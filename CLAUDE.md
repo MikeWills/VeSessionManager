@@ -101,6 +101,7 @@ To pick up updates: `/plugin marketplace update claude-tools`
 ## Known Constraints
 
 - The deploy server is behind a Tailscale VPN — a GitHub-hosted Actions runner can't reach it directly. The deploy workflow needs either a self-hosted runner joined to the tailnet, or a `tailscale/github-action` step to join the hosted runner to the tailnet before the deploy step.
+- **Worker Service reads `DOTNET_ENVIRONMENT`, not `ASPNETCORE_ENVIRONMENT`.** `VeSessionManager.Worker` is a plain generic Host (`Host.CreateApplicationBuilder`), which only honors `DOTNET_ENVIRONMENT`. Only the Web project (`WebApplication.CreateBuilder`) reads `ASPNETCORE_ENVIRONMENT` (and falls back to `DOTNET_ENVIRONMENT`). The generic Host's own default when neither is set is `Production` — so running the Worker's built DLL directly (bypassing `launchSettings.json`, which sets `DOTNET_ENVIRONMENT=Development` for `dotnet run`) silently picks up `appsettings.Production.json`'s Linux-only paths and fails on a dev machine. Always use `dotnet run --project ...` locally for the Worker, not the raw `.dll`.
 - (Environment-specific quirks and gotchas go here as they're discovered — e.g. API quirks, IIS behavior, network/DMZ restrictions, auth issues)
 
 ## Definition of Done

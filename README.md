@@ -27,7 +27,6 @@ tests/
 dotnet build
 dotnet test
 
-# Run from the repo root so both projects share the same SQLite file (see note below)
 dotnet run --project src/VeSessionManager.Worker
 dotnet run --project src/VeSessionManager.Web
 ```
@@ -43,14 +42,25 @@ dotnet ef migrations add <Name> --project src/VeSessionManager.Core
 
 ## Environments
 
-Config is selected via `ASPNETCORE_ENVIRONMENT` (`Test` or `Production`; there is no separate
+Config is selected by environment name (`Test` or `Production`; there is no separate
 `Development` environment — the local machine serves that role using the base `appsettings.json`).
 
-**Known limitation:** the Worker and Web projects must point at the identical SQLite file so
-they see the same data. Locally this only works cleanly if both are run from the repo root
-(relative path in `appsettings.json`); once deployed, `appsettings.Production.json` in each
-project points at the same absolute path (`/var/lib/vesessionmanager/vesessionmanager.db`) —
-update that path to match wherever the service actually gets deployed.
+**Note:** the Worker project is a plain generic Host, not ASP.NET Core, so it reads
+`DOTNET_ENVIRONMENT` rather than `ASPNETCORE_ENVIRONMENT` (the Web project's `WebApplication`
+host reads both, preferring `ASPNETCORE_ENVIRONMENT`). Neither is set by default outside a
+launch profile, and the Generic Host's own default is `Production` — so running the built DLL
+directly (bypassing `launchSettings.json`) picks up `appsettings.Production.json`, which points
+at a Linux-only absolute path and will fail to open on a dev machine. Always use
+`dotnet run --project ...` locally (it applies `launchSettings.json`'s `DOTNET_ENVIRONMENT` for
+you); don't invoke the built `.dll` directly unless you set the environment variable yourself.
+
+The Worker and Web projects share one SQLite file. `dotnet run --project <path>` sets the
+working directory to that project's own folder, so the base and Test connection strings use
+`Data Source=../../<file>.db` (two levels up from `src/<Project>/`) to land on the same
+repo-root file regardless of which project is running. `appsettings.Production.json` in both
+projects instead points at the same absolute path
+(`/var/lib/vesessionmanager/vesessionmanager.db`) — update that path to match wherever the
+service actually gets deployed.
 
 ## Deployment
 
