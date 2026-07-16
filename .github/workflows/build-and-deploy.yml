@@ -1,0 +1,30 @@
+name: Build and Deploy
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - run: dotnet build --configuration Release
+
+      - run: dotnet test --configuration Release
+
+  deploy:
+    needs: build-and-test
+    runs-on: self-hosted # TODO: confirm this runner is joined to the Tailscale tailnet (server is Tailscale-only)
+    steps:
+      - run: |
+          echo "TODO: deploy step not implemented yet."
+          echo "This server is behind Tailscale (see CLAUDE.md Known Constraints) and deploys via systemd,"
+          echo "matching the existing NcsScheduler pattern. Fill in once those specifics (runner registration,"
+          echo "systemd unit files, publish/copy steps) are confirmed."

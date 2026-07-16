@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/VeSessionManager.Core/VeSessionManager.Core.csproj" />
+    <Project Path="src/VeSessionManager.Web/VeSessionManager.Web.csproj" />
+    <Project Path="src/VeSessionManager.Worker/VeSessionManager.Worker.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/VeSessionManager.Core.Tests/VeSessionManager.Core.Tests.csproj" />
+  </Folder>
+</Solution>

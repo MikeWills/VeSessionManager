@@ -1,0 +1,78 @@
+using Microsoft.EntityFrameworkCore;
+using VeSessionManager.Core.Entities;
+
+namespace VeSessionManager.Core.Data;
+
+public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(options)
+{
+    public DbSet<Vec> Vecs => Set<Vec>();
+    public DbSet<EmailTemplate> EmailTemplates => Set<EmailTemplate>();
+    public DbSet<FeeConfiguration> FeeConfigurations => Set<FeeConfiguration>();
+    public DbSet<Session> Sessions => Set<Session>();
+    public DbSet<Candidate> Candidates => Set<Candidate>();
+    public DbSet<Payment> Payments => Set<Payment>();
+    public DbSet<VolunteerExaminer> VolunteerExaminers => Set<VolunteerExaminer>();
+    public DbSet<SessionVolunteerExaminer> SessionVolunteerExaminers => Set<SessionVolunteerExaminer>();
+    public DbSet<User> Users => Set<User>();
+    public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
+    public DbSet<JobRunHistory> JobRunHistories => Set<JobRunHistory>();
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        // The app never hard-deletes rows with dependents (PII is nulled in place, not the row
+        // removed — see Candidate/Payment purge behavior in the spec), so every FK below is
+        // Restrict rather than Cascade. This also sidesteps SQL Server-style "multiple cascade
+        // paths" errors from the several relationships that both point at User/Vec.
+        modelBuilder.Entity<FeeConfiguration>(b =>
+        {
+            b.HasOne(f => f.Vec).WithMany(v => v.FeeConfigurations).HasForeignKey(f => f.VecId).OnDelete(DeleteBehavior.Restrict);
+            b.HasOne(f => f.CreatedByUser).WithMany().HasForeignKey(f => f.CreatedByUserId).OnDelete(DeleteBehavior.Restrict);
+            b.Property(f => f.ExamFeeAmount).HasPrecision(10, 2);
+            b.Property(f => f.RetainedAmount).HasPrecision(10, 2);
+        });
+
+        modelBuilder.Entity<Session>(b =>
+        {
+            b.HasOne(s => s.Vec).WithMany(v => v.Sessions).HasForeignKey(s => s.VecId).OnDelete(DeleteBehavior.Restrict);
+            b.HasOne(s => s.FeeConfiguration).WithMany(f => f.Sessions).HasForeignKey(s => s.FeeConfigurationId).OnDelete(DeleteBehavior.Restrict);
+            b.HasOne(s => s.TestingCompletedByUser).WithMany().HasForeignKey(s => s.TestingCompletedByUserId).OnDelete(DeleteBehavior.Restrict);
+            b.HasOne(s => s.ArrlSubmittedByUser).WithMany().HasForeignKey(s => s.ArrlSubmittedByUserId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<Candidate>(b =>
+        {
+            b.HasOne(c => c.Session).WithMany(s => s.Candidates).HasForeignKey(c => c.SessionId).OnDelete(DeleteBehavior.Restrict);
+            b.HasOne(c => c.ResultMarkedByUser).WithMany().HasForeignKey(c => c.ResultMarkedByUserId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<Payment>(b =>
+        {
+            b.HasOne(p => p.Candidate).WithMany(c => c.Payments).HasForeignKey(p => p.CandidateId).OnDelete(DeleteBehavior.Restrict);
+            b.HasOne(p => p.RefundRequestedByUser).WithMany().HasForeignKey(p => p.RefundRequestedByUserId).OnDelete(DeleteBehavior.Restrict);
+            b.Property(p => p.Amount).HasPrecision(10, 2);
+        });
+
+        modelBuilder.Entity<SessionVolunteerExaminer>(b =>
+        {
+            b.HasKey(sve => new { sve.SessionId, sve.VolunteerExaminerId });
+            b.HasOne(sve => sve.Session).WithMany(s => s.SessionVolunteerExaminers).HasForeignKey(sve => sve.SessionId).OnDelete(DeleteBehavior.Restrict);
+            b.HasOne(sve => sve.VolunteerExaminer).WithMany(v => v.SessionVolunteerExaminers).HasForeignKey(sve => sve.VolunteerExaminerId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<User>(b =>
+        {
+            b.HasOne(u => u.ManagedByUser).WithMany().HasForeignKey(u => u.ManagedByUserId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<EmailTemplate>(b =>
+        {
+            b.HasIndex(e => e.Key).IsUnique();
+            b.HasOne(e => e.UpdatedByUser).WithMany().HasForeignKey(e => e.UpdatedByUserId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<AuditLog>(b =>
+        {
+            b.HasOne(a => a.User).WithMany().HasForeignKey(a => a.UserId).OnDelete(DeleteBehavior.Restrict);
+        });
+    }
+}

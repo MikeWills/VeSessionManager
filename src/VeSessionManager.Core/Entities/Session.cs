@@ -1,0 +1,48 @@
+namespace VeSessionManager.Core.Entities;
+
+public class Session
+{
+    public int Id { get; set; }
+
+    /// <summary>External reference into ExamTools/HamStudy.</summary>
+    public required string ExamToolsSessionId { get; set; }
+
+    public required string Title { get; set; }
+
+    public DateTime ScheduledStartUtc { get; set; }
+
+    // Populated once Phase 2 creates the Zoom meeting/Discord event.
+    public string? ZoomMeetingId { get; set; }
+    public string? ZoomJoinUrl { get; set; }
+    public string? DiscordEventId { get; set; }
+
+    /// <summary>Denormalized copy for easy filtering/reporting without joining through FeeConfiguration.</summary>
+    public int VecId { get; set; }
+    public Vec Vec { get; set; } = null!;
+
+    /// <summary>Snapshot of whichever config was active when the session was created, so historical sessions keep an accurate fee record even after rates change.</summary>
+    public int FeeConfigurationId { get; set; }
+    public FeeConfiguration FeeConfiguration { get; set; } = null!;
+
+    public SessionStatus Status { get; set; } = SessionStatus.Active;
+    public DateTime? CancelledUtc { get; set; }
+
+    /// <summary>Set when a reschedule is detected while the session already has candidates — a "something needs a human" flag, not an automatic action.</summary>
+    public bool RescheduleFlaggedForReview { get; set; }
+    public DateTime? RescheduleFlaggedUtc { get; set; }
+
+    /// <summary>Set by the Session Manager's "mark session as completed" action; bulk-flips Candidate.Tested = true for every non-terminal candidate in the session.</summary>
+    public DateTime? TestingCompletedUtc { get; set; }
+    public int? TestingCompletedByUserId { get; set; }
+    public User? TestingCompletedByUser { get; set; }
+
+    public ArrlSubmissionStatus ArrlSubmissionStatus { get; set; } = ArrlSubmissionStatus.NotSubmitted;
+    public DateTime? ArrlSubmittedDate { get; set; }
+    public int? ArrlSubmittedByUserId { get; set; }
+    public User? ArrlSubmittedByUser { get; set; }
+
+    public DateTime CreatedUtc { get; set; }
+
+    public List<Candidate> Candidates { get; } = [];
+    public List<SessionVolunteerExaminer> SessionVolunteerExaminers { get; } = [];
+}
