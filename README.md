@@ -57,62 +57,58 @@ first run (see `DevDataSeeder`) — without those rows, ingestion intentionally 
 until fee configuration exists. `Vec` is shared/global across every team, not per-team — see
 `docs/multi-team.md` for why.
 
-The Zoom/Discord scheduler (Phase 2) needs its own credentials, same pattern — and both Zoom and
-Discord are **optional**: leave either unconfigured and the Worker just skips that half (logging
-one quiet note per poll, not an error), creating whichever one(s) you *have* set up and
-back-filling the rest automatically the moment you add credentials later. If you don't have a
-Zoom Server-to-Server OAuth app or a Discord bot yet, see
+**As of the multi-team fast-follow, Zoom/Square/Email credentials also live on the `Team` row in
+the DB (hand-edited directly, same pattern as ExamTools above), not user-secrets — only Discord's
+bot token is still a shared, global user-secret.** See [`docs/multi-team.md`](docs/multi-team.md)
+for the full per-team rationale.
+
+The Zoom/Discord scheduler (Phase 2) needs its own credentials, and both Zoom and Discord are
+**optional**: leave either unconfigured and the Worker just skips that half (logging one quiet
+note per poll, not an error), creating whichever one(s) you *have* set up and back-filling the
+rest automatically the moment you add credentials later. If you don't have a Zoom
+Server-to-Server OAuth app or a Discord bot yet, see
 [`docs/zoom-discord-scheduling.md`](docs/zoom-discord-scheduling.md#account-setup-one-time-before-the-four-secrets-in-the-readme-mean-anything)
 for how to create them — that's account-dashboard setup, not something runnable from this repo.
 
+Set `Team.ZoomAccountId`/`ZoomClientId`/`ZoomClientSecret` directly on each team's row (a
+`ZoomUserId` of `"me"` is fine for most single-license Zoom accounts). Discord's bot token is
+still one shared credential across every team:
+
 ```bash
-dotnet user-secrets set "Zoom:AccountId" "<Zoom S2S OAuth app account id>" --project src/VeSessionManager.Worker
-dotnet user-secrets set "Zoom:ClientId" "<Zoom S2S OAuth app client id>" --project src/VeSessionManager.Worker
-dotnet user-secrets set "Zoom:ClientSecret" "<Zoom S2S OAuth app client secret>" --project src/VeSessionManager.Worker
 dotnet user-secrets set "Discord:BotToken" "<Discord bot token>" --project src/VeSessionManager.Worker
 ```
 
-On the server: `Zoom__AccountId` / `Zoom__ClientId` / `Zoom__ClientSecret` / `Discord__BotToken`
-environment variables. `Discord:GuildId` (the server events get created in) is not secret; it
-defaults to `0`, which reads as "not configured" the same as a missing BotToken — set it in
-appsettings.json once you have a real guild to use. See [`docs/zoom-discord-scheduling.md`](docs/zoom-discord-scheduling.md)
-for API details.
+On the server: `Discord__BotToken` environment variable. Each team then needs its own
+`Team.DiscordGuildId` (the server events get created in) — not secret, `null`/`0` reads as "not
+configured" the same as a missing BotToken; the shared bot must be invited into that team's
+Discord server before events will actually create. See
+[`docs/zoom-discord-scheduling.md`](docs/zoom-discord-scheduling.md) for API details.
 
-The Square payment-link/webhook flow (Phase 3) needs credentials in **both** the Worker (creates
-links) and the Web project (verifies/receives the webhook) — they share one user-secrets store
-(`VeSessionManager.Web.csproj` deliberately reuses the Worker's `UserSecretsId`), so these only
-need to be set once, against either project. If you don't have a Square Developer account/app
-yet, see [`docs/square-payments.md`](docs/square-payments.md#account-setup-one-time) for how to
-create one, get sandbox credentials, and register the webhook subscription.
+The Square payment-link/webhook flow (Phase 3) reads `Team.SquareAccessToken`/`SquareLocationId`/
+`SquareWebhookSignatureKey`/`SquareWebhookNotificationUrl` for each team; the Web project's
+webhook route is now **`/webhooks/square/{teamId}`** (the route identifies the team before
+signature verification, since verification needs that team's own key), so
+`SquareWebhookNotificationUrl` must include the team's numeric id (e.g.
+`https://<host>/webhooks/square/1` for the seeded team). If you don't have a Square Developer
+account/app yet, see [`docs/square-payments.md`](docs/square-payments.md#account-setup-one-time)
+for how to create one, get sandbox credentials, and register the webhook subscription against
+the team-specific URL. Only `Square:Environment` (`Sandbox` locally, `Production` in
+`appsettings.Production.json`) remains a whole-deployment `appsettings.json` setting, since
+sandbox-vs-production is an environment choice, not a per-team one. **Square is optional** too,
+same pattern as Zoom/Discord: without a team's `SquareAccessToken` set, payment-link generation
+is skipped quietly for that team (Payment rows still get created, `Unpaid`, just without a link
+until Square is configured) rather than erroring every poll. See
+[`docs/square-payments.md`](docs/square-payments.md) for API details.
 
-```bash
-dotnet user-secrets set "Square:AccessToken" "<Sandbox or Production access token>" --project src/VeSessionManager.Worker
-dotnet user-secrets set "Square:WebhookSignatureKey" "<webhook subscription signature key>" --project src/VeSessionManager.Worker
-```
-
-On the server: `Square__AccessToken` / `Square__WebhookSignatureKey` environment variables for
-**both** the Worker and Web systemd units. Non-secret settings — `Square:LocationId`,
-`Square:WebhookNotificationUrl`, `Square:Environment` (`Sandbox` locally, `Production` in
-`appsettings.Production.json`) — live in `appsettings.json` in both projects. **Square is
-optional** too, same pattern as Zoom/Discord: without `Square:AccessToken` set, payment-link
-generation is skipped quietly (Payment rows still get created, `Unpaid`, just without a link
-until Square is configured) rather than erroring every poll. See [`docs/square-payments.md`](docs/square-payments.md)
-for API details.
-
-Candidate notification emails (Phase 4) need SMTP credentials — **also optional**, same pattern.
-Templates and the From/Reply-To/privacy-policy settings are seeded once with placeholder content
-on first run and are meant to be **hand-edited by a human** (not generated content) before real
-use; see [`docs/email-notifications.md`](docs/email-notifications.md) for how to edit them today,
-without waiting on Phase 9's admin UI, plus the full placeholder reference.
-
-```bash
-dotnet user-secrets set "Email:SmtpUsername" "<Mailgun SMTP username, e.g. postmaster@yourdomain.com>" --project src/VeSessionManager.Worker
-dotnet user-secrets set "Email:SmtpPassword" "<Mailgun SMTP password>" --project src/VeSessionManager.Worker
-```
-
-On the server: `Email__SmtpUsername` / `Email__SmtpPassword` environment variables. Non-secret
-`Email:SmtpHost`/`Email:SmtpPort`/`Email:UseStartTls` in appsettings.json already default to
-Mailgun's recommended `smtp.mailgun.org:587` with STARTTLS.
+Candidate notification emails (Phase 4) read `Team.SmtpHost`/`SmtpPort`/`SmtpUsername`/
+`SmtpPassword`/`SmtpUseStartTls` for each team — **also optional**, same pattern, and deliberately
+with **no baked-in default** on any of the five columns (so a team reads as "not configured" until
+someone actually sets them, not the instant the repo is cloned). `EmailSettings` and
+`EmailTemplate` are both per-team now too — each team gets its own From/Reply-To/privacy-policy
+settings row and its own template wording, seeded once with placeholder content on first run and
+meant to be **hand-edited by a human** (not generated content) before real use; see
+[`docs/email-notifications.md`](docs/email-notifications.md) for how to edit them today, without
+waiting on Phase 9's admin UI, plus the full placeholder reference.
 
 The FCC ULS watcher (Phase 5) needs **no credentials at all** — `data.fcc.gov` is a public
 dataset — so there's nothing to configure beyond the `FccUls:BaseUrl` default already in

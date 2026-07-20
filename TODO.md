@@ -20,9 +20,9 @@ of Phases 2–4's actual deliverables.
 ## Email/SMTP (Phase 4) — not yet live-verified
 
 - [ ] Get Mailgun's domain-specific SMTP username/password (Mailgun dashboard → Sending → Domain settings → SMTP credentials) — see `docs/email-notifications.md`
-- [ ] Set `Email:SmtpUsername`, `Email:SmtpPassword` (via `dotnet user-secrets set`, run with `!`)
-- [ ] Replace the seeded `EmailSettings` row's placeholder values (`FromAddress`/`FromDisplayName`/`ReplyToAddress`/`PrivacyPolicyUrl` are currently `noreply@example.org` / `https://example.org/privacy`) with real values — edit directly in the DB, see `docs/email-notifications.md`
-- [ ] Review/rewrite the seeded `RegistrationConfirmation`/`DayBeforeReminder` template content — it's a real starting example (bullet points, `{{CandidateFirstName}}`, etc.) but the actual wording is a placeholder, not final copy
+- [ ] **Updated by multi-team (see below): these now go on the seeded `Team` row (direct DB edit), not `Email:*` user-secrets** — set `Team.SmtpHost`/`SmtpPort`/`SmtpUsername`/`SmtpPassword`/`SmtpUseStartTls`. No column has a baked-in default (deliberate — see CLAUDE.md's `IsConfigured` gotcha), so all five need setting even to match Mailgun's usual `smtp.mailgun.org:587`+STARTTLS defaults.
+- [ ] Replace the seeded `EmailSettings` row's placeholder values (`FromAddress`/`FromDisplayName`/`ReplyToAddress`/`PrivacyPolicyUrl` are currently `noreply@example.org` / `https://example.org/privacy`) with real values for **each team's own `EmailSettings` row** (one per team now, not a singleton) — edit directly in the DB, see `docs/email-notifications.md`
+- [ ] Review/rewrite the seeded `RegistrationConfirmation`/`DayBeforeReminder` template content — it's a real starting example (bullet points, `{{CandidateFirstName}}`, etc.) but the actual wording is a placeholder, not final copy. Templates are now per-team (`EmailTemplate.TeamId`) so each team can have its own wording if desired.
 - [ ] Live test: confirm a test candidate actually receives both emails with correctly substituted placeholders
 
 ## FCC ULS Watcher (Phase 5) — not yet live-verified
@@ -40,14 +40,48 @@ of Phases 2–4's actual deliverables.
 - [ ] Live test: let a real candidate's Unpaid payment age past 10 days and confirm `Payment.ExpiredUnpaid` flips and the admin notice arrives at the configured `AdminNotificationEmail`
 - [ ] Decide whether `PaymentReminder:UnmatchedReviewWindowDays` (default 5) is the right value once real sessions are running through Phase 1/5 — the spec calls this "some reasonable window," not a fixed number
 
-## Multi-Team Foundation — blocking real ExamTools polling
+## Multi-Team Foundation — consolidated per-team setup checklist
 
-- [ ] **Blocking:** set the seeded `Team` row's `ExamToolsUsername`/`ExamToolsPassword` via direct DB edit — the migration deliberately leaves them `NULL` (migrations must never contain real secrets, even ones already sitting in this repo's user-secrets). ExamTools ingestion is silently skipped (one quiet log line per poll, no error) until this is done. See `docs/multi-team.md`.
-- [ ] Rename the seeded `Team.Name` (currently `"WX0MIK"`, copied from the old `ExamTools:Team` appsettings value as a placeholder) to something more human-readable if desired — purely cosmetic, `ExamToolsTeamCode` is the value that actually matters functionally.
-- [ ] **Found while cleaning up appsettings.Production.json**: the seeded team's `ExamToolsTeamCode` was copied from the *dev* value (`WX0MIK`, from the base `appsettings.json`) — the real production team code is `HRCC` (was in `appsettings.Production.json`'s now-removed `ExamTools:Team`, per `ExamToolsOptions`' original doc comment: "WX0MIK on dev, HRCC on prod"). If/when this team starts polling the production ExamTools host, set `Team.ExamToolsTeamCode = "HRCC"` instead of `WX0MIK` — don't just re-enter the dev value.
-- [ ] Onboard the second team: add a new `Team` row (direct DB edit — no admin UI yet) with its own `Name`/`ExamToolsTeamCode`/`ExamToolsUsername`/`ExamToolsPassword`/Zoom/Discord Guild/Square credentials. `SessionIngestionJob` picks it up automatically on the next tick, no restart needed.
-- [x] ~~Fast-follow: apply the same per-team pattern to Zoom/Discord/Square + the Web project's Square webhook route~~ — done. Zoom and Square are fully per-team (each team has its own account); Discord uses one shared bot with a per-team Guild (confirmed with the user — not per-team credentials). Only **Email/SMTP** still uses one shared global account — that's the one remaining fast-follow piece, not yet scoped as its own phase.
-- [ ] Live test: with two real `Team` rows configured, confirm `SessionIngestionJob`'s per-team loop correctly ingests both teams' sessions into the one shared `Vec`/`FeeConfiguration` (if both teams work with the same VEC) without cross-team session cancellation false-positives (covered by a unit test, but worth confirming against the real ExamTools API too).
+All four fast-follow stages (Zoom, Discord, Square, Email) are done — every integration except
+Discord's bot token is now fully per-team; see `docs/multi-team.md`. **Every credential column
+added across all five migrations (ExamTools + the four fast-follow stages) is left `NULL` on the
+seeded `Team` row** (migrations must never contain real secrets, even ones already sitting in this
+repo's user-secrets) — each integration is silently skipped (one quiet log line per poll, no error)
+until its columns are set via direct DB edit (no admin UI yet):
+
+- [ ] **Blocking:** `Team.ExamToolsUsername`/`ExamToolsPassword` — ExamTools ingestion is the one
+  hard dependency everything else needs; nothing else runs meaningfully without real sessions.
+- [ ] `Team.ZoomAccountId`/`ZoomClientId`/`ZoomClientSecret` (`ZoomUserId` is pre-filled `"me"`)
+- [ ] `Team.DiscordGuildId` is pre-filled with the real MARC server id (`1323140214008578111`) —
+  only `Discord:BotToken` (still shared/global, user-secrets) needs setting if not already done
+  from before the fast-follow.
+- [ ] `Team.SquareAccessToken`/`SquareWebhookSignatureKey`/`SquareLocationId`/
+  `SquareWebhookNotificationUrl` — `SquareWebhookNotificationUrl` must be the *team-specific* URL:
+  `https://<host>/webhooks/square/1` for the seeded team (route changed from `/webhooks/square` to
+  `/webhooks/square/{teamId}`).
+- [ ] `Team.SmtpHost`/`SmtpPort`/`SmtpUsername`/`SmtpPassword`/`SmtpUseStartTls` — no baked-in
+  default on any of these (deliberate, see CLAUDE.md's `IsConfigured` gotcha).
+- [ ] Rename the seeded `Team.Name` (currently `"WX0MIK"`, copied from the old `ExamTools:Team`
+  appsettings value as a placeholder) to something more human-readable if desired — purely
+  cosmetic, `ExamToolsTeamCode` is the value that actually matters functionally.
+- [ ] **Found while cleaning up appsettings.Production.json**: the seeded team's
+  `ExamToolsTeamCode` was copied from the *dev* value (`WX0MIK`, from the base
+  `appsettings.json`) — the real production team code is `HRCC` (was in
+  `appsettings.Production.json`'s now-removed `ExamTools:Team`, per `ExamToolsOptions`' original
+  doc comment: "WX0MIK on dev, HRCC on prod"). If/when this team starts polling the production
+  ExamTools host, set `Team.ExamToolsTeamCode = "HRCC"` instead of `WX0MIK` — don't just re-enter
+  the dev value.
+- [ ] Onboard the second team: add a new `Team` row (direct DB edit — no admin UI yet) with its
+  own `Name`/`ExamToolsTeamCode`/`ExamToolsUsername`/`ExamToolsPassword`/Zoom/Square/Email
+  credentials and its own `DiscordGuildId` (the shared bot needs to be invited into that team's
+  Discord server first). Every job picks it up automatically on the next tick, no restart needed.
+- [ ] Live test: with two real `Team` rows configured, confirm every per-team job loop (ingestion,
+  Zoom/Discord scheduling, Square payment generation + webhook routing, registration/reminder
+  emails) correctly isolates both teams' data — ingestion into the one shared `Vec`/
+  `FeeConfiguration` without cross-team session cancellation false-positives, Square webhooks
+  routing to the right team via `/webhooks/square/{teamId}`, emails using each team's own SMTP
+  credentials and template wording — all covered by unit tests, but worth confirming against the
+  real APIs too.
 
 ## Carried over from earlier phases
 

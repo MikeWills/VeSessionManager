@@ -58,28 +58,58 @@ Zoom/Discord/Square/Email fast-follow:
   touching the client, mirroring the `IsConfigured`-gate convention already used for Zoom/Discord/
   Square/Email, just living on the entity now instead of a client-held options object.
 
-## What's still global (not yet multi-team)
+## What's per-team now (fast-follow complete, 2026-07-20)
 
-This slice covers **only ExamTools** — the one hard-required integration. Still single-account,
-shared across every team's sessions, exactly as before this change:
+Every external integration except one is now fully per-team, following the exact `ExamToolsClient`
+pattern above. Landed as four separate commits — Zoom, Discord, Square (+ webhook route), Email —
+each with its own migration:
 
-- Zoom (`IZoomClient`) / Discord (`IDiscordEventClient`) — `SessionEventSchedulingService`
-- Square (`ISquareClient`) — `PaymentGenerationService`, plus the Web project's
-  `POST /webhooks/square` route and `SquareWebhookHandler`
-- Email/SMTP (`IEmailSender`) — `CandidateNotificationService`, `PaymentReminderService`
+- **ExamTools** — `Team.ExamToolsTeamCode`/`ExamToolsUsername`/`ExamToolsPassword`.
+  `SessionIngestionService`.
+- **Zoom** — `Team.ZoomAccountId`/`ZoomClientId`/`ZoomClientSecret`/`ZoomUserId`. `ZoomClient`
+  caches a `(AccessToken, ExpiresUtc, SemaphoreSlim)` per `TeamId` in a
+  `ConcurrentDictionary<int, TeamZoomSession>` (Bearer-token auth needs no per-team `HttpClient`,
+  unlike ExamTools' cookie-jar).
+- **Discord — the one exception.** One Discord bot token is shared across every team
+  (`Discord:BotToken`, stays in `IOptions<DiscordOptions>`/user-secrets, unchanged from before this
+  fast-follow); only *which guild* the bot posts events into varies per team
+  (`Team.DiscordGuildId`, non-secret, `null`/`0` = "not configured"). This was an explicit user
+  decision, not the default pattern: Discord's bot model has no one-guild-per-token constraint, so
+  one bot identity legitimately serving multiple teams' servers is a normal supported setup —
+  unlike a Zoom/Square/Email account, which genuinely can't be shared. `DiscordEventClient` needs
+  **no per-team cache at all** as a result — it keeps the single shared `DiscordRestClient`/
+  `_loggedIn`/login-lock it always had; only the `guildId` passed into each call varies.
+  `IDiscordEventClient.IsConfigured` stays client-level (bot-token readiness); a session's Discord
+  attempt needs **both** `discordEventClient.IsConfigured && team.IsDiscordConfigured` true.
+- **Square** — `Team.SquareAccessToken`/`SquareLocationId`/`SquareWebhookSignatureKey`/
+  `SquareWebhookNotificationUrl`. Only `Square:Environment` (Sandbox/Production, a
+  whole-deployment choice) stays in `appsettings.json`. `PaymentGenerationService` per-team.
+  **Webhook route changed to `/webhooks/square/{teamId}`** — the URL identifies the team *before*
+  signature verification (which needs that team's own `WebhookSignatureKey`), exactly the design
+  problem flagged as needing "genuinely new design" before this fast-follow started.
+  `SquareWebhookHandler.ProcessAsync(teamId, ...)` looks up the `Team` by route id first; an
+  unknown or webhook-unconfigured team returns `InvalidSignature` (same outcome either way — never
+  leak whether a `teamId` is valid vs. just unconfigured); after matching a `Payment` by `order_id`
+  (unchanged), a defense-in-depth check confirms that payment's actual `Session.TeamId` matches the
+  route's `teamId`, returning `Ignored` (not `Processed`) on mismatch — catches a misconfigured
+  `WebhookNotificationUrl` pointing at the wrong team before it marks the wrong team's payment paid.
+- **Email/SMTP** — `Team.SmtpHost`/`SmtpPort`/`SmtpUsername`/`SmtpPassword`/`SmtpUseStartTls` (no
+  baked-in default on any of them — see the CLAUDE.md gotcha about a shipped default making
+  `IsConfigured` read true before setup). `EmailSettings` moved from a true singleton to one row
+  per team (`TeamId` unique index); `EmailTemplate`'s unique index moved from `Key` alone to
+  `(TeamId, Key)` — **template wording (Subject/Body) is now customizable per team**, not shared,
+  per an explicit user decision (different teams may want different tone/branding, and email
+  addresses differ per team regardless). `EmailDefaultsSeeder` loops every `Team` and seeds one
+  `EmailSettings` row + the full template set per team, idempotent per row exactly as before.
 
-`FccUlsWatcherService` never needs this treatment — it already matches candidates across every
+`FccUlsWatcherService` never needed this treatment — it already matches candidates across every
 session/team in one pass, by design (FCC data has no concept of "which team").
 
-**Fast-follow scope, when it happens:** apply the exact `ExamToolsClient` pattern above to each of
-the four remaining clients; add the equivalent credential columns to `Team`; loop
-`SessionEventSchedulingService`/`PaymentGenerationService`/`CandidateNotificationService`/
-`PaymentReminderService` per-team the same way `SessionIngestionJob` now loops ingestion. The one
-piece that needs genuinely new design, not just repetition: the Square webhook route. Square's
-signature verification needs the right team's `WebhookSignatureKey` *before* the payload can even
-be parsed to find which `Payment`/team it belongs to — the fix is almost certainly a per-team route
-(e.g. `/webhooks/square/{teamSlug}`) so the URL itself identifies the team ahead of signature
-verification, since `WebhookNotificationUrl` is already a required input to the HMAC anyway.
+**Onboarding a second team** is now just inserting a new `Team` row (direct DB edit — no admin UI
+yet) with its own ExamTools/Zoom/Square/Email credentials and Discord guild id. Every job (ingestion,
+scheduling, payment generation, notifications, reminders) picks it up automatically on its next
+poll — no restart, no separate backfill step. See `TODO.md`'s Multi-Team Foundation section for the
+exact checklist.
 
 ## Migration follow-up — required before ExamTools polling works again
 
