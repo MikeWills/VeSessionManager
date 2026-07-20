@@ -53,12 +53,16 @@ builder.Services.Configure<FccUlsOptions>(builder.Configuration.GetSection(FccUl
 builder.Services.AddSingleton<IFccUlsClient, FccUlsClient>();
 builder.Services.AddScoped<FccUlsWatcherService>();
 
+builder.Services.Configure<PaymentReminderOptions>(builder.Configuration.GetSection(PaymentReminderOptions.SectionName));
+builder.Services.AddScoped<PaymentReminderService>();
+
 builder.Services.AddScoped<JobRunHistoryLogger>();
 builder.Services.AddHostedService<HelloWorldJob>();
 builder.Services.AddHostedService<SessionIngestionJob>();
 builder.Services.AddHostedService<DayBeforeReminderJob>();
 builder.Services.AddHostedService<FccDailyWatcherJob>();
 builder.Services.AddHostedService<FccWeeklyCatchupJob>();
+builder.Services.AddHostedService<PaymentReminderJob>();
 
 var host = builder.Build();
 

@@ -122,6 +122,12 @@ dataset — so there's nothing to configure beyond the `FccUls:BaseUrl` default 
 `appsettings.json`. See [`docs/fcc-uls-watcher.md`](docs/fcc-uls-watcher.md) for the file formats
 and field layout it depends on.
 
+Payment reminders/expiration (Phase 6) reuse Phase 4's SMTP setup — no separate credentials. The
+one new piece to configure by hand is `EmailSettings.AdminNotificationEmail` (where the 10-day
+expiration notice goes — the Session Manager's inbox, not the candidate's), seeded with a
+placeholder alongside the From/Reply-To/privacy-policy fields; see
+[`docs/payment-reminders.md`](docs/payment-reminders.md).
+
 ## Environments
 
 Config is selected by environment name (`Test` or `Production`; there is no separate

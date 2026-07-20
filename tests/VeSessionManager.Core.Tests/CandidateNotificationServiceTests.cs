@@ -58,7 +58,8 @@ public class CandidateNotificationServiceTests
             FromAddress = "noreply@example.org",
             FromDisplayName = "VE Session Manager",
             ReplyToAddress = "reply@example.org",
-            PrivacyPolicyUrl = "https://example.org/privacy"
+            PrivacyPolicyUrl = "https://example.org/privacy",
+            AdminNotificationEmail = "admin@example.org"
         });
         dbContext.EmailTemplates.Add(new EmailTemplate
         {
@@ -359,7 +360,7 @@ public class CandidateNotificationServiceTests
         await using var dbContext = CreateContext();
         dbContext.EmailSettings.Add(new EmailSettings
         {
-            FromAddress = "noreply@example.org", ReplyToAddress = "reply@example.org", PrivacyPolicyUrl = "https://example.org/privacy"
+            FromAddress = "noreply@example.org", ReplyToAddress = "reply@example.org", PrivacyPolicyUrl = "https://example.org/privacy", AdminNotificationEmail = "admin@example.org"
         });
         // No RegistrationConfirmation template seeded at all.
         await dbContext.SaveChangesAsync();

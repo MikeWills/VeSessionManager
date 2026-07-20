@@ -18,6 +18,9 @@ public class EmailSettings
     public required string ReplyToAddress { get; set; }
     public required string PrivacyPolicyUrl { get; set; }
 
+    /// <summary>Not in the original shared data model — added in Phase 6. Where the PaymentExpirationNotice template goes ("to Mike," per the spec, not to the candidate) — the Session Manager's own inbox, not a candidate-facing address. Same hand-edit-in-the-DB pattern as the other fields on this row.</summary>
+    public required string AdminNotificationEmail { get; set; }
+
     public int? UpdatedByUserId { get; set; }
     public User? UpdatedByUser { get; set; }
     public DateTime? UpdatedUtc { get; set; }

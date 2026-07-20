@@ -52,5 +52,8 @@ public class Candidate
     /// <summary>See RegistrationConfirmationSentUtc — prevents a daily job restart from re-sending the same day's reminder.</summary>
     public DateTime? DayBeforeReminderSentUtc { get; set; }
 
+    /// <summary>Not in the original shared data model — added in Phase 6. Set once when ApplicationStatus has stayed Unmatched for longer than PaymentReminderOptions.UnmatchedReviewWindowDays past DateRegisteredUtc, per the spec's "flag separately for manual review" note (no FCC application date exists yet to gate a payment reminder on). Surfaced today only via a WARNING log line — Phase 9's admin UI doesn't exist yet to show it anywhere else.</summary>
+    public DateTime? UnmatchedReviewFlaggedUtc { get; set; }
+
     public List<Payment> Payments { get; } = [];
 }

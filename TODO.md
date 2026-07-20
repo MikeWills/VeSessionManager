@@ -1,6 +1,6 @@
 # TODO
 
-Outstanding testing/configuration items for what's already built (Phases 0–5 of
+Outstanding testing/configuration items for what's already built (Phases 0–6 of
 [`docs/spec.md`](docs/spec.md)). This tracks operational follow-ups, not the phase roadmap itself
 — see `docs/spec.md` for what's planned but not yet built.
 
@@ -32,11 +32,20 @@ of Phases 2–4's actual deliverables.
 - [ ] Let `FccWeeklyCatchupJob` actually run on a real Monday at least once and confirm it hits `complete/a_amat.zip`/`complete/l_amat.zip` successfully (these are ~190MB+ files — first real run will validate both the download time and memory footprint of loading them fully into memory, not just the small daily files exercised so far)
 - [ ] Revisit the deferred "upgrade exam" (existing licensee) matching logic once real ULS + ExamTools/HamStudy sample data for an upgrade candidate is available — see `docs/fcc-uls-watcher.md`'s Open Item
 
+## Payment Reminders (Phase 6) — not yet live-verified
+
+- [ ] Replace `EmailSettings.AdminNotificationEmail`'s seeded placeholder (`admin@example.org`) with a real inbox — this is where every `PaymentExpirationNotice` goes, so it silently goes nowhere useful until changed
+- [ ] Review/rewrite the seeded `PaymentReminder5Day`/`PaymentExpirationNotice` template content — same "real starting example, not final copy" caveat as Phase 4's templates
+- [ ] Live test: let a real candidate's Unpaid payment age past 5 days (`Received` status, `ApplicationDateEnteredUtc` from Phase 5) and confirm the reminder actually sends with correct placeholders
+- [ ] Live test: let a real candidate's Unpaid payment age past 10 days and confirm `Payment.ExpiredUnpaid` flips and the admin notice arrives at the configured `AdminNotificationEmail`
+- [ ] Decide whether `PaymentReminder:UnmatchedReviewWindowDays` (default 5) is the right value once real sessions are running through Phase 1/5 — the spec calls this "some reasonable window," not a fixed number
+
 ## Carried over from earlier phases
 
 - [ ] Confirm the production ExamTools host — `exam.tools` vs `alpha.exam.tools` (only the dev site, `examtools.dev`, has been exercised so far)
 - [ ] Review `DevDataSeeder`'s $15/$7 ARRL fee amounts against the real current fee schedule before this touches real candidates
 - [ ] Multi-team support (raised 2026-07-20): if this app ever needs to serve more than one independent VE team, each with its own Discord/Square/Zoom account, those three clients need reworking from a single global-credential singleton to per-`Vec` credential resolution. The FCC watcher already needs no changes for this (its matching is inherently team-agnostic). Not scoped as a phase yet — revisit if/when a second team is actually onboarding.
+- [ ] Retest payment reminders (flagged in spec.md's Phase 6 section): the 5-/10-day reminder logic is gated on `ApplicationStatus = Received`, which only happens once a candidate *passes* and their FCC application shows up. A candidate who fails and immediately retests within the same session may owe a fee before there's any FCC application to gate on — so today, a retest payment never gets a reminder/expiration at all. Spec's suggested fix if this turns out to matter in practice: gate retest reminders on the Session Manager having marked *some* result, not FCC status. Revisit once real sessions with retests are running through this.
 
 ## Deferred (no urgency, revisit when ready)
 

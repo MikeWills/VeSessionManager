@@ -24,9 +24,10 @@ public static class EmailDefaultsSeeder
                 FromDisplayName = "VE Session Manager",
                 ReplyToAddress = "noreply@example.org",
                 PrivacyPolicyUrl = "https://example.org/privacy",
+                AdminNotificationEmail = "admin@example.org",
                 UpdatedUtc = DateTime.UtcNow
             });
-            logger.LogWarning("Seeded default EmailSettings with placeholder From/Reply-To/PrivacyPolicyUrl values — these must be updated before sending real candidate email");
+            logger.LogWarning("Seeded default EmailSettings with placeholder From/Reply-To/PrivacyPolicy/AdminNotification values — these must be updated before sending real candidate email");
         }
 
         // Deliberately demonstrates the formatting an Admin has available (headings, bold, a
@@ -61,6 +62,25 @@ public static class EmailDefaultsSeeder
             </ul>
             <p>Outstanding payment link (if applicable): {{OutstandingPaymentLinkUrl}}</p>
             <p>See you then, {{CandidateFirstName}}!</p>
+            """);
+
+        await SeedTemplateIfMissingAsync(dbContext, logger, "PaymentReminder5Day",
+            "Reminder: Your VE Exam Fee is Still Due",
+            """
+            <p>Hi {{CandidateName}},</p>
+            <p>Your FCC application has been received, but we haven't seen your exam fee payment yet.</p>
+            <p><a href="{{PaymentLinkUrl}}">Pay your exam fee</a></p>
+            <p><a href="{{ZoomJoinUrl}}">Session Zoom link</a> (for reference)</p>
+            <p>Thanks!</p>
+            """);
+
+        await SeedTemplateIfMissingAsync(dbContext, logger, "PaymentExpirationNotice",
+            "Unpaid Exam Fee Expired",
+            """
+            <p>{{CandidateName}}'s exam fee ({{PaymentAmount}}) from the session on {{SessionDate}} has gone
+            10+ days without payment and is now marked expired.</p>
+            <p>This is an internal notice — it goes to the Session Manager (EmailSettings.AdminNotificationEmail),
+            not the candidate.</p>
             """);
 
         await dbContext.SaveChangesAsync();
