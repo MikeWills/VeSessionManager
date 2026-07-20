@@ -23,6 +23,14 @@ public class Team
     public string? ExamToolsUsername { get; set; }
     public string? ExamToolsPassword { get; set; }
 
+    // Zoom credentials — nullable. Unlike ExamTools/Square/Email, this team's own separate Zoom
+    // subscription/S2S OAuth app (confirmed with the user — not shared across teams).
+    public string? ZoomAccountId { get; set; }
+    public string? ZoomClientId { get; set; }
+    public string? ZoomClientSecret { get; set; }
+    /// <summary>Which Zoom user's calendar meetings get created under — defaults to "me" in code (ZoomClient) when null, not required to be set explicitly.</summary>
+    public string? ZoomUserId { get; set; }
+
     public DateTime CreatedUtc { get; set; }
 
     public List<Session> Sessions { get; } = [];
@@ -31,4 +39,9 @@ public class Team
         !string.IsNullOrWhiteSpace(ExamToolsTeamCode)
         && !string.IsNullOrWhiteSpace(ExamToolsUsername)
         && !string.IsNullOrWhiteSpace(ExamToolsPassword);
+
+    public bool IsZoomConfigured =>
+        !string.IsNullOrWhiteSpace(ZoomAccountId)
+        && !string.IsNullOrWhiteSpace(ZoomClientId)
+        && !string.IsNullOrWhiteSpace(ZoomClientSecret);
 }

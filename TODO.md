@@ -57,3 +57,4 @@ of Phases 2–4's actual deliverables.
 ## Deferred (no urgency, revisit when ready)
 
 - [ ] Deployment: no systemd unit file or working GitHub Actions deploy step exists yet (`.github/workflows/build-and-deploy.yml`'s `deploy` job is a stub) — needs the self-hosted-runner/Tailscale-tailnet setup and a systemd unit, matching the NcsScheduler pattern
+- [ ] Zoom: use a meeting template if one exists, instead of (or in addition to) the manually-specified settings `ZoomMeetingRequest` currently sends — Zoom supports creating a meeting from a saved template (`template_id`) so a team's preferred settings (waiting room, recording, etc.) don't need to be hardcoded here. Needs a `Team`-level "which template" setting once this is picked up.

@@ -17,13 +17,15 @@ namespace VeSessionManager.Worker;
 /// collects a fee) the candidate's payment link have had their best chance to already exist, so the
 /// email reads as complete rather than partial.
 ///
-/// Those three steps are deliberately still global (one call per tick, not looped per team) — they
-/// still use a single shared Zoom/Discord/Square/Email account across every team's sessions, until
-/// a later fast-follow gives those integrations the same per-team credential treatment ExamTools
-/// just got. Each step still gets its own JobRunHistory entry: a failure in one step (or one team's
-/// ingestion) shouldn't read as a failure in another on the ops dashboard, and each later step
-/// should still run against whatever the earlier ones already committed even if it itself later
-/// fails.
+/// Session/candidate ingestion and Zoom/Discord scheduling are looped per Team (each team has its
+/// own ExamTools/Zoom credentials, and shares one Discord bot but picks its own Guild — see
+/// docs/multi-team.md). Payment generation and registration confirmation are still global (one
+/// call per tick, not looped per team) — they still use a single shared Square/Email account across
+/// every team's sessions, until a later fast-follow gives those integrations the same per-team
+/// credential treatment. Each step still gets its own JobRunHistory entry: a failure in one step
+/// (or one team's turn) shouldn't read as a failure in another on the ops dashboard, and each later
+/// step should still run against whatever the earlier ones already committed even if it itself
+/// later fails.
 /// </summary>
 public class SessionIngestionJob(
     IServiceScopeFactory scopeFactory,
@@ -52,17 +54,17 @@ public class SessionIngestionJob(
                     ct => ingestionService.RunAsync(team, ct),
                     team.Id,
                     stoppingToken);
+
+                await jobRunHistoryLogger.RunAsync(
+                    "SessionEventScheduling",
+                    ct => schedulingService.RunAsync(team, ct),
+                    team.Id,
+                    stoppingToken);
             }
 
-            // Global steps: still process ALL sessions/candidates regardless of team, until Zoom/
-            // Discord/Square/Email get the same per-team treatment as ExamTools in a later
-            // fast-follow (see docs/multi-team.md).
-            await jobRunHistoryLogger.RunAsync(
-                "SessionEventScheduling",
-                schedulingService.RunAsync,
-                null,
-                stoppingToken);
-
+            // Global steps: still process ALL candidates/payments regardless of team, until Square/
+            // Email get the same per-team treatment as ExamTools/Zoom/Discord in a later fast-follow
+            // (see docs/multi-team.md).
             await jobRunHistoryLogger.RunAsync(
                 "PaymentGeneration",
                 paymentGenerationService.RunAsync,

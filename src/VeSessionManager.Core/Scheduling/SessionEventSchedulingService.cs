@@ -19,9 +19,11 @@ namespace VeSessionManager.Core.Scheduling;
 /// Both Zoom and Discord are optional integrations (unlike ExamTools, which fails loudly when
 /// unconfigured, since ingestion is the one thing everything else depends on): a team that
 /// hasn't finished setting one up yet must not see a repeated failed-call error every poll.
-/// IZoomClient.IsConfigured / IDiscordEventClient.IsConfigured gate each independently, and
-/// either integration backfills automatically the moment it becomes configured — no other
-/// config change or manual retrigger needed, matching Phase 3/4's optional integrations.
+/// Zoom is per-team (Team.IsZoomConfigured, each team has its own separate Zoom S2S OAuth app);
+/// Discord shares one bot across every team (IDiscordEventClient.IsConfigured) but still needs a
+/// per-team Guild selected (Team.IsDiscordConfigured) — see docs/multi-team.md. Either integration
+/// backfills automatically the moment it becomes configured — no other config change or manual
+/// retrigger needed, matching Phase 3/4's optional integrations.
 ///
 /// Discord's event needs the Zoom join link for its description/location, so Discord can only
 /// actually run once Zoom has produced one — if Zoom isn't configured (or hasn't succeeded yet),
@@ -29,7 +31,8 @@ namespace VeSessionManager.Core.Scheduling;
 /// produces a link, Discord picks up automatically on the same or a later poll.
 ///
 /// This means a poll that crashes or fails partway always resumes correctly next run purely by
-/// re-reading Session state — matching Phase 1's polling philosophy.
+/// re-reading Session state — matching Phase 1's polling philosophy. Multi-team: this service now
+/// operates on one Team's sessions per call — see docs/multi-team.md.
 /// Per spec: cancellation cleanup never sends any candidate-facing notification — that is a
 /// manual Session Manager action, not something this job (or any later phase) should do.
 /// </summary>
@@ -40,22 +43,22 @@ public class SessionEventSchedulingService(
     TimeProvider timeProvider,
     ILogger<SessionEventSchedulingService> logger)
 {
-    public async Task<SchedulingResult> RunAsync(CancellationToken cancellationToken)
+    public async Task<SchedulingResult> RunAsync(Team team, CancellationToken cancellationToken)
     {
         var now = timeProvider.GetUtcNow().UtcDateTime;
         var result = new SchedulingResult();
 
         var sessionsNeedingSync = await dbContext.Sessions
-            .Where(s => s.Status == SessionStatus.Active && s.ScheduledStartUtc != s.ZoomDiscordSyncedStartUtc)
+            .Where(s => s.TeamId == team.Id && s.Status == SessionStatus.Active && s.ScheduledStartUtc != s.ZoomDiscordSyncedStartUtc)
             .ToListAsync(cancellationToken);
 
-        LogUnconfiguredIntegrations(sessionsNeedingSync);
+        LogUnconfiguredIntegrations(team, sessionsNeedingSync);
 
         foreach (var session in sessionsNeedingSync)
         {
             try
             {
-                await SyncZoomAndDiscordAsync(session, cancellationToken);
+                await SyncZoomAndDiscordAsync(team, session, cancellationToken);
                 if (session.ZoomDiscordSyncedStartUtc == session.ScheduledStartUtc)
                 {
                     result.SessionsSynced++;
@@ -79,14 +82,14 @@ public class SessionEventSchedulingService(
         }
 
         var sessionsNeedingCleanup = await dbContext.Sessions
-            .Where(s => s.Status == SessionStatus.Cancelled && (s.ZoomMeetingId != null || s.DiscordEventId != null))
+            .Where(s => s.TeamId == team.Id && s.Status == SessionStatus.Cancelled && (s.ZoomMeetingId != null || s.DiscordEventId != null))
             .ToListAsync(cancellationToken);
 
         foreach (var session in sessionsNeedingCleanup)
         {
             try
             {
-                await CleanupZoomAndDiscordAsync(session, now, cancellationToken);
+                await CleanupZoomAndDiscordAsync(team, session, now, cancellationToken);
                 result.SessionsCleanedUp++;
             }
             catch (Exception ex)
@@ -98,19 +101,19 @@ public class SessionEventSchedulingService(
             await dbContext.SaveChangesAsync(cancellationToken);
         }
 
-        logger.LogInformation("Session event scheduling finished: {Result}", result);
+        logger.LogInformation("Session event scheduling finished for team {TeamId} ({TeamName}): {Result}", team.Id, team.Name, result);
         return result;
     }
 
-    private void LogUnconfiguredIntegrations(List<Session> sessionsNeedingSync)
+    private void LogUnconfiguredIntegrations(Team team, List<Session> sessionsNeedingSync)
     {
-        if (zoomClient.IsConfigured && discordEventClient.IsConfigured)
+        if (team.IsZoomConfigured && discordEventClient.IsConfigured)
         {
             return;
         }
 
         var pendingCount = sessionsNeedingSync.Count(s =>
-            (!zoomClient.IsConfigured && s.ZoomMeetingId is null) ||
+            (!team.IsZoomConfigured && s.ZoomMeetingId is null) ||
             (!discordEventClient.IsConfigured && s.DiscordEventId is null));
         if (pendingCount == 0)
         {
@@ -118,26 +121,27 @@ public class SessionEventSchedulingService(
         }
 
         var unconfigured = string.Join(" and ",
-            new[] { zoomClient.IsConfigured ? null : "Zoom", discordEventClient.IsConfigured ? null : "Discord" }
+            new[] { team.IsZoomConfigured ? null : "Zoom", discordEventClient.IsConfigured ? null : "Discord" }
                 .Where(name => name is not null));
-        logger.LogInformation("{Unconfigured} not fully configured — {PendingCount} session(s) waiting; will create automatically once configured",
-            unconfigured, pendingCount);
+        logger.LogInformation("{Unconfigured} not fully configured for team {TeamId} — {PendingCount} session(s) waiting; will create automatically once configured",
+            unconfigured, team.Id, pendingCount);
     }
 
-    private async Task SyncZoomAndDiscordAsync(Session session, CancellationToken cancellationToken)
+    private async Task SyncZoomAndDiscordAsync(Team team, Session session, CancellationToken cancellationToken)
     {
-        if (zoomClient.IsConfigured)
+        if (team.IsZoomConfigured)
         {
+            var zoomCredentials = new ZoomCredentials(team.Id, team.ZoomAccountId!, team.ZoomClientId!, team.ZoomClientSecret!, team.ZoomUserId ?? "me");
             var zoomRequest = new ZoomMeetingRequest(session.Title, session.ScheduledStartUtc, session.DurationMinutes);
             if (session.ZoomMeetingId is null)
             {
-                var meeting = await zoomClient.CreateMeetingAsync(zoomRequest, cancellationToken);
+                var meeting = await zoomClient.CreateMeetingAsync(zoomCredentials, zoomRequest, cancellationToken);
                 session.ZoomMeetingId = meeting.Id;
                 session.ZoomJoinUrl = meeting.JoinUrl;
             }
             else
             {
-                await zoomClient.UpdateMeetingAsync(session.ZoomMeetingId, zoomRequest, cancellationToken);
+                await zoomClient.UpdateMeetingAsync(zoomCredentials, session.ZoomMeetingId, zoomRequest, cancellationToken);
             }
         }
 
@@ -175,11 +179,12 @@ public class SessionEventSchedulingService(
         }
     }
 
-    private async Task CleanupZoomAndDiscordAsync(Session session, DateTime now, CancellationToken cancellationToken)
+    private async Task CleanupZoomAndDiscordAsync(Team team, Session session, DateTime now, CancellationToken cancellationToken)
     {
         if (session.ZoomMeetingId is not null)
         {
-            await zoomClient.DeleteMeetingAsync(session.ZoomMeetingId, cancellationToken);
+            var zoomCredentials = new ZoomCredentials(team.Id, team.ZoomAccountId!, team.ZoomClientId!, team.ZoomClientSecret!, team.ZoomUserId ?? "me");
+            await zoomClient.DeleteMeetingAsync(zoomCredentials, session.ZoomMeetingId, cancellationToken);
             dbContext.AuditLogs.Add(new AuditLog
             {
                 UserId = null, // system action, not a person

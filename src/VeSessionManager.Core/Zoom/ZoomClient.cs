@@ -1,9 +1,9 @@
+using System.Collections.Concurrent;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 
 namespace VeSessionManager.Core.Zoom;
 
@@ -12,7 +12,13 @@ namespace VeSessionManager.Core.Zoom;
 /// token from POST https://zoom.us/oauth/token (grant_type=account_credentials, Basic auth of
 /// client id/secret) — see https://developers.zoom.us/docs/internal-apps/s2s-oauth/. Tokens
 /// expire after an hour with no refresh token, so this caches one and re-requests before expiry.
-/// Registered as a singleton so the cached token survives between poll cycles.
+///
+/// Registered as a singleton, but — like ExamToolsClient — that singleton now manages one
+/// independent cached access token *per team*, keyed by ZoomCredentials.TeamId, rather than
+/// exactly one for the whole process (each team has its own separate Zoom S2S OAuth app). Unlike
+/// ExamTools/Discord, Zoom's Bearer-token auth needs no per-team HttpClient/cookie isolation —
+/// the same shared HttpClient serves every team's requests, just with a different token looked up
+/// per call. See docs/multi-team.md.
 /// </summary>
 public sealed class ZoomClient : IZoomClient, IDisposable
 {
@@ -21,17 +27,13 @@ public sealed class ZoomClient : IZoomClient, IDisposable
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
-    private readonly ZoomOptions _options;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<ZoomClient> _logger;
     private readonly HttpClient _httpClient;
-    private readonly SemaphoreSlim _tokenLock = new(1, 1);
-    private string? _accessToken;
-    private DateTime _tokenExpiresUtc = DateTime.MinValue;
+    private readonly ConcurrentDictionary<int, TeamZoomSession> _sessionsByTeamId = new();
 
-    public ZoomClient(IOptions<ZoomOptions> options, TimeProvider timeProvider, ILogger<ZoomClient> logger)
+    public ZoomClient(TimeProvider timeProvider, ILogger<ZoomClient> logger)
     {
-        _options = options.Value;
         _timeProvider = timeProvider;
         _logger = logger;
         _httpClient = new HttpClient(new SocketsHttpHandler
@@ -40,36 +42,31 @@ public sealed class ZoomClient : IZoomClient, IDisposable
         });
     }
 
-    public bool IsConfigured =>
-        !string.IsNullOrWhiteSpace(_options.AccountId)
-        && !string.IsNullOrWhiteSpace(_options.ClientId)
-        && !string.IsNullOrWhiteSpace(_options.ClientSecret);
-
-    public async Task<ZoomMeeting> CreateMeetingAsync(ZoomMeetingRequest request, CancellationToken cancellationToken)
+    public async Task<ZoomMeeting> CreateMeetingAsync(ZoomCredentials credentials, ZoomMeetingRequest request, CancellationToken cancellationToken)
     {
         var response = await SendAsync(
-            HttpMethod.Post, $"{ApiBaseUrl}/v2/users/{Uri.EscapeDataString(_options.UserId)}/meetings",
+            credentials, HttpMethod.Post, $"{ApiBaseUrl}/v2/users/{Uri.EscapeDataString(credentials.UserId)}/meetings",
             ToWireRequest(request), cancellationToken);
 
         var meeting = await response.Content.ReadFromJsonAsync<ZoomMeetingWireResponse>(JsonOptions, cancellationToken)
             ?? throw new InvalidOperationException("Zoom create-meeting response body was empty.");
 
-        _logger.LogInformation("Created Zoom meeting {ZoomMeetingId}", meeting.Id);
+        _logger.LogInformation("Created Zoom meeting {ZoomMeetingId} for team {TeamId}", meeting.Id, credentials.TeamId);
         return new ZoomMeeting { Id = meeting.Id.ToString(), JoinUrl = meeting.JoinUrl };
     }
 
-    public async Task UpdateMeetingAsync(string meetingId, ZoomMeetingRequest request, CancellationToken cancellationToken)
+    public async Task UpdateMeetingAsync(ZoomCredentials credentials, string meetingId, ZoomMeetingRequest request, CancellationToken cancellationToken)
     {
-        await SendAsync(HttpMethod.Patch, $"{ApiBaseUrl}/v2/meetings/{Uri.EscapeDataString(meetingId)}",
+        await SendAsync(credentials, HttpMethod.Patch, $"{ApiBaseUrl}/v2/meetings/{Uri.EscapeDataString(meetingId)}",
             ToWireRequest(request), cancellationToken);
-        _logger.LogInformation("Updated Zoom meeting {ZoomMeetingId}", meetingId);
+        _logger.LogInformation("Updated Zoom meeting {ZoomMeetingId} for team {TeamId}", meetingId, credentials.TeamId);
     }
 
-    public async Task DeleteMeetingAsync(string meetingId, CancellationToken cancellationToken)
+    public async Task DeleteMeetingAsync(ZoomCredentials credentials, string meetingId, CancellationToken cancellationToken)
     {
-        await SendAsync(HttpMethod.Delete, $"{ApiBaseUrl}/v2/meetings/{Uri.EscapeDataString(meetingId)}",
+        await SendAsync(credentials, HttpMethod.Delete, $"{ApiBaseUrl}/v2/meetings/{Uri.EscapeDataString(meetingId)}",
             body: null, cancellationToken);
-        _logger.LogInformation("Deleted Zoom meeting {ZoomMeetingId}", meetingId);
+        _logger.LogInformation("Deleted Zoom meeting {ZoomMeetingId} for team {TeamId}", meetingId, credentials.TeamId);
     }
 
     private static ZoomMeetingWireRequest ToWireRequest(ZoomMeetingRequest request) => new()
@@ -80,9 +77,9 @@ public sealed class ZoomClient : IZoomClient, IDisposable
         Duration = request.DurationMinutes
     };
 
-    private async Task<HttpResponseMessage> SendAsync(HttpMethod method, string absoluteUrl, object? body, CancellationToken cancellationToken)
+    private async Task<HttpResponseMessage> SendAsync(ZoomCredentials credentials, HttpMethod method, string absoluteUrl, object? body, CancellationToken cancellationToken)
     {
-        var token = await GetAccessTokenAsync(cancellationToken);
+        var token = await GetAccessTokenAsync(credentials, cancellationToken);
 
         using var request = new HttpRequestMessage(method, absoluteUrl);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
@@ -96,36 +93,43 @@ public sealed class ZoomClient : IZoomClient, IDisposable
         return response;
     }
 
-    private async Task<string> GetAccessTokenAsync(CancellationToken cancellationToken)
+    private async Task<string> GetAccessTokenAsync(ZoomCredentials credentials, CancellationToken cancellationToken)
     {
+        var teamSession = _sessionsByTeamId.GetOrAdd(credentials.TeamId, _ => new TeamZoomSession());
+
         var now = _timeProvider.GetUtcNow().UtcDateTime;
-        if (_accessToken is not null && now < _tokenExpiresUtc)
+        if (teamSession.AccessToken is not null && now < teamSession.TokenExpiresUtc)
         {
-            return _accessToken;
+            return teamSession.AccessToken;
         }
 
-        await _tokenLock.WaitAsync(cancellationToken);
+        await teamSession.TokenLock.WaitAsync(cancellationToken);
         try
         {
             now = _timeProvider.GetUtcNow().UtcDateTime;
-            if (_accessToken is not null && now < _tokenExpiresUtc)
+            if (teamSession.AccessToken is not null && now < teamSession.TokenExpiresUtc)
             {
-                return _accessToken;
+                return teamSession.AccessToken;
             }
 
-            if (string.IsNullOrWhiteSpace(_options.AccountId) || string.IsNullOrWhiteSpace(_options.ClientId) || string.IsNullOrWhiteSpace(_options.ClientSecret))
+            if (string.IsNullOrWhiteSpace(credentials.AccountId) || string.IsNullOrWhiteSpace(credentials.ClientId) || string.IsNullOrWhiteSpace(credentials.ClientSecret))
             {
+                // Callers normally check Team.IsZoomConfigured first and never reach here, but the
+                // cleanup path (deleting a Zoom meeting for a Cancelled session) always attempts the
+                // call regardless of current configuration, since a meeting that already exists
+                // needs cleanup even if the team's Zoom setup changed since it was created. A clear
+                // exception here (caught and logged by the caller) beats a confusing null-token 401.
                 throw new InvalidOperationException(
-                    "Zoom credentials are not configured. Set Zoom:AccountId, Zoom:ClientId and Zoom:ClientSecret via user-secrets or environment variables.");
+                    $"Zoom credentials are not configured for team {credentials.TeamId}. Set Team.ZoomAccountId/ZoomClientId/ZoomClientSecret via direct DB edit.");
             }
 
             using var request = new HttpRequestMessage(HttpMethod.Post, TokenUrl);
-            var basicAuth = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{_options.ClientId}:{_options.ClientSecret}"));
+            var basicAuth = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{credentials.ClientId}:{credentials.ClientSecret}"));
             request.Headers.Authorization = new AuthenticationHeaderValue("Basic", basicAuth);
             request.Content = new FormUrlEncodedContent(
             [
                 new KeyValuePair<string, string>("grant_type", "account_credentials"),
-                new KeyValuePair<string, string>("account_id", _options.AccountId)
+                new KeyValuePair<string, string>("account_id", credentials.AccountId)
             ]);
 
             var response = await _httpClient.SendAsync(request, cancellationToken);
@@ -134,15 +138,15 @@ public sealed class ZoomClient : IZoomClient, IDisposable
             var token = await response.Content.ReadFromJsonAsync<ZoomTokenResponse>(JsonOptions, cancellationToken)
                 ?? throw new InvalidOperationException("Zoom token response body was empty.");
 
-            _accessToken = token.AccessToken;
+            teamSession.AccessToken = token.AccessToken;
             // Refresh a little early so a call in flight right at expiry never races a 401.
-            _tokenExpiresUtc = now.AddSeconds(Math.Max(token.ExpiresIn - 60, 60));
-            _logger.LogInformation("Obtained Zoom Server-to-Server OAuth token, expires {ExpiresUtc:u}", _tokenExpiresUtc);
-            return _accessToken;
+            teamSession.TokenExpiresUtc = now.AddSeconds(Math.Max(token.ExpiresIn - 60, 60));
+            _logger.LogInformation("Obtained Zoom Server-to-Server OAuth token for team {TeamId}, expires {ExpiresUtc:u}", credentials.TeamId, teamSession.TokenExpiresUtc);
+            return teamSession.AccessToken;
         }
         finally
         {
-            _tokenLock.Release();
+            teamSession.TokenLock.Release();
         }
     }
 
@@ -167,7 +171,18 @@ public sealed class ZoomClient : IZoomClient, IDisposable
 
     public void Dispose()
     {
+        foreach (var teamSession in _sessionsByTeamId.Values)
+        {
+            teamSession.TokenLock.Dispose();
+        }
         _httpClient.Dispose();
-        _tokenLock.Dispose();
+    }
+
+    /// <summary>One team's independent cached OAuth token — see class remarks.</summary>
+    private sealed class TeamZoomSession
+    {
+        public string? AccessToken { get; set; }
+        public DateTime TokenExpiresUtc { get; set; } = DateTime.MinValue;
+        public SemaphoreSlim TokenLock { get; } = new(1, 1);
     }
 }

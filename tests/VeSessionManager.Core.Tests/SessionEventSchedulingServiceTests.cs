@@ -26,11 +26,12 @@ public class SessionEventSchedulingServiceTests
         public List<string> DeleteCalls { get; } = [];
         public Exception? ThrowOnCreate { get; set; }
         public Exception? ThrowOnUpdate { get; set; }
-        public bool IsConfigured { get; set; } = true;
+        public List<ZoomCredentials> CredentialsUsed { get; } = [];
         private int _nextId = 1000;
 
-        public Task<ZoomMeeting> CreateMeetingAsync(ZoomMeetingRequest request, CancellationToken cancellationToken)
+        public Task<ZoomMeeting> CreateMeetingAsync(ZoomCredentials credentials, ZoomMeetingRequest request, CancellationToken cancellationToken)
         {
+            CredentialsUsed.Add(credentials);
             CreateCalls.Add(request.Topic);
             if (ThrowOnCreate is not null)
             {
@@ -40,8 +41,9 @@ public class SessionEventSchedulingServiceTests
             return Task.FromResult(new ZoomMeeting { Id = id, JoinUrl = $"https://zoom.us/j/{id}" });
         }
 
-        public Task UpdateMeetingAsync(string meetingId, ZoomMeetingRequest request, CancellationToken cancellationToken)
+        public Task UpdateMeetingAsync(ZoomCredentials credentials, string meetingId, ZoomMeetingRequest request, CancellationToken cancellationToken)
         {
+            CredentialsUsed.Add(credentials);
             UpdateCalls.Add(meetingId);
             if (ThrowOnUpdate is not null)
             {
@@ -50,8 +52,9 @@ public class SessionEventSchedulingServiceTests
             return Task.CompletedTask;
         }
 
-        public Task DeleteMeetingAsync(string meetingId, CancellationToken cancellationToken)
+        public Task DeleteMeetingAsync(ZoomCredentials credentials, string meetingId, CancellationToken cancellationToken)
         {
+            CredentialsUsed.Add(credentials);
             DeleteCalls.Add(meetingId);
             return Task.CompletedTask;
         }
@@ -101,6 +104,22 @@ public class SessionEventSchedulingServiceTests
         AppDbContext dbContext, IZoomClient zoom, IDiscordEventClient discord) =>
         new(dbContext, zoom, discord, new FixedTimeProvider(Now), NullLogger<SessionEventSchedulingService>.Instance);
 
+    /// <summary>Seeds a Team. zoomConfigured=true (default) sets AccountId/ClientId/ClientSecret so Team.IsZoomConfigured is true.</summary>
+    private static async Task<Team> SeedTeamAsync(AppDbContext dbContext, bool zoomConfigured = true)
+    {
+        var team = new Team
+        {
+            Name = "TESTTEAM",
+            ZoomAccountId = zoomConfigured ? "zoom-account" : null,
+            ZoomClientId = zoomConfigured ? "zoom-client" : null,
+            ZoomClientSecret = zoomConfigured ? "zoom-secret" : null,
+            CreatedUtc = Now
+        };
+        dbContext.Teams.Add(team);
+        await dbContext.SaveChangesAsync();
+        return team;
+    }
+
     /// <summary>Minimal Vec/FeeConfiguration/User rows a Session's required FKs need to save.</summary>
     private static async Task<(Vec vec, FeeConfiguration feeConfiguration)> SeedRefsAsync(AppDbContext dbContext)
     {
@@ -120,13 +139,14 @@ public class SessionEventSchedulingServiceTests
         return (vec, feeConfiguration);
     }
 
-    private static Session NewSession(Vec vec, FeeConfiguration feeConfiguration, string examToolsId = "session-1") => new()
+    private static Session NewSession(Vec vec, FeeConfiguration feeConfiguration, Team team, string examToolsId = "session-1") => new()
     {
         ExamToolsSessionId = examToolsId,
         Title = "July Session",
         ScheduledStartUtc = SessionStart,
         DurationMinutes = 60,
         VecId = vec.Id,
+        TeamId = team.Id,
         FeeConfigurationId = feeConfiguration.Id,
         CreatedUtc = Now
     };
@@ -136,13 +156,14 @@ public class SessionEventSchedulingServiceTests
     {
         await using var dbContext = CreateContext();
         var (vec, feeConfig) = await SeedRefsAsync(dbContext);
-        var session = NewSession(vec, feeConfig);
+        var team = await SeedTeamAsync(dbContext);
+        var session = NewSession(vec, feeConfig, team);
         dbContext.Sessions.Add(session);
         await dbContext.SaveChangesAsync();
 
         var zoom = new FakeZoomClient();
         var discord = new FakeDiscordEventClient();
-        var result = await CreateService(dbContext, zoom, discord).RunAsync(CancellationToken.None);
+        var result = await CreateService(dbContext, zoom, discord).RunAsync(team, CancellationToken.None);
 
         Assert.Equal(1, result.SessionsSynced);
         Assert.Equal(0, result.SessionsFailed);
@@ -150,6 +171,7 @@ public class SessionEventSchedulingServiceTests
         Assert.Single(discord.CreateCalls);
         Assert.Empty(zoom.UpdateCalls);
         Assert.Empty(discord.UpdateCalls);
+        Assert.Equal(team.Id, Assert.Single(zoom.CredentialsUsed).TeamId);
 
         var saved = dbContext.Sessions.Single();
         Assert.NotNull(saved.ZoomMeetingId);
@@ -163,7 +185,8 @@ public class SessionEventSchedulingServiceTests
     {
         await using var dbContext = CreateContext();
         var (vec, feeConfig) = await SeedRefsAsync(dbContext);
-        dbContext.Sessions.Add(NewSession(vec, feeConfig));
+        var team = await SeedTeamAsync(dbContext);
+        dbContext.Sessions.Add(NewSession(vec, feeConfig, team));
         await dbContext.SaveChangesAsync();
 
         var zoom = new FakeZoomClient();
@@ -171,7 +194,7 @@ public class SessionEventSchedulingServiceTests
         // FakeDiscordEventClient only records the event name, not the full request, so verify the
         // join-url-in-description/location requirement via the persisted ZoomJoinUrl instead —
         // SyncZoomAndDiscordAsync builds the Discord request's Location directly from it.
-        await CreateService(dbContext, zoom, discord).RunAsync(CancellationToken.None);
+        await CreateService(dbContext, zoom, discord).RunAsync(team, CancellationToken.None);
 
         var saved = dbContext.Sessions.Single();
         Assert.NotNull(saved.ZoomJoinUrl);
@@ -182,7 +205,8 @@ public class SessionEventSchedulingServiceTests
     {
         await using var dbContext = CreateContext();
         var (vec, feeConfig) = await SeedRefsAsync(dbContext);
-        var session = NewSession(vec, feeConfig);
+        var team = await SeedTeamAsync(dbContext);
+        var session = NewSession(vec, feeConfig, team);
         session.ZoomMeetingId = "existing-zoom";
         session.ZoomJoinUrl = "https://zoom.us/j/existing-zoom";
         session.DiscordEventId = "existing-discord";
@@ -192,7 +216,7 @@ public class SessionEventSchedulingServiceTests
 
         var zoom = new FakeZoomClient();
         var discord = new FakeDiscordEventClient();
-        var result = await CreateService(dbContext, zoom, discord).RunAsync(CancellationToken.None);
+        var result = await CreateService(dbContext, zoom, discord).RunAsync(team, CancellationToken.None);
 
         Assert.Equal(0, result.SessionsSynced);
         Assert.Empty(zoom.CreateCalls);
@@ -206,7 +230,8 @@ public class SessionEventSchedulingServiceTests
     {
         await using var dbContext = CreateContext();
         var (vec, feeConfig) = await SeedRefsAsync(dbContext);
-        var session = NewSession(vec, feeConfig);
+        var team = await SeedTeamAsync(dbContext);
+        var session = NewSession(vec, feeConfig, team);
         session.ZoomMeetingId = "zoom-1";
         session.ZoomJoinUrl = "https://zoom.us/j/zoom-1";
         session.DiscordEventId = "discord-1";
@@ -221,7 +246,7 @@ public class SessionEventSchedulingServiceTests
 
         var zoom = new FakeZoomClient();
         var discord = new FakeDiscordEventClient();
-        var result = await CreateService(dbContext, zoom, discord).RunAsync(CancellationToken.None);
+        var result = await CreateService(dbContext, zoom, discord).RunAsync(team, CancellationToken.None);
 
         Assert.Equal(1, result.SessionsSynced);
         Assert.Empty(zoom.CreateCalls);
@@ -240,12 +265,13 @@ public class SessionEventSchedulingServiceTests
     {
         await using var dbContext = CreateContext();
         var (vec, feeConfig) = await SeedRefsAsync(dbContext);
-        dbContext.Sessions.Add(NewSession(vec, feeConfig));
+        var team = await SeedTeamAsync(dbContext);
+        dbContext.Sessions.Add(NewSession(vec, feeConfig, team));
         await dbContext.SaveChangesAsync();
 
         var zoom = new FakeZoomClient();
         var discord = new FakeDiscordEventClient { ThrowOnCreate = new InvalidOperationException("Discord unavailable") };
-        var result = await CreateService(dbContext, zoom, discord).RunAsync(CancellationToken.None);
+        var result = await CreateService(dbContext, zoom, discord).RunAsync(team, CancellationToken.None);
 
         Assert.Equal(0, result.SessionsSynced);
         Assert.Equal(1, result.SessionsFailed);
@@ -256,7 +282,7 @@ public class SessionEventSchedulingServiceTests
 
         // Next run: Zoom must not be re-created (its id is already set); only Discord retries.
         discord.ThrowOnCreate = null;
-        var retryResult = await CreateService(dbContext, zoom, discord).RunAsync(CancellationToken.None);
+        var retryResult = await CreateService(dbContext, zoom, discord).RunAsync(team, CancellationToken.None);
 
         Assert.Equal(1, retryResult.SessionsSynced);
         Assert.Single(zoom.CreateCalls); // still just the one call from the first run — never re-created
@@ -269,18 +295,19 @@ public class SessionEventSchedulingServiceTests
     {
         await using var dbContext = CreateContext();
         var (vec, feeConfig) = await SeedRefsAsync(dbContext);
+        var team = await SeedTeamAsync(dbContext);
         // Whichever of these two sessions the service processes first will hit the fake client's
         // one-time failure; the other must still be processed and synced in the same run. The
         // order EF's InMemory provider returns rows in isn't a documented guarantee, so this test
         // doesn't assume which named session ends up in which state — only that exactly one of
         // each outcome occurs.
-        dbContext.Sessions.Add(NewSession(vec, feeConfig, "session-a"));
-        dbContext.Sessions.Add(NewSession(vec, feeConfig, "session-b"));
+        dbContext.Sessions.Add(NewSession(vec, feeConfig, team, "session-a"));
+        dbContext.Sessions.Add(NewSession(vec, feeConfig, team, "session-b"));
         await dbContext.SaveChangesAsync();
 
         var failingZoom = new FailFirstThenSucceedZoomClient();
         var discord = new FakeDiscordEventClient();
-        var result = await CreateService(dbContext, failingZoom, discord).RunAsync(CancellationToken.None);
+        var result = await CreateService(dbContext, failingZoom, discord).RunAsync(team, CancellationToken.None);
 
         Assert.Equal(1, result.SessionsFailed);
         Assert.Equal(1, result.SessionsSynced);
@@ -293,11 +320,10 @@ public class SessionEventSchedulingServiceTests
     /// <summary>Throws on the first CreateMeetingAsync call only, so a two-session run can prove one failure doesn't block the other session's processing.</summary>
     private sealed class FailFirstThenSucceedZoomClient : IZoomClient
     {
-        public bool IsConfigured { get; set; } = true;
         private bool _thrown;
         private int _nextId = 3000;
 
-        public Task<ZoomMeeting> CreateMeetingAsync(ZoomMeetingRequest request, CancellationToken cancellationToken)
+        public Task<ZoomMeeting> CreateMeetingAsync(ZoomCredentials credentials, ZoomMeetingRequest request, CancellationToken cancellationToken)
         {
             if (!_thrown)
             {
@@ -308,10 +334,10 @@ public class SessionEventSchedulingServiceTests
             return Task.FromResult(new ZoomMeeting { Id = id, JoinUrl = $"https://zoom.us/j/{id}" });
         }
 
-        public Task UpdateMeetingAsync(string meetingId, ZoomMeetingRequest request, CancellationToken cancellationToken) =>
+        public Task UpdateMeetingAsync(ZoomCredentials credentials, string meetingId, ZoomMeetingRequest request, CancellationToken cancellationToken) =>
             Task.CompletedTask;
 
-        public Task DeleteMeetingAsync(string meetingId, CancellationToken cancellationToken) =>
+        public Task DeleteMeetingAsync(ZoomCredentials credentials, string meetingId, CancellationToken cancellationToken) =>
             Task.CompletedTask;
     }
 
@@ -320,7 +346,8 @@ public class SessionEventSchedulingServiceTests
     {
         await using var dbContext = CreateContext();
         var (vec, feeConfig) = await SeedRefsAsync(dbContext);
-        var session = NewSession(vec, feeConfig);
+        var team = await SeedTeamAsync(dbContext);
+        var session = NewSession(vec, feeConfig, team);
         session.ZoomMeetingId = "zoom-1";
         session.ZoomJoinUrl = "https://zoom.us/j/zoom-1";
         session.DiscordEventId = "discord-1";
@@ -332,7 +359,7 @@ public class SessionEventSchedulingServiceTests
 
         var zoom = new FakeZoomClient();
         var discord = new FakeDiscordEventClient();
-        var result = await CreateService(dbContext, zoom, discord).RunAsync(CancellationToken.None);
+        var result = await CreateService(dbContext, zoom, discord).RunAsync(team, CancellationToken.None);
 
         Assert.Equal(1, result.SessionsCleanedUp);
         Assert.Equal(["zoom-1"], zoom.DeleteCalls);
@@ -354,7 +381,8 @@ public class SessionEventSchedulingServiceTests
     {
         await using var dbContext = CreateContext();
         var (vec, feeConfig) = await SeedRefsAsync(dbContext);
-        var session = NewSession(vec, feeConfig);
+        var team = await SeedTeamAsync(dbContext);
+        var session = NewSession(vec, feeConfig, team);
         session.ZoomMeetingId = "zoom-1";
         session.ZoomJoinUrl = "https://zoom.us/j/zoom-1";
         session.DiscordEventId = null; // e.g. Discord create had never succeeded before cancellation
@@ -365,7 +393,7 @@ public class SessionEventSchedulingServiceTests
 
         var zoom = new FakeZoomClient();
         var discord = new FakeDiscordEventClient();
-        await CreateService(dbContext, zoom, discord).RunAsync(CancellationToken.None);
+        await CreateService(dbContext, zoom, discord).RunAsync(team, CancellationToken.None);
 
         Assert.Single(zoom.DeleteCalls);
         Assert.Empty(discord.DeleteCalls);
@@ -377,7 +405,8 @@ public class SessionEventSchedulingServiceTests
     {
         await using var dbContext = CreateContext();
         var (vec, feeConfig) = await SeedRefsAsync(dbContext);
-        var session = NewSession(vec, feeConfig);
+        var team = await SeedTeamAsync(dbContext);
+        var session = NewSession(vec, feeConfig, team);
         session.Status = SessionStatus.Cancelled;
         session.CancelledUtc = Now;
         // Never had a Zoom/Discord presence (e.g. cancelled before Phase 2 ever ran for it).
@@ -386,7 +415,7 @@ public class SessionEventSchedulingServiceTests
 
         var zoom = new FakeZoomClient();
         var discord = new FakeDiscordEventClient();
-        var result = await CreateService(dbContext, zoom, discord).RunAsync(CancellationToken.None);
+        var result = await CreateService(dbContext, zoom, discord).RunAsync(team, CancellationToken.None);
 
         Assert.Equal(0, result.SessionsCleanedUp);
         Assert.Empty(zoom.DeleteCalls);
@@ -401,12 +430,13 @@ public class SessionEventSchedulingServiceTests
     {
         await using var dbContext = CreateContext();
         var (vec, feeConfig) = await SeedRefsAsync(dbContext);
-        dbContext.Sessions.Add(NewSession(vec, feeConfig));
+        var team = await SeedTeamAsync(dbContext, zoomConfigured: false);
+        dbContext.Sessions.Add(NewSession(vec, feeConfig, team));
         await dbContext.SaveChangesAsync();
 
-        var zoom = new FakeZoomClient { IsConfigured = false };
+        var zoom = new FakeZoomClient();
         var discord = new FakeDiscordEventClient { IsConfigured = false };
-        var result = await CreateService(dbContext, zoom, discord).RunAsync(CancellationToken.None);
+        var result = await CreateService(dbContext, zoom, discord).RunAsync(team, CancellationToken.None);
 
         Assert.Equal(0, result.SessionsSynced);
         Assert.Equal(1, result.SessionsAwaitingIntegrationConfig);
@@ -423,12 +453,13 @@ public class SessionEventSchedulingServiceTests
     {
         await using var dbContext = CreateContext();
         var (vec, feeConfig) = await SeedRefsAsync(dbContext);
-        dbContext.Sessions.Add(NewSession(vec, feeConfig));
+        var team = await SeedTeamAsync(dbContext, zoomConfigured: false);
+        dbContext.Sessions.Add(NewSession(vec, feeConfig, team));
         await dbContext.SaveChangesAsync();
 
-        var zoom = new FakeZoomClient { IsConfigured = false };
+        var zoom = new FakeZoomClient();
         var discord = new FakeDiscordEventClient(); // configured, but has nothing to work with
-        var result = await CreateService(dbContext, zoom, discord).RunAsync(CancellationToken.None);
+        var result = await CreateService(dbContext, zoom, discord).RunAsync(team, CancellationToken.None);
 
         Assert.Equal(0, result.SessionsSynced);
         Assert.Equal(1, result.SessionsAwaitingIntegrationConfig);
@@ -441,12 +472,13 @@ public class SessionEventSchedulingServiceTests
     {
         await using var dbContext = CreateContext();
         var (vec, feeConfig) = await SeedRefsAsync(dbContext);
-        dbContext.Sessions.Add(NewSession(vec, feeConfig));
+        var team = await SeedTeamAsync(dbContext);
+        dbContext.Sessions.Add(NewSession(vec, feeConfig, team));
         await dbContext.SaveChangesAsync();
 
         var zoom = new FakeZoomClient();
         var discord = new FakeDiscordEventClient { IsConfigured = false };
-        var result = await CreateService(dbContext, zoom, discord).RunAsync(CancellationToken.None);
+        var result = await CreateService(dbContext, zoom, discord).RunAsync(team, CancellationToken.None);
 
         Assert.Equal(0, result.SessionsSynced);
         Assert.Equal(1, result.SessionsAwaitingIntegrationConfig);
@@ -463,17 +495,21 @@ public class SessionEventSchedulingServiceTests
     {
         await using var dbContext = CreateContext();
         var (vec, feeConfig) = await SeedRefsAsync(dbContext);
-        dbContext.Sessions.Add(NewSession(vec, feeConfig));
+        var team = await SeedTeamAsync(dbContext, zoomConfigured: false);
+        dbContext.Sessions.Add(NewSession(vec, feeConfig, team));
         await dbContext.SaveChangesAsync();
 
-        var zoom = new FakeZoomClient { IsConfigured = false };
+        var zoom = new FakeZoomClient();
         var discord = new FakeDiscordEventClient { IsConfigured = false };
-        await CreateService(dbContext, zoom, discord).RunAsync(CancellationToken.None);
+        await CreateService(dbContext, zoom, discord).RunAsync(team, CancellationToken.None);
         Assert.Null(dbContext.Sessions.Single().ZoomDiscordSyncedStartUtc);
 
-        zoom.IsConfigured = true;
+        team.ZoomAccountId = "zoom-account";
+        team.ZoomClientId = "zoom-client";
+        team.ZoomClientSecret = "zoom-secret";
+        await dbContext.SaveChangesAsync();
         discord.IsConfigured = true;
-        var result = await CreateService(dbContext, zoom, discord).RunAsync(CancellationToken.None);
+        var result = await CreateService(dbContext, zoom, discord).RunAsync(team, CancellationToken.None);
 
         Assert.Equal(1, result.SessionsSynced);
         Assert.Single(zoom.CreateCalls);

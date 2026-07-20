@@ -29,8 +29,8 @@ builder.Services.Configure<ExamToolsOptions>(builder.Configuration.GetSection(Ex
 builder.Services.AddSingleton<IExamToolsClient, ExamToolsClient>();
 builder.Services.AddScoped<SessionIngestionService>();
 
-builder.Services.Configure<ZoomOptions>(builder.Configuration.GetSection(ZoomOptions.SectionName));
-// Singleton so the cached OAuth token survives between poll cycles.
+// Singleton so cached per-team OAuth tokens survive between poll cycles. No ZoomOptions to
+// Configure<> anymore — AccountId/ClientId/ClientSecret/UserId all live on Team now (multi-team).
 builder.Services.AddSingleton<IZoomClient, ZoomClient>();
 builder.Services.Configure<DiscordOptions>(builder.Configuration.GetSection(DiscordOptions.SectionName));
 // Singleton so the bot login only happens once (bot tokens don't expire, unlike Zoom's).
