@@ -79,6 +79,26 @@ before running the Worker; it defaults to `0`, which will fail loudly against th
 API rather than silently doing nothing. See [`docs/zoom-discord-scheduling.md`](docs/zoom-discord-scheduling.md)
 for API details.
 
+The Square payment-link/webhook flow (Phase 3) needs credentials in **both** the Worker (creates
+links) and the Web project (verifies/receives the webhook) — they share one user-secrets store
+(`VeSessionManager.Web.csproj` deliberately reuses the Worker's `UserSecretsId`), so these only
+need to be set once, against either project. If you don't have a Square Developer account/app
+yet, see [`docs/square-payments.md`](docs/square-payments.md#account-setup-one-time) for how to
+create one, get sandbox credentials, and register the webhook subscription.
+
+```bash
+dotnet user-secrets set "Square:AccessToken" "<Sandbox or Production access token>" --project src/VeSessionManager.Worker
+dotnet user-secrets set "Square:WebhookSignatureKey" "<webhook subscription signature key>" --project src/VeSessionManager.Worker
+```
+
+On the server: `Square__AccessToken` / `Square__WebhookSignatureKey` environment variables for
+**both** the Worker and Web systemd units. Non-secret settings — `Square:LocationId`,
+`Square:WebhookNotificationUrl`, `Square:Environment` (`Sandbox` locally, `Production` in
+`appsettings.Production.json`) — live in `appsettings.json` in both projects; `LocationId` and
+`WebhookNotificationUrl` default to empty strings, which fail loudly (not silently) once the
+Worker/webhook endpoint actually try to use them. See [`docs/square-payments.md`](docs/square-payments.md)
+for API details.
+
 ## Environments
 
 Config is selected by environment name (`Test` or `Production`; there is no separate

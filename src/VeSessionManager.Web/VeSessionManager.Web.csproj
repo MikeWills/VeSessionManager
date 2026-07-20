@@ -13,6 +13,10 @@
     <TargetFramework>net10.0</TargetFramework>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <!-- Deliberately the same id as VeSessionManager.Worker's: Phase 3's Square secrets (e.g.
+         WebhookSignatureKey) are needed by both projects, and sharing one secrets.json means
+         `dotnet user-secrets set` only needs to be run once, against either project. -->
+    <UserSecretsId>dotnet-VeSessionManager.Worker-7144504e-98be-4ccd-ab50-694b48bd088d</UserSecretsId>
   </PropertyGroup>
 
 </Project>

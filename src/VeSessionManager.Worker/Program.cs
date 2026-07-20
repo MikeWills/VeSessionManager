@@ -5,7 +5,9 @@ using VeSessionManager.Core.Discord;
 using VeSessionManager.Core.ExamTools;
 using VeSessionManager.Core.Ingestion;
 using VeSessionManager.Core.Jobs;
+using VeSessionManager.Core.Payments;
 using VeSessionManager.Core.Scheduling;
+using VeSessionManager.Core.Square;
 using VeSessionManager.Core.Zoom;
 using VeSessionManager.Worker;
 
@@ -31,6 +33,11 @@ builder.Services.Configure<DiscordOptions>(builder.Configuration.GetSection(Disc
 // Singleton so the bot login only happens once (bot tokens don't expire, unlike Zoom's).
 builder.Services.AddSingleton<IDiscordEventClient, DiscordEventClient>();
 builder.Services.AddScoped<SessionEventSchedulingService>();
+
+builder.Services.Configure<SquareOptions>(builder.Configuration.GetSection(SquareOptions.SectionName));
+// Singleton: the Square SDK client owns its own HttpClient, same reasoning as the other API clients.
+builder.Services.AddSingleton<ISquareClient, SquareClient>();
+builder.Services.AddScoped<PaymentGenerationService>();
 
 builder.Services.AddScoped<JobRunHistoryLogger>();
 builder.Services.AddHostedService<HelloWorldJob>();
