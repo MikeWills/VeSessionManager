@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Serilog;
+using VeSessionManager.Core.ArrlSubmissions;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Discord;
 using VeSessionManager.Core.Email;
@@ -63,6 +64,11 @@ builder.Services.AddScoped<FccUlsWatcherService>();
 
 builder.Services.Configure<PaymentReminderOptions>(builder.Configuration.GetSection(PaymentReminderOptions.SectionName));
 builder.Services.AddScoped<PaymentReminderService>();
+
+// Phase 8: no job/worker involvement — a manual, user-triggered action + a dashboard query, both
+// called directly by Phase 9's (not yet built) admin UI. Registered now so they're ready for it.
+builder.Services.AddScoped<ArrlSubmissionService>();
+builder.Services.AddScoped<ArrlSubmissionReportService>();
 
 builder.Services.AddScoped<JobRunHistoryLogger>();
 builder.Services.AddHostedService<HelloWorldJob>();

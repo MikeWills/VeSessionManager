@@ -20,6 +20,10 @@ public static class DevDataSeeder
 
         var vec = new Vec
         {
+            // Not an arbitrary/generic placeholder — SessionIngestionService matches this
+            // case-insensitively against ExamTools' real per-session "vec" code, and the dev
+            // team's real examtools.dev sessions all report "arrl". Change this only if the dev
+            // team ever starts running sessions under a different VEC.
             Name = "ARRL",
             SupportsYouthProgram = true,
             Notes = "Dev seed row"
@@ -39,12 +43,12 @@ public static class DevDataSeeder
             FeeCollectionEnabled = true,
             ExamFeeAmount = 15m,
             RetainedAmount = 7m,
-            Notes = "Dev seed — 2026 ARRL fee schedule",
+            Notes = "Dev seed — 2026 fee schedule",
             CreatedByUser = systemUser,
             CreatedUtc = DateTime.UtcNow
         });
 
         await dbContext.SaveChangesAsync();
-        logger.LogInformation("Seeded dev data: Vec ARRL, System user, 2026 fee configuration");
+        logger.LogInformation("Seeded dev data: Vec {VecName}, System user, 2026 fee configuration", vec.Name);
     }
 }
