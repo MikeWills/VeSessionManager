@@ -317,6 +317,44 @@ JobRunHistory
 
 ---
 
+## Phase 6.5 — Multi-Team Foundation
+
+**Goal:** Let one deployment serve more than one independent VE team (each with their own
+ExamTools/Zoom/Discord/Square/Email credentials), inserted ahead of Phase 9's admin backend so
+authorization scoping is built team-aware from the start rather than retrofitted later.
+
+**Hierarchy: VEC ⇒ Team ⇒ VE, not the reverse.** A `Vec` is the FCC-recognized coordinating org
+(ARRL, W5YI, etc.) that dictates fees — it stays a shared/global reference table (one real-world
+"ARRL" row, not one per team), since a VEC dictates fees universally, not per-team-negotiated. The
+new `Team` entity is the group of VEs operating a deployment, holding integration credentials;
+individual VEs (`VolunteerExaminer`, Phase 7) belong to a Team. `Session` gained a `TeamId` FK
+independent of its existing `VecId` — no relationship between `Vec` and `Team` themselves, so a
+team can work with multiple VECs and a VEC can be shared by multiple teams.
+
+**Scope: ExamTools only, deliberately narrow.** `ExamToolsClient` reworked from one process-lifetime
+singleton credential set to one internal per-`TeamId` cache (own `HttpClient`/cookie-jar/login-state
+per team, still a single `AddSingleton` — no keyed DI). `SessionIngestionService.RunAsync` takes a
+`Team`; `SessionIngestionJob` loops every `Team` for the ingestion step, then still runs the
+Zoom/Discord scheduling, Square payment-link, and registration-confirmation steps globally (one
+call per tick, shared account) exactly as before. Credentials moved off appsettings/user-secrets
+onto `Team` columns, following the plaintext-in-SQLite approach `EmailSettings` already used.
+
+**Deferred fast-follow, not built in this pass:** the same per-`TeamId` client pattern applied to
+Zoom/Discord/Square/Email, plus a per-team Square webhook route (signature verification needs the
+right team's key *before* the payload can be parsed to find which team it belongs to — likely
+`/webhooks/square/{teamSlug}`). See `docs/multi-team.md` for the full design and the template to
+repeat.
+
+**Unit Tests:** `SessionIngestionServiceTests` covers a shared-`Vec`-across-two-teams case (proves
+sessions from different teams correctly attribute to one shared VEC/fee schedule while getting
+distinct `TeamId`s) and a cross-team cancellation-false-positive case (one team's poll must never
+see another team's still-active session as "disappeared").
+
+**Deliverable:** Two `Team` rows, each with their own ExamTools credentials, both correctly ingest
+their own sessions on the same deployment with no cross-team interference.
+
+---
+
 ## Phase 7 — VE Tracking
 
 **Goal:** Track which VEs worked which sessions.
@@ -454,4 +492,4 @@ JobRunHistory
 
 ## Suggested order of attack
 
-Phases 0–4 form the core "session lifecycle" pipeline and should be done in order. Phase 5 (FCC watcher) and Phase 3 (Square) are independent of each other and can be done in either order once Phase 1 exists. Phase 6 depends on both 3 and 5. Phases 7, 8, 10 are small and can slot in anytime after Phase 0. Phase 9 (admin backend) is split into four sub-phases (9a–9d) and should be tackled in that order — 9a first since it establishes the auth/scaffolding the other three build on. 9b and 9c are each easiest once most of the data model they surface is populated by real jobs (after Phase 6), but 9a could be scaffolded earlier if you want a UI to watch data land as you build the other phases.
+Phases 0–4 form the core "session lifecycle" pipeline and should be done in order. Phase 5 (FCC watcher) and Phase 3 (Square) are independent of each other and can be done in either order once Phase 1 exists. Phase 6 depends on both 3 and 5. Phases 7, 8, 10 are small and can slot in anytime after Phase 0. Phase 6.5 (multi-team foundation) should land before Phase 9 (admin backend) even though it isn't a hard dependency of any single sub-phase — Phase 9 is the one phase where retrofitting team-scoped authorization after the fact would be genuinely costly (redoing authz surface area is a real security-bug risk), so building it team-aware from 9a onward is cheaper than doing it single-tenant first. Phase 9 (admin backend) is split into four sub-phases (9a–9d) and should be tackled in that order — 9a first since it establishes the auth/scaffolding the other three build on. 9b and 9c are each easiest once most of the data model they surface is populated by real jobs (after Phase 6), but 9a could be scaffolded earlier if you want a UI to watch data land as you build the other phases.

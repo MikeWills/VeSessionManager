@@ -36,6 +36,7 @@ public class FccWeeklyCatchupJob(
             await jobRunHistoryLogger.RunAsync(
                 "FccWeeklyCatchup",
                 watcherService.RunWeeklyCatchupAsync,
+                null,
                 stoppingToken);
         }
         while (await timer.WaitForNextTickAsync(stoppingToken));

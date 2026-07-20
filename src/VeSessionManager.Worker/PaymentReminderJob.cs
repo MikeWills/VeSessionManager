@@ -28,6 +28,7 @@ public class PaymentReminderJob(
             await jobRunHistoryLogger.RunAsync(
                 "PaymentReminder",
                 reminderService.RunAsync,
+                null,
                 stoppingToken);
         }
         while (await timer.WaitForNextTickAsync(stoppingToken));

@@ -29,6 +29,7 @@ public class FccDailyWatcherJob(
             await jobRunHistoryLogger.RunAsync(
                 "FccDailyWatcher",
                 watcherService.RunDailyAsync,
+                null,
                 stoppingToken);
         }
         while (await timer.WaitForNextTickAsync(stoppingToken));

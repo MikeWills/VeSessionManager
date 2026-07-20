@@ -30,15 +30,30 @@ public class SessionIngestionService(
     /// </summary>
     private static readonly TimeSpan NewSessionPastGrace = TimeSpan.FromDays(1);
 
-    public async Task<IngestionResult> RunAsync(CancellationToken cancellationToken)
+    public async Task<IngestionResult> RunAsync(Team team, CancellationToken cancellationToken)
     {
         var now = timeProvider.GetUtcNow().UtcDateTime;
         var result = new IngestionResult();
 
-        var remoteSessions = await examToolsClient.GetTeamSessionsAsync(cancellationToken);
+        if (!team.IsExamToolsConfigured)
+        {
+            // ExamTools is the one hard requirement at the whole-app level, but once credentials
+            // are per-Team, an individual team that hasn't finished setup yet must not error-log
+            // every poll — same skip-quietly convention as every optional integration elsewhere.
+            logger.LogInformation("Team {TeamId} ({TeamName}) has no ExamTools credentials configured yet — skipping ingestion until Team.ExamToolsTeamCode/Username/Password are set",
+                team.Id, team.Name);
+            return result;
+        }
+
+        var credentials = new ExamToolsCredentials(team.Id, team.ExamToolsTeamCode!, team.ExamToolsUsername!, team.ExamToolsPassword!);
+
+        var remoteSessions = await examToolsClient.GetTeamSessionsAsync(credentials, cancellationToken);
         var remoteIds = remoteSessions.Select(r => r.Id).ToHashSet();
 
-        var localSessions = await dbContext.Sessions.Include(s => s.Candidates).ToListAsync(cancellationToken);
+        // Scoped to this team — otherwise another team's still-active sessions (never in this
+        // team's own remoteIds, since ExamTools' feed is per-team) would look "disappeared" below
+        // and get wrongly marked Cancelled.
+        var localSessions = await dbContext.Sessions.Include(s => s.Candidates).Where(s => s.TeamId == team.Id).ToListAsync(cancellationToken);
         var localByExternalId = localSessions.ToDictionary(s => s.ExamToolsSessionId);
 
         foreach (var remote in remoteSessions)
@@ -49,7 +64,7 @@ public class SessionIngestionService(
             }
             else if (remote.State == PendingState && remote.Date >= now - NewSessionPastGrace)
             {
-                var created = await TryCreateSessionAsync(remote, now, result, cancellationToken);
+                var created = await TryCreateSessionAsync(remote, team, now, result, cancellationToken);
                 if (created is not null)
                 {
                     localSessions.Add(created);
@@ -89,17 +104,17 @@ public class SessionIngestionService(
                 continue;
             }
 
-            var applicants = await examToolsClient.GetSessionApplicantsAsync(remote.Id, cancellationToken);
+            var applicants = await examToolsClient.GetSessionApplicantsAsync(credentials, remote.Id, cancellationToken);
             SyncCandidates(local, applicants, result);
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);
-        logger.LogInformation("Session ingestion finished: {Result}", result);
+        logger.LogInformation("Session ingestion finished for team {TeamId} ({TeamName}): {Result}", team.Id, team.Name, result);
         return result;
     }
 
     private async Task<Session?> TryCreateSessionAsync(
-        ExamToolsSession remote, DateTime now, IngestionResult result, CancellationToken cancellationToken)
+        ExamToolsSession remote, Team team, DateTime now, IngestionResult result, CancellationToken cancellationToken)
     {
         var vecCode = remote.Vec.ToLowerInvariant();
         var vec = await dbContext.Vecs.FirstOrDefaultAsync(v => v.Name.ToLower() == vecCode, cancellationToken);
@@ -131,6 +146,7 @@ public class SessionIngestionService(
             ScheduledStartUtc = remote.Date,
             DurationMinutes = remote.SessionDef?.Duration > 0 ? remote.SessionDef.Duration / 60 : DefaultDurationMinutes,
             VecId = vec.Id,
+            TeamId = team.Id,
             FeeConfigurationId = feeConfiguration.Id,
             CreatedUtc = now
         };

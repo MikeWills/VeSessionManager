@@ -5,6 +5,7 @@ namespace VeSessionManager.Core.Data;
 
 public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(options)
 {
+    public DbSet<Team> Teams => Set<Team>();
     public DbSet<Vec> Vecs => Set<Vec>();
     public DbSet<EmailTemplate> EmailTemplates => Set<EmailTemplate>();
     public DbSet<EmailSettings> EmailSettings => Set<EmailSettings>();
@@ -36,9 +37,15 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         {
             b.HasIndex(s => s.ExamToolsSessionId).IsUnique();
             b.HasOne(s => s.Vec).WithMany(v => v.Sessions).HasForeignKey(s => s.VecId).OnDelete(DeleteBehavior.Restrict);
+            b.HasOne(s => s.Team).WithMany(t => t.Sessions).HasForeignKey(s => s.TeamId).OnDelete(DeleteBehavior.Restrict);
             b.HasOne(s => s.FeeConfiguration).WithMany(f => f.Sessions).HasForeignKey(s => s.FeeConfigurationId).OnDelete(DeleteBehavior.Restrict);
             b.HasOne(s => s.TestingCompletedByUser).WithMany().HasForeignKey(s => s.TestingCompletedByUserId).OnDelete(DeleteBehavior.Restrict);
             b.HasOne(s => s.ArrlSubmittedByUser).WithMany().HasForeignKey(s => s.ArrlSubmittedByUserId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<JobRunHistory>(b =>
+        {
+            b.HasOne(j => j.Team).WithMany().HasForeignKey(j => j.TeamId).OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<Candidate>(b =>

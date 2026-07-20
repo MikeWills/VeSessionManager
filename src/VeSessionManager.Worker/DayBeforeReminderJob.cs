@@ -30,6 +30,7 @@ public class DayBeforeReminderJob(
             await jobRunHistoryLogger.RunAsync(
                 "DayBeforeReminder",
                 notificationService.SendDayBeforeRemindersAsync,
+                null,
                 stoppingToken);
         }
         while (await timer.WaitForNextTickAsync(stoppingToken));

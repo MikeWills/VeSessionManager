@@ -22,13 +22,14 @@ public class JobRunHistoryLoggerTests
         await using var dbContext = CreateContext();
         var sut = new JobRunHistoryLogger(dbContext, NullLogger<JobRunHistoryLogger>.Instance);
 
-        await sut.RunAsync("TestJob", _ => Task.CompletedTask, CancellationToken.None);
+        await sut.RunAsync("TestJob", _ => Task.CompletedTask, null, CancellationToken.None);
 
         var history = Assert.Single(dbContext.JobRunHistories);
         Assert.Equal("TestJob", history.JobName);
         Assert.True(history.Success);
         Assert.NotNull(history.CompletedUtc);
         Assert.Null(history.ErrorMessage);
+        Assert.Null(history.TeamId);
         Assert.True(history.CompletedUtc >= history.StartedUtc);
     }
 
@@ -41,6 +42,7 @@ public class JobRunHistoryLoggerTests
         await sut.RunAsync(
             "FailingJob",
             _ => throw new InvalidOperationException("boom"),
+            null,
             CancellationToken.None);
 
         var history = Assert.Single(dbContext.JobRunHistories);
@@ -48,5 +50,17 @@ public class JobRunHistoryLoggerTests
         Assert.False(history.Success);
         Assert.Equal("boom", history.ErrorMessage);
         Assert.NotNull(history.CompletedUtc);
+    }
+
+    [Fact]
+    public async Task RunAsync_WithTeamId_RecordsItOnTheHistoryRow()
+    {
+        await using var dbContext = CreateContext();
+        var sut = new JobRunHistoryLogger(dbContext, NullLogger<JobRunHistoryLogger>.Instance);
+
+        await sut.RunAsync("PerTeamJob", _ => Task.CompletedTask, 42, CancellationToken.None);
+
+        var history = Assert.Single(dbContext.JobRunHistories);
+        Assert.Equal(42, history.TeamId);
     }
 }

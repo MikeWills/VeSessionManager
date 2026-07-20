@@ -29,6 +29,7 @@ public class HelloWorldJob(
                     logger.LogInformation("Hello, world!");
                     return Task.CompletedTask;
                 },
+                null,
                 stoppingToken);
         }
         while (await timer.WaitForNextTickAsync(stoppingToken));

@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Net;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
@@ -9,8 +10,13 @@ namespace VeSessionManager.Core.ExamTools;
 /// HttpClient wrapper for the ExamTools/HamStudy VE API. Auth is a session cookie obtained from
 /// POST /api/ve/login (form-urlencoded username/password) — the login endpoint returns HTTP 200
 /// even for bad credentials, signalling failure via an {"error": ...} body, so success is judged
-/// by the response body, not the status code. Registered as a singleton so the cookie jar
-/// survives between poll cycles; expired cookies are handled by one re-login-and-retry.
+/// by the response body, not the status code.
+///
+/// Registered as a singleton, but — unlike the pre-multi-team version of this class — that
+/// singleton now manages one independent HttpClient (own CookieContainer)/login-state pair *per
+/// team*, keyed by ExamToolsCredentials.TeamId, rather than exactly one for the whole process.
+/// This is the template for the deferred Zoom/Discord/Square/Email multi-team fast-follow — see
+/// docs/multi-team.md.
 /// </summary>
 public sealed class ExamToolsClient : IExamToolsClient, IDisposable
 {
@@ -18,49 +24,39 @@ public sealed class ExamToolsClient : IExamToolsClient, IDisposable
 
     private readonly ExamToolsOptions _options;
     private readonly ILogger<ExamToolsClient> _logger;
-    private readonly HttpClient _httpClient;
-    private readonly SemaphoreSlim _loginLock = new(1, 1);
-    private bool _loggedIn;
+    private readonly ConcurrentDictionary<int, TeamSession> _sessionsByTeamId = new();
 
     public ExamToolsClient(IOptions<ExamToolsOptions> options, ILogger<ExamToolsClient> logger)
     {
         _options = options.Value;
         _logger = logger;
-        _httpClient = new HttpClient(new SocketsHttpHandler
-        {
-            CookieContainer = new CookieContainer(),
-            // Long-lived singleton client: recycle pooled connections so DNS changes are picked up.
-            PooledConnectionLifetime = TimeSpan.FromMinutes(15)
-        })
-        {
-            BaseAddress = new Uri(_options.BaseUrl)
-        };
     }
 
-    public async Task<IReadOnlyList<ExamToolsSession>> GetTeamSessionsAsync(CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<ExamToolsSession>> GetTeamSessionsAsync(ExamToolsCredentials credentials, CancellationToken cancellationToken)
     {
         var sessions = await GetJsonAsync<List<ExamToolsSession>>(
-            $"/api/veUser/sessions?team={Uri.EscapeDataString(_options.Team)}", cancellationToken);
+            credentials, $"/api/veUser/sessions?team={Uri.EscapeDataString(credentials.TeamCode)}", cancellationToken);
         return sessions ?? [];
     }
 
-    public async Task<IReadOnlyList<ExamToolsApplicant>> GetSessionApplicantsAsync(string examToolsSessionId, CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<ExamToolsApplicant>> GetSessionApplicantsAsync(ExamToolsCredentials credentials, string examToolsSessionId, CancellationToken cancellationToken)
     {
         var export = await GetJsonAsync<ExamToolsApplicantExport>(
-            $"/api/veUser/sessions/{Uri.EscapeDataString(examToolsSessionId)}/export/basic.json", cancellationToken);
+            credentials, $"/api/veUser/sessions/{Uri.EscapeDataString(examToolsSessionId)}/export/basic.json", cancellationToken);
         return export?.Applicants ?? [];
     }
 
-    private async Task<T?> GetJsonAsync<T>(string relativeUrl, CancellationToken cancellationToken)
+    private async Task<T?> GetJsonAsync<T>(ExamToolsCredentials credentials, string relativeUrl, CancellationToken cancellationToken)
     {
-        await EnsureLoggedInAsync(forceRelogin: false, cancellationToken);
+        var teamSession = GetOrCreateTeamSession(credentials.TeamId);
+        await EnsureLoggedInAsync(teamSession, credentials, forceRelogin: false, cancellationToken);
 
-        var response = await _httpClient.GetAsync(relativeUrl, cancellationToken);
+        var response = await teamSession.HttpClient.GetAsync(relativeUrl, cancellationToken);
         if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
         {
-            _logger.LogInformation("ExamTools returned {StatusCode} — session cookie likely expired, re-authenticating", (int)response.StatusCode);
-            await EnsureLoggedInAsync(forceRelogin: true, cancellationToken);
-            response = await _httpClient.GetAsync(relativeUrl, cancellationToken);
+            _logger.LogInformation("ExamTools returned {StatusCode} for team {TeamId} — session cookie likely expired, re-authenticating", (int)response.StatusCode, credentials.TeamId);
+            await EnsureLoggedInAsync(teamSession, credentials, forceRelogin: true, cancellationToken);
+            response = await teamSession.HttpClient.GetAsync(relativeUrl, cancellationToken);
         }
 
         response.EnsureSuccessStatusCode();
@@ -68,38 +64,32 @@ public sealed class ExamToolsClient : IExamToolsClient, IDisposable
         return await JsonSerializer.DeserializeAsync<T>(stream, JsonOptions, cancellationToken);
     }
 
-    private async Task EnsureLoggedInAsync(bool forceRelogin, CancellationToken cancellationToken)
+    private async Task EnsureLoggedInAsync(TeamSession teamSession, ExamToolsCredentials credentials, bool forceRelogin, CancellationToken cancellationToken)
     {
-        if (_loggedIn && !forceRelogin)
+        if (teamSession.LoggedIn && !forceRelogin)
         {
             return;
         }
 
-        await _loginLock.WaitAsync(cancellationToken);
+        await teamSession.LoginLock.WaitAsync(cancellationToken);
         try
         {
-            if (_loggedIn && !forceRelogin)
+            if (teamSession.LoggedIn && !forceRelogin)
             {
                 return;
             }
 
-            if (string.IsNullOrWhiteSpace(_options.Username) || string.IsNullOrWhiteSpace(_options.Password))
-            {
-                throw new InvalidOperationException(
-                    "ExamTools credentials are not configured. Set ExamTools:Username and ExamTools:Password via user-secrets or environment variables.");
-            }
-
             using var request = new HttpRequestMessage(HttpMethod.Post, "/api/ve/login");
             // Courtesy convention from the prior client library: identify automated traffic to the ExamTools maintainer.
-            request.Headers.Add("Hello-Richard", $"Auto scripting being run by {_options.Username} (VeSessionManager)");
+            request.Headers.Add("Hello-Richard", $"Auto scripting being run by {credentials.Username} (VeSessionManager)");
             request.Content = new FormUrlEncodedContent(
             [
-                new KeyValuePair<string, string>("username", _options.Username),
-                new KeyValuePair<string, string>("password", _options.Password),
+                new KeyValuePair<string, string>("username", credentials.Username),
+                new KeyValuePair<string, string>("password", credentials.Password),
                 new KeyValuePair<string, string>("remember", "0")
             ]);
 
-            var response = await _httpClient.SendAsync(request, cancellationToken);
+            var response = await teamSession.HttpClient.SendAsync(request, cancellationToken);
             response.EnsureSuccessStatusCode();
 
             var body = await response.Content.ReadAsStringAsync(cancellationToken);
@@ -107,21 +97,43 @@ public sealed class ExamToolsClient : IExamToolsClient, IDisposable
             if (document.RootElement.ValueKind == JsonValueKind.Object
                 && document.RootElement.TryGetProperty("error", out var error))
             {
-                throw new InvalidOperationException($"ExamTools login failed: {error.GetString()}");
+                throw new InvalidOperationException($"ExamTools login failed for team {credentials.TeamId}: {error.GetString()}");
             }
 
-            _loggedIn = true;
-            _logger.LogInformation("Logged into ExamTools at {BaseUrl} as {Username}", _options.BaseUrl, _options.Username);
+            teamSession.LoggedIn = true;
+            _logger.LogInformation("Logged into ExamTools at {BaseUrl} for team {TeamId} as {Username}", _options.BaseUrl, credentials.TeamId, credentials.Username);
         }
         finally
         {
-            _loginLock.Release();
+            teamSession.LoginLock.Release();
         }
     }
 
+    private TeamSession GetOrCreateTeamSession(int teamId) =>
+        _sessionsByTeamId.GetOrAdd(teamId, _ => new TeamSession(new HttpClient(new SocketsHttpHandler
+        {
+            CookieContainer = new CookieContainer(),
+            // Long-lived cached client: recycle pooled connections so DNS changes are picked up.
+            PooledConnectionLifetime = TimeSpan.FromMinutes(15)
+        })
+        {
+            BaseAddress = new Uri(_options.BaseUrl)
+        }));
+
     public void Dispose()
     {
-        _httpClient.Dispose();
-        _loginLock.Dispose();
+        foreach (var teamSession in _sessionsByTeamId.Values)
+        {
+            teamSession.HttpClient.Dispose();
+            teamSession.LoginLock.Dispose();
+        }
+    }
+
+    /// <summary>One team's independent cookie jar + login state — see class remarks.</summary>
+    private sealed class TeamSession(HttpClient httpClient)
+    {
+        public HttpClient HttpClient { get; } = httpClient;
+        public SemaphoreSlim LoginLock { get; } = new(1, 1);
+        public bool LoggedIn { get; set; }
     }
 }

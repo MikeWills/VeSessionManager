@@ -40,11 +40,18 @@ of Phases 2–4's actual deliverables.
 - [ ] Live test: let a real candidate's Unpaid payment age past 10 days and confirm `Payment.ExpiredUnpaid` flips and the admin notice arrives at the configured `AdminNotificationEmail`
 - [ ] Decide whether `PaymentReminder:UnmatchedReviewWindowDays` (default 5) is the right value once real sessions are running through Phase 1/5 — the spec calls this "some reasonable window," not a fixed number
 
+## Multi-Team Foundation — blocking real ExamTools polling
+
+- [ ] **Blocking:** set the seeded `Team` row's `ExamToolsUsername`/`ExamToolsPassword` via direct DB edit — the migration deliberately leaves them `NULL` (migrations must never contain real secrets, even ones already sitting in this repo's user-secrets). ExamTools ingestion is silently skipped (one quiet log line per poll, no error) until this is done. See `docs/multi-team.md`.
+- [ ] Rename the seeded `Team.Name` (currently `"WX0MIK"`, copied from the old `ExamTools:Team` appsettings value as a placeholder) to something more human-readable if desired — purely cosmetic, `ExamToolsTeamCode` is the value that actually matters functionally.
+- [ ] Onboard the second team: add a new `Team` row (direct DB edit — no admin UI yet) with its own `Name`/`ExamToolsTeamCode`/`ExamToolsUsername`/`ExamToolsPassword`. `SessionIngestionJob` picks it up automatically on the next tick, no restart needed.
+- [ ] Fast-follow (not yet scoped as its own phase): apply the same per-team pattern to Zoom/Discord/Square/Email + the Web project's Square webhook route, per `docs/multi-team.md`'s "What's still global" section — until then, every team's sessions share one Zoom/Discord/Square/SMTP account.
+- [ ] Live test: with two real `Team` rows configured, confirm `SessionIngestionJob`'s per-team loop correctly ingests both teams' sessions into the one shared `Vec`/`FeeConfiguration` (if both teams work with the same VEC) without cross-team session cancellation false-positives (covered by a unit test, but worth confirming against the real ExamTools API too).
+
 ## Carried over from earlier phases
 
 - [ ] Confirm the production ExamTools host — `exam.tools` vs `alpha.exam.tools` (only the dev site, `examtools.dev`, has been exercised so far)
 - [ ] Review `DevDataSeeder`'s $15/$7 ARRL fee amounts against the real current fee schedule before this touches real candidates
-- [ ] Multi-team support (raised 2026-07-20): if this app ever needs to serve more than one independent *team* (not VEC — a team is the group of VEs running the deployment; a VEC like ARRL/W5YI is the FCC-recognized coordinating org a team submits paperwork to, and one team can already work with multiple VECs today via `Session.VecId`/`FeeConfiguration.VecId`), Discord/Square/Zoom need reworking from a single global-credential singleton to per-*Team* credential resolution — there's no `Team` entity yet, so this needs one introduced, with an open question of whether `Vec` stays shared/global (joined to `Team`) or becomes per-`Team`. The FCC watcher already needs no changes for this (its matching is inherently team-agnostic). Not scoped as a phase yet — revisit if/when a second team is actually onboarding.
 - [ ] Retest payment reminders (flagged in spec.md's Phase 6 section): the 5-/10-day reminder logic is gated on `ApplicationStatus = Received`, which only happens once a candidate *passes* and their FCC application shows up. A candidate who fails and immediately retests within the same session may owe a fee before there's any FCC application to gate on — so today, a retest payment never gets a reminder/expiration at all. Spec's suggested fix if this turns out to matter in practice: gate retest reminders on the Session Manager having marked *some* result, not FCC status. Revisit once real sessions with retests are running through this.
 
 ## Deferred (no urgency, revisit when ready)

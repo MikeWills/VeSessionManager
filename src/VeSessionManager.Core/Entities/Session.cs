@@ -26,6 +26,10 @@ public class Session
     public int VecId { get; set; }
     public Vec Vec { get; set; } = null!;
 
+    /// <summary>Not in the original shared data model — added as a multi-team foundation. Which team operationally ran this session (owns its ExamTools/Zoom/Discord/Square credentials) — independent of VecId (which VEC/fee schedule applies). See Team's own doc comment for why these are separate, unrelated FKs.</summary>
+    public int TeamId { get; set; }
+    public Team Team { get; set; } = null!;
+
     /// <summary>Snapshot of whichever config was active when the session was created, so historical sessions keep an accurate fee record even after rates change.</summary>
     public int FeeConfigurationId { get; set; }
     public FeeConfiguration FeeConfiguration { get; set; } = null!;

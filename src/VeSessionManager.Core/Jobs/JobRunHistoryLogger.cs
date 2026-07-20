@@ -11,11 +11,12 @@ namespace VeSessionManager.Core.Jobs;
 /// </summary>
 public class JobRunHistoryLogger(AppDbContext dbContext, ILogger<JobRunHistoryLogger> logger)
 {
-    public async Task RunAsync(string jobName, Func<CancellationToken, Task> job, CancellationToken cancellationToken)
+    public async Task RunAsync(string jobName, Func<CancellationToken, Task> job, int? teamId, CancellationToken cancellationToken)
     {
         var history = new JobRunHistory
         {
             JobName = jobName,
+            TeamId = teamId,
             StartedUtc = DateTime.UtcNow
         };
         dbContext.JobRunHistories.Add(history);

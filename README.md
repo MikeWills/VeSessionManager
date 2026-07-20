@@ -42,23 +42,20 @@ dotnet ef migrations add <Name> --project src/VeSessionManager.Core
 
 ## Configuration & Secrets
 
-The Worker's ExamTools poller (Phase 1) needs credentials that are **never** committed.
-Locally, set them via user-secrets:
-
-```bash
-dotnet user-secrets set "ExamTools:Username" "<your VE username>" --project src/VeSessionManager.Worker
-dotnet user-secrets set "ExamTools:Password" "<your VE password>" --project src/VeSessionManager.Worker
-```
-
-On the server, provide `ExamTools__Username` / `ExamTools__Password` as environment variables
-(e.g. in the systemd unit). Non-secret settings (`ExamTools:BaseUrl`, `ExamTools:Team`, poll
-interval `Jobs:SessionIngestionIntervalSeconds`) live in `appsettings.json` with per-environment
-overrides; the base config points at the ExamTools dev site, `appsettings.Production.json` at
-the live one. See [`docs/examtools-api.md`](docs/examtools-api.md) for API details.
+**ExamTools credentials (Phase 1) now live on the `Team` row in the DB**, hand-edited directly
+(no admin UI yet — see [`docs/multi-team.md`](docs/multi-team.md)), not user-secrets: set
+`Team.ExamToolsUsername`/`ExamToolsPassword`/`ExamToolsTeamCode` per team. One `Team` row is
+seeded automatically by the `Phase6_5MultiTeamFoundation` migration, but its credential columns
+are intentionally left blank (migrations must never contain real secrets) — ingestion for that
+team is silently skipped until they're filled in. Only `ExamTools:BaseUrl` (which host to hit —
+`examtools.dev` in dev, the live site in production) stays in `appsettings.json`, since it's the
+same for every team on one deployment; per-environment overrides pick the right one automatically.
+See [`docs/examtools-api.md`](docs/examtools-api.md) for API details.
 
 In the Development environment the Worker also seeds a starter `Vec`/`FeeConfiguration` on
 first run (see `DevDataSeeder`) — without those rows, ingestion intentionally skips sessions
-until fee configuration exists.
+until fee configuration exists. `Vec` is shared/global across every team, not per-team — see
+`docs/multi-team.md` for why.
 
 The Zoom/Discord scheduler (Phase 2) needs its own credentials, same pattern — and both Zoom and
 Discord are **optional**: leave either unconfigured and the Worker just skips that half (logging

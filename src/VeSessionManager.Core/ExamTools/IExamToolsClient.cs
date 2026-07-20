@@ -6,9 +6,9 @@ namespace VeSessionManager.Core.ExamTools;
 /// </summary>
 public interface IExamToolsClient
 {
-    /// <summary>All sessions visible to the configured team, upcoming and past.</summary>
-    Task<IReadOnlyList<ExamToolsSession>> GetTeamSessionsAsync(CancellationToken cancellationToken);
+    /// <summary>All sessions visible to the given team, upcoming and past.</summary>
+    Task<IReadOnlyList<ExamToolsSession>> GetTeamSessionsAsync(ExamToolsCredentials credentials, CancellationToken cancellationToken);
 
     /// <summary>Registered applicants for one session, including PII — handle results per the PII logging rules.</summary>
-    Task<IReadOnlyList<ExamToolsApplicant>> GetSessionApplicantsAsync(string examToolsSessionId, CancellationToken cancellationToken);
+    Task<IReadOnlyList<ExamToolsApplicant>> GetSessionApplicantsAsync(ExamToolsCredentials credentials, string examToolsSessionId, CancellationToken cancellationToken);
 }
