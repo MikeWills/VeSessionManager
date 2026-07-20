@@ -19,6 +19,9 @@ public class SessionIngestionService(
 {
     private const string PendingState = "pend";
 
+    /// <summary>Fallback when ExamTools reports no duration (or 0) for a session's sessionDef.</summary>
+    private const int DefaultDurationMinutes = 60;
+
     /// <summary>
     /// The real feed contains stale sessions that were never closed out upstream — still "pend"
     /// but years old (observed on examtools.dev). Never ingesting a first-seen session already
@@ -126,6 +129,7 @@ public class SessionIngestionService(
             ExamToolsSessionId = remote.Id,
             Title = string.IsNullOrWhiteSpace(remote.SessionDef?.Summary) ? remote.Id : remote.SessionDef!.Summary,
             ScheduledStartUtc = remote.Date,
+            DurationMinutes = remote.SessionDef?.Duration > 0 ? remote.SessionDef.Duration / 60 : DefaultDurationMinutes,
             VecId = vec.Id,
             FeeConfigurationId = feeConfiguration.Id,
             CreatedUtc = now

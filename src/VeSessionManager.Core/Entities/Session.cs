@@ -11,10 +11,16 @@ public class Session
 
     public DateTime ScheduledStartUtc { get; set; }
 
+    /// <summary>From ExamTools' sessionDef.duration (seconds), converted at ingestion time. Not in the original shared data model — added in Phase 2 because both the Zoom meeting and the Discord event require an explicit length/end time.</summary>
+    public int DurationMinutes { get; set; }
+
     // Populated once Phase 2 creates the Zoom meeting/Discord event.
     public string? ZoomMeetingId { get; set; }
     public string? ZoomJoinUrl { get; set; }
     public string? DiscordEventId { get; set; }
+
+    /// <summary>The ScheduledStartUtc value last successfully pushed to *both* Zoom and Discord. Null means never synced (a brand-new session). Mismatching ScheduledStartUtc is exactly the "needs Zoom/Discord create-or-update" signal Phase 2's scheduling job scans for — no separate event queue needed.</summary>
+    public DateTime? ZoomDiscordSyncedStartUtc { get; set; }
 
     /// <summary>Denormalized copy for easy filtering/reporting without joining through FeeConfiguration.</summary>
     public int VecId { get; set; }

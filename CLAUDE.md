@@ -4,9 +4,10 @@ This is a Visual Studio project that is designed to automate many of the mundane
 
 ## Current State
 
-- Phase 0 (foundation) and Phase 1 (ExamTools session/candidate ingestion) of `docs/spec.md` are implemented. Next up: Phase 2 (Zoom + Discord event creation).
-- Build/test/run: `dotnet build`, `dotnet test`, `dotnet run --project src/VeSessionManager.Worker` (see README for the `DOTNET_ENVIRONMENT` gotcha). Tests are xUnit in `tests/VeSessionManager.Core.Tests`, using the EF InMemory provider and fake client implementations — follow `SessionIngestionServiceTests` as the pattern.
+- Phase 0 (foundation), Phase 1 (ExamTools session/candidate ingestion), and Phase 2 (Zoom + Discord event scheduling) of `docs/spec.md` are implemented. Next up: Phase 3 (Square payment links + webhook).
+- Build/test/run: `dotnet build`, `dotnet test`, `dotnet run --project src/VeSessionManager.Worker` (see README for the `DOTNET_ENVIRONMENT` gotcha). Tests are xUnit in `tests/VeSessionManager.Core.Tests`, using the EF InMemory provider and fake client implementations — follow `SessionIngestionServiceTests`/`SessionEventSchedulingServiceTests` as the pattern.
 - ExamTools API access: cookie login + endpoint shapes documented in `docs/examtools-api.md`; runnable requests in `api-examples/` (Bruno). Credentials come from user-secrets (`ExamTools:Username`/`ExamTools:Password`), never appsettings.
+- Zoom (Server-to-Server OAuth) + Discord (bot, `Discord.Net.Rest`) scheduling: API shapes documented in `docs/zoom-discord-scheduling.md`. `SessionEventSchedulingService` is scan-based, not event-driven — it diffs `Session.ScheduledStartUtc` against `Session.ZoomDiscordSyncedStartUtc` each run rather than reacting to a one-shot "new session" signal, so partial failures (e.g. Zoom succeeds, Discord doesn't) self-heal on the next poll with no extra bookkeeping. Credentials: `Zoom:AccountId`/`Zoom:ClientId`/`Zoom:ClientSecret`, `Discord:BotToken` (user-secrets); `Discord:GuildId` is non-secret but has no safe default (starts at `0`) — must be set before the scheduler will work against a real Discord server.
 
 ## Environment
 
@@ -104,6 +105,8 @@ To pick up updates: `/plugin marketplace update claude-tools`
 - **Worker Service reads `DOTNET_ENVIRONMENT`, not `ASPNETCORE_ENVIRONMENT`.** `VeSessionManager.Worker` is a plain generic Host (`Host.CreateApplicationBuilder`), which only honors `DOTNET_ENVIRONMENT`. Only the Web project (`WebApplication.CreateBuilder`) reads `ASPNETCORE_ENVIRONMENT` (and falls back to `DOTNET_ENVIRONMENT`). The generic Host's own default when neither is set is `Production` — so running the Worker's built DLL directly (bypassing `launchSettings.json`, which sets `DOTNET_ENVIRONMENT=Development` for `dotnet run`) silently picks up `appsettings.Production.json`'s Linux-only paths and fails on a dev machine. Always use `dotnet run --project ...` locally for the Worker, not the raw `.dll`.
 - **ExamTools login returns HTTP 200 on bad credentials** — failure is an `{"error": ...}` body, not a status code. Any code touching `POST /api/ve/login` must check the body (see `ExamToolsClient` and `docs/examtools-api.md`).
 - **ExamTools has no "cancelled" session state** — cancellations are detected by a known session id disappearing from the team feed, reschedules by a changed `date` on the same id. Don't go looking for a status flag that isn't there.
+- **Zoom Server-to-Server OAuth tokens have no refresh token** — they just expire after an hour; the only way to get a new one is to call `/oauth/token` again with the same `account_credentials` grant. `ZoomClient` caches and re-requests a minute before expiry rather than reacting to a 401.
+- **`DateTimeOffset` construction from a Sqlite-round-tripped `DateTime` will throw if you're not careful** — EF Core/Sqlite returns `DateTimeKind.Unspecified`, and `new DateTimeOffset(dateTime, TimeSpan.Zero)` validates Kind against the offset. `DiscordEventClient.ToOffset()` forces `Kind = Utc` first; reuse that pattern anywhere else a stored `DateTime` needs to become a `DateTimeOffset`.
 - (Environment-specific quirks and gotchas go here as they're discovered — e.g. API quirks, IIS behavior, network/DMZ restrictions, auth issues)
 
 ## Definition of Done

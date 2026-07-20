@@ -49,9 +49,11 @@ Session
   ExamToolsSessionId (external ref)
   Title
   ScheduledStartUtc
+  DurationMinutes (added in Phase 2, not in the original model — from ExamTools' sessionDef.duration; both the Zoom meeting and the Discord event need an explicit length/end time)
   ZoomMeetingId
   ZoomJoinUrl
   DiscordEventId
+  ZoomDiscordSyncedStartUtc (nullable, added in Phase 2 — the ScheduledStartUtc value last successfully pushed to *both* Zoom and Discord; null means never synced. Comparing this against the current ScheduledStartUtc is Phase 2's entire "does this session need a Zoom/Discord create-or-update" signal — no separate event queue)
   VecId (FK -> Vec — denormalized copy for easy filtering/reporting without joining through FeeConfiguration)
   FeeConfigurationId (FK -> FeeConfiguration — snapshot of whichever config was active when the session was created, so historical sessions keep an accurate fee record even after rates change)
   Status (Active | Cancelled)
@@ -189,6 +191,9 @@ JobRunHistory
 - Trigger: hook this into the end of Phase 1's "new session detected" path
 - **Reschedule (zero-candidate case only, per Phase 1):** update the *existing* Zoom meeting (Zoom's update meeting endpoint) and the *existing* Discord event (Discord.Net's event modify call) to the new date/time — do not delete and recreate, so the same `ZoomMeetingId`/`DiscordEventId`/join link stay valid
 - **Cancellation:** cancel/delete the Zoom meeting and delete the Discord event. This happens automatically regardless of candidate count — it's infrastructure cleanup, not candidate communication. **Do not send any candidate-facing notification from this job** — per policy, communicating a cancellation to registered candidates is handled manually by the Session Manager, not automated
+- **Implemented as a scan, not an event queue:** rather than reacting to Phase 1's "new session detected" as a discrete event, `SessionEventSchedulingService` scans `Session` each run for `Status = Active && ScheduledStartUtc != ZoomDiscordSyncedStartUtc` (needs create-or-update: null `ZoomMeetingId`/`DiscordEventId` means create, non-null means update) and `Status = Cancelled && (ZoomMeetingId or DiscordEventId still set)` (needs cleanup). This makes the "Zoom succeeds, Discord fails" case from the Unit Tests note self-healing: the failed run leaves state that the *next* run picks up automatically (Zoom is skipped since its id is already set; Discord is retried since its id is still null) — no separate retry/flag bookkeeping needed. Still triggered from the same Worker tick as Phase 1's ingestion, immediately after it, per "hook this into the end of Phase 1's new session detected path," but as its own `JobRunHistory`-tracked step (`SessionEventScheduling`) so a scheduling failure doesn't read as an ingestion failure or vice versa.
+- **Zoom client is hand-rolled** (plain `HttpClient`, no NuGet package) — Zoom does not publish an official lightweight .NET SDK for this Server-to-Server OAuth + Meetings API surface, so this follows the same pattern as `ExamToolsClient`. **Discord.Net.Rest** (the REST-only, no-gateway-connection flavor — this job never needs to listen for Discord events) is used for Discord, per the Stack section's pre-approval of Discord.Net.
+- Zoom Server-to-Server OAuth token endpoint (`POST https://zoom.us/oauth/token`, `grant_type=account_credentials`) confirmed live; access tokens last 1 hour with no refresh token, so `ZoomClient` caches and re-requests one a minute before expiry.
 
 **Unit Tests:** Mock `IZoomClient`/Discord.Net client interfaces; test that the correct date/time and Zoom link get passed into the Discord event creation call, and that `ZoomMeetingId`/`ZoomJoinUrl`/`DiscordEventId` are persisted correctly on `Session`. Test failure handling (e.g. Zoom succeeds but Discord call fails — confirm behavior, likely retry or flag rather than silently losing the Zoom meeting). Test that reschedule calls the update endpoints (not create) and preserves the existing IDs. Test that cancellation triggers cleanup calls but never triggers an email send.
 

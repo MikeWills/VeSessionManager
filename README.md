@@ -60,6 +60,22 @@ In the Development environment the Worker also seeds a starter `Vec`/`FeeConfigu
 first run (see `DevDataSeeder`) — without those rows, ingestion intentionally skips sessions
 until fee configuration exists.
 
+The Zoom/Discord scheduler (Phase 2) needs its own credentials, same pattern:
+
+```bash
+dotnet user-secrets set "Zoom:AccountId" "<Zoom S2S OAuth app account id>" --project src/VeSessionManager.Worker
+dotnet user-secrets set "Zoom:ClientId" "<Zoom S2S OAuth app client id>" --project src/VeSessionManager.Worker
+dotnet user-secrets set "Zoom:ClientSecret" "<Zoom S2S OAuth app client secret>" --project src/VeSessionManager.Worker
+dotnet user-secrets set "Discord:BotToken" "<Discord bot token>" --project src/VeSessionManager.Worker
+```
+
+On the server: `Zoom__AccountId` / `Zoom__ClientId` / `Zoom__ClientSecret` / `Discord__BotToken`
+environment variables. `Discord:GuildId` (the server events get created in) is not secret but
+also has no sane default — set it in `appsettings.json` (or an environment-specific override)
+before running the Worker; it defaults to `0`, which will fail loudly against the real Discord
+API rather than silently doing nothing. See [`docs/zoom-discord-scheduling.md`](docs/zoom-discord-scheduling.md)
+for API details.
+
 ## Environments
 
 Config is selected by environment name (`Test` or `Production`; there is no separate

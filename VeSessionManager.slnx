@@ -1,4 +1,5 @@
 <Solution>
+  <Folder Name="/docs/" />
   <Folder Name="/src/">
     <Project Path="src/VeSessionManager.Core/VeSessionManager.Core.csproj" />
     <Project Path="src/VeSessionManager.Web/VeSessionManager.Web.csproj" />

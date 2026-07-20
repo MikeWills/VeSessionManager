@@ -29,6 +29,9 @@ public class ExamToolsSession
 public class ExamToolsSessionDef
 {
     public string Summary { get; set; } = "";
+
+    /// <summary>Seconds. Present on both the list and detail endpoints.</summary>
+    public int Duration { get; set; }
 }
 
 /// <summary>Response of GET /api/veUser/sessions/{id}/export/basic.json.</summary>
