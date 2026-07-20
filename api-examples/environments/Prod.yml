@@ -1,0 +1,10 @@
+name: Prod
+variables:
+  - name: EXAMTOOLS_ENVIRONMENT
+    value: Production
+  - name: EXAMTOOLS_USERNAME
+    value: wx0mik
+  - secret: true
+    name: EXAMTOOLS_PASSWORD
+  - name: EXAMTOOLS_URL
+    value: https://exam.tools/

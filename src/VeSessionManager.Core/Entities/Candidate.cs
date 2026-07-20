@@ -7,6 +7,9 @@ public class Candidate
     public int SessionId { get; set; }
     public Session Session { get; set; } = null!;
 
+    /// <summary>External applicant id from ExamTools/HamStudy — the stable key the ingestion job diffs against on re-polls. Null only for rows created manually.</summary>
+    public string? ExamToolsApplicantId { get; set; }
+
     // Nullable because the PII purge job (Phase 10) and the immediate no-show/withdrawal
     // delete action (Phase 9) null these fields out while keeping the row for stats.
     public string? Name { get; set; }

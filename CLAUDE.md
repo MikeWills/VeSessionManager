@@ -4,9 +4,9 @@ This is a Visual Studio project that is designed to automate many of the mundane
 
 ## Current State
 
-- No code has been scaffolded yet — the repo currently contains only this file and `docs/spec.md`. There is no solution/project file, no build, and no tests to run.
-- Next step is Phase 0 in `docs/spec.md` (project foundation: ASP.NET Core 10 solution with a Worker Service + web project sharing a class library, EF Core + initial migration, `JobRunHistory` logging helper).
-- Once Phase 0 lands, replace this section with real build/test/lint commands and update Testing / Quality below with the actual xUnit project layout.
+- Phase 0 (foundation) and Phase 1 (ExamTools session/candidate ingestion) of `docs/spec.md` are implemented. Next up: Phase 2 (Zoom + Discord event creation).
+- Build/test/run: `dotnet build`, `dotnet test`, `dotnet run --project src/VeSessionManager.Worker` (see README for the `DOTNET_ENVIRONMENT` gotcha). Tests are xUnit in `tests/VeSessionManager.Core.Tests`, using the EF InMemory provider and fake client implementations — follow `SessionIngestionServiceTests` as the pattern.
+- ExamTools API access: cookie login + endpoint shapes documented in `docs/examtools-api.md`; runnable requests in `api-examples/` (Bruno). Credentials come from user-secrets (`ExamTools:Username`/`ExamTools:Password`), never appsettings.
 
 ## Environment
 
@@ -102,6 +102,8 @@ To pick up updates: `/plugin marketplace update claude-tools`
 
 - The deploy server is behind a Tailscale VPN — a GitHub-hosted Actions runner can't reach it directly. The deploy workflow needs either a self-hosted runner joined to the tailnet, or a `tailscale/github-action` step to join the hosted runner to the tailnet before the deploy step.
 - **Worker Service reads `DOTNET_ENVIRONMENT`, not `ASPNETCORE_ENVIRONMENT`.** `VeSessionManager.Worker` is a plain generic Host (`Host.CreateApplicationBuilder`), which only honors `DOTNET_ENVIRONMENT`. Only the Web project (`WebApplication.CreateBuilder`) reads `ASPNETCORE_ENVIRONMENT` (and falls back to `DOTNET_ENVIRONMENT`). The generic Host's own default when neither is set is `Production` — so running the Worker's built DLL directly (bypassing `launchSettings.json`, which sets `DOTNET_ENVIRONMENT=Development` for `dotnet run`) silently picks up `appsettings.Production.json`'s Linux-only paths and fails on a dev machine. Always use `dotnet run --project ...` locally for the Worker, not the raw `.dll`.
+- **ExamTools login returns HTTP 200 on bad credentials** — failure is an `{"error": ...}` body, not a status code. Any code touching `POST /api/ve/login` must check the body (see `ExamToolsClient` and `docs/examtools-api.md`).
+- **ExamTools has no "cancelled" session state** — cancellations are detected by a known session id disappearing from the team feed, reschedules by a changed `date` on the same id. Don't go looking for a status flag that isn't there.
 - (Environment-specific quirks and gotchas go here as they're discovered — e.g. API quirks, IIS behavior, network/DMZ restrictions, auth issues)
 
 ## Definition of Done

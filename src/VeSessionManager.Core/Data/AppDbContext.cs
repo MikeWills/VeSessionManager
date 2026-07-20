@@ -33,6 +33,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
 
         modelBuilder.Entity<Session>(b =>
         {
+            b.HasIndex(s => s.ExamToolsSessionId).IsUnique();
             b.HasOne(s => s.Vec).WithMany(v => v.Sessions).HasForeignKey(s => s.VecId).OnDelete(DeleteBehavior.Restrict);
             b.HasOne(s => s.FeeConfiguration).WithMany(f => f.Sessions).HasForeignKey(s => s.FeeConfigurationId).OnDelete(DeleteBehavior.Restrict);
             b.HasOne(s => s.TestingCompletedByUser).WithMany().HasForeignKey(s => s.TestingCompletedByUserId).OnDelete(DeleteBehavior.Restrict);
@@ -41,6 +42,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
 
         modelBuilder.Entity<Candidate>(b =>
         {
+            b.HasIndex(c => new { c.SessionId, c.ExamToolsApplicantId }).IsUnique();
             b.HasOne(c => c.Session).WithMany(s => s.Candidates).HasForeignKey(c => c.SessionId).OnDelete(DeleteBehavior.Restrict);
             b.HasOne(c => c.ResultMarkedByUser).WithMany().HasForeignKey(c => c.ResultMarkedByUserId).OnDelete(DeleteBehavior.Restrict);
         });

@@ -40,6 +40,26 @@ To add a new migration after changing entities in `VeSessionManager.Core`:
 dotnet ef migrations add <Name> --project src/VeSessionManager.Core
 ```
 
+## Configuration & Secrets
+
+The Worker's ExamTools poller (Phase 1) needs credentials that are **never** committed.
+Locally, set them via user-secrets:
+
+```bash
+dotnet user-secrets set "ExamTools:Username" "<your VE username>" --project src/VeSessionManager.Worker
+dotnet user-secrets set "ExamTools:Password" "<your VE password>" --project src/VeSessionManager.Worker
+```
+
+On the server, provide `ExamTools__Username` / `ExamTools__Password` as environment variables
+(e.g. in the systemd unit). Non-secret settings (`ExamTools:BaseUrl`, `ExamTools:Team`, poll
+interval `Jobs:SessionIngestionIntervalSeconds`) live in `appsettings.json` with per-environment
+overrides; the base config points at the ExamTools dev site, `appsettings.Production.json` at
+the live one. See [`docs/examtools-api.md`](docs/examtools-api.md) for API details.
+
+In the Development environment the Worker also seeds a starter `Vec`/`FeeConfiguration` on
+first run (see `DevDataSeeder`) — without those rows, ingestion intentionally skips sessions
+until fee configuration exists.
+
 ## Environments
 
 Config is selected by environment name (`Test` or `Production`; there is no separate
