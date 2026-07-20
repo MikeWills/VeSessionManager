@@ -4,6 +4,7 @@ using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Discord;
 using VeSessionManager.Core.Email;
 using VeSessionManager.Core.ExamTools;
+using VeSessionManager.Core.FccUls;
 using VeSessionManager.Core.Ingestion;
 using VeSessionManager.Core.Jobs;
 using VeSessionManager.Core.Notifications;
@@ -46,10 +47,18 @@ builder.Services.AddScoped<IEmailSender, SmtpEmailSender>();
 builder.Services.AddScoped<EmailTemplateRenderer>();
 builder.Services.AddScoped<CandidateNotificationService>();
 
+builder.Services.Configure<FccUlsOptions>(builder.Configuration.GetSection(FccUlsOptions.SectionName));
+// Singleton: owns its own HttpClient, same reasoning as the other API clients. No credentials, so
+// unlike Zoom/Square/Email this isn't an optional integration — it always runs.
+builder.Services.AddSingleton<IFccUlsClient, FccUlsClient>();
+builder.Services.AddScoped<FccUlsWatcherService>();
+
 builder.Services.AddScoped<JobRunHistoryLogger>();
 builder.Services.AddHostedService<HelloWorldJob>();
 builder.Services.AddHostedService<SessionIngestionJob>();
 builder.Services.AddHostedService<DayBeforeReminderJob>();
+builder.Services.AddHostedService<FccDailyWatcherJob>();
+builder.Services.AddHostedService<FccWeeklyCatchupJob>();
 
 var host = builder.Build();
 

@@ -117,6 +117,11 @@ On the server: `Email__SmtpUsername` / `Email__SmtpPassword` environment variabl
 `Email:SmtpHost`/`Email:SmtpPort`/`Email:UseStartTls` in appsettings.json already default to
 Mailgun's recommended `smtp.mailgun.org:587` with STARTTLS.
 
+The FCC ULS watcher (Phase 5) needs **no credentials at all** — `data.fcc.gov` is a public
+dataset — so there's nothing to configure beyond the `FccUls:BaseUrl` default already in
+`appsettings.json`. See [`docs/fcc-uls-watcher.md`](docs/fcc-uls-watcher.md) for the file formats
+and field layout it depends on.
+
 ## Environments
 
 Config is selected by environment name (`Test` or `Production`; there is no separate
