@@ -6,7 +6,7 @@ public enum SessionStatus
     Cancelled
 }
 
-public enum ArrlSubmissionStatus
+public enum VecSubmissionStatus
 {
     NotSubmitted,
     Submitted

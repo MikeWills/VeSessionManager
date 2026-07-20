@@ -1,6 +1,6 @@
 # VE Session Management System — Project Spec
 
-**Purpose:** Automate the lifecycle of ham radio VE (Volunteer Examiner) test sessions — from session creation through Zoom/Discord scheduling, candidate payment, FCC license tracking, ARRL submission tracking, and PII retention — with a role-based admin backend.
+**Purpose:** Automate the lifecycle of ham radio VE (Volunteer Examiner) test sessions — from session creation through Zoom/Discord scheduling, candidate payment, FCC license tracking, VEC submission tracking, and PII retention — with a role-based admin backend.
 
 **Stack:** ASP.NET Core 10 (C#, LTS — released Nov 2025, supported until Nov 2028), SQLite, PowerShell 7 (for standalone jobs where useful), Discord.Net, minimal/no JS frameworks for the frontend (Razor Pages preferred, plain JS only where needed — confirm before adding any JS framework). NuGet packages are fine to use wherever they make sense (e.g. EF Core, Discord.Net, official Zoom/Square SDKs if available, `AspNet.Security.OAuth.Apple`) — no requirement to hand-roll things a well-maintained package already solves well. Prefer official/first-party SDKs where they exist; for community packages, prefer actively maintained ones (recent commits/releases) and flag the choice so it's a conscious pick, not a default.
 
@@ -71,9 +71,9 @@ Session
   RescheduleFlaggedUtc (nullable)
   TestingCompletedUtc (nullable — set by the Session Manager's "mark session as completed" action, see Phase 9; bulk-flips `Candidate.Tested = true` for every non-terminal candidate in the session)
   TestingCompletedByUserId (nullable)
-  ArrlSubmissionStatus (NotSubmitted | Submitted)
-  ArrlSubmittedDate (nullable)
-  ArrlSubmittedByUserId (nullable)
+  VecSubmissionStatus (NotSubmitted | Submitted) -- renamed from ArrlSubmissionStatus (Phase 8, 2026-07-21): submission goes to whichever VEC this session's VecId is, not always ARRL
+  VecSubmittedDate (nullable)
+  VecSubmittedByUserId (nullable)
   CreatedUtc
 
 Candidate
@@ -369,13 +369,19 @@ their own sessions on the same deployment with no cross-team interference.
 
 ---
 
-## Phase 8 — ARRL Submission Tracker
+## Phase 8 — VEC Submission Tracker
+
+**Renamed from "ARRL Submission Tracker" (2026-07-21, user request):** submission goes to
+whichever VEC a session is actually under (`Session.VecId`), not always ARRL, so the phase and its
+fields are named generically. `Vec.SupportsYouthProgram` and the `ArrlYouthProgramInstructions`
+email template (Phase 9) are **not** part of this rename — those are genuinely ARRL-specific
+features (ARRL's own youth discount program), not a generic VEC concept.
 
 **Goal:** Track submission status per session (manual process, not automated).
 
-- `Session.ArrlSubmissionStatus`, `ArrlSubmittedDate`, `ArrlSubmittedByUserId` (already in shared model)
+- `Session.VecSubmissionStatus`, `VecSubmittedDate`, `VecSubmittedByUserId` (already in shared model as `Arrl*`; renamed Phase 8)
 - Session detail view (Phase 9 admin backend): toggle Not Submitted → Submitted, captures date + user automatically
-- Dashboard indicator: count of sessions pending ARRL submission (e.g., sessions with `Granted` or otherwise-complete candidates where status is still `NotSubmitted`)
+- Dashboard indicator: count of sessions pending VEC submission (e.g., sessions with `Granted` or otherwise-complete candidates where status is still `NotSubmitted`)
 
 **Unit Tests:** Test the toggle logic (status transition, date/user capture) and the "pending submission" dashboard query.
 
@@ -401,7 +407,7 @@ their own sessions on the same deployment with no cross-team interference.
   - create a retest payment for a candidate who fails and retests within the same session
   - flag a payment as "refund requested" with notes — the actual refund is processed manually in the Square dashboard, this is tracking-only
   - review and clear a session's `RescheduleFlaggedForReview` flag once they've manually communicated the change to candidates and confirmed the new date
-  - VE roster editing, ARRL submission toggle
+  - VE roster editing, VEC submission toggle
 - **Team Lead:** scoped to sessions they're assigned to (via `User.ManagedByUserId` or a future session-assignment table if a Team Lead needs multi-manager visibility — confirm scope when building this), same status view as Session Manager including full PII (Name, Email, FRN) — needed for day-of check-in and identity verification against photo ID, not masked, but read-only except where explicitly decided otherwise (confirm with Mike before granting Team Leads any write access beyond viewing)
 
 ---
@@ -431,7 +437,7 @@ their own sessions on the same deployment with no cross-team interference.
 
 - Session list + session detail view with the candidate table (registration, payment, application, license status)
 - Every action listed under "Session Manager" above, wired to the real underlying logic built in Phases 1–8
-- VE roster editing (Phase 7), ARRL submission toggle (Phase 8), refund-request flagging (Phase 3)
+- VE roster editing (Phase 7), VEC submission toggle (Phase 8), refund-request flagging (Phase 3)
 
 **Unit Tests:** Each action's authorization check (Session Manager can only act on their own sessions), each action's state-transition correctness (reuses/extends the logic already unit-tested in its originating phase — this phase's tests focus on the UI-triggered wiring, not re-testing the underlying business logic).
 

@@ -1,12 +1,12 @@
 using Microsoft.EntityFrameworkCore;
-using VeSessionManager.Core.ArrlSubmissions;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Entities;
+using VeSessionManager.Core.VecSubmissions;
 using Xunit;
 
 namespace VeSessionManager.Core.Tests;
 
-public class ArrlSubmissionServiceTests
+public class VecSubmissionServiceTests
 {
     private static readonly DateTime Now = new(2026, 7, 21, 12, 0, 0, DateTimeKind.Utc);
 
@@ -23,10 +23,10 @@ public class ArrlSubmissionServiceTests
         return new AppDbContext(options);
     }
 
-    private static async Task<(Team Team, Session Session, User User)> SeedSessionAsync(AppDbContext dbContext, ArrlSubmissionStatus status = ArrlSubmissionStatus.NotSubmitted)
+    private static async Task<(Team Team, Session Session, User User)> SeedSessionAsync(AppDbContext dbContext, VecSubmissionStatus status = VecSubmissionStatus.NotSubmitted, string vecName = "ARRL")
     {
         var team = new Team { Name = "TESTTEAM", CreatedUtc = Now };
-        var vec = new Vec { Name = "ARRL" };
+        var vec = new Vec { Name = vecName };
         var user = new User { Name = "Session Manager", Email = "sm@example.com", Role = UserRole.SessionManager };
         var feeConfiguration = new FeeConfiguration
         {
@@ -45,7 +45,7 @@ public class ArrlSubmissionServiceTests
             Team = team,
             Vec = vec,
             FeeConfiguration = feeConfiguration,
-            ArrlSubmissionStatus = status,
+            VecSubmissionStatus = status,
             CreatedUtc = Now
         };
         dbContext.Sessions.Add(session);
@@ -53,7 +53,7 @@ public class ArrlSubmissionServiceTests
         return (team, session, user);
     }
 
-    private static ArrlSubmissionService CreateService(AppDbContext dbContext) =>
+    private static VecSubmissionService CreateService(AppDbContext dbContext) =>
         new(dbContext, new FixedTimeProvider(Now));
 
     [Fact]
@@ -64,27 +64,28 @@ public class ArrlSubmissionServiceTests
 
         var result = await CreateService(dbContext).MarkSubmittedAsync(session.Id, user.Id, CancellationToken.None);
 
-        Assert.Equal(ArrlSubmissionMarkResult.Marked, result);
+        Assert.Equal(VecSubmissionMarkResult.Marked, result);
         var updated = dbContext.Sessions.Single();
-        Assert.Equal(ArrlSubmissionStatus.Submitted, updated.ArrlSubmissionStatus);
-        Assert.Equal(Now, updated.ArrlSubmittedDate);
-        Assert.Equal(user.Id, updated.ArrlSubmittedByUserId);
+        Assert.Equal(VecSubmissionStatus.Submitted, updated.VecSubmissionStatus);
+        Assert.Equal(Now, updated.VecSubmittedDate);
+        Assert.Equal(user.Id, updated.VecSubmittedByUserId);
     }
 
     [Fact]
     public async Task MarkSubmitted_WritesAuditLogEntry()
     {
         await using var dbContext = CreateContext();
-        var (_, session, user) = await SeedSessionAsync(dbContext);
+        var (_, session, user) = await SeedSessionAsync(dbContext, vecName: "W5YI");
 
         await CreateService(dbContext).MarkSubmittedAsync(session.Id, user.Id, CancellationToken.None);
 
         var audit = Assert.Single(dbContext.AuditLogs);
         Assert.Equal(user.Id, audit.UserId);
-        Assert.Equal("ArrlSubmissionMarked", audit.Action);
+        Assert.Equal("VecSubmissionMarked", audit.Action);
         Assert.Equal(nameof(Session), audit.EntityType);
         Assert.Equal(session.Id, audit.EntityId);
         Assert.Equal(Now, audit.TimestampUtc);
+        Assert.Contains("W5YI", audit.Details); // proves the message names the session's actual VEC, not a hardcoded one
     }
 
     [Fact]
@@ -93,9 +94,9 @@ public class ArrlSubmissionServiceTests
         await using var dbContext = CreateContext();
         var originalDate = new DateTime(2026, 6, 2, 9, 0, 0, DateTimeKind.Utc);
         var (_, session, firstUser) = await SeedSessionAsync(dbContext);
-        session.ArrlSubmissionStatus = ArrlSubmissionStatus.Submitted;
-        session.ArrlSubmittedDate = originalDate;
-        session.ArrlSubmittedByUserId = firstUser.Id;
+        session.VecSubmissionStatus = VecSubmissionStatus.Submitted;
+        session.VecSubmittedDate = originalDate;
+        session.VecSubmittedByUserId = firstUser.Id;
         await dbContext.SaveChangesAsync();
 
         var secondUser = new User { Name = "Someone Else", Email = "other@example.com", Role = UserRole.SessionManager };
@@ -104,10 +105,10 @@ public class ArrlSubmissionServiceTests
 
         var result = await CreateService(dbContext).MarkSubmittedAsync(session.Id, secondUser.Id, CancellationToken.None);
 
-        Assert.Equal(ArrlSubmissionMarkResult.AlreadySubmitted, result);
+        Assert.Equal(VecSubmissionMarkResult.AlreadySubmitted, result);
         var unchanged = dbContext.Sessions.Single();
-        Assert.Equal(originalDate, unchanged.ArrlSubmittedDate);
-        Assert.Equal(firstUser.Id, unchanged.ArrlSubmittedByUserId);
+        Assert.Equal(originalDate, unchanged.VecSubmittedDate);
+        Assert.Equal(firstUser.Id, unchanged.VecSubmittedByUserId);
         Assert.Empty(dbContext.AuditLogs);
     }
 
@@ -118,7 +119,7 @@ public class ArrlSubmissionServiceTests
 
         var result = await CreateService(dbContext).MarkSubmittedAsync(999, userId: 1, CancellationToken.None);
 
-        Assert.Equal(ArrlSubmissionMarkResult.SessionNotFound, result);
+        Assert.Equal(VecSubmissionMarkResult.SessionNotFound, result);
         Assert.Empty(dbContext.AuditLogs);
     }
 }

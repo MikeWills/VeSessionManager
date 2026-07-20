@@ -40,7 +40,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             b.HasOne(s => s.Team).WithMany(t => t.Sessions).HasForeignKey(s => s.TeamId).OnDelete(DeleteBehavior.Restrict);
             b.HasOne(s => s.FeeConfiguration).WithMany(f => f.Sessions).HasForeignKey(s => s.FeeConfigurationId).OnDelete(DeleteBehavior.Restrict);
             b.HasOne(s => s.TestingCompletedByUser).WithMany().HasForeignKey(s => s.TestingCompletedByUserId).OnDelete(DeleteBehavior.Restrict);
-            b.HasOne(s => s.ArrlSubmittedByUser).WithMany().HasForeignKey(s => s.ArrlSubmittedByUserId).OnDelete(DeleteBehavior.Restrict);
+            b.HasOne(s => s.VecSubmittedByUser).WithMany().HasForeignKey(s => s.VecSubmittedByUserId).OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<JobRunHistory>(b =>

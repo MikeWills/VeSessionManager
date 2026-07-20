@@ -46,10 +46,11 @@ public class Session
     public int? TestingCompletedByUserId { get; set; }
     public User? TestingCompletedByUser { get; set; }
 
-    public ArrlSubmissionStatus ArrlSubmissionStatus { get; set; } = ArrlSubmissionStatus.NotSubmitted;
-    public DateTime? ArrlSubmittedDate { get; set; }
-    public int? ArrlSubmittedByUserId { get; set; }
-    public User? ArrlSubmittedByUser { get; set; }
+    /// <summary>Renamed from Arrl* to Vec* (Phase 8) — submission goes to whichever VEC this session is actually under (VecId), not always ARRL specifically.</summary>
+    public VecSubmissionStatus VecSubmissionStatus { get; set; } = VecSubmissionStatus.NotSubmitted;
+    public DateTime? VecSubmittedDate { get; set; }
+    public int? VecSubmittedByUserId { get; set; }
+    public User? VecSubmittedByUser { get; set; }
 
     public DateTime CreatedUtc { get; set; }
 

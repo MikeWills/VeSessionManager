@@ -1,6 +1,5 @@
 using Microsoft.EntityFrameworkCore;
 using Serilog;
-using VeSessionManager.Core.ArrlSubmissions;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Discord;
 using VeSessionManager.Core.Email;
@@ -12,6 +11,7 @@ using VeSessionManager.Core.Notifications;
 using VeSessionManager.Core.Payments;
 using VeSessionManager.Core.Scheduling;
 using VeSessionManager.Core.Square;
+using VeSessionManager.Core.VecSubmissions;
 using VeSessionManager.Core.VolunteerExaminers;
 using VeSessionManager.Core.Zoom;
 using VeSessionManager.Worker;
@@ -67,8 +67,8 @@ builder.Services.AddScoped<PaymentReminderService>();
 
 // Phase 8: no job/worker involvement — a manual, user-triggered action + a dashboard query, both
 // called directly by Phase 9's (not yet built) admin UI. Registered now so they're ready for it.
-builder.Services.AddScoped<ArrlSubmissionService>();
-builder.Services.AddScoped<ArrlSubmissionReportService>();
+builder.Services.AddScoped<VecSubmissionService>();
+builder.Services.AddScoped<VecSubmissionReportService>();
 
 builder.Services.AddScoped<JobRunHistoryLogger>();
 builder.Services.AddHostedService<HelloWorldJob>();

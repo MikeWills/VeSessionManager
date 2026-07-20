@@ -1,12 +1,12 @@
 using Microsoft.EntityFrameworkCore;
-using VeSessionManager.Core.ArrlSubmissions;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Entities;
+using VeSessionManager.Core.VecSubmissions;
 using Xunit;
 
 namespace VeSessionManager.Core.Tests;
 
-public class ArrlSubmissionReportServiceTests
+public class VecSubmissionReportServiceTests
 {
     private static readonly DateTime Now = new(2026, 7, 21, 12, 0, 0, DateTimeKind.Utc);
 
@@ -46,7 +46,7 @@ public class ArrlSubmissionReportServiceTests
 
     private static async Task<Session> SeedSessionAsync(
         AppDbContext dbContext, Team team, Vec vec, FeeConfiguration feeConfiguration,
-        ArrlSubmissionStatus arrlStatus = ArrlSubmissionStatus.NotSubmitted, SessionStatus status = SessionStatus.Active)
+        VecSubmissionStatus vecStatus = VecSubmissionStatus.NotSubmitted, SessionStatus status = SessionStatus.Active)
     {
         var session = new Session
         {
@@ -56,7 +56,7 @@ public class ArrlSubmissionReportServiceTests
             Team = team,
             Vec = vec,
             FeeConfiguration = feeConfiguration,
-            ArrlSubmissionStatus = arrlStatus,
+            VecSubmissionStatus = vecStatus,
             Status = status,
             CreatedUtc = Now
         };
@@ -86,7 +86,7 @@ public class ArrlSubmissionReportServiceTests
         AddCandidate(dbContext, session, terminalStatus);
         await dbContext.SaveChangesAsync();
 
-        var count = await new ArrlSubmissionReportService(dbContext).GetPendingSubmissionCountAsync(team.Id, CancellationToken.None);
+        var count = await new VecSubmissionReportService(dbContext).GetPendingSubmissionCountAsync(team.Id, CancellationToken.None);
 
         Assert.Equal(1, count);
     }
@@ -97,11 +97,11 @@ public class ArrlSubmissionReportServiceTests
         await using var dbContext = CreateContext();
         var team = await SeedTeamAsync(dbContext);
         var (vec, feeConfiguration) = await SeedVecAndFeeConfigAsync(dbContext);
-        var session = await SeedSessionAsync(dbContext, team, vec, feeConfiguration, arrlStatus: ArrlSubmissionStatus.Submitted);
+        var session = await SeedSessionAsync(dbContext, team, vec, feeConfiguration, vecStatus: VecSubmissionStatus.Submitted);
         AddCandidate(dbContext, session, CandidateApplicationStatus.Granted);
         await dbContext.SaveChangesAsync();
 
-        var count = await new ArrlSubmissionReportService(dbContext).GetPendingSubmissionCountAsync(team.Id, CancellationToken.None);
+        var count = await new VecSubmissionReportService(dbContext).GetPendingSubmissionCountAsync(team.Id, CancellationToken.None);
 
         Assert.Equal(0, count);
     }
@@ -118,7 +118,7 @@ public class ArrlSubmissionReportServiceTests
         AddCandidate(dbContext, session, nonTerminalStatus);
         await dbContext.SaveChangesAsync();
 
-        var count = await new ArrlSubmissionReportService(dbContext).GetPendingSubmissionCountAsync(team.Id, CancellationToken.None);
+        var count = await new VecSubmissionReportService(dbContext).GetPendingSubmissionCountAsync(team.Id, CancellationToken.None);
 
         Assert.Equal(0, count);
     }
@@ -133,7 +133,7 @@ public class ArrlSubmissionReportServiceTests
         AddCandidate(dbContext, session, CandidateApplicationStatus.Granted);
         await dbContext.SaveChangesAsync();
 
-        var count = await new ArrlSubmissionReportService(dbContext).GetPendingSubmissionCountAsync(team.Id, CancellationToken.None);
+        var count = await new VecSubmissionReportService(dbContext).GetPendingSubmissionCountAsync(team.Id, CancellationToken.None);
 
         Assert.Equal(0, count);
     }
@@ -149,7 +149,7 @@ public class ArrlSubmissionReportServiceTests
         AddCandidate(dbContext, session, CandidateApplicationStatus.Granted);
         await dbContext.SaveChangesAsync();
 
-        var count = await new ArrlSubmissionReportService(dbContext).GetPendingSubmissionCountAsync(team.Id, CancellationToken.None);
+        var count = await new VecSubmissionReportService(dbContext).GetPendingSubmissionCountAsync(team.Id, CancellationToken.None);
 
         Assert.Equal(1, count);
     }
@@ -167,7 +167,7 @@ public class ArrlSubmissionReportServiceTests
         AddCandidate(dbContext, sessionB, CandidateApplicationStatus.Granted);
         await dbContext.SaveChangesAsync();
 
-        var count = await new ArrlSubmissionReportService(dbContext).GetPendingSubmissionCountAsync(teamA.Id, CancellationToken.None);
+        var count = await new VecSubmissionReportService(dbContext).GetPendingSubmissionCountAsync(teamA.Id, CancellationToken.None);
 
         Assert.Equal(1, count);
     }
