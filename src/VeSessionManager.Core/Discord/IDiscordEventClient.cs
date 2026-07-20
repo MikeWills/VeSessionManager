@@ -7,12 +7,12 @@ namespace VeSessionManager.Core.Discord;
 /// </summary>
 public interface IDiscordEventClient
 {
-    /// <summary>True once BotToken and GuildId are both set. Discord is an optional integration — a team that hasn't set up (or doesn't want) the Discord bot must not see a repeated failed-call error every poll; SessionEventSchedulingService checks this before attempting Discord at all, and still creates/updates the Zoom meeting regardless.</summary>
+    /// <summary>True once the shared bot's BotToken is set. Discord is an optional integration — a deployment that hasn't set up (or doesn't want) the Discord bot must not see a repeated failed-call error every poll. This is only the bot-level gate; SessionEventSchedulingService also requires the calling Team's own GuildId to be set (Team.IsDiscordConfigured) before attempting Discord at all, and still creates/updates the Zoom meeting regardless.</summary>
     bool IsConfigured { get; }
 
-    Task<DiscordEvent> CreateEventAsync(DiscordEventRequest request, CancellationToken cancellationToken);
+    Task<DiscordEvent> CreateEventAsync(ulong guildId, DiscordEventRequest request, CancellationToken cancellationToken);
 
-    Task UpdateEventAsync(string eventId, DiscordEventRequest request, CancellationToken cancellationToken);
+    Task UpdateEventAsync(ulong guildId, string eventId, DiscordEventRequest request, CancellationToken cancellationToken);
 
-    Task DeleteEventAsync(string eventId, CancellationToken cancellationToken);
+    Task DeleteEventAsync(ulong guildId, string eventId, CancellationToken cancellationToken);
 }

@@ -33,7 +33,9 @@ builder.Services.AddScoped<SessionIngestionService>();
 // Configure<> anymore — AccountId/ClientId/ClientSecret/UserId all live on Team now (multi-team).
 builder.Services.AddSingleton<IZoomClient, ZoomClient>();
 builder.Services.Configure<DiscordOptions>(builder.Configuration.GetSection(DiscordOptions.SectionName));
-// Singleton so the bot login only happens once (bot tokens don't expire, unlike Zoom's).
+// Singleton so the bot login only happens once (bot tokens don't expire, unlike Zoom's). Only
+// BotToken lives here now — it's shared across every team (multi-team, see docs/multi-team.md);
+// each team's own Discord Guild lives on Team.DiscordGuildId instead.
 builder.Services.AddSingleton<IDiscordEventClient, DiscordEventClient>();
 builder.Services.AddScoped<SessionEventSchedulingService>();
 

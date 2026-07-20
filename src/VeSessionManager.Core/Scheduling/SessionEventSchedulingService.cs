@@ -107,21 +107,24 @@ public class SessionEventSchedulingService(
 
     private void LogUnconfiguredIntegrations(Team team, List<Session> sessionsNeedingSync)
     {
-        if (team.IsZoomConfigured && discordEventClient.IsConfigured)
+        // Discord needs both gates true: the shared bot itself ready, and this team having picked
+        // a Guild — see Team.IsDiscordConfigured's remarks.
+        var discordReady = discordEventClient.IsConfigured && team.IsDiscordConfigured;
+        if (team.IsZoomConfigured && discordReady)
         {
             return;
         }
 
         var pendingCount = sessionsNeedingSync.Count(s =>
             (!team.IsZoomConfigured && s.ZoomMeetingId is null) ||
-            (!discordEventClient.IsConfigured && s.DiscordEventId is null));
+            (!discordReady && s.DiscordEventId is null));
         if (pendingCount == 0)
         {
             return;
         }
 
         var unconfigured = string.Join(" and ",
-            new[] { team.IsZoomConfigured ? null : "Zoom", discordEventClient.IsConfigured ? null : "Discord" }
+            new[] { team.IsZoomConfigured ? null : "Zoom", discordReady ? null : "Discord" }
                 .Where(name => name is not null));
         logger.LogInformation("{Unconfigured} not fully configured for team {TeamId} — {PendingCount} session(s) waiting; will create automatically once configured",
             unconfigured, team.Id, pendingCount);
@@ -147,8 +150,10 @@ public class SessionEventSchedulingService(
 
         // Discord's location/description needs the Zoom join link, so it can't do anything
         // meaningful until Zoom has actually produced one, regardless of Discord's own config.
-        if (discordEventClient.IsConfigured && session.ZoomJoinUrl is not null)
+        // Both gates must be true: the shared bot ready, and this team has picked a Guild.
+        if (discordEventClient.IsConfigured && team.IsDiscordConfigured && session.ZoomJoinUrl is not null)
         {
+            var guildId = team.DiscordGuildId!.Value;
             var endTimeUtc = session.ScheduledStartUtc.AddMinutes(session.DurationMinutes);
             var discordRequest = new DiscordEventRequest(
                 session.Title,
@@ -159,12 +164,12 @@ public class SessionEventSchedulingService(
 
             if (session.DiscordEventId is null)
             {
-                var scheduledEvent = await discordEventClient.CreateEventAsync(discordRequest, cancellationToken);
+                var scheduledEvent = await discordEventClient.CreateEventAsync(guildId, discordRequest, cancellationToken);
                 session.DiscordEventId = scheduledEvent.Id;
             }
             else
             {
-                await discordEventClient.UpdateEventAsync(session.DiscordEventId, discordRequest, cancellationToken);
+                await discordEventClient.UpdateEventAsync(guildId, session.DiscordEventId, discordRequest, cancellationToken);
             }
         }
 
@@ -200,7 +205,17 @@ public class SessionEventSchedulingService(
 
         if (session.DiscordEventId is not null)
         {
-            await discordEventClient.DeleteEventAsync(session.DiscordEventId, cancellationToken);
+            if (team.DiscordGuildId is null)
+            {
+                // Same reasoning as Zoom's cleanup guard above: cleanup always attempts regardless
+                // of current configuration (an existing event needs tearing down even if the
+                // team's Discord setup changed since it was created), so this needs a clear
+                // exception rather than a confusing null-guildId call to Discord's API.
+                throw new InvalidOperationException(
+                    $"Team {team.Id} has no DiscordGuildId set but Session {session.Id} still has a DiscordEventId — cannot clean it up without knowing which guild it's in.");
+            }
+
+            await discordEventClient.DeleteEventAsync(team.DiscordGuildId.Value, session.DiscordEventId, cancellationToken);
             dbContext.AuditLogs.Add(new AuditLog
             {
                 UserId = null,

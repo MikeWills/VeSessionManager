@@ -26,11 +26,11 @@ public sealed class DiscordEventClient : IDiscordEventClient, IDisposable
         _logger = logger;
     }
 
-    public bool IsConfigured => !string.IsNullOrWhiteSpace(_options.BotToken) && _options.GuildId != 0;
+    public bool IsConfigured => !string.IsNullOrWhiteSpace(_options.BotToken);
 
-    public async Task<DiscordEvent> CreateEventAsync(DiscordEventRequest request, CancellationToken cancellationToken)
+    public async Task<DiscordEvent> CreateEventAsync(ulong guildId, DiscordEventRequest request, CancellationToken cancellationToken)
     {
-        var guild = await GetGuildAsync(cancellationToken);
+        var guild = await GetGuildAsync(guildId, cancellationToken);
         var scheduledEvent = await guild.CreateEventAsync(
             request.Name,
             ToOffset(request.StartTimeUtc),
@@ -39,13 +39,13 @@ public sealed class DiscordEventClient : IDiscordEventClient, IDisposable
             endTime: ToOffset(request.EndTimeUtc),
             location: request.Location);
 
-        _logger.LogInformation("Created Discord scheduled event {DiscordEventId}", scheduledEvent.Id);
+        _logger.LogInformation("Created Discord scheduled event {DiscordEventId} in guild {GuildId}", scheduledEvent.Id, guildId);
         return new DiscordEvent { Id = scheduledEvent.Id.ToString() };
     }
 
-    public async Task UpdateEventAsync(string eventId, DiscordEventRequest request, CancellationToken cancellationToken)
+    public async Task UpdateEventAsync(ulong guildId, string eventId, DiscordEventRequest request, CancellationToken cancellationToken)
     {
-        var guild = await GetGuildAsync(cancellationToken);
+        var guild = await GetGuildAsync(guildId, cancellationToken);
         var scheduledEvent = await guild.GetEventAsync(ulong.Parse(eventId))
             ?? throw new InvalidOperationException($"Discord scheduled event {eventId} no longer exists (deleted outside the app?).");
 
@@ -57,12 +57,12 @@ public sealed class DiscordEventClient : IDiscordEventClient, IDisposable
             props.EndTime = ToOffset(request.EndTimeUtc);
             props.Location = request.Location;
         });
-        _logger.LogInformation("Updated Discord scheduled event {DiscordEventId}", eventId);
+        _logger.LogInformation("Updated Discord scheduled event {DiscordEventId} in guild {GuildId}", eventId, guildId);
     }
 
-    public async Task DeleteEventAsync(string eventId, CancellationToken cancellationToken)
+    public async Task DeleteEventAsync(ulong guildId, string eventId, CancellationToken cancellationToken)
     {
-        var guild = await GetGuildAsync(cancellationToken);
+        var guild = await GetGuildAsync(guildId, cancellationToken);
         var scheduledEvent = await guild.GetEventAsync(ulong.Parse(eventId));
         if (scheduledEvent is null)
         {
@@ -71,20 +71,20 @@ public sealed class DiscordEventClient : IDiscordEventClient, IDisposable
         }
 
         await scheduledEvent.DeleteAsync();
-        _logger.LogInformation("Deleted Discord scheduled event {DiscordEventId}", eventId);
+        _logger.LogInformation("Deleted Discord scheduled event {DiscordEventId} in guild {GuildId}", eventId, guildId);
     }
 
     /// <summary>DateTimeOffset(DateTime, TimeSpan.Zero) requires Kind=Utc (or Unspecified); force it so a value that round-tripped through EF/Sqlite (which drops Kind) never throws.</summary>
     private static DateTimeOffset ToOffset(DateTime utc) =>
         new(DateTime.SpecifyKind(utc, DateTimeKind.Utc), TimeSpan.Zero);
 
-    private async Task<RestGuild> GetGuildAsync(CancellationToken cancellationToken)
+    private async Task<RestGuild> GetGuildAsync(ulong guildId, CancellationToken cancellationToken)
     {
         await EnsureLoggedInAsync(cancellationToken);
-        return await _client.GetGuildAsync(_options.GuildId)
+        return await _client.GetGuildAsync(guildId)
             ?? throw new InvalidOperationException(
-                $"Discord guild {_options.GuildId} was not found, or this bot is not a member of it. " +
-                "Check Discord:GuildId and that the bot was actually invited via the OAuth2 URL Generator (bot scope + Manage Events permission) — see docs/zoom-discord-scheduling.md.");
+                $"Discord guild {guildId} was not found, or this bot is not a member of it. " +
+                "Check Team.DiscordGuildId and that the bot was actually invited via the OAuth2 URL Generator (bot scope + Manage Events permission) — see docs/zoom-discord-scheduling.md.");
     }
 
     private async Task EnsureLoggedInAsync(CancellationToken cancellationToken)
@@ -110,7 +110,7 @@ public sealed class DiscordEventClient : IDiscordEventClient, IDisposable
 
             await _client.LoginAsync(TokenType.Bot, _options.BotToken);
             _loggedIn = true;
-            _logger.LogInformation("Logged into Discord as a bot for guild {GuildId}", _options.GuildId);
+            _logger.LogInformation("Logged into Discord as a bot — shared across every team");
         }
         finally
         {

@@ -65,12 +65,14 @@ public class SessionEventSchedulingServiceTests
         public List<string> CreateCalls { get; } = [];
         public List<string> UpdateCalls { get; } = [];
         public List<string> DeleteCalls { get; } = [];
+        public List<ulong> GuildIdsUsed { get; } = [];
         public Exception? ThrowOnCreate { get; set; }
         public bool IsConfigured { get; set; } = true;
         private int _nextId = 2000;
 
-        public Task<DiscordEvent> CreateEventAsync(DiscordEventRequest request, CancellationToken cancellationToken)
+        public Task<DiscordEvent> CreateEventAsync(ulong guildId, DiscordEventRequest request, CancellationToken cancellationToken)
         {
+            GuildIdsUsed.Add(guildId);
             CreateCalls.Add(request.Name);
             if (ThrowOnCreate is not null)
             {
@@ -79,14 +81,16 @@ public class SessionEventSchedulingServiceTests
             return Task.FromResult(new DiscordEvent { Id = (_nextId++).ToString() });
         }
 
-        public Task UpdateEventAsync(string eventId, DiscordEventRequest request, CancellationToken cancellationToken)
+        public Task UpdateEventAsync(ulong guildId, string eventId, DiscordEventRequest request, CancellationToken cancellationToken)
         {
+            GuildIdsUsed.Add(guildId);
             UpdateCalls.Add(eventId);
             return Task.CompletedTask;
         }
 
-        public Task DeleteEventAsync(string eventId, CancellationToken cancellationToken)
+        public Task DeleteEventAsync(ulong guildId, string eventId, CancellationToken cancellationToken)
         {
+            GuildIdsUsed.Add(guildId);
             DeleteCalls.Add(eventId);
             return Task.CompletedTask;
         }
@@ -104,8 +108,8 @@ public class SessionEventSchedulingServiceTests
         AppDbContext dbContext, IZoomClient zoom, IDiscordEventClient discord) =>
         new(dbContext, zoom, discord, new FixedTimeProvider(Now), NullLogger<SessionEventSchedulingService>.Instance);
 
-    /// <summary>Seeds a Team. zoomConfigured=true (default) sets AccountId/ClientId/ClientSecret so Team.IsZoomConfigured is true.</summary>
-    private static async Task<Team> SeedTeamAsync(AppDbContext dbContext, bool zoomConfigured = true)
+    /// <summary>Seeds a Team. zoomConfigured=true (default) sets AccountId/ClientId/ClientSecret so Team.IsZoomConfigured is true; discordConfigured=true (default) sets DiscordGuildId so Team.IsDiscordConfigured is true (the shared bot's own readiness is controlled separately via FakeDiscordEventClient.IsConfigured).</summary>
+    private static async Task<Team> SeedTeamAsync(AppDbContext dbContext, bool zoomConfigured = true, bool discordConfigured = true)
     {
         var team = new Team
         {
@@ -113,6 +117,7 @@ public class SessionEventSchedulingServiceTests
             ZoomAccountId = zoomConfigured ? "zoom-account" : null,
             ZoomClientId = zoomConfigured ? "zoom-client" : null,
             ZoomClientSecret = zoomConfigured ? "zoom-secret" : null,
+            DiscordGuildId = discordConfigured ? 999UL : null,
             CreatedUtc = Now
         };
         dbContext.Teams.Add(team);
@@ -430,7 +435,7 @@ public class SessionEventSchedulingServiceTests
     {
         await using var dbContext = CreateContext();
         var (vec, feeConfig) = await SeedRefsAsync(dbContext);
-        var team = await SeedTeamAsync(dbContext, zoomConfigured: false);
+        var team = await SeedTeamAsync(dbContext, zoomConfigured: false, discordConfigured: false);
         dbContext.Sessions.Add(NewSession(vec, feeConfig, team));
         await dbContext.SaveChangesAsync();
 
@@ -495,7 +500,7 @@ public class SessionEventSchedulingServiceTests
     {
         await using var dbContext = CreateContext();
         var (vec, feeConfig) = await SeedRefsAsync(dbContext);
-        var team = await SeedTeamAsync(dbContext, zoomConfigured: false);
+        var team = await SeedTeamAsync(dbContext, zoomConfigured: false, discordConfigured: false);
         dbContext.Sessions.Add(NewSession(vec, feeConfig, team));
         await dbContext.SaveChangesAsync();
 
@@ -507,6 +512,7 @@ public class SessionEventSchedulingServiceTests
         team.ZoomAccountId = "zoom-account";
         team.ZoomClientId = "zoom-client";
         team.ZoomClientSecret = "zoom-secret";
+        team.DiscordGuildId = 999UL;
         await dbContext.SaveChangesAsync();
         discord.IsConfigured = true;
         var result = await CreateService(dbContext, zoom, discord).RunAsync(team, CancellationToken.None);
@@ -518,5 +524,27 @@ public class SessionEventSchedulingServiceTests
         Assert.NotNull(saved.ZoomMeetingId);
         Assert.NotNull(saved.DiscordEventId);
         Assert.Equal(SessionStart, saved.ZoomDiscordSyncedStartUtc);
+    }
+
+    [Fact]
+    public async Task TwoTeams_SharedDiscordBot_EachUsesItsOwnGuildId()
+    {
+        await using var dbContext = CreateContext();
+        var (vec, feeConfig) = await SeedRefsAsync(dbContext);
+        var teamA = await SeedTeamAsync(dbContext);
+        teamA.DiscordGuildId = 111UL;
+        var teamB = await SeedTeamAsync(dbContext);
+        teamB.DiscordGuildId = 222UL;
+        await dbContext.SaveChangesAsync();
+        dbContext.Sessions.Add(NewSession(vec, feeConfig, teamA, "teamA-session"));
+        dbContext.Sessions.Add(NewSession(vec, feeConfig, teamB, "teamB-session"));
+        await dbContext.SaveChangesAsync();
+
+        // One shared FakeDiscordEventClient instance, matching the real shared-bot design.
+        var discord = new FakeDiscordEventClient();
+        await CreateService(dbContext, new FakeZoomClient(), discord).RunAsync(teamA, CancellationToken.None);
+        await CreateService(dbContext, new FakeZoomClient(), discord).RunAsync(teamB, CancellationToken.None);
+
+        Assert.Equal([111UL, 222UL], discord.GuildIdsUsed);
     }
 }

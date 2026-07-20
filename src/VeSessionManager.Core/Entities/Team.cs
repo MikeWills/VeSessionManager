@@ -31,6 +31,9 @@ public class Team
     /// <summary>Which Zoom user's calendar meetings get created under — defaults to "me" in code (ZoomClient) when null, not required to be set explicitly.</summary>
     public string? ZoomUserId { get; set; }
 
+    /// <summary>Which Discord server this team's events post to — the bot itself is shared globally (Discord:BotToken, confirmed with the user), only the Guild varies per team. Null means this team hasn't picked one yet.</summary>
+    public ulong? DiscordGuildId { get; set; }
+
     public DateTime CreatedUtc { get; set; }
 
     public List<Session> Sessions { get; } = [];
@@ -44,4 +47,7 @@ public class Team
         !string.IsNullOrWhiteSpace(ZoomAccountId)
         && !string.IsNullOrWhiteSpace(ZoomClientId)
         && !string.IsNullOrWhiteSpace(ZoomClientSecret);
+
+    /// <summary>Just the per-Team half of Discord readiness (has a Guild been picked) — combine with IDiscordEventClient.IsConfigured (the shared bot's own readiness) before actually attempting Discord for a session.</summary>
+    public bool IsDiscordConfigured => DiscordGuildId is not null && DiscordGuildId != 0;
 }
