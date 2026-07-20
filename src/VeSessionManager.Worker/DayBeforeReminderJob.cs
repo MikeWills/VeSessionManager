@@ -1,3 +1,5 @@
+using Microsoft.EntityFrameworkCore;
+using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Jobs;
 using VeSessionManager.Core.Notifications;
 
@@ -10,7 +12,8 @@ namespace VeSessionManager.Worker;
 /// specific wall-clock time of day — simplest option consistent with every other job in this
 /// codebase (PeriodicTimer, no cron/Quartz dependency); acceptable since
 /// CandidateNotificationService's send-once tracking makes an extra same-day tick a no-op rather
-/// than a duplicate send.
+/// than a duplicate send. Looped per Team — each team has its own SMTP account (multi-team, see
+/// docs/multi-team.md).
 /// </summary>
 public class DayBeforeReminderJob(
     IServiceScopeFactory scopeFactory,
@@ -24,14 +27,19 @@ public class DayBeforeReminderJob(
         do
         {
             using var scope = scopeFactory.CreateScope();
+            var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             var jobRunHistoryLogger = scope.ServiceProvider.GetRequiredService<JobRunHistoryLogger>();
             var notificationService = scope.ServiceProvider.GetRequiredService<CandidateNotificationService>();
 
-            await jobRunHistoryLogger.RunAsync(
-                "DayBeforeReminder",
-                notificationService.SendDayBeforeRemindersAsync,
-                null,
-                stoppingToken);
+            var teams = await dbContext.Teams.ToListAsync(stoppingToken);
+            foreach (var team in teams)
+            {
+                await jobRunHistoryLogger.RunAsync(
+                    "DayBeforeReminder",
+                    ct => notificationService.SendDayBeforeRemindersAsync(team, ct),
+                    team.Id,
+                    stoppingToken);
+            }
         }
         while (await timer.WaitForNextTickAsync(stoppingToken));
     }

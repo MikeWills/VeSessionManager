@@ -1,7 +1,6 @@
 using MailKit.Net.Smtp;
 using MailKit.Security;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using MimeKit;
 
 namespace VeSessionManager.Core.Email;
@@ -10,31 +9,15 @@ namespace VeSessionManager.Core.Email;
 /// Sends mail via MailKit's SmtpClient. Connects fresh per send rather than holding a persistent
 /// connection — this app's email volume (registration confirmations, daily reminders) is low
 /// enough that per-send connect/disconnect overhead doesn't matter, and it sidesteps stale-
-/// connection handling entirely. Credential validation is deferred to SendAsync, not the
-/// constructor — same reasoning as ZoomClient/DiscordEventClient/SquareClient (this type can be
-/// resolved from inside a Worker BackgroundService; a constructor throw there stops the whole
-/// host, not just email sending).
+/// connection handling entirely. Needs no per-team cache the way ExamTools/Zoom/Discord/Square
+/// do — credentials are just threaded straight through per call, since each team has its own
+/// separate SMTP account (confirmed with the user) and there's no login/session state to reuse
+/// across calls in the first place.
 /// </summary>
-public class SmtpEmailSender(IOptions<EmailOptions> options, ILogger<SmtpEmailSender> logger) : IEmailSender
+public class SmtpEmailSender(ILogger<SmtpEmailSender> logger) : IEmailSender
 {
-    /// <summary>
-    /// Requires both host and username, not just host — SmtpHost alone can have a real, correct
-    /// default baked into appsettings.json (e.g. smtp.mailgun.org) while credentials are still
-    /// unset, and Mailgun (and most real providers) reject unauthenticated senders outright. A
-    /// deployment that genuinely needs a no-auth relay can set any non-empty SmtpUsername to
-    /// force this true; SendAsync only actually authenticates when SmtpUsername is non-empty.
-    /// </summary>
-    public bool IsConfigured => !string.IsNullOrWhiteSpace(options.Value.SmtpHost) && !string.IsNullOrWhiteSpace(options.Value.SmtpUsername);
-
-    public async Task SendAsync(EmailMessage message, CancellationToken cancellationToken)
+    public async Task SendAsync(EmailCredentials credentials, EmailMessage message, CancellationToken cancellationToken)
     {
-        var smtpOptions = options.Value;
-        if (string.IsNullOrWhiteSpace(smtpOptions.SmtpHost))
-        {
-            throw new InvalidOperationException(
-                "SMTP is not configured. Set Email:SmtpHost (and Email:SmtpUsername/Email:SmtpPassword via user-secrets or environment variables).");
-        }
-
         var mimeMessage = new MimeMessage();
         mimeMessage.From.Add(new MailboxAddress(message.FromDisplayName ?? "", message.FromAddress));
         mimeMessage.ReplyTo.Add(MailboxAddress.Parse(message.ReplyToAddress));
@@ -43,12 +26,12 @@ public class SmtpEmailSender(IOptions<EmailOptions> options, ILogger<SmtpEmailSe
         mimeMessage.Body = new BodyBuilder { HtmlBody = message.HtmlBody }.ToMessageBody();
 
         using var client = new SmtpClient();
-        var secureSocketOptions = smtpOptions.UseStartTls ? SecureSocketOptions.StartTls : SecureSocketOptions.Auto;
-        await client.ConnectAsync(smtpOptions.SmtpHost, smtpOptions.SmtpPort, secureSocketOptions, cancellationToken);
+        var secureSocketOptions = credentials.UseStartTls ? SecureSocketOptions.StartTls : SecureSocketOptions.Auto;
+        await client.ConnectAsync(credentials.Host, credentials.Port, secureSocketOptions, cancellationToken);
 
-        if (!string.IsNullOrWhiteSpace(smtpOptions.SmtpUsername))
+        if (!string.IsNullOrWhiteSpace(credentials.Username))
         {
-            await client.AuthenticateAsync(smtpOptions.SmtpUsername, smtpOptions.SmtpPassword, cancellationToken);
+            await client.AuthenticateAsync(credentials.Username, credentials.Password, cancellationToken);
         }
 
         await client.SendAsync(mimeMessage, cancellationToken);
@@ -56,6 +39,6 @@ public class SmtpEmailSender(IOptions<EmailOptions> options, ILogger<SmtpEmailSe
 
         // Never log the candidate's address — PII rule established throughout this codebase
         // (see SessionIngestionService: log ids/counts, never names/emails/FRNs).
-        logger.LogInformation("Sent email with subject {Subject}", message.Subject);
+        logger.LogInformation("Sent email with subject {Subject} for team {TeamId}", message.Subject, credentials.TeamId);
     }
 }

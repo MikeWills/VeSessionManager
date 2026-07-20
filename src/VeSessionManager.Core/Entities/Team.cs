@@ -43,6 +43,17 @@ public class Team
     /// <summary>Must exactly match this team's webhook subscription's notification URL configured in the Square Developer portal — required input to signature verification, not just where Square happens to POST. Should be https://&lt;host&gt;/webhooks/square/{this team's Id}.</summary>
     public string? SquareWebhookNotificationUrl { get; set; }
 
+    // SMTP credentials — nullable, no defaults baked in (a shipped default like "smtp.mailgun.org"
+    // would make IsEmailConfigured read true before an admin actually finished setup — see the
+    // CLAUDE.md gotcha this already caused once). This team's own separate SMTP account (confirmed
+    // with the user — not shared across teams). SmtpPort/SmtpUseStartTls fall back to 587/true in
+    // code (CandidateNotificationService/PaymentReminderService) when null, not stored as a default.
+    public string? SmtpHost { get; set; }
+    public int? SmtpPort { get; set; }
+    public string? SmtpUsername { get; set; }
+    public string? SmtpPassword { get; set; }
+    public bool? SmtpUseStartTls { get; set; }
+
     public DateTime CreatedUtc { get; set; }
 
     public List<Session> Sessions { get; } = [];
@@ -67,4 +78,9 @@ public class Team
     public bool IsSquareWebhookConfigured =>
         !string.IsNullOrWhiteSpace(SquareWebhookSignatureKey)
         && !string.IsNullOrWhiteSpace(SquareWebhookNotificationUrl);
+
+    /// <summary>Requires Host and Username, not just Host — same reasoning the pre-multi-team IEmailSender.IsConfigured had: a real default host could otherwise read as "configured" before credentials exist.</summary>
+    public bool IsEmailConfigured =>
+        !string.IsNullOrWhiteSpace(SmtpHost)
+        && !string.IsNullOrWhiteSpace(SmtpUsername);
 }

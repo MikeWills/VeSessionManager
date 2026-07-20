@@ -30,6 +30,10 @@ namespace VeSessionManager.Core.Payments;
 /// ApplicationDateEnteredUtc yet (Phase 5 only sets it once Received) — which is exactly the
 /// "excluded from both triggers, flagged separately instead" behavior the spec calls for, achieved
 /// here as a side effect of the date-null filter rather than a separate status check.
+///
+/// Multi-team: this service now operates on one Team's candidates/payments per RunAsync call —
+/// each team has its own separate SMTP account and EmailSettings/EmailTemplate rows. See
+/// docs/multi-team.md.
 /// </summary>
 public class PaymentReminderService(
     AppDbContext dbContext,
@@ -47,29 +51,29 @@ public class PaymentReminderService(
     private const int ReminderThresholdDays = 5;
     private const int ExpirationThresholdDays = 10;
 
-    public async Task<PaymentReminderResult> RunAsync(CancellationToken cancellationToken)
+    public async Task<PaymentReminderResult> RunAsync(Team team, CancellationToken cancellationToken)
     {
         var result = new PaymentReminderResult();
         var now = timeProvider.GetUtcNow().UtcDateTime;
 
-        var emailSettings = await dbContext.EmailSettings.FirstOrDefaultAsync(cancellationToken);
+        var emailSettings = await dbContext.EmailSettings.FirstOrDefaultAsync(e => e.TeamId == team.Id, cancellationToken);
         if (emailSettings is null)
         {
-            logger.LogWarning("No EmailSettings row exists yet — skipping payment reminders/expirations until seeded");
+            logger.LogWarning("No EmailSettings row exists yet for team {TeamId} — skipping payment reminders/expirations until seeded", team.Id);
         }
         else
         {
-            await SendFiveDayRemindersAsync(now, emailSettings, result, cancellationToken);
-            await ProcessExpirationsAsync(now, emailSettings, result, cancellationToken);
+            await SendFiveDayRemindersAsync(team, now, emailSettings, result, cancellationToken);
+            await ProcessExpirationsAsync(team, now, emailSettings, result, cancellationToken);
         }
 
-        await FlagStaleUnmatchedCandidatesAsync(now, result, cancellationToken);
+        await FlagStaleUnmatchedCandidatesAsync(team, now, result, cancellationToken);
 
-        logger.LogInformation("Payment reminder run finished: {Result}", result);
+        logger.LogInformation("Payment reminder run finished for team {TeamId} ({TeamName}): {Result}", team.Id, team.Name, result);
         return result;
     }
 
-    private async Task SendFiveDayRemindersAsync(DateTime now, EmailSettings emailSettings, PaymentReminderResult result, CancellationToken cancellationToken)
+    private async Task SendFiveDayRemindersAsync(Team team, DateTime now, EmailSettings emailSettings, PaymentReminderResult result, CancellationToken cancellationToken)
     {
         var threshold = now.AddDays(-ReminderThresholdDays);
 
@@ -82,17 +86,20 @@ public class PaymentReminderService(
                         && p.Candidate.ApplicationStatus == CandidateApplicationStatus.Received
                         && p.Candidate.ApplicationDateEnteredUtc != null
                         && p.Candidate.ApplicationDateEnteredUtc <= threshold
+                        && p.Candidate.Session.TeamId == team.Id
                         && p.Candidate.Session.Status == SessionStatus.Active)
             .ToListAsync(cancellationToken);
 
-        if (payments.Count > 0 && !emailSender.IsConfigured)
+        if (payments.Count > 0 && !team.IsEmailConfigured)
         {
             // SMTP optional, same reasoning as CandidateNotificationService — skip quietly rather
             // than fail-log every poll; PaymentReminderSentUtc stays null so the next poll sends
             // everything backlogged once SMTP is configured.
-            logger.LogInformation("SMTP is not fully configured — {PendingCount} 5-day payment reminder(s) waiting; will send automatically once configured", payments.Count);
+            logger.LogInformation("SMTP is not fully configured for team {TeamId} — {PendingCount} 5-day payment reminder(s) waiting; will send automatically once configured", team.Id, payments.Count);
             return;
         }
+
+        var credentials = new EmailCredentials(team.Id, team.SmtpHost!, team.SmtpPort ?? 587, team.SmtpUsername!, team.SmtpPassword ?? "", team.SmtpUseStartTls ?? true);
 
         foreach (var payment in payments)
         {
@@ -105,7 +112,7 @@ public class PaymentReminderService(
                     ["PaymentLinkUrl"] = payment.PaymentLinkUrl ?? ""
                 };
 
-                var rendered = await templateRenderer.RenderAsync(PaymentReminder5DayKey, placeholders, cancellationToken);
+                var rendered = await templateRenderer.RenderAsync(team.Id, PaymentReminder5DayKey, placeholders, cancellationToken);
                 if (rendered is null)
                 {
                     result.Failed++;
@@ -114,6 +121,7 @@ public class PaymentReminderService(
                 }
 
                 await emailSender.SendAsync(
+                    credentials,
                     new EmailMessage(payment.Candidate.Email!, emailSettings.FromAddress, emailSettings.FromDisplayName, emailSettings.ReplyToAddress, rendered.Subject, rendered.Body),
                     cancellationToken);
 
@@ -132,7 +140,7 @@ public class PaymentReminderService(
         }
     }
 
-    private async Task ProcessExpirationsAsync(DateTime now, EmailSettings emailSettings, PaymentReminderResult result, CancellationToken cancellationToken)
+    private async Task ProcessExpirationsAsync(Team team, DateTime now, EmailSettings emailSettings, PaymentReminderResult result, CancellationToken cancellationToken)
     {
         var threshold = now.AddDays(-ExpirationThresholdDays);
 
@@ -145,14 +153,17 @@ public class PaymentReminderService(
                         && p.Candidate.ApplicationStatus != CandidateApplicationStatus.NotTested
                         && p.Candidate.ApplicationDateEnteredUtc != null
                         && p.Candidate.ApplicationDateEnteredUtc <= threshold
+                        && p.Candidate.Session.TeamId == team.Id
                         && p.Candidate.Session.Status == SessionStatus.Active)
             .ToListAsync(cancellationToken);
 
-        if (payments.Count > 0 && !emailSender.IsConfigured)
+        if (payments.Count > 0 && !team.IsEmailConfigured)
         {
-            logger.LogInformation("SMTP is not fully configured — {PendingCount} payment expiration notice(s) waiting; will send automatically once configured", payments.Count);
+            logger.LogInformation("SMTP is not fully configured for team {TeamId} — {PendingCount} payment expiration notice(s) waiting; will send automatically once configured", team.Id, payments.Count);
             return;
         }
+
+        var credentials = new EmailCredentials(team.Id, team.SmtpHost!, team.SmtpPort ?? 587, team.SmtpUsername!, team.SmtpPassword ?? "", team.SmtpUseStartTls ?? true);
 
         foreach (var payment in payments)
         {
@@ -168,7 +179,7 @@ public class PaymentReminderService(
                     ["PaymentAmount"] = $"${payment.Amount.ToString("F2", CultureInfo.InvariantCulture)}"
                 };
 
-                var rendered = await templateRenderer.RenderAsync(PaymentExpirationNoticeKey, placeholders, cancellationToken);
+                var rendered = await templateRenderer.RenderAsync(team.Id, PaymentExpirationNoticeKey, placeholders, cancellationToken);
                 if (rendered is null)
                 {
                     result.Failed++;
@@ -177,6 +188,7 @@ public class PaymentReminderService(
                 }
 
                 await emailSender.SendAsync(
+                    credentials,
                     new EmailMessage(emailSettings.AdminNotificationEmail, emailSettings.FromAddress, emailSettings.FromDisplayName, emailSettings.ReplyToAddress, rendered.Subject, rendered.Body),
                     cancellationToken);
 
@@ -197,7 +209,7 @@ public class PaymentReminderService(
         }
     }
 
-    private async Task FlagStaleUnmatchedCandidatesAsync(DateTime now, PaymentReminderResult result, CancellationToken cancellationToken)
+    private async Task FlagStaleUnmatchedCandidatesAsync(Team team, DateTime now, PaymentReminderResult result, CancellationToken cancellationToken)
     {
         var threshold = now.AddDays(-options.Value.UnmatchedReviewWindowDays);
 
@@ -206,6 +218,7 @@ public class PaymentReminderService(
                         && c.ApplicationStatus == CandidateApplicationStatus.Unmatched
                         && c.UnmatchedReviewFlaggedUtc == null
                         && c.DateRegisteredUtc <= threshold
+                        && c.Session.TeamId == team.Id
                         && c.Session.Status == SessionStatus.Active)
             .ToListAsync(cancellationToken);
 

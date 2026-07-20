@@ -17,15 +17,11 @@ namespace VeSessionManager.Worker;
 /// collects a fee) the candidate's payment link have had their best chance to already exist, so the
 /// email reads as complete rather than partial.
 ///
-/// Session/candidate ingestion, Zoom/Discord scheduling, and Square payment generation are all
-/// looped per Team (each has its own ExamTools/Zoom/Square credentials; Discord shares one bot but
-/// each team picks its own Guild — see docs/multi-team.md). Registration confirmation is still
-/// global (one call per tick, not looped per team) — it still uses a single shared Email/SMTP
-/// account across every team's sessions, until a later fast-follow gives that integration the same
-/// per-team credential treatment. Each step still gets its own JobRunHistory entry: a failure in
-/// one step (or one team's turn) shouldn't read as a failure in another on the ops dashboard, and
-/// each later step should still run against whatever the earlier ones already committed even if it
-/// itself later fails.
+/// Every step is looped per Team — each has its own ExamTools/Zoom/Square/SMTP credentials; Discord
+/// shares one bot but each team picks its own Guild (see docs/multi-team.md). Each step still gets
+/// its own JobRunHistory entry: a failure in one step (or one team's turn) shouldn't read as a
+/// failure in another on the ops dashboard, and each later step should still run against whatever
+/// the earlier ones already committed even if it itself later fails.
 /// </summary>
 public class SessionIngestionJob(
     IServiceScopeFactory scopeFactory,
@@ -66,16 +62,13 @@ public class SessionIngestionJob(
                     ct => paymentGenerationService.RunAsync(team, ct),
                     team.Id,
                     stoppingToken);
-            }
 
-            // Global step: still processes ALL candidates regardless of team, until Email gets the
-            // same per-team treatment as ExamTools/Zoom/Discord/Square in a later fast-follow (see
-            // docs/multi-team.md).
-            await jobRunHistoryLogger.RunAsync(
-                "RegistrationConfirmation",
-                notificationService.SendRegistrationConfirmationsAsync,
-                null,
-                stoppingToken);
+                await jobRunHistoryLogger.RunAsync(
+                    "RegistrationConfirmation",
+                    ct => notificationService.SendRegistrationConfirmationsAsync(team, ct),
+                    team.Id,
+                    stoppingToken);
+            }
         }
         while (await timer.WaitForNextTickAsync(stoppingToken));
     }

@@ -76,12 +76,18 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
 
         modelBuilder.Entity<EmailTemplate>(b =>
         {
-            b.HasIndex(e => e.Key).IsUnique();
+            // Per-team customizable templates (multi-team) — uniqueness is now (TeamId, Key), not
+            // Key alone.
+            b.HasIndex(e => new { e.TeamId, e.Key }).IsUnique();
+            b.HasOne(e => e.Team).WithMany().HasForeignKey(e => e.TeamId).OnDelete(DeleteBehavior.Restrict);
             b.HasOne(e => e.UpdatedByUser).WithMany().HasForeignKey(e => e.UpdatedByUserId).OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<EmailSettings>(b =>
         {
+            // One row per team (multi-team) — was a true singleton before.
+            b.HasIndex(e => e.TeamId).IsUnique();
+            b.HasOne(e => e.Team).WithMany().HasForeignKey(e => e.TeamId).OnDelete(DeleteBehavior.Restrict);
             b.HasOne(e => e.UpdatedByUser).WithMany().HasForeignKey(e => e.UpdatedByUserId).OnDelete(DeleteBehavior.Restrict);
         });
 

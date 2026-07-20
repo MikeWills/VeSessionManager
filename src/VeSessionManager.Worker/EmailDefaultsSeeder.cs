@@ -5,21 +5,37 @@ using VeSessionManager.Core.Entities;
 namespace VeSessionManager.Worker;
 
 /// <summary>
-/// Seeds the EmailSettings singleton row and the two EmailTemplate rows Phase 4 introduces, if
-/// they don't already exist. Unlike DevDataSeeder, this runs in every environment (not just
+/// Seeds one EmailSettings row and the four EmailTemplate rows per Team, if they don't already
+/// exist for that team. Unlike DevDataSeeder, this runs in every environment (not just
 /// Development) — real deployments need real template rows to send anything, not just local
-/// dev convenience data. Idempotent per-row (checks existence individually) so it never
+/// dev convenience data. Idempotent per-row (checks existence individually, per team) so it never
 /// overwrites an Admin's edits to seeded content, matching the spec's "treat that content as a
 /// starting point... not the source of truth going forward."
+///
+/// Multi-team: both EmailSettings and EmailTemplate content are per-team (confirmed with the
+/// user — templates are customizable per team, not shared) — this loops every Team and seeds a
+/// full set for each, rather than seeding once globally. See docs/multi-team.md.
 /// </summary>
 public static class EmailDefaultsSeeder
 {
     public static async Task SeedAsync(AppDbContext dbContext, ILogger logger)
     {
-        if (!await dbContext.EmailSettings.AnyAsync())
+        var teams = await dbContext.Teams.ToListAsync();
+        foreach (var team in teams)
+        {
+            await SeedForTeamAsync(dbContext, logger, team);
+        }
+
+        await dbContext.SaveChangesAsync();
+    }
+
+    private static async Task SeedForTeamAsync(AppDbContext dbContext, ILogger logger, Team team)
+    {
+        if (!await dbContext.EmailSettings.AnyAsync(e => e.TeamId == team.Id))
         {
             dbContext.EmailSettings.Add(new EmailSettings
             {
+                TeamId = team.Id,
                 FromAddress = "noreply@example.org",
                 FromDisplayName = "VE Session Manager",
                 ReplyToAddress = "noreply@example.org",
@@ -27,13 +43,14 @@ public static class EmailDefaultsSeeder
                 AdminNotificationEmail = "admin@example.org",
                 UpdatedUtc = DateTime.UtcNow
             });
-            logger.LogWarning("Seeded default EmailSettings with placeholder From/Reply-To/PrivacyPolicy/AdminNotification values — these must be updated before sending real candidate email");
+            logger.LogWarning("Seeded default EmailSettings for team {TeamId} ({TeamName}) with placeholder From/Reply-To/PrivacyPolicy/AdminNotification values — these must be updated before sending real candidate email",
+                team.Id, team.Name);
         }
 
         // Deliberately demonstrates the formatting an Admin has available (headings, bold, a
         // bullet list, links) and every placeholder this template key supports — not meant to be
         // the final wording, just a real, edit-in-place starting point per the spec.
-        await SeedTemplateIfMissingAsync(dbContext, logger, "RegistrationConfirmation",
+        await SeedTemplateIfMissingAsync(dbContext, logger, team, "RegistrationConfirmation",
             "Your VE Exam Session Registration",
             """
             <p>Hi {{CandidateFirstName}},</p>
@@ -50,7 +67,7 @@ public static class EmailDefaultsSeeder
             <p><a href="{{PrivacyPolicyUrl}}">Privacy Policy</a></p>
             """);
 
-        await SeedTemplateIfMissingAsync(dbContext, logger, "DayBeforeReminder",
+        await SeedTemplateIfMissingAsync(dbContext, logger, team, "DayBeforeReminder",
             "Reminder: Your VE Exam Session is Tomorrow",
             """
             <p>Hi {{CandidateFirstName}},</p>
@@ -64,7 +81,7 @@ public static class EmailDefaultsSeeder
             <p>See you then, {{CandidateFirstName}}!</p>
             """);
 
-        await SeedTemplateIfMissingAsync(dbContext, logger, "PaymentReminder5Day",
+        await SeedTemplateIfMissingAsync(dbContext, logger, team, "PaymentReminder5Day",
             "Reminder: Your VE Exam Fee is Still Due",
             """
             <p>Hi {{CandidateName}},</p>
@@ -74,7 +91,7 @@ public static class EmailDefaultsSeeder
             <p>Thanks!</p>
             """);
 
-        await SeedTemplateIfMissingAsync(dbContext, logger, "PaymentExpirationNotice",
+        await SeedTemplateIfMissingAsync(dbContext, logger, team, "PaymentExpirationNotice",
             "Unpaid Exam Fee Expired",
             """
             <p>{{CandidateName}}'s exam fee ({{PaymentAmount}}) from the session on {{SessionDate}} has gone
@@ -82,18 +99,16 @@ public static class EmailDefaultsSeeder
             <p>This is an internal notice — it goes to the Session Manager (EmailSettings.AdminNotificationEmail),
             not the candidate.</p>
             """);
-
-        await dbContext.SaveChangesAsync();
     }
 
-    private static async Task SeedTemplateIfMissingAsync(AppDbContext dbContext, ILogger logger, string key, string subject, string body)
+    private static async Task SeedTemplateIfMissingAsync(AppDbContext dbContext, ILogger logger, Team team, string key, string subject, string body)
     {
-        if (await dbContext.EmailTemplates.AnyAsync(t => t.Key == key))
+        if (await dbContext.EmailTemplates.AnyAsync(t => t.TeamId == team.Id && t.Key == key))
         {
             return;
         }
 
-        dbContext.EmailTemplates.Add(new EmailTemplate { Key = key, Subject = subject, Body = body });
-        logger.LogInformation("Seeded default EmailTemplate {Key}", key);
+        dbContext.EmailTemplates.Add(new EmailTemplate { TeamId = team.Id, Key = key, Subject = subject, Body = body });
+        logger.LogInformation("Seeded default EmailTemplate {Key} for team {TeamId}", key, team.Id);
     }
 }

@@ -44,7 +44,8 @@ builder.Services.Configure<SquareOptions>(builder.Configuration.GetSection(Squar
 builder.Services.AddSingleton<ISquareClient, SquareClient>();
 builder.Services.AddScoped<PaymentGenerationService>();
 
-builder.Services.Configure<EmailOptions>(builder.Configuration.GetSection(EmailOptions.SectionName));
+// No EmailOptions to Configure<> anymore — SmtpHost/Port/Username/Password/UseStartTls all live on
+// Team now (multi-team, see docs/multi-team.md).
 builder.Services.AddScoped<IEmailSender, SmtpEmailSender>();
 builder.Services.AddScoped<EmailTemplateRenderer>();
 builder.Services.AddScoped<CandidateNotificationService>();

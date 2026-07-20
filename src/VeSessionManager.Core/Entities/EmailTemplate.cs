@@ -4,6 +4,10 @@ public class EmailTemplate
 {
     public int Id { get; set; }
 
+    /// <summary>Not in the original shared data model — added as part of the multi-team foundation. Template content is per-team customizable (confirmed with the user) — Key's uniqueness is now scoped to (TeamId, Key), not global.</summary>
+    public int TeamId { get; set; }
+    public Team Team { get; set; } = null!;
+
     /// <summary>Identifies which automated/triggerable email this is, e.g. RegistrationConfirmation, DayBeforeReminder.</summary>
     public required string Key { get; set; }
 

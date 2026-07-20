@@ -17,6 +17,10 @@ namespace VeSessionManager.Core.Notifications;
 /// RegistrationConfirmationSentUtc/DayBeforeReminderSentUtc being null is the "needs to be sent"
 /// signal, set only after a successful send, so a mid-run crash or per-item failure retries
 /// cleanly next run without resending anything already delivered.
+///
+/// Multi-team: this service now operates on one Team's candidates per call — each team has its
+/// own separate SMTP account and its own EmailSettings/EmailTemplate rows (confirmed with the
+/// user — content is per-team customizable, not shared). See docs/multi-team.md.
 /// </summary>
 public class CandidateNotificationService(
     AppDbContext dbContext,
@@ -28,15 +32,15 @@ public class CandidateNotificationService(
     private const string RegistrationConfirmationKey = "RegistrationConfirmation";
     private const string DayBeforeReminderKey = "DayBeforeReminder";
 
-    public async Task<EmailNotificationResult> SendRegistrationConfirmationsAsync(CancellationToken cancellationToken)
+    public async Task<EmailNotificationResult> SendRegistrationConfirmationsAsync(Team team, CancellationToken cancellationToken)
     {
         var result = new EmailNotificationResult();
         var now = timeProvider.GetUtcNow().UtcDateTime;
 
-        var emailSettings = await dbContext.EmailSettings.FirstOrDefaultAsync(cancellationToken);
+        var emailSettings = await dbContext.EmailSettings.FirstOrDefaultAsync(e => e.TeamId == team.Id, cancellationToken);
         if (emailSettings is null)
         {
-            logger.LogWarning("No EmailSettings row exists yet — skipping registration confirmations until seeded");
+            logger.LogWarning("No EmailSettings row exists yet for team {TeamId} — skipping registration confirmations until seeded", team.Id);
             return result;
         }
 
@@ -46,18 +50,21 @@ public class CandidateNotificationService(
             .Where(c => c.PiiPurgedUtc == null
                         && c.Email != null
                         && c.RegistrationConfirmationSentUtc == null
+                        && c.Session.TeamId == team.Id
                         && c.Session.Status == SessionStatus.Active)
             .ToListAsync(cancellationToken);
 
-        if (candidates.Count > 0 && !emailSender.IsConfigured)
+        if (candidates.Count > 0 && !team.IsEmailConfigured)
         {
             // SMTP is optional the same way Square is (see PaymentGenerationService) — skip
             // quietly rather than retry-and-fail-log every poll; RegistrationConfirmationSentUtc
             // stays null, so the very next poll sends everything backlogged once SMTP is set up.
-            logger.LogInformation("SMTP is not fully configured (Email:SmtpHost/SmtpUsername) — {PendingCount} registration confirmation(s) waiting; will send automatically once configured",
-                candidates.Count);
+            logger.LogInformation("SMTP is not fully configured for team {TeamId} — {PendingCount} registration confirmation(s) waiting; will send automatically once configured",
+                team.Id, candidates.Count);
             return result;
         }
+
+        var credentials = new EmailCredentials(team.Id, team.SmtpHost!, team.SmtpPort ?? 587, team.SmtpUsername!, team.SmtpPassword ?? "", team.SmtpUseStartTls ?? true);
 
         foreach (var candidate in candidates)
         {
@@ -77,7 +84,7 @@ public class CandidateNotificationService(
                     ["PrivacyPolicyUrl"] = emailSettings.PrivacyPolicyUrl
                 };
 
-                if (!await TrySendAsync(RegistrationConfirmationKey, candidate, emailSettings, placeholders, cancellationToken))
+                if (!await TrySendAsync(team.Id, credentials, RegistrationConfirmationKey, candidate, emailSettings, placeholders, cancellationToken))
                 {
                     result.Failed++;
                     await dbContext.SaveChangesAsync(cancellationToken);
@@ -98,11 +105,11 @@ public class CandidateNotificationService(
             await dbContext.SaveChangesAsync(cancellationToken);
         }
 
-        logger.LogInformation("Registration confirmations finished: {Result}", result);
+        logger.LogInformation("Registration confirmations finished for team {TeamId} ({TeamName}): {Result}", team.Id, team.Name, result);
         return result;
     }
 
-    public async Task<EmailNotificationResult> SendDayBeforeRemindersAsync(CancellationToken cancellationToken)
+    public async Task<EmailNotificationResult> SendDayBeforeRemindersAsync(Team team, CancellationToken cancellationToken)
     {
         var result = new EmailNotificationResult();
         var now = timeProvider.GetUtcNow().UtcDateTime;
@@ -112,10 +119,10 @@ public class CandidateNotificationService(
         var tomorrowStartUtc = now.Date.AddDays(1);
         var tomorrowEndUtc = tomorrowStartUtc.AddDays(1);
 
-        var emailSettings = await dbContext.EmailSettings.FirstOrDefaultAsync(cancellationToken);
+        var emailSettings = await dbContext.EmailSettings.FirstOrDefaultAsync(e => e.TeamId == team.Id, cancellationToken);
         if (emailSettings is null)
         {
-            logger.LogWarning("No EmailSettings row exists yet — skipping day-before reminders until seeded");
+            logger.LogWarning("No EmailSettings row exists yet for team {TeamId} — skipping day-before reminders until seeded", team.Id);
             return result;
         }
 
@@ -125,17 +132,20 @@ public class CandidateNotificationService(
             .Where(c => c.PiiPurgedUtc == null
                         && c.Email != null
                         && c.DayBeforeReminderSentUtc == null
+                        && c.Session.TeamId == team.Id
                         && c.Session.Status == SessionStatus.Active
                         && c.Session.ScheduledStartUtc >= tomorrowStartUtc
                         && c.Session.ScheduledStartUtc < tomorrowEndUtc)
             .ToListAsync(cancellationToken);
 
-        if (candidates.Count > 0 && !emailSender.IsConfigured)
+        if (candidates.Count > 0 && !team.IsEmailConfigured)
         {
-            logger.LogInformation("SMTP is not fully configured (Email:SmtpHost/SmtpUsername) — {PendingCount} day-before reminder(s) waiting; will send automatically once configured",
-                candidates.Count);
+            logger.LogInformation("SMTP is not fully configured for team {TeamId} — {PendingCount} day-before reminder(s) waiting; will send automatically once configured",
+                team.Id, candidates.Count);
             return result;
         }
+
+        var credentials = new EmailCredentials(team.Id, team.SmtpHost!, team.SmtpPort ?? 587, team.SmtpUsername!, team.SmtpPassword ?? "", team.SmtpUseStartTls ?? true);
 
         foreach (var candidate in candidates)
         {
@@ -156,7 +166,7 @@ public class CandidateNotificationService(
                     ["OutstandingPaymentLinkUrl"] = outstandingPaymentLinkUrl
                 };
 
-                if (!await TrySendAsync(DayBeforeReminderKey, candidate, emailSettings, placeholders, cancellationToken))
+                if (!await TrySendAsync(team.Id, credentials, DayBeforeReminderKey, candidate, emailSettings, placeholders, cancellationToken))
                 {
                     result.Failed++;
                     await dbContext.SaveChangesAsync(cancellationToken);
@@ -175,21 +185,22 @@ public class CandidateNotificationService(
             await dbContext.SaveChangesAsync(cancellationToken);
         }
 
-        logger.LogInformation("Day-before reminders finished: {Result}", result);
+        logger.LogInformation("Day-before reminders finished for team {TeamId} ({TeamName}): {Result}", team.Id, team.Name, result);
         return result;
     }
 
     private async Task<bool> TrySendAsync(
-        string templateKey, Candidate candidate, EmailSettings emailSettings,
+        int teamId, EmailCredentials credentials, string templateKey, Candidate candidate, EmailSettings emailSettings,
         Dictionary<string, string> placeholders, CancellationToken cancellationToken)
     {
-        var rendered = await templateRenderer.RenderAsync(templateKey, placeholders, cancellationToken);
+        var rendered = await templateRenderer.RenderAsync(teamId, templateKey, placeholders, cancellationToken);
         if (rendered is null)
         {
             return false;
         }
 
         await emailSender.SendAsync(
+            credentials,
             new EmailMessage(candidate.Email!, emailSettings.FromAddress, emailSettings.FromDisplayName, emailSettings.ReplyToAddress, rendered.Subject, rendered.Body),
             cancellationToken);
         return true;

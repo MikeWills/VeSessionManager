@@ -1,3 +1,5 @@
+using Microsoft.EntityFrameworkCore;
+using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Jobs;
 using VeSessionManager.Core.Payments;
 
@@ -8,7 +10,8 @@ namespace VeSessionManager.Worker;
 /// review flags. Same 24-hour PeriodicTimer idiom as DayBeforeReminderJob/FccDailyWatcherJob — not
 /// pinned to a specific wall-clock time; PaymentReminderService's own tracking fields
 /// (PaymentReminderSentUtc/ExpiredUnpaid/UnmatchedReviewFlaggedUtc) make an extra same-day tick a
-/// no-op rather than a duplicate send/flag.
+/// no-op rather than a duplicate send/flag. Looped per Team — each team has its own SMTP account
+/// (multi-team, see docs/multi-team.md).
 /// </summary>
 public class PaymentReminderJob(
     IServiceScopeFactory scopeFactory,
@@ -22,14 +25,19 @@ public class PaymentReminderJob(
         do
         {
             using var scope = scopeFactory.CreateScope();
+            var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             var jobRunHistoryLogger = scope.ServiceProvider.GetRequiredService<JobRunHistoryLogger>();
             var reminderService = scope.ServiceProvider.GetRequiredService<PaymentReminderService>();
 
-            await jobRunHistoryLogger.RunAsync(
-                "PaymentReminder",
-                reminderService.RunAsync,
-                null,
-                stoppingToken);
+            var teams = await dbContext.Teams.ToListAsync(stoppingToken);
+            foreach (var team in teams)
+            {
+                await jobRunHistoryLogger.RunAsync(
+                    "PaymentReminder",
+                    ct => reminderService.RunAsync(team, ct),
+                    team.Id,
+                    stoppingToken);
+            }
         }
         while (await timer.WaitForNextTickAsync(stoppingToken));
     }

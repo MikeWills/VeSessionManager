@@ -6,20 +6,23 @@ using VeSessionManager.Core.Data;
 namespace VeSessionManager.Core.Email;
 
 /// <summary>
-/// Loads an EmailTemplate by Key and substitutes {{Placeholder}} tokens. A placeholder present in
-/// the caller's dictionary (even with an empty-string value, e.g. PaymentLinkUrl when nothing's
-/// outstanding) substitutes cleanly. A placeholder the caller never provided a value for at all —
-/// almost always a template typo — is left as the literal "{{Typo}}" text (so a broken template
-/// is visibly broken, not silently mangled) and logged as a warning, per the spec.
+/// Loads a Team's EmailTemplate by Key and substitutes {{Placeholder}} tokens. A placeholder
+/// present in the caller's dictionary (even with an empty-string value, e.g. PaymentLinkUrl when
+/// nothing's outstanding) substitutes cleanly. A placeholder the caller never provided a value
+/// for at all — almost always a template typo — is left as the literal "{{Typo}}" text (so a
+/// broken template is visibly broken, not silently mangled) and logged as a warning, per the spec.
+///
+/// Multi-team: template content is per-team customizable (confirmed with the user), not shared —
+/// each Team has its own full set of templates, keyed by (TeamId, Key). See docs/multi-team.md.
 /// </summary>
 public partial class EmailTemplateRenderer(AppDbContext dbContext, ILogger<EmailTemplateRenderer> logger)
 {
-    public async Task<RenderedEmail?> RenderAsync(string templateKey, IReadOnlyDictionary<string, string> placeholders, CancellationToken cancellationToken)
+    public async Task<RenderedEmail?> RenderAsync(int teamId, string templateKey, IReadOnlyDictionary<string, string> placeholders, CancellationToken cancellationToken)
     {
-        var template = await dbContext.EmailTemplates.FirstOrDefaultAsync(t => t.Key == templateKey, cancellationToken);
+        var template = await dbContext.EmailTemplates.FirstOrDefaultAsync(t => t.TeamId == teamId && t.Key == templateKey, cancellationToken);
         if (template is null)
         {
-            logger.LogError("No EmailTemplate found for key {TemplateKey} — cannot send", templateKey);
+            logger.LogError("No EmailTemplate found for team {TeamId}, key {TemplateKey} — cannot send", teamId, templateKey);
             return null;
         }
 

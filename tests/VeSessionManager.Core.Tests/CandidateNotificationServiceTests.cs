@@ -20,11 +20,12 @@ public class CandidateNotificationServiceTests
     private sealed class FakeEmailSender : IEmailSender
     {
         public List<EmailMessage> SentMessages { get; } = [];
+        public List<EmailCredentials> CredentialsUsed { get; } = [];
         public Exception? ThrowOnNextSend { get; set; }
-        public bool IsConfigured { get; set; } = true;
 
-        public Task SendAsync(EmailMessage message, CancellationToken cancellationToken)
+        public Task SendAsync(EmailCredentials credentials, EmailMessage message, CancellationToken cancellationToken)
         {
+            CredentialsUsed.Add(credentials);
             if (ThrowOnNextSend is not null)
             {
                 var ex = ThrowOnNextSend;
@@ -51,10 +52,27 @@ public class CandidateNotificationServiceTests
         new FixedTimeProvider(Now),
         NullLogger<CandidateNotificationService>.Instance);
 
-    private static async Task SeedEmailSettingsAndTemplatesAsync(AppDbContext dbContext)
+    /// <summary>Seeds a Team. emailConfigured=true (default) sets SmtpHost/Username so Team.IsEmailConfigured is true.</summary>
+    private static async Task<Team> SeedTeamAsync(AppDbContext dbContext, bool emailConfigured = true)
+    {
+        var team = new Team
+        {
+            Name = "TESTTEAM",
+            SmtpHost = emailConfigured ? "smtp.example.org" : null,
+            SmtpUsername = emailConfigured ? "smtp-user" : null,
+            SmtpPassword = emailConfigured ? "smtp-pass" : null,
+            CreatedUtc = Now
+        };
+        dbContext.Teams.Add(team);
+        await dbContext.SaveChangesAsync();
+        return team;
+    }
+
+    private static async Task SeedEmailSettingsAndTemplatesAsync(AppDbContext dbContext, Team team)
     {
         dbContext.EmailSettings.Add(new EmailSettings
         {
+            TeamId = team.Id,
             FromAddress = "noreply@example.org",
             FromDisplayName = "VE Session Manager",
             ReplyToAddress = "reply@example.org",
@@ -63,12 +81,14 @@ public class CandidateNotificationServiceTests
         });
         dbContext.EmailTemplates.Add(new EmailTemplate
         {
+            TeamId = team.Id,
             Key = "RegistrationConfirmation",
             Subject = "Registered for {{SessionDate}}",
             Body = "Hi {{CandidateFirstName}} ({{CandidateName}}), Zoom: {{ZoomJoinUrl}}, Pay: {{PaymentLinkUrl}}, Privacy: {{PrivacyPolicyUrl}}"
         });
         dbContext.EmailTemplates.Add(new EmailTemplate
         {
+            TeamId = team.Id,
             Key = "DayBeforeReminder",
             Subject = "Reminder for {{SessionDate}}",
             Body = "Hi {{CandidateFirstName}}, Zoom: {{ZoomJoinUrl}}, Outstanding: {{OutstandingPaymentLinkUrl}}"
@@ -78,7 +98,7 @@ public class CandidateNotificationServiceTests
 
     /// <summary>Seeds Vec/User/FeeConfiguration/Session, returning the Session for further per-test customization.</summary>
     private static async Task<Session> SeedSessionAsync(
-        AppDbContext dbContext, DateTime scheduledStartUtc, bool feeCollectionEnabled = true,
+        AppDbContext dbContext, Team team, DateTime scheduledStartUtc, bool feeCollectionEnabled = true,
         SessionStatus status = SessionStatus.Active, string? zoomJoinUrl = "https://zoom.us/j/123")
     {
         var vec = new Vec { Name = "ARRL" };
@@ -92,7 +112,7 @@ public class CandidateNotificationServiceTests
         var session = new Session
         {
             ExamToolsSessionId = "session-1", Title = "July Session", ScheduledStartUtc = scheduledStartUtc,
-            DurationMinutes = 60, Vec = vec, FeeConfiguration = feeConfiguration, Status = status,
+            DurationMinutes = 60, Vec = vec, TeamId = team.Id, FeeConfiguration = feeConfiguration, Status = status,
             ZoomJoinUrl = zoomJoinUrl, CreatedUtc = Now
         };
         dbContext.Sessions.Add(session);
@@ -116,8 +136,9 @@ public class CandidateNotificationServiceTests
     public async Task RegistrationConfirmation_SendsWithCorrectPlaceholders_AndMarksSent()
     {
         await using var dbContext = CreateContext();
-        await SeedEmailSettingsAndTemplatesAsync(dbContext);
-        var session = await SeedSessionAsync(dbContext, Now.AddDays(4));
+        var team = await SeedTeamAsync(dbContext);
+        await SeedEmailSettingsAndTemplatesAsync(dbContext, team);
+        var session = await SeedSessionAsync(dbContext, team, Now.AddDays(4));
         var candidate = NewCandidate(session);
         dbContext.Candidates.Add(candidate);
         await dbContext.SaveChangesAsync();
@@ -129,7 +150,7 @@ public class CandidateNotificationServiceTests
         await dbContext.SaveChangesAsync();
 
         var sender = new FakeEmailSender();
-        var result = await CreateService(dbContext, sender).SendRegistrationConfirmationsAsync(CancellationToken.None);
+        var result = await CreateService(dbContext, sender).SendRegistrationConfirmationsAsync(team, CancellationToken.None);
 
         Assert.Equal(1, result.Sent);
         Assert.Equal(0, result.Failed);
@@ -142,19 +163,21 @@ public class CandidateNotificationServiceTests
         Assert.Contains("Pay: https://square.link/u/abc", message.HtmlBody);
         Assert.Contains("Privacy: https://example.org/privacy", message.HtmlBody);
         Assert.Equal(Now, dbContext.Candidates.Single().RegistrationConfirmationSentUtc);
+        Assert.Equal(team.Id, Assert.Single(sender.CredentialsUsed).TeamId);
     }
 
     [Fact]
     public async Task RegistrationConfirmation_FeeCollectionDisabled_PaymentLinkUrlIsBlank()
     {
         await using var dbContext = CreateContext();
-        await SeedEmailSettingsAndTemplatesAsync(dbContext);
-        var session = await SeedSessionAsync(dbContext, Now.AddDays(4), feeCollectionEnabled: false);
+        var team = await SeedTeamAsync(dbContext);
+        await SeedEmailSettingsAndTemplatesAsync(dbContext, team);
+        var session = await SeedSessionAsync(dbContext, team, Now.AddDays(4), feeCollectionEnabled: false);
         dbContext.Candidates.Add(NewCandidate(session));
         await dbContext.SaveChangesAsync();
 
         var sender = new FakeEmailSender();
-        await CreateService(dbContext, sender).SendRegistrationConfirmationsAsync(CancellationToken.None);
+        await CreateService(dbContext, sender).SendRegistrationConfirmationsAsync(team, CancellationToken.None);
 
         var message = Assert.Single(sender.SentMessages);
         Assert.Contains("Pay: ,", message.HtmlBody); // blank, per "read sensibly either way"
@@ -164,15 +187,16 @@ public class CandidateNotificationServiceTests
     public async Task RegistrationConfirmation_AlreadySent_IsNotResent()
     {
         await using var dbContext = CreateContext();
-        await SeedEmailSettingsAndTemplatesAsync(dbContext);
-        var session = await SeedSessionAsync(dbContext, Now.AddDays(4));
+        var team = await SeedTeamAsync(dbContext);
+        await SeedEmailSettingsAndTemplatesAsync(dbContext, team);
+        var session = await SeedSessionAsync(dbContext, team, Now.AddDays(4));
         var candidate = NewCandidate(session);
         candidate.RegistrationConfirmationSentUtc = Now.AddDays(-1);
         dbContext.Candidates.Add(candidate);
         await dbContext.SaveChangesAsync();
 
         var sender = new FakeEmailSender();
-        var result = await CreateService(dbContext, sender).SendRegistrationConfirmationsAsync(CancellationToken.None);
+        var result = await CreateService(dbContext, sender).SendRegistrationConfirmationsAsync(team, CancellationToken.None);
 
         Assert.Equal(0, result.Sent);
         Assert.Empty(sender.SentMessages);
@@ -182,13 +206,14 @@ public class CandidateNotificationServiceTests
     public async Task RegistrationConfirmation_CancelledSession_IsExcluded()
     {
         await using var dbContext = CreateContext();
-        await SeedEmailSettingsAndTemplatesAsync(dbContext);
-        var session = await SeedSessionAsync(dbContext, Now.AddDays(4), status: SessionStatus.Cancelled);
+        var team = await SeedTeamAsync(dbContext);
+        await SeedEmailSettingsAndTemplatesAsync(dbContext, team);
+        var session = await SeedSessionAsync(dbContext, team, Now.AddDays(4), status: SessionStatus.Cancelled);
         dbContext.Candidates.Add(NewCandidate(session));
         await dbContext.SaveChangesAsync();
 
         var sender = new FakeEmailSender();
-        var result = await CreateService(dbContext, sender).SendRegistrationConfirmationsAsync(CancellationToken.None);
+        var result = await CreateService(dbContext, sender).SendRegistrationConfirmationsAsync(team, CancellationToken.None);
 
         Assert.Equal(0, result.Sent);
         Assert.Empty(sender.SentMessages);
@@ -198,15 +223,16 @@ public class CandidateNotificationServiceTests
     public async Task RegistrationConfirmation_NoEmailSettingsRow_SkipsGracefully()
     {
         await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
         // Templates exist, but no EmailSettings row seeded.
-        dbContext.EmailTemplates.Add(new EmailTemplate { Key = "RegistrationConfirmation", Subject = "s", Body = "b" });
+        dbContext.EmailTemplates.Add(new EmailTemplate { TeamId = team.Id, Key = "RegistrationConfirmation", Subject = "s", Body = "b" });
         await dbContext.SaveChangesAsync();
-        var session = await SeedSessionAsync(dbContext, Now.AddDays(4));
+        var session = await SeedSessionAsync(dbContext, team, Now.AddDays(4));
         dbContext.Candidates.Add(NewCandidate(session));
         await dbContext.SaveChangesAsync();
 
         var sender = new FakeEmailSender();
-        var result = await CreateService(dbContext, sender).SendRegistrationConfirmationsAsync(CancellationToken.None);
+        var result = await CreateService(dbContext, sender).SendRegistrationConfirmationsAsync(team, CancellationToken.None);
 
         Assert.Equal(0, result.Sent);
         Assert.Empty(sender.SentMessages);
@@ -216,14 +242,15 @@ public class CandidateNotificationServiceTests
     public async Task RegistrationConfirmation_OneSendFailing_DoesNotBlockOthers_AndIsRetryable()
     {
         await using var dbContext = CreateContext();
-        await SeedEmailSettingsAndTemplatesAsync(dbContext);
-        var session = await SeedSessionAsync(dbContext, Now.AddDays(4));
+        var team = await SeedTeamAsync(dbContext);
+        await SeedEmailSettingsAndTemplatesAsync(dbContext, team);
+        var session = await SeedSessionAsync(dbContext, team, Now.AddDays(4));
         dbContext.Candidates.Add(NewCandidate(session, "applicant-1", "Roana", "Glory"));
         dbContext.Candidates.Add(NewCandidate(session, "applicant-2", "Tomasina", "Susanna"));
         await dbContext.SaveChangesAsync();
 
         var sender = new FakeEmailSender { ThrowOnNextSend = new InvalidOperationException("SMTP down") };
-        var result = await CreateService(dbContext, sender).SendRegistrationConfirmationsAsync(CancellationToken.None);
+        var result = await CreateService(dbContext, sender).SendRegistrationConfirmationsAsync(team, CancellationToken.None);
 
         Assert.Equal(1, result.Sent);
         Assert.Equal(1, result.Failed);
@@ -238,13 +265,14 @@ public class CandidateNotificationServiceTests
     public async Task DayBeforeReminder_SessionTomorrow_IsIncluded()
     {
         await using var dbContext = CreateContext();
-        await SeedEmailSettingsAndTemplatesAsync(dbContext);
-        var session = await SeedSessionAsync(dbContext, Now.Date.AddDays(1).AddHours(17)); // tomorrow, 5pm UTC
+        var team = await SeedTeamAsync(dbContext);
+        await SeedEmailSettingsAndTemplatesAsync(dbContext, team);
+        var session = await SeedSessionAsync(dbContext, team, Now.Date.AddDays(1).AddHours(17)); // tomorrow, 5pm UTC
         dbContext.Candidates.Add(NewCandidate(session));
         await dbContext.SaveChangesAsync();
 
         var sender = new FakeEmailSender();
-        var result = await CreateService(dbContext, sender).SendDayBeforeRemindersAsync(CancellationToken.None);
+        var result = await CreateService(dbContext, sender).SendDayBeforeRemindersAsync(team, CancellationToken.None);
 
         Assert.Equal(1, result.Sent);
         Assert.Equal(Now, dbContext.Candidates.Single().DayBeforeReminderSentUtc);
@@ -254,13 +282,14 @@ public class CandidateNotificationServiceTests
     public async Task DayBeforeReminder_SessionToday_IsExcluded()
     {
         await using var dbContext = CreateContext();
-        await SeedEmailSettingsAndTemplatesAsync(dbContext);
-        var session = await SeedSessionAsync(dbContext, Now.Date.AddHours(17)); // today
+        var team = await SeedTeamAsync(dbContext);
+        await SeedEmailSettingsAndTemplatesAsync(dbContext, team);
+        var session = await SeedSessionAsync(dbContext, team, Now.Date.AddHours(17)); // today
         dbContext.Candidates.Add(NewCandidate(session));
         await dbContext.SaveChangesAsync();
 
         var sender = new FakeEmailSender();
-        var result = await CreateService(dbContext, sender).SendDayBeforeRemindersAsync(CancellationToken.None);
+        var result = await CreateService(dbContext, sender).SendDayBeforeRemindersAsync(team, CancellationToken.None);
 
         Assert.Equal(0, result.Sent);
         Assert.Empty(sender.SentMessages);
@@ -270,13 +299,14 @@ public class CandidateNotificationServiceTests
     public async Task DayBeforeReminder_SessionDayAfterTomorrow_IsExcluded()
     {
         await using var dbContext = CreateContext();
-        await SeedEmailSettingsAndTemplatesAsync(dbContext);
-        var session = await SeedSessionAsync(dbContext, Now.Date.AddDays(2).AddHours(17));
+        var team = await SeedTeamAsync(dbContext);
+        await SeedEmailSettingsAndTemplatesAsync(dbContext, team);
+        var session = await SeedSessionAsync(dbContext, team, Now.Date.AddDays(2).AddHours(17));
         dbContext.Candidates.Add(NewCandidate(session));
         await dbContext.SaveChangesAsync();
 
         var sender = new FakeEmailSender();
-        var result = await CreateService(dbContext, sender).SendDayBeforeRemindersAsync(CancellationToken.None);
+        var result = await CreateService(dbContext, sender).SendDayBeforeRemindersAsync(team, CancellationToken.None);
 
         Assert.Equal(0, result.Sent);
         Assert.Empty(sender.SentMessages);
@@ -286,13 +316,14 @@ public class CandidateNotificationServiceTests
     public async Task DayBeforeReminder_CancelledSession_IsExcludedEvenIfTomorrow()
     {
         await using var dbContext = CreateContext();
-        await SeedEmailSettingsAndTemplatesAsync(dbContext);
-        var session = await SeedSessionAsync(dbContext, Now.Date.AddDays(1).AddHours(17), status: SessionStatus.Cancelled);
+        var team = await SeedTeamAsync(dbContext);
+        await SeedEmailSettingsAndTemplatesAsync(dbContext, team);
+        var session = await SeedSessionAsync(dbContext, team, Now.Date.AddDays(1).AddHours(17), status: SessionStatus.Cancelled);
         dbContext.Candidates.Add(NewCandidate(session));
         await dbContext.SaveChangesAsync();
 
         var sender = new FakeEmailSender();
-        var result = await CreateService(dbContext, sender).SendDayBeforeRemindersAsync(CancellationToken.None);
+        var result = await CreateService(dbContext, sender).SendDayBeforeRemindersAsync(team, CancellationToken.None);
 
         Assert.Equal(0, result.Sent);
     }
@@ -301,15 +332,16 @@ public class CandidateNotificationServiceTests
     public async Task DayBeforeReminder_AlreadySent_IsNotResent()
     {
         await using var dbContext = CreateContext();
-        await SeedEmailSettingsAndTemplatesAsync(dbContext);
-        var session = await SeedSessionAsync(dbContext, Now.Date.AddDays(1).AddHours(17));
+        var team = await SeedTeamAsync(dbContext);
+        await SeedEmailSettingsAndTemplatesAsync(dbContext, team);
+        var session = await SeedSessionAsync(dbContext, team, Now.Date.AddDays(1).AddHours(17));
         var candidate = NewCandidate(session);
         candidate.DayBeforeReminderSentUtc = Now.AddHours(-1);
         dbContext.Candidates.Add(candidate);
         await dbContext.SaveChangesAsync();
 
         var sender = new FakeEmailSender();
-        var result = await CreateService(dbContext, sender).SendDayBeforeRemindersAsync(CancellationToken.None);
+        var result = await CreateService(dbContext, sender).SendDayBeforeRemindersAsync(team, CancellationToken.None);
 
         Assert.Equal(0, result.Sent);
         Assert.Empty(sender.SentMessages);
@@ -319,8 +351,9 @@ public class CandidateNotificationServiceTests
     public async Task DayBeforeReminder_OutstandingUnpaidPayment_IncludesItsLink()
     {
         await using var dbContext = CreateContext();
-        await SeedEmailSettingsAndTemplatesAsync(dbContext);
-        var session = await SeedSessionAsync(dbContext, Now.Date.AddDays(1).AddHours(17));
+        var team = await SeedTeamAsync(dbContext);
+        await SeedEmailSettingsAndTemplatesAsync(dbContext, team);
+        var session = await SeedSessionAsync(dbContext, team, Now.Date.AddDays(1).AddHours(17));
         var candidate = NewCandidate(session);
         dbContext.Candidates.Add(candidate);
         await dbContext.SaveChangesAsync();
@@ -332,7 +365,7 @@ public class CandidateNotificationServiceTests
         await dbContext.SaveChangesAsync();
 
         var sender = new FakeEmailSender();
-        await CreateService(dbContext, sender).SendDayBeforeRemindersAsync(CancellationToken.None);
+        await CreateService(dbContext, sender).SendDayBeforeRemindersAsync(team, CancellationToken.None);
 
         var message = Assert.Single(sender.SentMessages);
         Assert.Contains("Outstanding: https://square.link/u/xyz", message.HtmlBody);
@@ -342,13 +375,14 @@ public class CandidateNotificationServiceTests
     public async Task DayBeforeReminder_NoOutstandingPayment_OutstandingPlaceholderIsBlank()
     {
         await using var dbContext = CreateContext();
-        await SeedEmailSettingsAndTemplatesAsync(dbContext);
-        var session = await SeedSessionAsync(dbContext, Now.Date.AddDays(1).AddHours(17));
+        var team = await SeedTeamAsync(dbContext);
+        await SeedEmailSettingsAndTemplatesAsync(dbContext, team);
+        var session = await SeedSessionAsync(dbContext, team, Now.Date.AddDays(1).AddHours(17));
         dbContext.Candidates.Add(NewCandidate(session));
         await dbContext.SaveChangesAsync();
 
         var sender = new FakeEmailSender();
-        await CreateService(dbContext, sender).SendDayBeforeRemindersAsync(CancellationToken.None);
+        await CreateService(dbContext, sender).SendDayBeforeRemindersAsync(team, CancellationToken.None);
 
         var message = Assert.Single(sender.SentMessages);
         Assert.EndsWith("Outstanding: ", message.HtmlBody);
@@ -358,18 +392,20 @@ public class CandidateNotificationServiceTests
     public async Task MissingTemplate_CountsAsFailed_DoesNotMarkSent_IsRetryable()
     {
         await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
         dbContext.EmailSettings.Add(new EmailSettings
         {
+            TeamId = team.Id,
             FromAddress = "noreply@example.org", ReplyToAddress = "reply@example.org", PrivacyPolicyUrl = "https://example.org/privacy", AdminNotificationEmail = "admin@example.org"
         });
         // No RegistrationConfirmation template seeded at all.
         await dbContext.SaveChangesAsync();
-        var session = await SeedSessionAsync(dbContext, Now.AddDays(4));
+        var session = await SeedSessionAsync(dbContext, team, Now.AddDays(4));
         dbContext.Candidates.Add(NewCandidate(session));
         await dbContext.SaveChangesAsync();
 
         var sender = new FakeEmailSender();
-        var result = await CreateService(dbContext, sender).SendRegistrationConfirmationsAsync(CancellationToken.None);
+        var result = await CreateService(dbContext, sender).SendRegistrationConfirmationsAsync(team, CancellationToken.None);
 
         Assert.Equal(0, result.Sent);
         Assert.Equal(1, result.Failed);
@@ -383,13 +419,14 @@ public class CandidateNotificationServiceTests
     public async Task SmtpNotConfigured_RegistrationConfirmation_SkipsQuietly_NoFailureCounted()
     {
         await using var dbContext = CreateContext();
-        await SeedEmailSettingsAndTemplatesAsync(dbContext);
-        var session = await SeedSessionAsync(dbContext, Now.AddDays(4));
+        var team = await SeedTeamAsync(dbContext, emailConfigured: false);
+        await SeedEmailSettingsAndTemplatesAsync(dbContext, team);
+        var session = await SeedSessionAsync(dbContext, team, Now.AddDays(4));
         dbContext.Candidates.Add(NewCandidate(session));
         await dbContext.SaveChangesAsync();
 
-        var sender = new FakeEmailSender { IsConfigured = false };
-        var result = await CreateService(dbContext, sender).SendRegistrationConfirmationsAsync(CancellationToken.None);
+        var sender = new FakeEmailSender();
+        var result = await CreateService(dbContext, sender).SendRegistrationConfirmationsAsync(team, CancellationToken.None);
 
         Assert.Equal(0, result.Sent);
         Assert.Equal(0, result.Failed); // not attempted, so not a "failure"
@@ -397,8 +434,11 @@ public class CandidateNotificationServiceTests
         Assert.Null(dbContext.Candidates.Single().RegistrationConfirmationSentUtc);
 
         // Once SMTP becomes configured, the very next poll must send the backlog automatically.
-        sender.IsConfigured = true;
-        var retryResult = await CreateService(dbContext, sender).SendRegistrationConfirmationsAsync(CancellationToken.None);
+        team.SmtpHost = "smtp.example.org";
+        team.SmtpUsername = "smtp-user";
+        team.SmtpPassword = "smtp-pass";
+        await dbContext.SaveChangesAsync();
+        var retryResult = await CreateService(dbContext, sender).SendRegistrationConfirmationsAsync(team, CancellationToken.None);
 
         Assert.Equal(1, retryResult.Sent);
         Assert.Single(sender.SentMessages);
@@ -408,17 +448,46 @@ public class CandidateNotificationServiceTests
     public async Task SmtpNotConfigured_DayBeforeReminder_SkipsQuietly_NoFailureCounted()
     {
         await using var dbContext = CreateContext();
-        await SeedEmailSettingsAndTemplatesAsync(dbContext);
-        var session = await SeedSessionAsync(dbContext, Now.Date.AddDays(1).AddHours(17));
+        var team = await SeedTeamAsync(dbContext, emailConfigured: false);
+        await SeedEmailSettingsAndTemplatesAsync(dbContext, team);
+        var session = await SeedSessionAsync(dbContext, team, Now.Date.AddDays(1).AddHours(17));
         dbContext.Candidates.Add(NewCandidate(session));
         await dbContext.SaveChangesAsync();
 
-        var sender = new FakeEmailSender { IsConfigured = false };
-        var result = await CreateService(dbContext, sender).SendDayBeforeRemindersAsync(CancellationToken.None);
+        var sender = new FakeEmailSender();
+        var result = await CreateService(dbContext, sender).SendDayBeforeRemindersAsync(team, CancellationToken.None);
 
         Assert.Equal(0, result.Sent);
         Assert.Equal(0, result.Failed);
         Assert.Empty(sender.SentMessages);
         Assert.Null(dbContext.Candidates.Single().DayBeforeReminderSentUtc);
+    }
+
+    // ---- Multi-team ----
+
+    [Fact]
+    public async Task TwoTeams_EachSendsWithItsOwnTemplateContentAndCredentials()
+    {
+        await using var dbContext = CreateContext();
+        var teamA = await SeedTeamAsync(dbContext);
+        var teamB = await SeedTeamAsync(dbContext);
+        dbContext.EmailSettings.Add(new EmailSettings { TeamId = teamA.Id, FromAddress = "a@example.org", ReplyToAddress = "a@example.org", PrivacyPolicyUrl = "https://a.example.org/privacy", AdminNotificationEmail = "admin@a.example.org" });
+        dbContext.EmailSettings.Add(new EmailSettings { TeamId = teamB.Id, FromAddress = "b@example.org", ReplyToAddress = "b@example.org", PrivacyPolicyUrl = "https://b.example.org/privacy", AdminNotificationEmail = "admin@b.example.org" });
+        dbContext.EmailTemplates.Add(new EmailTemplate { TeamId = teamA.Id, Key = "RegistrationConfirmation", Subject = "A subject", Body = "Team A body" });
+        dbContext.EmailTemplates.Add(new EmailTemplate { TeamId = teamB.Id, Key = "RegistrationConfirmation", Subject = "B subject", Body = "Team B body" });
+        await dbContext.SaveChangesAsync();
+        var sessionA = await SeedSessionAsync(dbContext, teamA, Now.AddDays(4));
+        var sessionB = await SeedSessionAsync(dbContext, teamB, Now.AddDays(4));
+        dbContext.Candidates.Add(NewCandidate(sessionA, "applicant-a"));
+        dbContext.Candidates.Add(NewCandidate(sessionB, "applicant-b"));
+        await dbContext.SaveChangesAsync();
+
+        var sender = new FakeEmailSender();
+        await CreateService(dbContext, sender).SendRegistrationConfirmationsAsync(teamA, CancellationToken.None);
+        await CreateService(dbContext, sender).SendRegistrationConfirmationsAsync(teamB, CancellationToken.None);
+
+        Assert.Equal(2, sender.SentMessages.Count);
+        Assert.Contains(sender.SentMessages, m => m.FromAddress == "a@example.org" && m.HtmlBody == "Team A body");
+        Assert.Contains(sender.SentMessages, m => m.FromAddress == "b@example.org" && m.HtmlBody == "Team B body");
     }
 }
