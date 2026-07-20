@@ -5,6 +5,49 @@ What `SessionEventSchedulingService` (`VeSessionManager.Core/Scheduling/`) relie
 shapes/gotchas this codebase depends on, with sources, so a future change doesn't need to
 re-derive them.
 
+## Account Setup (one-time, before the four secrets in the README mean anything)
+
+Neither of these can be done from the repo or by me — they're account-level setup in Zoom's and
+Discord's own dashboards, done once by whoever owns the accounts.
+
+### Zoom: create the Server-to-Server OAuth app
+
+1. Sign into the [Zoom App Marketplace](https://marketplace.zoom.us/) with an account that has
+   developer permissions (needs to be an account **admin**, not just a regular user — S2S OAuth
+   scopes require admin-level "User and Permission Management" access).
+2. **Developer** (lower-left) → **Build an app** → choose **Server-to-Server OAuth** → **Create**.
+3. Name it (e.g. "VE Session Manager"), fill in the required basic info/company/contact fields.
+4. **Scopes** tab → **Add Scopes** → search "meeting" and add the create/update/delete/read
+   scopes for meetings. Zoom's scope naming has shifted over time and varies by account; look for
+   entries like `meeting:write:meeting:admin`, `meeting:update:meeting:admin`,
+   `meeting:delete:meeting:admin` (older accounts may instead show a single coarser
+   `meeting:write:admin`). The `:admin` variants are the ones you want — Server-to-Server apps
+   act at the account level, so even managing meetings only under your own user still needs the
+   admin-scoped versions ([confirmed on the Zoom developer forum](https://devforum.zoom.us/t/server-to-server-oauth-app-permissions-and-scopes/92331)).
+5. **Activation** tab → activate the app. Per Zoom's docs, [you cannot generate an access token
+   at all until the app is activated](https://developers.zoom.us/docs/internal-apps/create/) —
+   easy step to miss and get a confusing auth failure from.
+6. Back on the app's overview, the **App Credentials** section shows **Account ID**, **Client
+   ID**, and **Client Secret** — these are the three `Zoom:*` secrets in the README.
+
+### Discord: create the bot and invite it to your server
+
+1. Go to the [Discord Developer Portal](https://discord.com/developers/applications), sign in,
+   **New Application**, give it a name (e.g. "VE Session Manager").
+2. Left sidebar → **Bot**. A bot user is created automatically with the application. Click
+   **Reset Token** to reveal it (2FA confirmation if you have it enabled) — this is `Discord:BotToken`.
+   Treat it like a password; Discord will silently invalidate it if it ever leaks into a public repo.
+3. Left sidebar → **OAuth2** → **URL Generator**. Under **Scopes**, check **bot**. Under the
+   **Bot Permissions** that appears, check **Manage Events** (this is what allows creating,
+   modifying, and deleting guild scheduled events — no other permissions or privileged gateway
+   intents are needed, since `DiscordEventClient` only ever makes REST calls).
+4. Copy the generated URL, open it in a browser, pick your Discord server, **Authorize**.
+5. **Guild ID** (`Discord:GuildId`): in the Discord app, enable **User Settings → Advanced →
+   Developer Mode**, then right-click your server's icon → **Copy Server ID**.
+
+Once both are done, set the four secrets/one config value per the README's "Configuration &
+Secrets" section and the Worker's next poll cycle will pick up any session still needing a sync.
+
 ## Zoom
 
 Client: `VeSessionManager.Core/Zoom/ZoomClient.cs`. Hand-rolled `HttpClient` wrapper, not a NuGet

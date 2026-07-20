@@ -79,7 +79,10 @@ public sealed class DiscordEventClient : IDiscordEventClient, IDisposable
     private async Task<RestGuild> GetGuildAsync(CancellationToken cancellationToken)
     {
         await EnsureLoggedInAsync(cancellationToken);
-        return await _client.GetGuildAsync(_options.GuildId);
+        return await _client.GetGuildAsync(_options.GuildId)
+            ?? throw new InvalidOperationException(
+                $"Discord guild {_options.GuildId} was not found, or this bot is not a member of it. " +
+                "Check Discord:GuildId and that the bot was actually invited via the OAuth2 URL Generator (bot scope + Manage Events permission) — see docs/zoom-discord-scheduling.md.");
     }
 
     private async Task EnsureLoggedInAsync(CancellationToken cancellationToken)

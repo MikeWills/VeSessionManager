@@ -60,7 +60,10 @@ In the Development environment the Worker also seeds a starter `Vec`/`FeeConfigu
 first run (see `DevDataSeeder`) — without those rows, ingestion intentionally skips sessions
 until fee configuration exists.
 
-The Zoom/Discord scheduler (Phase 2) needs its own credentials, same pattern:
+The Zoom/Discord scheduler (Phase 2) needs its own credentials, same pattern. If you don't have
+a Zoom Server-to-Server OAuth app or a Discord bot yet, see
+[`docs/zoom-discord-scheduling.md`](docs/zoom-discord-scheduling.md#account-setup-one-time-before-the-four-secrets-in-the-readme-mean-anything)
+for how to create them — that's account-dashboard setup, not something runnable from this repo.
 
 ```bash
 dotnet user-secrets set "Zoom:AccountId" "<Zoom S2S OAuth app account id>" --project src/VeSessionManager.Worker

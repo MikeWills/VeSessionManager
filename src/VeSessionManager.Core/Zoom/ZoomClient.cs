@@ -87,7 +87,7 @@ public sealed class ZoomClient : IZoomClient, IDisposable
         }
 
         var response = await _httpClient.SendAsync(request, cancellationToken);
-        response.EnsureSuccessStatusCode();
+        await EnsureSuccessOrThrowWithBodyAsync(response, cancellationToken);
         return response;
     }
 
@@ -124,7 +124,7 @@ public sealed class ZoomClient : IZoomClient, IDisposable
             ]);
 
             var response = await _httpClient.SendAsync(request, cancellationToken);
-            response.EnsureSuccessStatusCode();
+            await EnsureSuccessOrThrowWithBodyAsync(response, cancellationToken);
 
             var token = await response.Content.ReadFromJsonAsync<ZoomTokenResponse>(JsonOptions, cancellationToken)
                 ?? throw new InvalidOperationException("Zoom token response body was empty.");
@@ -139,6 +139,25 @@ public sealed class ZoomClient : IZoomClient, IDisposable
         {
             _tokenLock.Release();
         }
+    }
+
+    /// <summary>
+    /// HttpResponseMessage.EnsureSuccessStatusCode() discards the response body, which for Zoom
+    /// is exactly where the useful diagnostic lives (e.g. token errors return
+    /// {"reason":"Invalid Client","error":"invalid_client"}; meeting API errors return
+    /// {"code":..., "message":"..."}). Never includes request content, so credentials never
+    /// end up in a log line or thrown exception.
+    /// </summary>
+    private static async Task EnsureSuccessOrThrowWithBodyAsync(HttpResponseMessage response, CancellationToken cancellationToken)
+    {
+        if (response.IsSuccessStatusCode)
+        {
+            return;
+        }
+
+        var body = await response.Content.ReadAsStringAsync(cancellationToken);
+        throw new HttpRequestException(
+            $"Zoom API call to {response.RequestMessage?.RequestUri} failed with {(int)response.StatusCode} {response.StatusCode}: {body}");
     }
 
     public void Dispose()
