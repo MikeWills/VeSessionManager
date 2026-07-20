@@ -70,3 +70,26 @@ public class ExamToolsApplicant
     /// <summary>True when the FRN is absent or ExamTools' all-zeros placeholder.</summary>
     public bool FrnIsMissing() => string.IsNullOrWhiteSpace(Frn) || Frn.All(c => c == '0');
 }
+
+/// <summary>
+/// Response of GET /api/veUser/sessions/{id}/export/full.json, wrapped under a DEVDOC key on the
+/// dev site (docs/examtools-api.md notes the wrapper key may differ on prod — re-verify there
+/// before relying on this in production). This is the only endpoint that returns a VE's display
+/// name, not just callsign — the session-detail endpoint's sessionVes field has callsign only.
+/// </summary>
+public class ExamToolsFullExport
+{
+    public ExamToolsFullExportDevDoc? Devdoc { get; set; }
+}
+
+public class ExamToolsFullExportDevDoc
+{
+    public List<ExamToolsVe> Ves { get; set; } = [];
+}
+
+/// <summary>One VE credited on a session's full export (DEVDOC.VEs) — the team lead plus every co-VE who signed off.</summary>
+public class ExamToolsVe
+{
+    public string Call { get; set; } = "";
+    public string Name { get; set; } = "";
+}

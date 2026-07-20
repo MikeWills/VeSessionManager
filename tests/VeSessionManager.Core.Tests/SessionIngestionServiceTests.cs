@@ -45,6 +45,11 @@ public class SessionIngestionServiceTests
             return Task.FromResult<IReadOnlyList<ExamToolsApplicant>>(
                 applicants.TryGetValue(examToolsSessionId, out var list) ? list : []);
         }
+
+        // Not exercised by these tests (Phase 7's VE roster sync has its own test file/fake) —
+        // implemented only to satisfy the interface.
+        public Task<IReadOnlyList<ExamToolsVe>> GetSessionVeRosterAsync(ExamToolsCredentials credentials, string examToolsSessionId, CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<ExamToolsVe>>([]);
     }
 
     private static AppDbContext CreateContext()

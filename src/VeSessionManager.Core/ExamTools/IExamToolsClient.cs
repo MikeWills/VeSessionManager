@@ -11,4 +11,7 @@ public interface IExamToolsClient
 
     /// <summary>Registered applicants for one session, including PII — handle results per the PII logging rules.</summary>
     Task<IReadOnlyList<ExamToolsApplicant>> GetSessionApplicantsAsync(ExamToolsCredentials credentials, string examToolsSessionId, CancellationToken cancellationToken);
+
+    /// <summary>Full VE roster for one session (callsign + display name for every VE credited) — see ExamToolsFullExport.</summary>
+    Task<IReadOnlyList<ExamToolsVe>> GetSessionVeRosterAsync(ExamToolsCredentials credentials, string examToolsSessionId, CancellationToken cancellationToken);
 }

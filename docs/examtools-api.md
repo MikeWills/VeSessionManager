@@ -25,9 +25,10 @@ library used `https://alpha.exam.tools` for production — if prod logins fail, 
 | Endpoint | Returns |
 |---|---|
 | `GET /api/veUser/sessions?team={teamId}` | All sessions for the team. Fields used: `_id`, `date` (UTC ISO), `vec` (e.g. `"arrl"`), `state` (`"pend"`/`"done"`), `applicantCount`, `sessionDef.summary`. `sessionVes` is always `[]` in this list view. |
-| `GET /api/veUser/sessions/{id}` | Single-session detail; same shape but `sessionVes` populated (`perm: 10` = lead/co-lead) and `sessionDef` gains `city`/`state`/`zip`. Not currently called by ingestion. |
+| `GET /api/veUser/sessions/{id}` | Single-session detail; same shape but `sessionVes` populated (`perm: 10` = lead/co-lead) and `sessionDef` gains `city`/`state`/`zip`. **Not** used for VE roster — `sessionVes` entries have `ve` (an internal Mongo ObjectId) and `callsign` but no display name; see `export/full.json` below for the endpoint Phase 7 actually uses. Not currently called by ingestion for any other purpose either. |
 | `GET /api/veUser/sessions/{id}/export/basic.json` | `{ session: {date, state}, applicants: [...] }` — the candidate registration feed. Applicant fields used: `id`, `firstname`/`middle`/`lastname`/`suffix`, `email`, `frn`, `has_felony`, `created`. Also available: `pin`, `phone`, `callsign`, `licenseClass`, address fields, `finalized`. |
 | `GET /api/veUser/sessions/{id}/applicant/{applicantId}` | Per-applicant detail: everything above plus `status` (`"reg"`), `exams[]`, `hasSigned`, `sentEmails{}`. Not used yet — likely useful for later phases (ExamTools tracks which emails it already sent). |
+| `GET /api/veUser/sessions/{id}/export/full.json` | `{ DEVDOC: { ..., VEs: [{call, name, number?}], applicants: [...] } }` — used by Phase 7 (`VolunteerExaminerSyncService`) purely for `DEVDOC.VEs`, the only endpoint that pairs a VE's callsign with a real display name (`sessionVes` above has callsign only). `number` (when present) is a VEC-issued VE accreditation number, **not** an FCC FRN — deliberately not mapped onto `VolunteerExaminer.Frn`. The `applicants[]` in this payload are ignored (ingestion already gets candidates from `export/basic.json`); `DEVDOC.applicants[].signingVes` also carries per-candidate VE names, unused for now — Phase 7 only needs the session-level roster, not who-signed-whom. Wrapper key may differ on prod, per the note below. |
 
 ## Semantics worth knowing
 
@@ -44,7 +45,9 @@ library used `https://alpha.exam.tools` for production — if prod logins fail, 
   `export/basic.json` is the list. `applicantCount` on the session lets the poller skip the
   PII-bearing export call when nothing is registered.
 - `export/full.json` returns a fuller session document (team, VEs, stats, applicants) wrapped
-  under a `DEVDOC` key on the dev site — the wrapper key may differ on prod.
+  under a `DEVDOC` key on the dev site — the wrapper key may differ on prod. **Live-verified
+  2026-07-20** against a real examtools.dev session: `DEVDOC.VEs` is `[{call, name, number?}]`,
+  confirmed as the VE roster source for Phase 7 (see `docs/ve-tracking.md`).
 - Other discovered-but-untested paths (from the site's JS bundles): `.../applicant/{id}/email`,
   `export/basic` (non-JSON), `vecDownload/*.zip`, `form605.pdf`, `laurel_export.csv`,
   `w5yi_export.csv`.

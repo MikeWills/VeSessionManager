@@ -5,17 +5,19 @@ using VeSessionManager.Core.Jobs;
 using VeSessionManager.Core.Notifications;
 using VeSessionManager.Core.Payments;
 using VeSessionManager.Core.Scheduling;
+using VeSessionManager.Core.VolunteerExaminers;
 
 namespace VeSessionManager.Worker;
 
 /// <summary>
 /// Polls ExamTools on a timer, runs the Session/Candidate ingestion diff (Phase 1) once per Team
-/// (multi-team foundation — see docs/multi-team.md), then — per the spec's "hook this into the end
-/// of Phase 1's new session detected path" — runs Phase 2's Zoom/Discord scheduling pass, Phase 3's
-/// Square payment-link generation, and Phase 4's registration-confirmation email in the same tick,
-/// in that order: by the time confirmations go out, the session's Zoom link and (if the VEC
-/// collects a fee) the candidate's payment link have had their best chance to already exist, so the
-/// email reads as complete rather than partial.
+/// (multi-team foundation — see docs/multi-team.md), then Phase 7's VE roster sync (reuses the same
+/// ExamTools credentials, no reason to wait for a separate tick), then — per the spec's "hook this
+/// into the end of Phase 1's new session detected path" — runs Phase 2's Zoom/Discord scheduling
+/// pass, Phase 3's Square payment-link generation, and Phase 4's registration-confirmation email in
+/// the same tick, in that order: by the time confirmations go out, the session's Zoom link and (if
+/// the VEC collects a fee) the candidate's payment link have had their best chance to already
+/// exist, so the email reads as complete rather than partial.
 ///
 /// Every step is looped per Team — each has its own ExamTools/Zoom/Square/SMTP credentials; Discord
 /// shares one bot but each team picks its own Guild (see docs/multi-team.md). Each step still gets
@@ -38,6 +40,7 @@ public class SessionIngestionJob(
             var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             var jobRunHistoryLogger = scope.ServiceProvider.GetRequiredService<JobRunHistoryLogger>();
             var ingestionService = scope.ServiceProvider.GetRequiredService<SessionIngestionService>();
+            var veRosterSyncService = scope.ServiceProvider.GetRequiredService<VolunteerExaminerSyncService>();
             var schedulingService = scope.ServiceProvider.GetRequiredService<SessionEventSchedulingService>();
             var paymentGenerationService = scope.ServiceProvider.GetRequiredService<PaymentGenerationService>();
             var notificationService = scope.ServiceProvider.GetRequiredService<CandidateNotificationService>();
@@ -48,6 +51,12 @@ public class SessionIngestionJob(
                 await jobRunHistoryLogger.RunAsync(
                     "SessionIngestion",
                     ct => ingestionService.RunAsync(team, ct),
+                    team.Id,
+                    stoppingToken);
+
+                await jobRunHistoryLogger.RunAsync(
+                    "VeRosterSync",
+                    ct => veRosterSyncService.RunAsync(team, ct),
                     team.Id,
                     stoppingToken);
 

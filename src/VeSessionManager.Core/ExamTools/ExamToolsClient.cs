@@ -46,6 +46,13 @@ public sealed class ExamToolsClient : IExamToolsClient, IDisposable
         return export?.Applicants ?? [];
     }
 
+    public async Task<IReadOnlyList<ExamToolsVe>> GetSessionVeRosterAsync(ExamToolsCredentials credentials, string examToolsSessionId, CancellationToken cancellationToken)
+    {
+        var export = await GetJsonAsync<ExamToolsFullExport>(
+            credentials, $"/api/veUser/sessions/{Uri.EscapeDataString(examToolsSessionId)}/export/full.json", cancellationToken);
+        return export?.Devdoc?.Ves ?? [];
+    }
+
     private async Task<T?> GetJsonAsync<T>(ExamToolsCredentials credentials, string relativeUrl, CancellationToken cancellationToken)
     {
         var teamSession = GetOrCreateTeamSession(credentials.TeamId);

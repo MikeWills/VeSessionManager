@@ -69,6 +69,13 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             b.HasOne(sve => sve.VolunteerExaminer).WithMany(v => v.SessionVolunteerExaminers).HasForeignKey(sve => sve.VolunteerExaminerId).OnDelete(DeleteBehavior.Restrict);
         });
 
+        modelBuilder.Entity<VolunteerExaminer>(b =>
+        {
+            // A VE is matched by (TeamId, CallSign) during roster sync — see VolunteerExaminerSyncService.
+            b.HasIndex(v => new { v.TeamId, v.CallSign }).IsUnique();
+            b.HasOne(v => v.Team).WithMany().HasForeignKey(v => v.TeamId).OnDelete(DeleteBehavior.Restrict);
+        });
+
         modelBuilder.Entity<User>(b =>
         {
             b.HasOne(u => u.ManagedByUser).WithMany().HasForeignKey(u => u.ManagedByUserId).OnDelete(DeleteBehavior.Restrict);
