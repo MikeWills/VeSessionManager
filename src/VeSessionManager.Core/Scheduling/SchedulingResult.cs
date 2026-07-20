@@ -4,9 +4,13 @@ namespace VeSessionManager.Core.Scheduling;
 public class SchedulingResult
 {
     public int SessionsSynced { get; set; }
+
+    /// <summary>Whatever could run this pass did; the rest is waiting on Zoom and/or Discord to be configured (both optional integrations) — not a failure, just waiting.</summary>
+    public int SessionsAwaitingIntegrationConfig { get; set; }
+
     public int SessionsCleanedUp { get; set; }
     public int SessionsFailed { get; set; }
 
     public override string ToString() =>
-        $"synced {SessionsSynced}, cleaned up {SessionsCleanedUp}, failed {SessionsFailed}";
+        $"synced {SessionsSynced}, awaiting integration config {SessionsAwaitingIntegrationConfig}, cleaned up {SessionsCleanedUp}, failed {SessionsFailed}";
 }

@@ -12,10 +12,22 @@ namespace VeSessionManager.Core.Scheduling;
 /// Session, driven entirely by comparing stored state — no event queue needed:
 ///   - Status Active and ScheduledStartUtc != ZoomDiscordSyncedStartUtc -> needs create-or-update.
 ///     A null ZoomMeetingId/DiscordEventId on that session means "create"; a non-null one means
-///     "update". ZoomDiscordSyncedStartUtc is only advanced once *both* succeed, so a session
-///     where Zoom succeeded but Discord failed is retried correctly on the next run (Zoom is
-///     skipped since its id is already set; Discord is retried since its id is still null).
+///     "update". ZoomDiscordSyncedStartUtc only advances once *everything currently able to run
+///     has run successfully* — see the "settled" logic in SyncZoomAndDiscordAsync.
 ///   - Status Cancelled and either id is still set -> needs cleanup (delete + null the id).
+///
+/// Both Zoom and Discord are optional integrations (unlike ExamTools, which fails loudly when
+/// unconfigured, since ingestion is the one thing everything else depends on): a team that
+/// hasn't finished setting one up yet must not see a repeated failed-call error every poll.
+/// IZoomClient.IsConfigured / IDiscordEventClient.IsConfigured gate each independently, and
+/// either integration backfills automatically the moment it becomes configured — no other
+/// config change or manual retrigger needed, matching Phase 3/4's optional integrations.
+///
+/// Discord's event needs the Zoom join link for its description/location, so Discord can only
+/// actually run once Zoom has produced one — if Zoom isn't configured (or hasn't succeeded yet),
+/// Discord stays pending too, even if Discord itself is fully configured; the moment Zoom
+/// produces a link, Discord picks up automatically on the same or a later poll.
+///
 /// This means a poll that crashes or fails partway always resumes correctly next run purely by
 /// re-reading Session state — matching Phase 1's polling philosophy.
 /// Per spec: cancellation cleanup never sends any candidate-facing notification — that is a
@@ -37,12 +49,23 @@ public class SessionEventSchedulingService(
             .Where(s => s.Status == SessionStatus.Active && s.ScheduledStartUtc != s.ZoomDiscordSyncedStartUtc)
             .ToListAsync(cancellationToken);
 
+        LogUnconfiguredIntegrations(sessionsNeedingSync);
+
         foreach (var session in sessionsNeedingSync)
         {
             try
             {
                 await SyncZoomAndDiscordAsync(session, cancellationToken);
-                result.SessionsSynced++;
+                if (session.ZoomDiscordSyncedStartUtc == session.ScheduledStartUtc)
+                {
+                    result.SessionsSynced++;
+                }
+                else
+                {
+                    // Everything that could run this pass did; what's left is waiting on Zoom
+                    // and/or Discord to be configured — not a failure, see SchedulingResult remarks.
+                    result.SessionsAwaitingIntegrationConfig++;
+                }
             }
             catch (Exception ex)
             {
@@ -79,40 +102,77 @@ public class SessionEventSchedulingService(
         return result;
     }
 
+    private void LogUnconfiguredIntegrations(List<Session> sessionsNeedingSync)
+    {
+        if (zoomClient.IsConfigured && discordEventClient.IsConfigured)
+        {
+            return;
+        }
+
+        var pendingCount = sessionsNeedingSync.Count(s =>
+            (!zoomClient.IsConfigured && s.ZoomMeetingId is null) ||
+            (!discordEventClient.IsConfigured && s.DiscordEventId is null));
+        if (pendingCount == 0)
+        {
+            return;
+        }
+
+        var unconfigured = string.Join(" and ",
+            new[] { zoomClient.IsConfigured ? null : "Zoom", discordEventClient.IsConfigured ? null : "Discord" }
+                .Where(name => name is not null));
+        logger.LogInformation("{Unconfigured} not fully configured — {PendingCount} session(s) waiting; will create automatically once configured",
+            unconfigured, pendingCount);
+    }
+
     private async Task SyncZoomAndDiscordAsync(Session session, CancellationToken cancellationToken)
     {
-        var zoomRequest = new ZoomMeetingRequest(session.Title, session.ScheduledStartUtc, session.DurationMinutes);
-        if (session.ZoomMeetingId is null)
+        if (zoomClient.IsConfigured)
         {
-            var meeting = await zoomClient.CreateMeetingAsync(zoomRequest, cancellationToken);
-            session.ZoomMeetingId = meeting.Id;
-            session.ZoomJoinUrl = meeting.JoinUrl;
-        }
-        else
-        {
-            await zoomClient.UpdateMeetingAsync(session.ZoomMeetingId, zoomRequest, cancellationToken);
-        }
-
-        var endTimeUtc = session.ScheduledStartUtc.AddMinutes(session.DurationMinutes);
-        var discordRequest = new DiscordEventRequest(
-            session.Title,
-            $"Ham radio VE exam session. Join via Zoom: {session.ZoomJoinUrl}",
-            session.ScheduledStartUtc,
-            endTimeUtc,
-            session.ZoomJoinUrl!);
-
-        if (session.DiscordEventId is null)
-        {
-            var scheduledEvent = await discordEventClient.CreateEventAsync(discordRequest, cancellationToken);
-            session.DiscordEventId = scheduledEvent.Id;
-        }
-        else
-        {
-            await discordEventClient.UpdateEventAsync(session.DiscordEventId, discordRequest, cancellationToken);
+            var zoomRequest = new ZoomMeetingRequest(session.Title, session.ScheduledStartUtc, session.DurationMinutes);
+            if (session.ZoomMeetingId is null)
+            {
+                var meeting = await zoomClient.CreateMeetingAsync(zoomRequest, cancellationToken);
+                session.ZoomMeetingId = meeting.Id;
+                session.ZoomJoinUrl = meeting.JoinUrl;
+            }
+            else
+            {
+                await zoomClient.UpdateMeetingAsync(session.ZoomMeetingId, zoomRequest, cancellationToken);
+            }
         }
 
-        // Only advance once both sides reflect the current time — see class remarks.
-        session.ZoomDiscordSyncedStartUtc = session.ScheduledStartUtc;
+        // Discord's location/description needs the Zoom join link, so it can't do anything
+        // meaningful until Zoom has actually produced one, regardless of Discord's own config.
+        if (discordEventClient.IsConfigured && session.ZoomJoinUrl is not null)
+        {
+            var endTimeUtc = session.ScheduledStartUtc.AddMinutes(session.DurationMinutes);
+            var discordRequest = new DiscordEventRequest(
+                session.Title,
+                $"Ham radio VE exam session. Join via Zoom: {session.ZoomJoinUrl}",
+                session.ScheduledStartUtc,
+                endTimeUtc,
+                session.ZoomJoinUrl);
+
+            if (session.DiscordEventId is null)
+            {
+                var scheduledEvent = await discordEventClient.CreateEventAsync(discordRequest, cancellationToken);
+                session.DiscordEventId = scheduledEvent.Id;
+            }
+            else
+            {
+                await discordEventClient.UpdateEventAsync(session.DiscordEventId, discordRequest, cancellationToken);
+            }
+        }
+
+        // Deliberately *not* "OR not configured" — an unconfigured integration must stay pending
+        // forever (re-checked every poll, one quiet aggregate log line via
+        // LogUnconfiguredIntegrations) so it backfills automatically the moment it's configured,
+        // exactly like Phase 3/4's optional integrations. Only an integration that has actually
+        // produced its id counts as settled.
+        if (session.ZoomMeetingId is not null && session.DiscordEventId is not null)
+        {
+            session.ZoomDiscordSyncedStartUtc = session.ScheduledStartUtc;
+        }
     }
 
     private async Task CleanupZoomAndDiscordAsync(Session session, DateTime now, CancellationToken cancellationToken)

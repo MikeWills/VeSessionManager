@@ -2,9 +2,11 @@ using Microsoft.EntityFrameworkCore;
 using Serilog;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Discord;
+using VeSessionManager.Core.Email;
 using VeSessionManager.Core.ExamTools;
 using VeSessionManager.Core.Ingestion;
 using VeSessionManager.Core.Jobs;
+using VeSessionManager.Core.Notifications;
 using VeSessionManager.Core.Payments;
 using VeSessionManager.Core.Scheduling;
 using VeSessionManager.Core.Square;
@@ -39,9 +41,15 @@ builder.Services.Configure<SquareOptions>(builder.Configuration.GetSection(Squar
 builder.Services.AddSingleton<ISquareClient, SquareClient>();
 builder.Services.AddScoped<PaymentGenerationService>();
 
+builder.Services.Configure<EmailOptions>(builder.Configuration.GetSection(EmailOptions.SectionName));
+builder.Services.AddScoped<IEmailSender, SmtpEmailSender>();
+builder.Services.AddScoped<EmailTemplateRenderer>();
+builder.Services.AddScoped<CandidateNotificationService>();
+
 builder.Services.AddScoped<JobRunHistoryLogger>();
 builder.Services.AddHostedService<HelloWorldJob>();
 builder.Services.AddHostedService<SessionIngestionJob>();
+builder.Services.AddHostedService<DayBeforeReminderJob>();
 
 var host = builder.Build();
 
@@ -50,9 +58,12 @@ using (var scope = host.Services.CreateScope())
     var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     dbContext.Database.Migrate();
 
+    var startupLogger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+    await EmailDefaultsSeeder.SeedAsync(dbContext, startupLogger);
+
     if (builder.Environment.IsDevelopment())
     {
-        await DevDataSeeder.SeedAsync(dbContext, scope.ServiceProvider.GetRequiredService<ILogger<Program>>());
+        await DevDataSeeder.SeedAsync(dbContext, startupLogger);
     }
 }
 

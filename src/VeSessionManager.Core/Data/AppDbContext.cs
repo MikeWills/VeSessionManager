@@ -7,6 +7,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
 {
     public DbSet<Vec> Vecs => Set<Vec>();
     public DbSet<EmailTemplate> EmailTemplates => Set<EmailTemplate>();
+    public DbSet<EmailSettings> EmailSettings => Set<EmailSettings>();
     public DbSet<FeeConfiguration> FeeConfigurations => Set<FeeConfiguration>();
     public DbSet<Session> Sessions => Set<Session>();
     public DbSet<Candidate> Candidates => Set<Candidate>();
@@ -69,6 +70,11 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         modelBuilder.Entity<EmailTemplate>(b =>
         {
             b.HasIndex(e => e.Key).IsUnique();
+            b.HasOne(e => e.UpdatedByUser).WithMany().HasForeignKey(e => e.UpdatedByUserId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<EmailSettings>(b =>
+        {
             b.HasOne(e => e.UpdatedByUser).WithMany().HasForeignKey(e => e.UpdatedByUserId).OnDelete(DeleteBehavior.Restrict);
         });
 

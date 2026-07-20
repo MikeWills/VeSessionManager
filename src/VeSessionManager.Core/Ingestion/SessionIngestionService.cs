@@ -197,6 +197,7 @@ public class SessionIngestionService(
                 {
                     ExamToolsApplicantId = applicant.Id,
                     Name = applicant.FullName(),
+                    FirstName = applicant.Firstname,
                     Email = applicant.Email,
                     Frn = applicant.FrnIsMissing() ? null : applicant.Frn,
                     FrnMissingAtRegistration = applicant.FrnIsMissing(),
@@ -221,6 +222,12 @@ public class SessionIngestionService(
             if (existing.Name != name)
             {
                 existing.Name = name;
+                changed = true;
+            }
+
+            if (existing.FirstName != applicant.Firstname)
+            {
+                existing.FirstName = applicant.Firstname;
                 changed = true;
             }
 

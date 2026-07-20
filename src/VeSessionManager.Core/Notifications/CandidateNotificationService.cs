@@ -1,0 +1,200 @@
+using System.Globalization;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+using VeSessionManager.Core.Data;
+using VeSessionManager.Core.Email;
+using VeSessionManager.Core.Entities;
+
+namespace VeSessionManager.Core.Notifications;
+
+/// <summary>
+/// Phase 4: sends the two candidate-facing emails via the shared template engine
+/// (EmailTemplateRenderer) and SMTP sender (IEmailSender). Every later phase that sends email
+/// should follow this same shape — render via EmailTemplateRenderer using its own EmailTemplate
+/// Key, never hardcode content — per the spec's explicit note to keep this pattern consistent.
+///
+/// Both methods are scan-based and idempotent, like Phase 2/3: a Candidate's
+/// RegistrationConfirmationSentUtc/DayBeforeReminderSentUtc being null is the "needs to be sent"
+/// signal, set only after a successful send, so a mid-run crash or per-item failure retries
+/// cleanly next run without resending anything already delivered.
+/// </summary>
+public class CandidateNotificationService(
+    AppDbContext dbContext,
+    EmailTemplateRenderer templateRenderer,
+    IEmailSender emailSender,
+    TimeProvider timeProvider,
+    ILogger<CandidateNotificationService> logger)
+{
+    private const string RegistrationConfirmationKey = "RegistrationConfirmation";
+    private const string DayBeforeReminderKey = "DayBeforeReminder";
+
+    public async Task<EmailNotificationResult> SendRegistrationConfirmationsAsync(CancellationToken cancellationToken)
+    {
+        var result = new EmailNotificationResult();
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+
+        var emailSettings = await dbContext.EmailSettings.FirstOrDefaultAsync(cancellationToken);
+        if (emailSettings is null)
+        {
+            logger.LogWarning("No EmailSettings row exists yet — skipping registration confirmations until seeded");
+            return result;
+        }
+
+        var candidates = await dbContext.Candidates
+            .Include(c => c.Session).ThenInclude(s => s.FeeConfiguration)
+            .Include(c => c.Payments)
+            .Where(c => c.PiiPurgedUtc == null
+                        && c.Email != null
+                        && c.RegistrationConfirmationSentUtc == null
+                        && c.Session.Status == SessionStatus.Active)
+            .ToListAsync(cancellationToken);
+
+        if (candidates.Count > 0 && !emailSender.IsConfigured)
+        {
+            // SMTP is optional the same way Square is (see PaymentGenerationService) — skip
+            // quietly rather than retry-and-fail-log every poll; RegistrationConfirmationSentUtc
+            // stays null, so the very next poll sends everything backlogged once SMTP is set up.
+            logger.LogInformation("SMTP is not fully configured (Email:SmtpHost/SmtpUsername) — {PendingCount} registration confirmation(s) waiting; will send automatically once configured",
+                candidates.Count);
+            return result;
+        }
+
+        foreach (var candidate in candidates)
+        {
+            try
+            {
+                var paymentLinkUrl = candidate.Session.FeeConfiguration.FeeCollectionEnabled
+                    ? candidate.Payments.FirstOrDefault(p => p.Reason == PaymentReason.InitialExam)?.PaymentLinkUrl ?? ""
+                    : "";
+
+                var placeholders = new Dictionary<string, string>
+                {
+                    ["CandidateName"] = candidate.Name ?? "",
+                    ["CandidateFirstName"] = candidate.FirstName ?? "",
+                    ["SessionDate"] = FormatSessionDate(candidate.Session.ScheduledStartUtc),
+                    ["ZoomJoinUrl"] = candidate.Session.ZoomJoinUrl ?? "",
+                    ["PaymentLinkUrl"] = paymentLinkUrl,
+                    ["PrivacyPolicyUrl"] = emailSettings.PrivacyPolicyUrl
+                };
+
+                if (!await TrySendAsync(RegistrationConfirmationKey, candidate, emailSettings, placeholders, cancellationToken))
+                {
+                    result.Failed++;
+                    await dbContext.SaveChangesAsync(cancellationToken);
+                    continue;
+                }
+
+                candidate.RegistrationConfirmationSentUtc = now;
+                result.Sent++;
+            }
+            catch (Exception ex)
+            {
+                result.Failed++;
+                logger.LogError(ex, "Failed to send RegistrationConfirmation for candidate {CandidateId}", candidate.Id);
+            }
+
+            // Save after every candidate so a crash mid-run, or one send failing, never loses
+            // progress already made on others, and never resends to someone already notified.
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+
+        logger.LogInformation("Registration confirmations finished: {Result}", result);
+        return result;
+    }
+
+    public async Task<EmailNotificationResult> SendDayBeforeRemindersAsync(CancellationToken cancellationToken)
+    {
+        var result = new EmailNotificationResult();
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+        // "Tomorrow" evaluated as a UTC calendar date, consistent with every other date stored in
+        // this app — sessions occurring right around UTC midnight may read as "tomorrow" a little
+        // earlier/later than the Session Manager's own local calendar day.
+        var tomorrowStartUtc = now.Date.AddDays(1);
+        var tomorrowEndUtc = tomorrowStartUtc.AddDays(1);
+
+        var emailSettings = await dbContext.EmailSettings.FirstOrDefaultAsync(cancellationToken);
+        if (emailSettings is null)
+        {
+            logger.LogWarning("No EmailSettings row exists yet — skipping day-before reminders until seeded");
+            return result;
+        }
+
+        var candidates = await dbContext.Candidates
+            .Include(c => c.Session)
+            .Include(c => c.Payments)
+            .Where(c => c.PiiPurgedUtc == null
+                        && c.Email != null
+                        && c.DayBeforeReminderSentUtc == null
+                        && c.Session.Status == SessionStatus.Active
+                        && c.Session.ScheduledStartUtc >= tomorrowStartUtc
+                        && c.Session.ScheduledStartUtc < tomorrowEndUtc)
+            .ToListAsync(cancellationToken);
+
+        if (candidates.Count > 0 && !emailSender.IsConfigured)
+        {
+            logger.LogInformation("SMTP is not fully configured (Email:SmtpHost/SmtpUsername) — {PendingCount} day-before reminder(s) waiting; will send automatically once configured",
+                candidates.Count);
+            return result;
+        }
+
+        foreach (var candidate in candidates)
+        {
+            try
+            {
+                var outstandingPaymentLinkUrl = candidate.Payments
+                    .Where(p => p.Status == PaymentStatus.Unpaid && p.PaymentLinkUrl != null)
+                    .OrderByDescending(p => p.CreatedUtc)
+                    .Select(p => p.PaymentLinkUrl)
+                    .FirstOrDefault() ?? "";
+
+                var placeholders = new Dictionary<string, string>
+                {
+                    ["CandidateName"] = candidate.Name ?? "",
+                    ["CandidateFirstName"] = candidate.FirstName ?? "",
+                    ["SessionDate"] = FormatSessionDate(candidate.Session.ScheduledStartUtc),
+                    ["ZoomJoinUrl"] = candidate.Session.ZoomJoinUrl ?? "",
+                    ["OutstandingPaymentLinkUrl"] = outstandingPaymentLinkUrl
+                };
+
+                if (!await TrySendAsync(DayBeforeReminderKey, candidate, emailSettings, placeholders, cancellationToken))
+                {
+                    result.Failed++;
+                    await dbContext.SaveChangesAsync(cancellationToken);
+                    continue;
+                }
+
+                candidate.DayBeforeReminderSentUtc = now;
+                result.Sent++;
+            }
+            catch (Exception ex)
+            {
+                result.Failed++;
+                logger.LogError(ex, "Failed to send DayBeforeReminder for candidate {CandidateId}", candidate.Id);
+            }
+
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+
+        logger.LogInformation("Day-before reminders finished: {Result}", result);
+        return result;
+    }
+
+    private async Task<bool> TrySendAsync(
+        string templateKey, Candidate candidate, EmailSettings emailSettings,
+        Dictionary<string, string> placeholders, CancellationToken cancellationToken)
+    {
+        var rendered = await templateRenderer.RenderAsync(templateKey, placeholders, cancellationToken);
+        if (rendered is null)
+        {
+            return false;
+        }
+
+        await emailSender.SendAsync(
+            new EmailMessage(candidate.Email!, emailSettings.FromAddress, emailSettings.FromDisplayName, emailSettings.ReplyToAddress, rendered.Subject, rendered.Body),
+            cancellationToken);
+        return true;
+    }
+
+    private static string FormatSessionDate(DateTime scheduledStartUtc) =>
+        scheduledStartUtc.ToString("dddd, MMMM d, yyyy 'at' h:mm tt", CultureInfo.InvariantCulture) + " UTC";
+}

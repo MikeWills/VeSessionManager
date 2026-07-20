@@ -26,6 +26,8 @@ public sealed class DiscordEventClient : IDiscordEventClient, IDisposable
         _logger = logger;
     }
 
+    public bool IsConfigured => !string.IsNullOrWhiteSpace(_options.BotToken) && _options.GuildId != 0;
+
     public async Task<DiscordEvent> CreateEventAsync(DiscordEventRequest request, CancellationToken cancellationToken)
     {
         var guild = await GetGuildAsync(cancellationToken);

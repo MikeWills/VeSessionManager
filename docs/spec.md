@@ -33,6 +33,15 @@ EmailTemplate
   UpdatedByUserId
   UpdatedUtc
 
+EmailSettings (added in Phase 4, not in the original model — singleton row, always Id = 1)
+  Id
+  FromAddress (Admin-configurable system setting per Phase 4's "From address and Reply-To address are separately configurable" note)
+  FromDisplayName (nullable)
+  ReplyToAddress
+  PrivacyPolicyUrl (the public privacy policy link RegistrationConfirmation's {{PrivacyPolicyUrl}} placeholder uses — "from Phase 9" per the original note, but Phase 9 doesn't exist yet, so it lives here until then)
+  UpdatedByUserId (nullable)
+  UpdatedUtc (nullable)
+
 FeeConfiguration
   Id
   VecId (FK -> Vec — fee schedule is tied to the VEC in effect, since switching VECs is often exactly when the fee changes)
@@ -71,6 +80,7 @@ Candidate
   Id
   SessionId (FK -> Session)
   Name
+  FirstName (added in Phase 4, not in the original model — sourced directly from ExamTools' separate firstname field so notification emails can open with "Hi {{CandidateFirstName}}," instead of the full Name)
   Email
   Frn (nullable — normally required before testing, but VECs have allowed testing without one during exceptional circumstances like federal shutdowns, with the candidate required to provide it afterward; Session Manager/Admin can add or edit it later once available)
   FrnMissingAtRegistration (bool — flags this case specifically, so a batch export of "no-FRN-at-time-of-test" candidates can be built later for VEC follow-up submission)
@@ -87,6 +97,8 @@ Candidate
   ResultMarkedByUserId (nullable — Session Manager who marked Failed/NotTested, for audit)
   ResultMarkedUtc (nullable)
   PiiPurgedUtc (nullable — set when PII nulled)
+  RegistrationConfirmationSentUtc (nullable, added in Phase 4 — send-once tracking, same idiom as Session.ZoomDiscordSyncedStartUtc)
+  DayBeforeReminderSentUtc (nullable, added in Phase 4 — prevents a same-day job restart from re-sending)
 
 Payment
   Id
@@ -194,6 +206,7 @@ JobRunHistory
 - **Implemented as a scan, not an event queue:** rather than reacting to Phase 1's "new session detected" as a discrete event, `SessionEventSchedulingService` scans `Session` each run for `Status = Active && ScheduledStartUtc != ZoomDiscordSyncedStartUtc` (needs create-or-update: null `ZoomMeetingId`/`DiscordEventId` means create, non-null means update) and `Status = Cancelled && (ZoomMeetingId or DiscordEventId still set)` (needs cleanup). This makes the "Zoom succeeds, Discord fails" case from the Unit Tests note self-healing: the failed run leaves state that the *next* run picks up automatically (Zoom is skipped since its id is already set; Discord is retried since its id is still null) — no separate retry/flag bookkeeping needed. Still triggered from the same Worker tick as Phase 1's ingestion, immediately after it, per "hook this into the end of Phase 1's new session detected path," but as its own `JobRunHistory`-tracked step (`SessionEventScheduling`) so a scheduling failure doesn't read as an ingestion failure or vice versa.
 - **Zoom client is hand-rolled** (plain `HttpClient`, no NuGet package) — Zoom does not publish an official lightweight .NET SDK for this Server-to-Server OAuth + Meetings API surface, so this follows the same pattern as `ExamToolsClient`. **Discord.Net.Rest** (the REST-only, no-gateway-connection flavor — this job never needs to listen for Discord events) is used for Discord, per the Stack section's pre-approval of Discord.Net.
 - Zoom Server-to-Server OAuth token endpoint (`POST https://zoom.us/oauth/token`, `grant_type=account_credentials`) confirmed live; access tokens last 1 hour with no refresh token, so `ZoomClient` caches and re-requests one a minute before expiry.
+- **Retrofitted in Phase 4 to make both Zoom and Discord optional** (user request, not in this phase's original description — only ExamTools remains a hard requirement, since ingestion is what everything else depends on). `IZoomClient.IsConfigured`/`IDiscordEventClient.IsConfigured` gate each independently; `ZoomDiscordSyncedStartUtc` only advances once both `ZoomMeetingId` and `DiscordEventId` are actually set (never "or unconfigured" — a session with one or both unconfigured just stays pending, logged once in aggregate per poll, and backfills automatically the moment credentials are added). Discord structurally needs the Zoom join link for its description/location, so it stays pending even if Discord itself is configured until Zoom has actually produced one. See `docs/zoom-discord-scheduling.md` and the CLAUDE.md gotcha about writing this kind of "settled" check correctly.
 
 **Unit Tests:** Mock `IZoomClient`/Discord.Net client interfaces; test that the correct date/time and Zoom link get passed into the Discord event creation call, and that `ZoomMeetingId`/`ZoomJoinUrl`/`DiscordEventId` are persisted correctly on `Session`. Test failure handling (e.g. Zoom succeeds but Discord call fails — confirm behavior, likely retry or flag rather than silently losing the Zoom meeting). Test that reschedule calls the update endpoints (not create) and preserves the existing IDs. Test that cancellation triggers cleanup calls but never triggers an email send.
 
@@ -244,6 +257,10 @@ JobRunHistory
 
 - Use SMTP directly in C# unless you already have a transactional email service in mind — confirm with Claude Code before adding a third-party email SDK
 - **From address and Reply-To address are separately configurable** (Admin-configurable system setting, not hardcoded) — every email sent through the template engine uses the configured "From" for the sender but sets the SMTP `Reply-To` header to a separately configured address, so replies land wherever you want them even though the send-from address is different
+- **Confirmed with the user: MailKit** (not the built-in, Microsoft-discouraged `System.Net.Mail.SmtpClient`), sending via **Mailgun's** SMTP endpoint (`smtp.mailgun.org:587`, STARTTLS) — the user already runs SMTP infrastructure and picked Mailgun as the actual provider. From/Reply-To/PrivacyPolicyUrl live in a new singleton `EmailSettings` row (added to the Shared Data Model; not explicitly named in the original Phase 4 text, which only described the *requirement* that they be admin-configurable, not where).
+- **`{{CandidateFirstName}}` added** alongside `{{CandidateName}}` on both templates (not in the original placeholder list) — sourced from ExamTools' own `firstname` field via a new `Candidate.FirstName` column, so "Hi {{CandidateFirstName}}," reads naturally instead of the full registered name.
+- **SMTP is optional**, same retrofit as Phase 2's Zoom/Discord (see that phase's note) — `IEmailSender.IsConfigured` (host *and* username both set — a bare default hostname isn't enough, see the CLAUDE.md gotcha) gates sending; `RegistrationConfirmationSentUtc`/`DayBeforeReminderSentUtc` stay null and backfill automatically once SMTP is configured, exactly like Payment's Square gate.
+- **Editing seeded content today:** since Phase 9's admin UI doesn't exist yet, `docs/email-notifications.md` documents editing `EmailTemplates`/`EmailSettings` directly via a SQLite browser — the seeder never overwrites a row that already exists for a given `Key`, so this is safe to do immediately after first run and stays safe on every future deploy.
 
 **Unit Tests:** Test the template substitution engine directly (known placeholders replaced correctly, unknown placeholders logged not silently sent, missing/empty values handled per-template as documented above). Mock `IEmailSender`; test that the "day-before" query correctly selects candidates whose session is exactly tomorrow (boundary cases: today, day-after-tomorrow should be excluded) and that the correct placeholder values are passed into the template engine per candidate.
 

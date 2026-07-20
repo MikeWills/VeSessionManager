@@ -6,6 +6,9 @@ namespace VeSessionManager.Core.Zoom;
 /// </summary>
 public interface IZoomClient
 {
+    /// <summary>True once AccountId/ClientId/ClientSecret are all set. Zoom is an optional integration — a team that hasn't finished Zoom S2S OAuth app setup yet must not see a repeated failed-call error every poll; SessionEventSchedulingService checks this before attempting Zoom at all.</summary>
+    bool IsConfigured { get; }
+
     Task<ZoomMeeting> CreateMeetingAsync(ZoomMeetingRequest request, CancellationToken cancellationToken);
 
     Task UpdateMeetingAsync(string meetingId, ZoomMeetingRequest request, CancellationToken cancellationToken);

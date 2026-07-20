@@ -60,8 +60,11 @@ In the Development environment the Worker also seeds a starter `Vec`/`FeeConfigu
 first run (see `DevDataSeeder`) — without those rows, ingestion intentionally skips sessions
 until fee configuration exists.
 
-The Zoom/Discord scheduler (Phase 2) needs its own credentials, same pattern. If you don't have
-a Zoom Server-to-Server OAuth app or a Discord bot yet, see
+The Zoom/Discord scheduler (Phase 2) needs its own credentials, same pattern — and both Zoom and
+Discord are **optional**: leave either unconfigured and the Worker just skips that half (logging
+one quiet note per poll, not an error), creating whichever one(s) you *have* set up and
+back-filling the rest automatically the moment you add credentials later. If you don't have a
+Zoom Server-to-Server OAuth app or a Discord bot yet, see
 [`docs/zoom-discord-scheduling.md`](docs/zoom-discord-scheduling.md#account-setup-one-time-before-the-four-secrets-in-the-readme-mean-anything)
 for how to create them — that's account-dashboard setup, not something runnable from this repo.
 
@@ -73,10 +76,9 @@ dotnet user-secrets set "Discord:BotToken" "<Discord bot token>" --project src/V
 ```
 
 On the server: `Zoom__AccountId` / `Zoom__ClientId` / `Zoom__ClientSecret` / `Discord__BotToken`
-environment variables. `Discord:GuildId` (the server events get created in) is not secret but
-also has no sane default — set it in `appsettings.json` (or an environment-specific override)
-before running the Worker; it defaults to `0`, which will fail loudly against the real Discord
-API rather than silently doing nothing. See [`docs/zoom-discord-scheduling.md`](docs/zoom-discord-scheduling.md)
+environment variables. `Discord:GuildId` (the server events get created in) is not secret; it
+defaults to `0`, which reads as "not configured" the same as a missing BotToken — set it in
+appsettings.json once you have a real guild to use. See [`docs/zoom-discord-scheduling.md`](docs/zoom-discord-scheduling.md)
 for API details.
 
 The Square payment-link/webhook flow (Phase 3) needs credentials in **both** the Worker (creates
@@ -94,10 +96,26 @@ dotnet user-secrets set "Square:WebhookSignatureKey" "<webhook subscription sign
 On the server: `Square__AccessToken` / `Square__WebhookSignatureKey` environment variables for
 **both** the Worker and Web systemd units. Non-secret settings — `Square:LocationId`,
 `Square:WebhookNotificationUrl`, `Square:Environment` (`Sandbox` locally, `Production` in
-`appsettings.Production.json`) — live in `appsettings.json` in both projects; `LocationId` and
-`WebhookNotificationUrl` default to empty strings, which fail loudly (not silently) once the
-Worker/webhook endpoint actually try to use them. See [`docs/square-payments.md`](docs/square-payments.md)
+`appsettings.Production.json`) — live in `appsettings.json` in both projects. **Square is
+optional** too, same pattern as Zoom/Discord: without `Square:AccessToken` set, payment-link
+generation is skipped quietly (Payment rows still get created, `Unpaid`, just without a link
+until Square is configured) rather than erroring every poll. See [`docs/square-payments.md`](docs/square-payments.md)
 for API details.
+
+Candidate notification emails (Phase 4) need SMTP credentials — **also optional**, same pattern.
+Templates and the From/Reply-To/privacy-policy settings are seeded once with placeholder content
+on first run and are meant to be **hand-edited by a human** (not generated content) before real
+use; see [`docs/email-notifications.md`](docs/email-notifications.md) for how to edit them today,
+without waiting on Phase 9's admin UI, plus the full placeholder reference.
+
+```bash
+dotnet user-secrets set "Email:SmtpUsername" "<Mailgun SMTP username, e.g. postmaster@yourdomain.com>" --project src/VeSessionManager.Worker
+dotnet user-secrets set "Email:SmtpPassword" "<Mailgun SMTP password>" --project src/VeSessionManager.Worker
+```
+
+On the server: `Email__SmtpUsername` / `Email__SmtpPassword` environment variables. Non-secret
+`Email:SmtpHost`/`Email:SmtpPort`/`Email:UseStartTls` in appsettings.json already default to
+Mailgun's recommended `smtp.mailgun.org:587` with STARTTLS.
 
 ## Environments
 

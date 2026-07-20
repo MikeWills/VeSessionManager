@@ -13,6 +13,9 @@ public class Candidate
     // Nullable because the PII purge job (Phase 10) and the immediate no-show/withdrawal
     // delete action (Phase 9) null these fields out while keeping the row for stats.
     public string? Name { get; set; }
+
+    /// <summary>Not in the original shared data model — added in Phase 4 so candidate emails can open with "Hi {{CandidateFirstName}}," rather than the full "First Middle Last Suffix" from Name. Sourced directly from ExamTools' separate firstname field, not parsed back out of Name.</summary>
+    public string? FirstName { get; set; }
     public string? Email { get; set; }
 
     /// <summary>Normally required before testing, but VECs have allowed testing without one during exceptional circumstances (e.g. federal shutdowns).</summary>
@@ -42,6 +45,12 @@ public class Candidate
     public DateTime? ResultMarkedUtc { get; set; }
 
     public DateTime? PiiPurgedUtc { get; set; }
+
+    /// <summary>Not in the original shared data model — added in Phase 4 so CandidateNotificationService's scans are idempotent (send-once) the same way Phase 2/3's ...SentUtc/SyncedUtc fields are, rather than needing a separate outbox table.</summary>
+    public DateTime? RegistrationConfirmationSentUtc { get; set; }
+
+    /// <summary>See RegistrationConfirmationSentUtc — prevents a daily job restart from re-sending the same day's reminder.</summary>
+    public DateTime? DayBeforeReminderSentUtc { get; set; }
 
     public List<Payment> Payments { get; } = [];
 }

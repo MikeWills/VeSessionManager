@@ -26,6 +26,7 @@ public class SessionEventSchedulingServiceTests
         public List<string> DeleteCalls { get; } = [];
         public Exception? ThrowOnCreate { get; set; }
         public Exception? ThrowOnUpdate { get; set; }
+        public bool IsConfigured { get; set; } = true;
         private int _nextId = 1000;
 
         public Task<ZoomMeeting> CreateMeetingAsync(ZoomMeetingRequest request, CancellationToken cancellationToken)
@@ -62,6 +63,7 @@ public class SessionEventSchedulingServiceTests
         public List<string> UpdateCalls { get; } = [];
         public List<string> DeleteCalls { get; } = [];
         public Exception? ThrowOnCreate { get; set; }
+        public bool IsConfigured { get; set; } = true;
         private int _nextId = 2000;
 
         public Task<DiscordEvent> CreateEventAsync(DiscordEventRequest request, CancellationToken cancellationToken)
@@ -291,6 +293,7 @@ public class SessionEventSchedulingServiceTests
     /// <summary>Throws on the first CreateMeetingAsync call only, so a two-session run can prove one failure doesn't block the other session's processing.</summary>
     private sealed class FailFirstThenSucceedZoomClient : IZoomClient
     {
+        public bool IsConfigured { get; set; } = true;
         private bool _thrown;
         private int _nextId = 3000;
 
@@ -389,5 +392,95 @@ public class SessionEventSchedulingServiceTests
         Assert.Empty(zoom.DeleteCalls);
         Assert.Empty(discord.DeleteCalls);
         Assert.Empty(dbContext.AuditLogs);
+    }
+
+    // ---- Zoom/Discord optional (neither is a hard requirement, unlike ExamTools) ----
+
+    [Fact]
+    public async Task NeitherZoomNorDiscordConfigured_SessionStaysPending_NoCallsMade()
+    {
+        await using var dbContext = CreateContext();
+        var (vec, feeConfig) = await SeedRefsAsync(dbContext);
+        dbContext.Sessions.Add(NewSession(vec, feeConfig));
+        await dbContext.SaveChangesAsync();
+
+        var zoom = new FakeZoomClient { IsConfigured = false };
+        var discord = new FakeDiscordEventClient { IsConfigured = false };
+        var result = await CreateService(dbContext, zoom, discord).RunAsync(CancellationToken.None);
+
+        Assert.Equal(0, result.SessionsSynced);
+        Assert.Equal(1, result.SessionsAwaitingIntegrationConfig);
+        Assert.Empty(zoom.CreateCalls);
+        Assert.Empty(discord.CreateCalls);
+        var saved = dbContext.Sessions.Single();
+        Assert.Null(saved.ZoomMeetingId);
+        Assert.Null(saved.DiscordEventId);
+        Assert.Null(saved.ZoomDiscordSyncedStartUtc);
+    }
+
+    [Fact]
+    public async Task DiscordConfiguredButZoomIsNot_DiscordIsNotCalled_BlockedOnMissingZoomLink()
+    {
+        await using var dbContext = CreateContext();
+        var (vec, feeConfig) = await SeedRefsAsync(dbContext);
+        dbContext.Sessions.Add(NewSession(vec, feeConfig));
+        await dbContext.SaveChangesAsync();
+
+        var zoom = new FakeZoomClient { IsConfigured = false };
+        var discord = new FakeDiscordEventClient(); // configured, but has nothing to work with
+        var result = await CreateService(dbContext, zoom, discord).RunAsync(CancellationToken.None);
+
+        Assert.Equal(0, result.SessionsSynced);
+        Assert.Equal(1, result.SessionsAwaitingIntegrationConfig);
+        Assert.Empty(zoom.CreateCalls);
+        Assert.Empty(discord.CreateCalls); // never attempted — no Zoom join link to put in it
+    }
+
+    [Fact]
+    public async Task ZoomConfiguredButDiscordIsNot_ZoomStillCreated_SessionAwaitsDiscord()
+    {
+        await using var dbContext = CreateContext();
+        var (vec, feeConfig) = await SeedRefsAsync(dbContext);
+        dbContext.Sessions.Add(NewSession(vec, feeConfig));
+        await dbContext.SaveChangesAsync();
+
+        var zoom = new FakeZoomClient();
+        var discord = new FakeDiscordEventClient { IsConfigured = false };
+        var result = await CreateService(dbContext, zoom, discord).RunAsync(CancellationToken.None);
+
+        Assert.Equal(0, result.SessionsSynced);
+        Assert.Equal(1, result.SessionsAwaitingIntegrationConfig);
+        Assert.Single(zoom.CreateCalls);
+        Assert.Empty(discord.CreateCalls);
+        var saved = dbContext.Sessions.Single();
+        Assert.NotNull(saved.ZoomMeetingId);
+        Assert.Null(saved.DiscordEventId);
+        Assert.Null(saved.ZoomDiscordSyncedStartUtc);
+    }
+
+    [Fact]
+    public async Task BothBecomeConfiguredLater_BackfillAutomaticallyOnNextPoll_NoDuplicateZoomMeeting()
+    {
+        await using var dbContext = CreateContext();
+        var (vec, feeConfig) = await SeedRefsAsync(dbContext);
+        dbContext.Sessions.Add(NewSession(vec, feeConfig));
+        await dbContext.SaveChangesAsync();
+
+        var zoom = new FakeZoomClient { IsConfigured = false };
+        var discord = new FakeDiscordEventClient { IsConfigured = false };
+        await CreateService(dbContext, zoom, discord).RunAsync(CancellationToken.None);
+        Assert.Null(dbContext.Sessions.Single().ZoomDiscordSyncedStartUtc);
+
+        zoom.IsConfigured = true;
+        discord.IsConfigured = true;
+        var result = await CreateService(dbContext, zoom, discord).RunAsync(CancellationToken.None);
+
+        Assert.Equal(1, result.SessionsSynced);
+        Assert.Single(zoom.CreateCalls);
+        Assert.Single(discord.CreateCalls);
+        var saved = dbContext.Sessions.Single();
+        Assert.NotNull(saved.ZoomMeetingId);
+        Assert.NotNull(saved.DiscordEventId);
+        Assert.Equal(SessionStart, saved.ZoomDiscordSyncedStartUtc);
     }
 }

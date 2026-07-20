@@ -1,8 +1,13 @@
 # TODO
 
-Outstanding testing/configuration items for what's already built (Phases 0–3 of
+Outstanding testing/configuration items for what's already built (Phases 0–4 of
 [`docs/spec.md`](docs/spec.md)). This tracks operational follow-ups, not the phase roadmap itself
 — see `docs/spec.md` for what's planned but not yet built.
+
+Reminder: Square, Zoom, Discord, and Email/SMTP are all **optional integrations** — the app runs
+fine with any subset of these unconfigured (one quiet log line per poll, no errors), so none of
+the items below are blocking further phase work. They're blocking *live end-to-end verification*
+of Phases 2–4's actual deliverables.
 
 ## Square (Phase 3) — not yet live-verified
 
@@ -11,6 +16,14 @@ Outstanding testing/configuration items for what's already built (Phases 0–3 o
 - [ ] Set `Square:LocationId`, `Square:WebhookNotificationUrl` in `appsettings.json`
 - [ ] For local testing, tunnel the Web project's webhook endpoint to a public HTTPS URL (e.g. `ngrok http https://localhost:5158`) and register that URL as the Square webhook subscription's notification URL
 - [ ] Live test: let the Worker generate a real payment link for a test candidate, pay it with a Square sandbox test card, confirm the webhook flips `Payment.Status` to `Paid`
+
+## Email/SMTP (Phase 4) — not yet live-verified
+
+- [ ] Get Mailgun's domain-specific SMTP username/password (Mailgun dashboard → Sending → Domain settings → SMTP credentials) — see `docs/email-notifications.md`
+- [ ] Set `Email:SmtpUsername`, `Email:SmtpPassword` (via `dotnet user-secrets set`, run with `!`)
+- [ ] Replace the seeded `EmailSettings` row's placeholder values (`FromAddress`/`FromDisplayName`/`ReplyToAddress`/`PrivacyPolicyUrl` are currently `noreply@example.org` / `https://example.org/privacy`) with real values — edit directly in the DB, see `docs/email-notifications.md`
+- [ ] Review/rewrite the seeded `RegistrationConfirmation`/`DayBeforeReminder` template content — it's a real starting example (bullet points, `{{CandidateFirstName}}`, etc.) but the actual wording is a placeholder, not final copy
+- [ ] Live test: confirm a test candidate actually receives both emails with correctly substituted placeholders
 
 ## Carried over from earlier phases
 

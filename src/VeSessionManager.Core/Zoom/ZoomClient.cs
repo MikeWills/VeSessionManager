@@ -40,6 +40,11 @@ public sealed class ZoomClient : IZoomClient, IDisposable
         });
     }
 
+    public bool IsConfigured =>
+        !string.IsNullOrWhiteSpace(_options.AccountId)
+        && !string.IsNullOrWhiteSpace(_options.ClientId)
+        && !string.IsNullOrWhiteSpace(_options.ClientSecret);
+
     public async Task<ZoomMeeting> CreateMeetingAsync(ZoomMeetingRequest request, CancellationToken cancellationToken)
     {
         var response = await SendAsync(
