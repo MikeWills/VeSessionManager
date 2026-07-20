@@ -2,12 +2,13 @@ using VeSessionManager.Core.Square;
 
 namespace VeSessionManager.Web;
 
-/// <summary>Phase 3: receives Square's payment.updated webhook.</summary>
+/// <summary>Phase 3: receives Square's payment.updated webhook. Multi-team: routed per-team (see docs/multi-team.md) since signature verification needs that team's own WebhookSignatureKey before the payload can even be parsed.</summary>
 public static class SquareWebhookEndpoint
 {
     public static IEndpointRouteBuilder MapSquareWebhook(this IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapPost("/webhooks/square", async (
+        endpoints.MapPost("/webhooks/square/{teamId:int}", async (
+            int teamId,
             HttpRequest request,
             SquareWebhookHandler handler,
             ILogger<Program> logger,
@@ -19,7 +20,7 @@ public static class SquareWebhookEndpoint
             var rawBody = await reader.ReadToEndAsync(cancellationToken);
             var signatureHeader = request.Headers["x-square-hmacsha256-signature"].ToString();
 
-            var outcome = await handler.ProcessAsync(rawBody, signatureHeader, cancellationToken);
+            var outcome = await handler.ProcessAsync(teamId, rawBody, signatureHeader, cancellationToken);
 
             if (outcome == SquareWebhookOutcome.InvalidSignature)
             {

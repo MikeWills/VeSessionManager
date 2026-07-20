@@ -15,6 +15,10 @@ namespace VeSessionManager.Core.Payments;
 ///      link at all if the session's FeeConfiguration doesn't collect a fee; Unpaid otherwise).
 ///   2. Payment is Unpaid with no PaymentLinkUrl yet -> call Square for a link. Left null on
 ///      failure so the very next poll retries just the link generation, not row creation too.
+///
+/// Multi-team: this service now operates on one Team's candidates/payments per RunAsync call —
+/// each team has its own separate Square merchant account (Team.IsSquareConfigured). See
+/// docs/multi-team.md.
 /// </summary>
 public class PaymentGenerationService(
     AppDbContext dbContext,
@@ -22,7 +26,7 @@ public class PaymentGenerationService(
     TimeProvider timeProvider,
     ILogger<PaymentGenerationService> logger)
 {
-    public async Task<PaymentGenerationResult> RunAsync(CancellationToken cancellationToken)
+    public async Task<PaymentGenerationResult> RunAsync(Team team, CancellationToken cancellationToken)
     {
         var result = new PaymentGenerationResult();
         var now = timeProvider.GetUtcNow().UtcDateTime;
@@ -30,6 +34,7 @@ public class PaymentGenerationService(
         var candidatesNeedingPayment = await dbContext.Candidates
             .Include(c => c.Session).ThenInclude(s => s.FeeConfiguration)
             .Where(c => c.PiiPurgedUtc == null
+                        && c.Session.TeamId == team.Id
                         && c.Session.Status == SessionStatus.Active
                         && !c.Payments.Any(p => p.Reason == PaymentReason.InitialExam))
             .ToListAsync(cancellationToken);
@@ -58,25 +63,29 @@ public class PaymentGenerationService(
 
         var paymentsNeedingLink = await dbContext.Payments
             .Include(p => p.Candidate).ThenInclude(c => c.Session)
-            .Where(p => p.Status == PaymentStatus.Unpaid && p.PaymentLinkUrl == null)
+            .Where(p => p.Status == PaymentStatus.Unpaid && p.PaymentLinkUrl == null && p.Candidate.Session.TeamId == team.Id)
             .ToListAsync(cancellationToken);
 
-        if (paymentsNeedingLink.Count > 0 && !squareClient.IsConfigured)
+        if (paymentsNeedingLink.Count > 0 && !team.IsSquareConfigured)
         {
-            // Square is an optional integration — an org that doesn't use it yet (or ever) would
+            // Square is an optional integration — a team that doesn't use it yet (or ever) would
             // otherwise see this fail and log an error every single poll, forever. Payment rows
-            // still exist and wait correctly; the moment Square:AccessToken is set, the very next
-            // poll generates every backlogged link with no other config change needed.
-            logger.LogInformation("Square is not configured (Square:AccessToken empty) — {PendingCount} Unpaid payment(s) waiting for a link; links will generate automatically once credentials are set",
-                paymentsNeedingLink.Count);
+            // still exist and wait correctly; the moment this team's SquareAccessToken is set, the
+            // very next poll generates every backlogged link with no other config change needed.
+            logger.LogInformation("Square is not configured for team {TeamId} — {PendingCount} Unpaid payment(s) waiting for a link; links will generate automatically once credentials are set",
+                team.Id, paymentsNeedingLink.Count);
             paymentsNeedingLink.Clear();
         }
+
+        var credentials = team.IsSquareConfigured
+            ? new SquareCredentials(team.Id, team.SquareAccessToken!, team.SquareLocationId ?? "")
+            : null;
 
         foreach (var payment in paymentsNeedingLink)
         {
             try
             {
-                await GenerateLinkAsync(payment, payment.Candidate.Session.Title, cancellationToken);
+                await GenerateLinkAsync(credentials!, payment, payment.Candidate.Session.Title, cancellationToken);
                 result.LinksGenerated++;
             }
             catch (Exception ex)
@@ -90,15 +99,16 @@ public class PaymentGenerationService(
             await dbContext.SaveChangesAsync(cancellationToken);
         }
 
-        logger.LogInformation("Payment generation finished: {Result}", result);
+        logger.LogInformation("Payment generation finished for team {TeamId} ({TeamName}): {Result}", team.Id, team.Name, result);
         return result;
     }
 
-    /// <summary>Manual entry point for the Session Manager's "create retest payment" action (surfaced in Phase 9's admin UI, which doesn't exist yet — this is the service method it will call).</summary>
+    /// <summary>Manual entry point for the Session Manager's "create retest payment" action (surfaced in Phase 9's admin UI, which doesn't exist yet — this is the service method it will call). Keyed by candidateId, not Team, since the caller works from a specific candidate — the owning Team is resolved internally via the candidate's Session.</summary>
     public async Task<Payment> CreateRetestPaymentAsync(int candidateId, CancellationToken cancellationToken)
     {
         var candidate = await dbContext.Candidates
             .Include(c => c.Session).ThenInclude(s => s.FeeConfiguration)
+            .Include(c => c.Session).ThenInclude(s => s.Team)
             .FirstOrDefaultAsync(c => c.Id == candidateId, cancellationToken)
             ?? throw new InvalidOperationException($"Candidate {candidateId} not found.");
 
@@ -115,14 +125,16 @@ public class PaymentGenerationService(
         await dbContext.SaveChangesAsync(cancellationToken);
         logger.LogInformation("Created Retest Payment for candidate {CandidateId}", candidate.Id);
 
-        if (feeConfiguration.FeeCollectionEnabled && squareClient.IsConfigured)
+        var team = candidate.Session.Team;
+        if (feeConfiguration.FeeCollectionEnabled && team.IsSquareConfigured)
         {
             try
             {
                 // Generate the link inline for responsive admin UX; if it fails, RunAsync's scan
                 // picks this Payment up on the next poll (PaymentLinkUrl is still null) — same
                 // retry-safety as the rest of this service.
-                await GenerateLinkAsync(payment, candidate.Session.Title, cancellationToken);
+                var credentials = new SquareCredentials(team.Id, team.SquareAccessToken!, team.SquareLocationId ?? "");
+                await GenerateLinkAsync(credentials, payment, candidate.Session.Title, cancellationToken);
                 await dbContext.SaveChangesAsync(cancellationToken);
             }
             catch (Exception ex)
@@ -134,13 +146,14 @@ public class PaymentGenerationService(
         return payment;
     }
 
-    private async Task GenerateLinkAsync(Payment payment, string sessionTitle, CancellationToken cancellationToken)
+    private async Task GenerateLinkAsync(SquareCredentials credentials, Payment payment, string sessionTitle, CancellationToken cancellationToken)
     {
         var itemName = payment.Reason == PaymentReason.Retest
             ? $"VE Exam Retest Fee - {sessionTitle}"
             : $"VE Exam Fee - {sessionTitle}";
 
         var link = await squareClient.CreatePaymentLinkAsync(
+            credentials,
             new SquarePaymentLinkRequest(payment.Id.ToString(), itemName, payment.Amount),
             cancellationToken);
 

@@ -12,9 +12,9 @@ of Phases 2–4's actual deliverables.
 ## Square (Phase 3) — not yet live-verified
 
 - [ ] Create the Square app + get sandbox credentials — see `docs/square-payments.md`'s Account Setup section
-- [ ] Set `Square:AccessToken`, `Square:WebhookSignatureKey` (via `dotnet user-secrets set`, run with `!` so the value stays local)
-- [ ] Set `Square:LocationId`, `Square:WebhookNotificationUrl` in `appsettings.json`
-- [ ] For local testing, tunnel the Web project's webhook endpoint to a public HTTPS URL (e.g. `ngrok http https://localhost:5158`) and register that URL as the Square webhook subscription's notification URL
+- [ ] **Updated by multi-team (see below): these now go on the seeded `Team` row (direct DB edit), not `Square:*` appsettings/user-secrets** — set `Team.SquareAccessToken`/`SquareWebhookSignatureKey`/`SquareLocationId`/`SquareWebhookNotificationUrl`. `Square:Environment` is the only value still in `appsettings.json` (Sandbox/Production, whole-deployment).
+- [ ] `SquareWebhookNotificationUrl` must be the *team-specific* URL now: `https://<host>/webhooks/square/1` for the seeded team (route changed from `/webhooks/square` to `/webhooks/square/{teamId}` — see `docs/multi-team.md`).
+- [ ] For local testing, tunnel the Web project's webhook endpoint to a public HTTPS URL (e.g. `ngrok http https://localhost:5158`) and register `https://<tunnel-host>/webhooks/square/1` as the Square webhook subscription's notification URL
 - [ ] Live test: let the Worker generate a real payment link for a test candidate, pay it with a Square sandbox test card, confirm the webhook flips `Payment.Status` to `Paid`
 
 ## Email/SMTP (Phase 4) — not yet live-verified
@@ -45,8 +45,8 @@ of Phases 2–4's actual deliverables.
 - [ ] **Blocking:** set the seeded `Team` row's `ExamToolsUsername`/`ExamToolsPassword` via direct DB edit — the migration deliberately leaves them `NULL` (migrations must never contain real secrets, even ones already sitting in this repo's user-secrets). ExamTools ingestion is silently skipped (one quiet log line per poll, no error) until this is done. See `docs/multi-team.md`.
 - [ ] Rename the seeded `Team.Name` (currently `"WX0MIK"`, copied from the old `ExamTools:Team` appsettings value as a placeholder) to something more human-readable if desired — purely cosmetic, `ExamToolsTeamCode` is the value that actually matters functionally.
 - [ ] **Found while cleaning up appsettings.Production.json**: the seeded team's `ExamToolsTeamCode` was copied from the *dev* value (`WX0MIK`, from the base `appsettings.json`) — the real production team code is `HRCC` (was in `appsettings.Production.json`'s now-removed `ExamTools:Team`, per `ExamToolsOptions`' original doc comment: "WX0MIK on dev, HRCC on prod"). If/when this team starts polling the production ExamTools host, set `Team.ExamToolsTeamCode = "HRCC"` instead of `WX0MIK` — don't just re-enter the dev value.
-- [ ] Onboard the second team: add a new `Team` row (direct DB edit — no admin UI yet) with its own `Name`/`ExamToolsTeamCode`/`ExamToolsUsername`/`ExamToolsPassword`. `SessionIngestionJob` picks it up automatically on the next tick, no restart needed.
-- [ ] Fast-follow (not yet scoped as its own phase): apply the same per-team pattern to Zoom/Discord/Square/Email + the Web project's Square webhook route, per `docs/multi-team.md`'s "What's still global" section — until then, every team's sessions share one Zoom/Discord/Square/SMTP account.
+- [ ] Onboard the second team: add a new `Team` row (direct DB edit — no admin UI yet) with its own `Name`/`ExamToolsTeamCode`/`ExamToolsUsername`/`ExamToolsPassword`/Zoom/Discord Guild/Square credentials. `SessionIngestionJob` picks it up automatically on the next tick, no restart needed.
+- [x] ~~Fast-follow: apply the same per-team pattern to Zoom/Discord/Square + the Web project's Square webhook route~~ — done. Zoom and Square are fully per-team (each team has its own account); Discord uses one shared bot with a per-team Guild (confirmed with the user — not per-team credentials). Only **Email/SMTP** still uses one shared global account — that's the one remaining fast-follow piece, not yet scoped as its own phase.
 - [ ] Live test: with two real `Team` rows configured, confirm `SessionIngestionJob`'s per-team loop correctly ingests both teams' sessions into the one shared `Vec`/`FeeConfiguration` (if both teams work with the same VEC) without cross-team session cancellation false-positives (covered by a unit test, but worth confirming against the real ExamTools API too).
 
 ## Carried over from earlier phases

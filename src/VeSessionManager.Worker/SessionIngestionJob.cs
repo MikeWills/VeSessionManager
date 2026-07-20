@@ -17,15 +17,15 @@ namespace VeSessionManager.Worker;
 /// collects a fee) the candidate's payment link have had their best chance to already exist, so the
 /// email reads as complete rather than partial.
 ///
-/// Session/candidate ingestion and Zoom/Discord scheduling are looped per Team (each team has its
-/// own ExamTools/Zoom credentials, and shares one Discord bot but picks its own Guild — see
-/// docs/multi-team.md). Payment generation and registration confirmation are still global (one
-/// call per tick, not looped per team) — they still use a single shared Square/Email account across
-/// every team's sessions, until a later fast-follow gives those integrations the same per-team
-/// credential treatment. Each step still gets its own JobRunHistory entry: a failure in one step
-/// (or one team's turn) shouldn't read as a failure in another on the ops dashboard, and each later
-/// step should still run against whatever the earlier ones already committed even if it itself
-/// later fails.
+/// Session/candidate ingestion, Zoom/Discord scheduling, and Square payment generation are all
+/// looped per Team (each has its own ExamTools/Zoom/Square credentials; Discord shares one bot but
+/// each team picks its own Guild — see docs/multi-team.md). Registration confirmation is still
+/// global (one call per tick, not looped per team) — it still uses a single shared Email/SMTP
+/// account across every team's sessions, until a later fast-follow gives that integration the same
+/// per-team credential treatment. Each step still gets its own JobRunHistory entry: a failure in
+/// one step (or one team's turn) shouldn't read as a failure in another on the ops dashboard, and
+/// each later step should still run against whatever the earlier ones already committed even if it
+/// itself later fails.
 /// </summary>
 public class SessionIngestionJob(
     IServiceScopeFactory scopeFactory,
@@ -60,17 +60,17 @@ public class SessionIngestionJob(
                     ct => schedulingService.RunAsync(team, ct),
                     team.Id,
                     stoppingToken);
+
+                await jobRunHistoryLogger.RunAsync(
+                    "PaymentGeneration",
+                    ct => paymentGenerationService.RunAsync(team, ct),
+                    team.Id,
+                    stoppingToken);
             }
 
-            // Global steps: still process ALL candidates/payments regardless of team, until Square/
-            // Email get the same per-team treatment as ExamTools/Zoom/Discord in a later fast-follow
-            // (see docs/multi-team.md).
-            await jobRunHistoryLogger.RunAsync(
-                "PaymentGeneration",
-                paymentGenerationService.RunAsync,
-                null,
-                stoppingToken);
-
+            // Global step: still processes ALL candidates regardless of team, until Email gets the
+            // same per-team treatment as ExamTools/Zoom/Discord/Square in a later fast-follow (see
+            // docs/multi-team.md).
             await jobRunHistoryLogger.RunAsync(
                 "RegistrationConfirmation",
                 notificationService.SendRegistrationConfirmationsAsync,

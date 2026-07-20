@@ -14,7 +14,9 @@ builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection")));
 
 builder.Services.AddSingleton(TimeProvider.System);
-builder.Services.Configure<SquareOptions>(builder.Configuration.GetSection(SquareOptions.SectionName));
+// No SquareOptions here — WebhookSignatureKey/WebhookNotificationUrl now live on Team (multi-team,
+// each team verifies against its own key via the /webhooks/square/{teamId} route). Nothing else in
+// this project needs SquareOptions:Environment.
 builder.Services.AddScoped<SquareWebhookHandler>();
 
 // Add services to the container.

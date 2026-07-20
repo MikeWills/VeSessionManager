@@ -34,6 +34,15 @@ public class Team
     /// <summary>Which Discord server this team's events post to — the bot itself is shared globally (Discord:BotToken, confirmed with the user), only the Guild varies per team. Null means this team hasn't picked one yet.</summary>
     public ulong? DiscordGuildId { get; set; }
 
+    // Square credentials — nullable. This team's own separate Square merchant account (confirmed
+    // with the user — not shared across teams). Environment (Sandbox/Production) stays global, in
+    // SquareOptions — a whole-deployment choice, not per-team.
+    public string? SquareAccessToken { get; set; }
+    public string? SquareLocationId { get; set; }
+    public string? SquareWebhookSignatureKey { get; set; }
+    /// <summary>Must exactly match this team's webhook subscription's notification URL configured in the Square Developer portal — required input to signature verification, not just where Square happens to POST. Should be https://&lt;host&gt;/webhooks/square/{this team's Id}.</summary>
+    public string? SquareWebhookNotificationUrl { get; set; }
+
     public DateTime CreatedUtc { get; set; }
 
     public List<Session> Sessions { get; } = [];
@@ -50,4 +59,12 @@ public class Team
 
     /// <summary>Just the per-Team half of Discord readiness (has a Guild been picked) — combine with IDiscordEventClient.IsConfigured (the shared bot's own readiness) before actually attempting Discord for a session.</summary>
     public bool IsDiscordConfigured => DiscordGuildId is not null && DiscordGuildId != 0;
+
+    /// <summary>Matches the pre-multi-team ISquareClient.IsConfigured check — AccessToken only. LocationId is validated separately, inside SquareClient, at the point it's actually needed.</summary>
+    public bool IsSquareConfigured => !string.IsNullOrWhiteSpace(SquareAccessToken);
+
+    /// <summary>Whether this team's Square webhook can be signature-verified at all — checked by the webhook route before even attempting verification, distinct from IsSquareConfigured (a team could have AccessToken set for creating payment links but not yet have registered/copied over its webhook subscription details, or vice versa).</summary>
+    public bool IsSquareWebhookConfigured =>
+        !string.IsNullOrWhiteSpace(SquareWebhookSignatureKey)
+        && !string.IsNullOrWhiteSpace(SquareWebhookNotificationUrl);
 }

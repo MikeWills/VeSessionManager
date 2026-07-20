@@ -22,12 +22,13 @@ public class PaymentGenerationServiceTests
     private sealed class FakeSquareClient : ISquareClient
     {
         public List<CapturedCall> Calls { get; } = [];
+        public List<SquareCredentials> CredentialsUsed { get; } = [];
         public Exception? ThrowOnNextCall { get; set; }
-        public bool IsConfigured { get; set; } = true;
         private int _nextOrderId = 5000;
 
-        public Task<SquarePaymentLink> CreatePaymentLinkAsync(SquarePaymentLinkRequest request, CancellationToken cancellationToken)
+        public Task<SquarePaymentLink> CreatePaymentLinkAsync(SquareCredentials credentials, SquarePaymentLinkRequest request, CancellationToken cancellationToken)
         {
+            CredentialsUsed.Add(credentials);
             Calls.Add(new CapturedCall(request.ReferenceId, request.ItemName, request.AmountUsd));
             if (ThrowOnNextCall is not null)
             {
@@ -51,9 +52,24 @@ public class PaymentGenerationServiceTests
     private static PaymentGenerationService CreateService(AppDbContext dbContext, ISquareClient square) =>
         new(dbContext, square, new FixedTimeProvider(Now), NullLogger<PaymentGenerationService>.Instance);
 
+    /// <summary>Seeds a Team. squareConfigured=true (default) sets AccessToken/LocationId so Team.IsSquareConfigured is true.</summary>
+    private static async Task<Team> SeedTeamAsync(AppDbContext dbContext, bool squareConfigured = true)
+    {
+        var team = new Team
+        {
+            Name = "TESTTEAM",
+            SquareAccessToken = squareConfigured ? "square-token" : null,
+            SquareLocationId = squareConfigured ? "square-location" : null,
+            CreatedUtc = Now
+        };
+        dbContext.Teams.Add(team);
+        await dbContext.SaveChangesAsync();
+        return team;
+    }
+
     /// <summary>Seeds Vec/User/FeeConfiguration/Session/Candidate. FeeCollectionEnabled defaults true, $15.</summary>
     private static async Task<Candidate> SeedCandidateAsync(
-        AppDbContext dbContext, bool feeCollectionEnabled = true, decimal examFeeAmount = 15m,
+        AppDbContext dbContext, Team team, bool feeCollectionEnabled = true, decimal examFeeAmount = 15m,
         SessionStatus sessionStatus = SessionStatus.Active, bool purged = false)
     {
         var vec = new Vec { Name = "ARRL" };
@@ -74,6 +90,7 @@ public class PaymentGenerationServiceTests
             ScheduledStartUtc = Now.AddDays(4),
             DurationMinutes = 60,
             Vec = vec,
+            TeamId = team.Id,
             FeeConfiguration = feeConfiguration,
             Status = sessionStatus,
             CreatedUtc = Now
@@ -96,10 +113,11 @@ public class PaymentGenerationServiceTests
     public async Task NewCandidate_WithFeeCollectionEnabled_CreatesUnpaidPaymentAndGeneratesLink()
     {
         await using var dbContext = CreateContext();
-        var candidate = await SeedCandidateAsync(dbContext);
+        var team = await SeedTeamAsync(dbContext);
+        var candidate = await SeedCandidateAsync(dbContext, team);
         var square = new FakeSquareClient();
 
-        var result = await CreateService(dbContext, square).RunAsync(CancellationToken.None);
+        var result = await CreateService(dbContext, square).RunAsync(team, CancellationToken.None);
 
         Assert.Equal(1, result.PaymentsCreated);
         Assert.Equal(1, result.LinksGenerated);
@@ -114,16 +132,18 @@ public class PaymentGenerationServiceTests
         var call = Assert.Single(square.Calls);
         Assert.Equal(payment.Id.ToString(), call.ReferenceId);
         Assert.Equal(15m, call.AmountUsd);
+        Assert.Equal(team.Id, Assert.Single(square.CredentialsUsed).TeamId);
     }
 
     [Fact]
     public async Task NewCandidate_WithFeeCollectionDisabled_CreatesNotApplicablePayment_NeverCallsSquare()
     {
         await using var dbContext = CreateContext();
-        await SeedCandidateAsync(dbContext, feeCollectionEnabled: false);
+        var team = await SeedTeamAsync(dbContext);
+        await SeedCandidateAsync(dbContext, team, feeCollectionEnabled: false);
         var square = new FakeSquareClient();
 
-        var result = await CreateService(dbContext, square).RunAsync(CancellationToken.None);
+        var result = await CreateService(dbContext, square).RunAsync(team, CancellationToken.None);
 
         Assert.Equal(1, result.PaymentsCreated);
         Assert.Equal(0, result.LinksGenerated);
@@ -138,11 +158,12 @@ public class PaymentGenerationServiceTests
     public async Task Repoll_DoesNotDuplicatePaymentRow_OrCallSquareTwice()
     {
         await using var dbContext = CreateContext();
-        await SeedCandidateAsync(dbContext);
+        var team = await SeedTeamAsync(dbContext);
+        await SeedCandidateAsync(dbContext, team);
         var square = new FakeSquareClient();
-        await CreateService(dbContext, square).RunAsync(CancellationToken.None);
+        await CreateService(dbContext, square).RunAsync(team, CancellationToken.None);
 
-        var result = await CreateService(dbContext, square).RunAsync(CancellationToken.None);
+        var result = await CreateService(dbContext, square).RunAsync(team, CancellationToken.None);
 
         Assert.Equal(0, result.PaymentsCreated);
         Assert.Equal(0, result.LinksGenerated);
@@ -154,10 +175,11 @@ public class PaymentGenerationServiceTests
     public async Task LinkGenerationFailure_LeavesPaymentRowIntact_AndRetriesOnlyTheLink()
     {
         await using var dbContext = CreateContext();
-        await SeedCandidateAsync(dbContext);
+        var team = await SeedTeamAsync(dbContext);
+        await SeedCandidateAsync(dbContext, team);
         var square = new FakeSquareClient { ThrowOnNextCall = new InvalidOperationException("Square unavailable") };
 
-        var result = await CreateService(dbContext, square).RunAsync(CancellationToken.None);
+        var result = await CreateService(dbContext, square).RunAsync(team, CancellationToken.None);
 
         Assert.Equal(1, result.PaymentsCreated);
         Assert.Equal(0, result.LinksGenerated);
@@ -166,7 +188,7 @@ public class PaymentGenerationServiceTests
         Assert.Equal(PaymentStatus.Unpaid, payment.Status);
         Assert.Null(payment.PaymentLinkUrl);
 
-        var retryResult = await CreateService(dbContext, square).RunAsync(CancellationToken.None);
+        var retryResult = await CreateService(dbContext, square).RunAsync(team, CancellationToken.None);
 
         Assert.Equal(0, retryResult.PaymentsCreated); // no duplicate row
         Assert.Equal(1, retryResult.LinksGenerated);
@@ -179,10 +201,11 @@ public class PaymentGenerationServiceTests
     public async Task CandidateInCancelledSession_IsNotGivenAPayment()
     {
         await using var dbContext = CreateContext();
-        await SeedCandidateAsync(dbContext, sessionStatus: SessionStatus.Cancelled);
+        var team = await SeedTeamAsync(dbContext);
+        await SeedCandidateAsync(dbContext, team, sessionStatus: SessionStatus.Cancelled);
         var square = new FakeSquareClient();
 
-        var result = await CreateService(dbContext, square).RunAsync(CancellationToken.None);
+        var result = await CreateService(dbContext, square).RunAsync(team, CancellationToken.None);
 
         Assert.Equal(0, result.PaymentsCreated);
         Assert.Empty(dbContext.Payments);
@@ -192,10 +215,11 @@ public class PaymentGenerationServiceTests
     public async Task PurgedCandidate_IsNotGivenAPayment()
     {
         await using var dbContext = CreateContext();
-        await SeedCandidateAsync(dbContext, purged: true);
+        var team = await SeedTeamAsync(dbContext);
+        await SeedCandidateAsync(dbContext, team, purged: true);
         var square = new FakeSquareClient();
 
-        var result = await CreateService(dbContext, square).RunAsync(CancellationToken.None);
+        var result = await CreateService(dbContext, square).RunAsync(team, CancellationToken.None);
 
         Assert.Equal(0, result.PaymentsCreated);
         Assert.Empty(dbContext.Payments);
@@ -205,10 +229,11 @@ public class PaymentGenerationServiceTests
     public async Task CreateRetestPaymentAsync_CreatesSecondPaymentRow_TrackedIndependently()
     {
         await using var dbContext = CreateContext();
-        var candidate = await SeedCandidateAsync(dbContext);
+        var team = await SeedTeamAsync(dbContext);
+        var candidate = await SeedCandidateAsync(dbContext, team);
         var square = new FakeSquareClient();
         var service = CreateService(dbContext, square);
-        await service.RunAsync(CancellationToken.None); // initial payment + link
+        await service.RunAsync(team, CancellationToken.None); // initial payment + link
 
         var initial = dbContext.Payments.Single();
         initial.Status = PaymentStatus.Paid;
@@ -235,10 +260,11 @@ public class PaymentGenerationServiceTests
     public async Task CreateRetestPaymentAsync_WithFeeCollectionDisabled_CreatesNotApplicablePayment()
     {
         await using var dbContext = CreateContext();
-        var candidate = await SeedCandidateAsync(dbContext, feeCollectionEnabled: false);
+        var team = await SeedTeamAsync(dbContext);
+        var candidate = await SeedCandidateAsync(dbContext, team, feeCollectionEnabled: false);
         var square = new FakeSquareClient();
         var service = CreateService(dbContext, square);
-        await service.RunAsync(CancellationToken.None);
+        await service.RunAsync(team, CancellationToken.None);
 
         var retest = await service.CreateRetestPaymentAsync(candidate.Id, CancellationToken.None);
 
@@ -251,10 +277,11 @@ public class PaymentGenerationServiceTests
     public async Task SquareNotConfigured_StillCreatesPaymentRow_ButSkipsLinkGeneration_NoFailureCounted()
     {
         await using var dbContext = CreateContext();
-        await SeedCandidateAsync(dbContext);
-        var square = new FakeSquareClient { IsConfigured = false };
+        var team = await SeedTeamAsync(dbContext, squareConfigured: false);
+        await SeedCandidateAsync(dbContext, team);
+        var square = new FakeSquareClient();
 
-        var result = await CreateService(dbContext, square).RunAsync(CancellationToken.None);
+        var result = await CreateService(dbContext, square).RunAsync(team, CancellationToken.None);
 
         Assert.Equal(1, result.PaymentsCreated);
         Assert.Equal(0, result.LinksGenerated);
@@ -265,8 +292,10 @@ public class PaymentGenerationServiceTests
         Assert.Empty(square.Calls); // CreatePaymentLinkAsync itself must never be invoked
 
         // Once Square becomes configured, the very next poll must backfill the link with no other change.
-        square.IsConfigured = true;
-        var retryResult = await CreateService(dbContext, square).RunAsync(CancellationToken.None);
+        team.SquareAccessToken = "square-token";
+        team.SquareLocationId = "square-location";
+        await dbContext.SaveChangesAsync();
+        var retryResult = await CreateService(dbContext, square).RunAsync(team, CancellationToken.None);
 
         Assert.Equal(0, retryResult.PaymentsCreated); // no duplicate row
         Assert.Equal(1, retryResult.LinksGenerated);
@@ -277,15 +306,32 @@ public class PaymentGenerationServiceTests
     public async Task CreateRetestPaymentAsync_WithSquareNotConfigured_CreatesPaymentRowWithoutAttemptingLink()
     {
         await using var dbContext = CreateContext();
-        var candidate = await SeedCandidateAsync(dbContext);
-        var square = new FakeSquareClient { IsConfigured = false };
+        var team = await SeedTeamAsync(dbContext, squareConfigured: false);
+        var candidate = await SeedCandidateAsync(dbContext, team);
+        var square = new FakeSquareClient();
         var service = CreateService(dbContext, square);
-        await service.RunAsync(CancellationToken.None); // initial payment, also skipped
+        await service.RunAsync(team, CancellationToken.None); // initial payment, also skipped
 
         var retest = await service.CreateRetestPaymentAsync(candidate.Id, CancellationToken.None);
 
         Assert.Equal(PaymentStatus.Unpaid, retest.Status);
         Assert.Null(retest.PaymentLinkUrl);
         Assert.Empty(square.Calls);
+    }
+
+    [Fact]
+    public async Task TwoTeams_EachGeneratesLinkWithItsOwnSquareCredentials()
+    {
+        await using var dbContext = CreateContext();
+        var teamA = await SeedTeamAsync(dbContext);
+        var teamB = await SeedTeamAsync(dbContext);
+        await SeedCandidateAsync(dbContext, teamA);
+        await SeedCandidateAsync(dbContext, teamB);
+        var square = new FakeSquareClient();
+
+        await CreateService(dbContext, square).RunAsync(teamA, CancellationToken.None);
+        await CreateService(dbContext, square).RunAsync(teamB, CancellationToken.None);
+
+        Assert.Equal([teamA.Id, teamB.Id], square.CredentialsUsed.Select(c => c.TeamId));
     }
 }

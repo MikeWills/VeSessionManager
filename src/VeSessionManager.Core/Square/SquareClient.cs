@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Square;
@@ -8,19 +9,20 @@ namespace VeSessionManager.Core.Square;
 /// <summary>
 /// Wraps the official Square .NET SDK's Checkout API to create Order-based payment links (not
 /// QuickPay — an Order is what lets us set ReferenceId, per
-/// https://developer.squareup.com/reference/square/objects/Order). Registered as a singleton.
-/// Credential validation and construction of the inner SDK client are both deferred to first
-/// use (not the constructor): this type is resolved eagerly from inside a BackgroundService, and
-/// a constructor throw there is a *host-stopping* failure (.NET's default
-/// BackgroundServiceExceptionBehavior is StopHost) — it would take down ExamTools/Zoom/Discord
-/// polling too, not just payment generation. A throw from CreatePaymentLinkAsync instead, is
-/// just one more per-item failure PaymentGenerationService already catches and retries next poll.
+/// https://developer.squareup.com/reference/square/objects/Order). Registered as a singleton;
+/// like ExamToolsClient, that singleton now manages one independent SDK client instance *per
+/// team*, keyed by SquareCredentials.TeamId (each team has its own separate Square merchant
+/// account — not shared, confirmed with the user). The SDK client has no per-instance login/
+/// session constraint the way Discord's does, so this is a plain cache, no locking needed.
+/// Construction is still deferred to first use per team (not eager): a constructor throw would be
+/// a *host-stopping* failure (.NET's default BackgroundServiceExceptionBehavior is StopHost) — it
+/// would take down ExamTools/Zoom/Discord polling too, not just payment generation.
 /// </summary>
 public sealed class SquareClient : ISquareClient
 {
     private readonly SquareOptions _options;
     private readonly ILogger<SquareClient> _logger;
-    private global::Square.SquareClient? _client;
+    private readonly ConcurrentDictionary<int, global::Square.SquareClient> _clientsByTeamId = new();
 
     public SquareClient(IOptions<SquareOptions> options, ILogger<SquareClient> logger)
     {
@@ -28,15 +30,17 @@ public sealed class SquareClient : ISquareClient
         _logger = logger;
     }
 
-    public bool IsConfigured => !string.IsNullOrWhiteSpace(_options.AccessToken);
-
-    public async Task<SquarePaymentLink> CreatePaymentLinkAsync(SquarePaymentLinkRequest request, CancellationToken cancellationToken)
+    public async Task<SquarePaymentLink> CreatePaymentLinkAsync(SquareCredentials credentials, SquarePaymentLinkRequest request, CancellationToken cancellationToken)
     {
-        var client = GetOrCreateClient();
+        var client = GetOrCreateClient(credentials);
 
-        if (string.IsNullOrWhiteSpace(_options.LocationId))
+        if (string.IsNullOrWhiteSpace(credentials.LocationId))
         {
-            throw new InvalidOperationException("Square:LocationId is not configured.");
+            // Mirrors Team.IsSquareConfigured deliberately only checking AccessToken, same as the
+            // pre-multi-team IsConfigured did — LocationId is validated here instead, at the point
+            // it's actually needed, so a team can get as far as "linked their Square account" before
+            // also needing to pick a Location.
+            throw new InvalidOperationException($"Team {credentials.TeamId}'s Square LocationId is not configured.");
         }
 
         // Amounts are stored as decimal USD dollars on Payment; Square wants an integer count of
@@ -49,7 +53,7 @@ public sealed class SquareClient : ISquareClient
                 IdempotencyKey = Guid.NewGuid().ToString(),
                 Order = new Order
                 {
-                    LocationId = _options.LocationId,
+                    LocationId = credentials.LocationId,
                     ReferenceId = request.ReferenceId,
                     LineItems =
                     [
@@ -73,7 +77,7 @@ public sealed class SquareClient : ISquareClient
         var paymentLink = response.PaymentLink
             ?? throw new InvalidOperationException("Square create-payment-link response had no payment_link and no errors.");
 
-        _logger.LogInformation("Created Square payment link for order {SquareOrderId}", paymentLink.OrderId);
+        _logger.LogInformation("Created Square payment link for team {TeamId}, order {SquareOrderId}", credentials.TeamId, paymentLink.OrderId);
         return new SquarePaymentLink
         {
             OrderId = paymentLink.OrderId ?? throw new InvalidOperationException("Square payment link response had no order_id."),
@@ -81,25 +85,15 @@ public sealed class SquareClient : ISquareClient
         };
     }
 
-    private global::Square.SquareClient GetOrCreateClient()
-    {
-        if (_client is not null)
+    private global::Square.SquareClient GetOrCreateClient(SquareCredentials credentials) =>
+        _clientsByTeamId.GetOrAdd(credentials.TeamId, _ =>
         {
-            return _client;
-        }
+            var environment = _options.Environment.Equals("Production", StringComparison.OrdinalIgnoreCase)
+                ? SquareEnvironment.Production
+                : SquareEnvironment.Sandbox;
 
-        if (string.IsNullOrWhiteSpace(_options.AccessToken))
-        {
-            throw new InvalidOperationException(
-                "Square access token is not configured. Set Square:AccessToken via user-secrets or environment variables.");
-        }
-
-        var environment = _options.Environment.Equals("Production", StringComparison.OrdinalIgnoreCase)
-            ? SquareEnvironment.Production
-            : SquareEnvironment.Sandbox;
-
-        return _client = new global::Square.SquareClient(
-            _options.AccessToken,
-            clientOptions: new ClientOptions { BaseUrl = environment });
-    }
+            return new global::Square.SquareClient(
+                credentials.AccessToken,
+                clientOptions: new ClientOptions { BaseUrl = environment });
+        });
 }
