@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using VeSessionManager.Core.Data;
 
@@ -10,9 +11,11 @@ using VeSessionManager.Core.Data;
 namespace VeSessionManager.Core.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260721112130_Phase9cSystemSettings")]
+    partial class Phase9cSystemSettings
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.10");
@@ -109,7 +112,7 @@ namespace VeSessionManager.Core.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("AuditLogs", (string)null);
+                    b.ToTable("AuditLogs");
                 });
 
             modelBuilder.Entity("VeSessionManager.Core.Entities.Candidate", b =>
@@ -185,7 +188,7 @@ namespace VeSessionManager.Core.Migrations
                     b.HasIndex("SessionId", "ExamToolsApplicantId")
                         .IsUnique();
 
-                    b.ToTable("Candidates", (string)null);
+                    b.ToTable("Candidates");
                 });
 
             modelBuilder.Entity("VeSessionManager.Core.Entities.EmailSettings", b =>
@@ -229,7 +232,7 @@ namespace VeSessionManager.Core.Migrations
 
                     b.HasIndex("UpdatedByUserId");
 
-                    b.ToTable("EmailSettings", (string)null);
+                    b.ToTable("EmailSettings");
                 });
 
             modelBuilder.Entity("VeSessionManager.Core.Entities.EmailTemplate", b =>
@@ -266,7 +269,7 @@ namespace VeSessionManager.Core.Migrations
                     b.HasIndex("TeamId", "Key")
                         .IsUnique();
 
-                    b.ToTable("EmailTemplates", (string)null);
+                    b.ToTable("EmailTemplates");
                 });
 
             modelBuilder.Entity("VeSessionManager.Core.Entities.FeeConfiguration", b =>
@@ -307,7 +310,7 @@ namespace VeSessionManager.Core.Migrations
 
                     b.HasIndex("VecId");
 
-                    b.ToTable("FeeConfigurations", (string)null);
+                    b.ToTable("FeeConfigurations");
                 });
 
             modelBuilder.Entity("VeSessionManager.Core.Entities.JobRunHistory", b =>
@@ -339,7 +342,7 @@ namespace VeSessionManager.Core.Migrations
 
                     b.HasIndex("TeamId");
 
-                    b.ToTable("JobRunHistories", (string)null);
+                    b.ToTable("JobRunHistories");
                 });
 
             modelBuilder.Entity("VeSessionManager.Core.Entities.Payment", b =>
@@ -397,7 +400,7 @@ namespace VeSessionManager.Core.Migrations
 
                     b.HasIndex("RefundRequestedByUserId");
 
-                    b.ToTable("Payments", (string)null);
+                    b.ToTable("Payments");
                 });
 
             modelBuilder.Entity("VeSessionManager.Core.Entities.Session", b =>
@@ -486,7 +489,7 @@ namespace VeSessionManager.Core.Migrations
 
                     b.HasIndex("VecSubmittedByUserId");
 
-                    b.ToTable("Sessions", (string)null);
+                    b.ToTable("Sessions");
                 });
 
             modelBuilder.Entity("VeSessionManager.Core.Entities.SessionVolunteerExaminer", b =>
@@ -501,7 +504,7 @@ namespace VeSessionManager.Core.Migrations
 
                     b.HasIndex("VolunteerExaminerId");
 
-                    b.ToTable("SessionVolunteerExaminers", (string)null);
+                    b.ToTable("SessionVolunteerExaminers");
                 });
 
             modelBuilder.Entity("VeSessionManager.Core.Entities.SystemSettings", b =>
@@ -532,7 +535,7 @@ namespace VeSessionManager.Core.Migrations
 
                     b.HasIndex("UpdatedByUserId");
 
-                    b.ToTable("SystemSettings", (string)null);
+                    b.ToTable("SystemSettings");
                 });
 
             modelBuilder.Entity("VeSessionManager.Core.Entities.Team", b =>
@@ -604,7 +607,7 @@ namespace VeSessionManager.Core.Migrations
                     b.HasIndex("Name")
                         .IsUnique();
 
-                    b.ToTable("Teams", (string)null);
+                    b.ToTable("Teams");
                 });
 
             modelBuilder.Entity("VeSessionManager.Core.Entities.User", b =>
@@ -710,7 +713,7 @@ namespace VeSessionManager.Core.Migrations
                     b.HasIndex("Name")
                         .IsUnique();
 
-                    b.ToTable("Vecs", (string)null);
+                    b.ToTable("Vecs");
                 });
 
             modelBuilder.Entity("VeSessionManager.Core.Entities.VolunteerExaminer", b =>
@@ -737,7 +740,7 @@ namespace VeSessionManager.Core.Migrations
                     b.HasIndex("TeamId", "CallSign")
                         .IsUnique();
 
-                    b.ToTable("VolunteerExaminers", (string)null);
+                    b.ToTable("VolunteerExaminers");
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityUserClaim<int>", b =>

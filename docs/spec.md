@@ -454,7 +454,9 @@ features (ARRL's own youth discount program), not a generic VEC concept.
 
 ### Phase 9c — Admin Config Screens
 
-**Goal:** Everything listed under SystemAdmin and TeamAdmin above. **Needs a real split when this phase is actually built** (not yet designed in detail) — SystemAdmin's screens are deployment-wide (team creation, TeamAdmin grants, VEC management since VECs are shared/global, PII retention window, ULS polling settings, global audit log/job run history), TeamAdmin's screens are scoped to their own team (that team's Zoom/Square/Discord/Email credentials, fee configuration for VECs their team works with, that team's email templates, granting SessionManager/TeamLead within their team). Decide during 9a's design pass whether these are genuinely separate screen sets or one screen set with SystemAdmin able to pick "which team" while TeamAdmin is locked to their own.
+**Done, 2026-07-21 — see CLAUDE.md's "Admin config screens" entry for full detail.**
+
+**Goal:** Everything listed under SystemAdmin and TeamAdmin above. **Split decided during this phase**: one shared Razor Pages set (`Pages/Admin/`) rather than separate SystemAdmin/TeamAdmin folders — SystemAdmin gets a team-picker, TeamAdmin is locked to their own team.
 
 - User management (create/deactivate, role assignment, Team Lead-to-Session Manager/Team Admin assignment)
 - System config: Zoom/Square/Discord credentials, SMTP settings (From/Reply-To) — now per-`Team` (multi-team foundation), ULS polling settings, PII retention window (deployment-wide, SystemAdmin only)

@@ -1,0 +1,203 @@
+@page
+@model VeSessionManager.Web.Pages.Admin.UsersModel
+@using VeSessionManager.Core.Entities
+@{
+    ViewData["Title"] = "Users";
+    ViewData["ActiveNav"] = "AdminUsers";
+    Layout = "_AppLayout";
+}
+
+<div class="page-head">
+    <div>
+        <p class="eyebrow">@(Model.IsSystemAdmin ? "Deployment-wide" : "Your team")</p>
+        <h1>Users</h1>
+    </div>
+    @if (Model.IsSystemAdmin || Model.TeamId is not null)
+    {
+        <button type="button" class="btn-primary" data-open-modal="createUserModal">+ New User</button>
+    }
+</div>
+
+@if (Model.IsSystemAdmin)
+{
+    <div class="filters" style="margin-bottom:16px;">
+        <a class="filter-pill @(Model.TeamId is null ? "active" : "")" asp-page="./Users">All teams</a>
+        @foreach (var team in Model.AvailableTeams)
+        {
+            <a class="filter-pill @(team.Id == Model.TeamId ? "active" : "")" asp-page="./Users" asp-route-teamId="@team.Id">@team.Name</a>
+        }
+    </div>
+}
+
+@if (!Model.IsSystemAdmin && Model.TeamId is null)
+{
+    <p>No team assigned to this account.</p>
+}
+else
+{
+    <table>
+        <thead>
+            <tr>
+                <th>Name</th>
+                <th>Email</th>
+                <th>Role</th>
+                <th>Team</th>
+                <th>Manager</th>
+                <th>Status</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            @if (Model.Users.Count == 0)
+            {
+                <tr><td colspan="7">No users yet.</td></tr>
+            }
+            @foreach (var u in Model.Users)
+            {
+                <tr>
+                    <td class="session-title">@u.Name</td>
+                    <td class="mono">@u.Email</td>
+                    <td>@u.Role</td>
+                    <td>@(u.TeamName ?? "—")</td>
+                    <td>@(u.ManagerName ?? "—")</td>
+                    <td>
+                        @if (u.IsActive)
+                        {
+                            <span class="chip chip-green">Active</span>
+                        }
+                        else
+                        {
+                            <span class="chip chip-brick">Deactivated</span>
+                        }
+                    </td>
+                    <td class="row-actions">
+                        <button type="button" class="kebab" aria-label="Actions">⋮</button>
+                        <div class="menu">
+                            <button type="button" class="item" data-open-modal="roleModal-@u.Id">Change role</button>
+                            @if (u.Role == UserRole.TeamLead)
+                            {
+                                <button type="button" class="item" data-open-modal="managerModal-@u.Id">Assign manager</button>
+                            }
+                            <hr>
+                            @if (u.IsActive)
+                            {
+                                <form method="post" asp-page-handler="Deactivate">
+                                    <input type="hidden" name="targetUserId" value="@u.Id" />
+                                    <button type="submit" class="item danger" disabled="@(u.Id == Model.CurrentUserId)">Deactivate</button>
+                                </form>
+                            }
+                            else
+                            {
+                                <form method="post" asp-page-handler="Reactivate">
+                                    <input type="hidden" name="targetUserId" value="@u.Id" />
+                                    <button type="submit" class="item">Reactivate</button>
+                                </form>
+                            }
+                        </div>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+
+    <div class="modal-backdrop" id="createUserModal">
+        <div class="modal">
+            <h3>New User</h3>
+            <form method="post" asp-page-handler="Create">
+                <div class="field"><label for="createUserEmail">Email</label><input id="createUserEmail" name="email" type="email" required /></div>
+                <div class="field"><label for="createUserName">Name</label><input id="createUserName" name="name" required /></div>
+                <div class="field">
+                    <label for="createUserRole">Role</label>
+                    <select id="createUserRole" name="role">
+                        @foreach (var role in Model.AssignableRoles)
+                        {
+                            <option value="@role">@role</option>
+                        }
+                    </select>
+                </div>
+                @if (Model.IsSystemAdmin)
+                {
+                    <div class="field">
+                        <label for="createUserTeam">Team</label>
+                        <select id="createUserTeam" name="teamId">
+                            <option value="">(none — SystemAdmin)</option>
+                            @foreach (var team in Model.AvailableTeams)
+                            {
+                                <option value="@team.Id" selected="@(team.Id == Model.TeamId)">@team.Name</option>
+                            }
+                        </select>
+                    </div>
+                }
+                <div class="field"><label for="createUserPassword">Initial password</label><input id="createUserPassword" name="password" type="password" required /></div>
+                <div class="modal-actions">
+                    <button type="button" class="btn-secondary btn-sm" data-close-modal>Cancel</button>
+                    <button type="submit" class="btn-primary btn-sm">Create</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    @foreach (var u in Model.Users)
+    {
+        <div class="modal-backdrop" id="roleModal-@u.Id">
+            <div class="modal">
+                <h3>Change role — @u.Name</h3>
+                <form method="post" asp-page-handler="SetRole">
+                    <input type="hidden" name="targetUserId" value="@u.Id" />
+                    <div class="field">
+                        <label for="newRole-@u.Id">Role</label>
+                        <select id="newRole-@u.Id" name="newRole">
+                            @foreach (var role in Model.AssignableRoles)
+                            {
+                                <option value="@role" selected="@(role == u.Role)">@role</option>
+                            }
+                        </select>
+                    </div>
+                    @if (Model.IsSystemAdmin)
+                    {
+                        <div class="field">
+                            <label for="roleTeam-@u.Id">Team</label>
+                            <select id="roleTeam-@u.Id" name="teamId">
+                                <option value="">(none — SystemAdmin)</option>
+                                @foreach (var team in Model.AvailableTeams)
+                                {
+                                    <option value="@team.Id" selected="@(team.Name == u.TeamName)">@team.Name</option>
+                                }
+                            </select>
+                        </div>
+                    }
+                    <div class="modal-actions">
+                        <button type="button" class="btn-secondary btn-sm" data-close-modal>Cancel</button>
+                        <button type="submit" class="btn-primary btn-sm">Save</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        @if (u.Role == UserRole.TeamLead)
+        {
+            <div class="modal-backdrop" id="managerModal-@u.Id">
+                <div class="modal">
+                    <h3>Assign manager — @u.Name</h3>
+                    <form method="post" asp-page-handler="SetManager">
+                        <input type="hidden" name="targetUserId" value="@u.Id" />
+                        <div class="field">
+                            <label for="managerUserId-@u.Id">Manager</label>
+                            <select id="managerUserId-@u.Id" name="managerUserId">
+                                <option value="">(none)</option>
+                                @foreach (var manager in Model.AvailableManagers)
+                                {
+                                    <option value="@manager.Id" selected="@(manager.Name == u.ManagerName)">@manager.Name</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="modal-actions">
+                            <button type="button" class="btn-secondary btn-sm" data-close-modal>Cancel</button>
+                            <button type="submit" class="btn-primary btn-sm">Save</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        }
+    }
+}

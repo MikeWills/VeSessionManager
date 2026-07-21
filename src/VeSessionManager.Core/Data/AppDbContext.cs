@@ -24,6 +24,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : IdentityUser
     public DbSet<SessionVolunteerExaminer> SessionVolunteerExaminers => Set<SessionVolunteerExaminer>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<JobRunHistory> JobRunHistories => Set<JobRunHistory>();
+    public DbSet<SystemSettings> SystemSettings => Set<SystemSettings>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -113,5 +114,15 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : IdentityUser
         {
             b.HasOne(a => a.User).WithMany().HasForeignKey(a => a.UserId).OnDelete(DeleteBehavior.Restrict);
         });
+
+        modelBuilder.Entity<SystemSettings>(b =>
+        {
+            b.HasOne(s => s.UpdatedByUser).WithMany().HasForeignKey(s => s.UpdatedByUserId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        // Phase 9c adds real Team/Vec create screens for the first time — enforce name
+        // uniqueness so the new team-picker/VEC-picker dropdowns can't end up with duplicates.
+        modelBuilder.Entity<Team>(b => b.HasIndex(t => t.Name).IsUnique());
+        modelBuilder.Entity<Vec>(b => b.HasIndex(v => v.Name).IsUnique());
     }
 }

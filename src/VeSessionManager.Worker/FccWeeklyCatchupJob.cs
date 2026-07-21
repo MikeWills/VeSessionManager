@@ -1,3 +1,6 @@
+using Microsoft.EntityFrameworkCore;
+using VeSessionManager.Core.Admin;
+using VeSessionManager.Core.Data;
 using VeSessionManager.Core.FccUls;
 using VeSessionManager.Core.Jobs;
 
@@ -18,8 +21,10 @@ public class FccWeeklyCatchupJob(
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var intervalHours = configuration.GetValue("Jobs:FccWeeklyCatchupIntervalHours", 24);
-        var targetDay = configuration.GetValue("Jobs:FccWeeklyCatchupDayOfWeek", DayOfWeek.Monday);
+        // Phase 9c: SystemSettings (DB, admin-editable) is authoritative as of the Worker's next
+        // restart after an edit — read once here, not re-checked mid-run. Falls back to the
+        // appsettings.json values only if the row is somehow missing.
+        var (intervalHours, targetDay) = await GetWeeklyCatchupSettingsAsync(stoppingToken);
         using var timer = new PeriodicTimer(TimeSpan.FromHours(intervalHours));
 
         do
@@ -40,5 +45,20 @@ public class FccWeeklyCatchupJob(
                 stoppingToken);
         }
         while (await timer.WaitForNextTickAsync(stoppingToken));
+    }
+
+    private async Task<(int IntervalHours, DayOfWeek TargetDay)> GetWeeklyCatchupSettingsAsync(CancellationToken cancellationToken)
+    {
+        using var scope = scopeFactory.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var settings = await dbContext.SystemSettings.FirstOrDefaultAsync(s => s.Id == SystemSettingsService.SingletonId, cancellationToken);
+        if (settings is not null)
+        {
+            return (settings.FccWeeklyCatchupIntervalHours, settings.FccWeeklyCatchupDayOfWeek);
+        }
+
+        return (
+            configuration.GetValue("Jobs:FccWeeklyCatchupIntervalHours", 24),
+            configuration.GetValue("Jobs:FccWeeklyCatchupDayOfWeek", DayOfWeek.Monday));
     }
 }

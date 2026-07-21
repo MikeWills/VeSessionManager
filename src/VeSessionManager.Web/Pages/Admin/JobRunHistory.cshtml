@@ -1,0 +1,53 @@
+@page
+@model VeSessionManager.Web.Pages.Admin.JobRunHistoryModel
+@{
+    ViewData["Title"] = "Job Run History";
+    ViewData["ActiveNav"] = "AdminJobHistory";
+    Layout = "_AppLayout";
+}
+
+<div class="page-head">
+    <div>
+        <p class="eyebrow">Most recent 200</p>
+        <h1>Job Run History</h1>
+    </div>
+</div>
+
+<table>
+    <thead>
+        <tr>
+            <th>Job</th>
+            <th>Team</th>
+            <th>Started</th>
+            <th>Completed</th>
+            <th>Status</th>
+            <th>Error</th>
+        </tr>
+    </thead>
+    <tbody>
+        @if (Model.Runs.Count == 0)
+        {
+            <tr><td colspan="6">No job runs recorded yet.</td></tr>
+        }
+        @foreach (var run in Model.Runs)
+        {
+            <tr>
+                <td class="session-title">@run.JobName</td>
+                <td>@(run.TeamName ?? "(global)")</td>
+                <td class="mono">@run.StartedUtc.ToString("MMM d, yyyy h:mm:ss tt")</td>
+                <td class="mono">@(run.CompletedUtc?.ToString("MMM d, yyyy h:mm:ss tt") ?? "—")</td>
+                <td>
+                    @if (run.Success)
+                    {
+                        <span class="chip chip-green">Success</span>
+                    }
+                    else
+                    {
+                        <span class="chip chip-brick">Failed</span>
+                    }
+                </td>
+                <td>@run.ErrorMessage</td>
+            </tr>
+        }
+    </tbody>
+</table>

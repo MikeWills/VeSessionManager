@@ -92,6 +92,14 @@ until its columns are set via direct DB edit (no admin UI yet):
   credentials and template wording — all covered by unit tests, but worth confirming against the
   real APIs too.
 
+## Bugs / known issues
+
+- [ ] **Duplicate Discord scheduled events** — found ~6 duplicate events in the Discord server (reported 2026-07-21). `SessionEventSchedulingService.SyncZoomAndDiscordAsync` (`src/VeSessionManager.Core/Scheduling/SessionEventSchedulingService.cs`) only checks `session.DiscordEventId is null` before calling `discordEventClient.CreateEventAsync` — if the process fails/restarts *after* the Discord API call succeeds but *before* `SaveChangesAsync` persists the returned `DiscordEventId`, the next poll has no record of the already-created event and creates another one for the same session. Two follow-ups: (1) manually delete the duplicate events in the Discord server now; (2) fix `CreateEventAsync`'s call site to check for an existing event by name/time in the guild before creating (or persist `DiscordEventId` immediately after the API call, before doing anything else that could throw) so this can't recur.
+
+- [ ] **Remove "Add walk-in candidate" — redundant with ExamTools** (reported 2026-07-21). Walk-in registration is already handled by ExamTools itself, so Phase 9b's own walk-in action (`CandidateActionService.AddWalkInAsync` in `src/VeSessionManager.Core/CandidateActions/CandidateActionService.cs`, plus its `OnPostAddWalkInAsync` handler and modal in `Pages/SessionManager/Detail.cshtml(.cs)`) is unnecessary — a walk-in registered directly in ExamTools will already flow in through the normal `SessionIngestionService` polling, same as any other candidate. Remove the action, its page wiring, and its test coverage (`CandidateActionServiceTests`' walk-in cases) once confirmed; double check nothing else (e.g. `docs/spec.md`'s Session Manager bullet list) still calls for it as a listed feature before removing the spec line too.
+
+- [ ] **Remove "Move candidate to a different session" — redundant with ExamTools** (reported 2026-07-21). Same reasoning as the walk-in item above: moving a candidate between sessions is already handled in ExamTools itself, so Phase 9b's own move action (`CandidateActionService.MoveAsync`/`CandidateMoveResult` in `src/VeSessionManager.Core/CandidateActions/CandidateActionService.cs`, plus its `OnPostMoveAsync` handler and modal in `Pages/SessionManager/Detail.cshtml(.cs)`) is unnecessary — a move made in ExamTools will already be reflected the next time `SessionIngestionService` polls. Remove the action, its page wiring, and its test coverage once confirmed; double check `docs/spec.md`'s Session Manager bullet list before removing that line too.
+
 ## Carried over from earlier phases
 
 - [ ] Confirm the production ExamTools host — `exam.tools` vs `alpha.exam.tools` (only the dev site, `examtools.dev`, has been exercised so far)

@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
+using VeSessionManager.Core.Admin;
 using VeSessionManager.Core.Authorization;
 using VeSessionManager.Core.CandidateActions;
 using VeSessionManager.Core.Data;
@@ -51,6 +52,15 @@ builder.Services.AddScoped<VolunteerExaminerRosterService>();
 
 // Phase 9a: stateless, no DB dependency of its own — safe as a singleton.
 builder.Services.AddSingleton<SessionAccessScope>();
+
+// Phase 9c: Admin Config Screens — SystemAdmin/TeamAdmin config surface (Pages/Admin/).
+builder.Services.AddSingleton<AdminAccessScope>();
+builder.Services.AddScoped<TeamSettingsService>();
+builder.Services.AddScoped<VecManagementService>();
+builder.Services.AddScoped<FeeConfigurationService>();
+builder.Services.AddScoped<EmailTemplateAdminService>();
+builder.Services.AddScoped<UserManagementService>();
+builder.Services.AddScoped<SystemSettingsService>();
 
 // AddIdentityCore, not AddIdentity — deliberately skips Identity's own Role tables (Role stays one
 // plain enum column on User, see docs/admin-auth.md). AddIdentityCookies() (below) supplies the

@@ -1,0 +1,42 @@
+@page
+@model VeSessionManager.Web.Pages.Admin.AuditLogModel
+@{
+    ViewData["Title"] = "Audit Log";
+    ViewData["ActiveNav"] = "AdminAuditLog";
+    Layout = "_AppLayout";
+}
+
+<div class="page-head">
+    <div>
+        <p class="eyebrow">Most recent 200</p>
+        <h1>Audit Log</h1>
+    </div>
+</div>
+
+<table>
+    <thead>
+        <tr>
+            <th>When</th>
+            <th>User</th>
+            <th>Action</th>
+            <th>Entity</th>
+            <th>Details</th>
+        </tr>
+    </thead>
+    <tbody>
+        @if (Model.Entries.Count == 0)
+        {
+            <tr><td colspan="5">No audit entries yet.</td></tr>
+        }
+        @foreach (var entry in Model.Entries)
+        {
+            <tr>
+                <td class="mono">@entry.TimestampUtc.ToString("MMM d, yyyy h:mm:ss tt")</td>
+                <td>@(entry.UserName ?? "(background job)")</td>
+                <td>@entry.Action</td>
+                <td class="mono">@entry.EntityType #@entry.EntityId</td>
+                <td>@entry.Details</td>
+            </tr>
+        }
+    </tbody>
+</table>

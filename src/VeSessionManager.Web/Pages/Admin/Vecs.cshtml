@@ -1,0 +1,93 @@
+@page
+@model VeSessionManager.Web.Pages.Admin.VecsModel
+@{
+    ViewData["Title"] = "VECs";
+    ViewData["ActiveNav"] = "AdminVecs";
+    Layout = "_AppLayout";
+}
+
+<div class="page-head">
+    <div>
+        <p class="eyebrow">Shared / global reference data</p>
+        <h1>VECs</h1>
+    </div>
+    <button type="button" class="btn-primary" data-open-modal="createVecModal">+ New VEC</button>
+</div>
+
+<table>
+    <thead>
+        <tr>
+            <th>Name</th>
+            <th>Youth program</th>
+            <th>Notes</th>
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+        @if (Model.Vecs.Count == 0)
+        {
+            <tr><td colspan="4">No VECs yet.</td></tr>
+        }
+        @foreach (var vec in Model.Vecs)
+        {
+            <tr>
+                <td class="session-title">@vec.Name</td>
+                <td>
+                    @if (vec.SupportsYouthProgram)
+                    {
+                        <span class="chip chip-green">Supported</span>
+                    }
+                    else
+                    {
+                        <span class="chip chip-neutral">Not supported</span>
+                    }
+                </td>
+                <td>@vec.Notes</td>
+                <td class="row-actions">
+                    <button type="button" class="kebab" aria-label="Actions">⋮</button>
+                    <div class="menu">
+                        <button type="button" class="item" data-open-modal="editVecModal-@vec.Id">Edit</button>
+                    </div>
+                </td>
+            </tr>
+        }
+    </tbody>
+</table>
+
+<div class="modal-backdrop" id="createVecModal">
+    <div class="modal">
+        <h3>New VEC</h3>
+        <form method="post" asp-page-handler="Create">
+            <div class="field"><label for="createVecName">Name</label><input id="createVecName" name="name" required /></div>
+            <div class="field">
+                <label><input type="checkbox" name="supportsYouthProgram" value="true" style="width:auto; display:inline-block;" /> Supports youth program</label>
+            </div>
+            <div class="field"><label for="createVecNotes">Notes</label><textarea id="createVecNotes" name="notes" rows="2"></textarea></div>
+            <div class="modal-actions">
+                <button type="button" class="btn-secondary btn-sm" data-close-modal>Cancel</button>
+                <button type="submit" class="btn-primary btn-sm">Create</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+@foreach (var vec in Model.Vecs)
+{
+    <div class="modal-backdrop" id="editVecModal-@vec.Id">
+        <div class="modal">
+            <h3>Edit VEC</h3>
+            <form method="post" asp-page-handler="Update">
+                <input type="hidden" name="vecId" value="@vec.Id" />
+                <div class="field"><label for="editVecName-@vec.Id">Name</label><input id="editVecName-@vec.Id" name="name" value="@vec.Name" required /></div>
+                <div class="field">
+                    <label><input type="checkbox" name="supportsYouthProgram" value="true" checked="@vec.SupportsYouthProgram" style="width:auto; display:inline-block;" /> Supports youth program</label>
+                </div>
+                <div class="field"><label for="editVecNotes-@vec.Id">Notes</label><textarea id="editVecNotes-@vec.Id" name="notes" rows="2">@vec.Notes</textarea></div>
+                <div class="modal-actions">
+                    <button type="button" class="btn-secondary btn-sm" data-close-modal>Cancel</button>
+                    <button type="submit" class="btn-primary btn-sm">Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+}

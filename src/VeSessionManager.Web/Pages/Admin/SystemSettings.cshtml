@@ -1,0 +1,55 @@
+@page
+@model VeSessionManager.Web.Pages.Admin.SystemSettingsModel
+@{
+    ViewData["Title"] = "System Settings";
+    ViewData["ActiveNav"] = "AdminSystemSettings";
+    Layout = "_AppLayout";
+}
+
+<div class="page-head">
+    <div>
+        <p class="eyebrow">Deployment-wide</p>
+        <h1>System Settings</h1>
+    </div>
+</div>
+
+<div class="session-panel" style="display:block;">
+    <div class="section-head"><h2>PII Retention</h2></div>
+    <form method="post">
+        <div class="field" style="max-width:280px;">
+            <label for="piiRetentionWindowDays">Retention window (days)</label>
+            <input id="piiRetentionWindowDays" name="piiRetentionWindowDays" type="number" min="1" value="@Model.PiiRetentionWindowDays" placeholder="Not yet set" />
+        </div>
+        <p class="session-sub">Used by the (not yet built) PII purge job. Leave blank until an explicit value is decided — no default is assumed.</p>
+
+        <div class="section-head" style="margin-top:24px;"><h2>ULS Polling</h2></div>
+        <div class="meta-grid">
+            <div class="field" style="max-width:200px;">
+                <label for="fccDailyWatcherIntervalHours">Daily watcher interval (hours)</label>
+                <input id="fccDailyWatcherIntervalHours" name="fccDailyWatcherIntervalHours" type="number" min="1" value="@Model.FccDailyWatcherIntervalHours" required />
+            </div>
+            <div class="field" style="max-width:200px;">
+                <label for="fccWeeklyCatchupIntervalHours">Weekly catch-up interval (hours)</label>
+                <input id="fccWeeklyCatchupIntervalHours" name="fccWeeklyCatchupIntervalHours" type="number" min="1" value="@Model.FccWeeklyCatchupIntervalHours" required />
+            </div>
+            <div class="field" style="max-width:200px;">
+                <label for="fccWeeklyCatchupDayOfWeek">Weekly catch-up day</label>
+                <select id="fccWeeklyCatchupDayOfWeek" name="fccWeeklyCatchupDayOfWeek">
+                    @foreach (var day in Enum.GetValues<DayOfWeek>())
+                    {
+                        <option value="@day" selected="@(day == Model.FccWeeklyCatchupDayOfWeek)">@day</option>
+                    }
+                </select>
+            </div>
+        </div>
+
+        @if (Model.UpdatedUtc is not null)
+        {
+            <p class="session-sub" style="margin-top:16px;">Last updated @Model.UpdatedUtc.Value.ToString("MMM d, yyyy h:mm tt") UTC</p>
+        }
+
+        <div class="panel-actions" style="align-items:flex-start; margin-top:20px;">
+            <button type="submit" class="btn-primary">Save settings</button>
+        </div>
+    </form>
+</div>

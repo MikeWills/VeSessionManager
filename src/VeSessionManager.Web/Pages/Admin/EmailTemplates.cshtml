@@ -1,0 +1,61 @@
+@page
+@model VeSessionManager.Web.Pages.Admin.EmailTemplatesModel
+@{
+    ViewData["Title"] = "Email Templates";
+    ViewData["ActiveNav"] = "AdminEmailTemplates";
+    Layout = "_AppLayout";
+}
+
+<div class="page-head">
+    <div>
+        <p class="eyebrow">Per team</p>
+        <h1>Email Templates</h1>
+    </div>
+</div>
+
+@if (Model.IsSystemAdmin)
+{
+    <div class="filters" style="margin-bottom:16px;">
+        @foreach (var team in Model.AvailableTeams)
+        {
+            <a class="filter-pill @(team.Id == Model.TeamId ? "active" : "")" asp-page="./EmailTemplates" asp-route-teamId="@team.Id">@team.Name</a>
+        }
+    </div>
+}
+
+@if (Model.TeamId is null)
+{
+    <p>@(Model.IsSystemAdmin ? "Pick a team above." : "No team assigned to this account.")</p>
+}
+else if (Model.Templates.Count == 0)
+{
+    <p>No templates seeded for this team yet.</p>
+}
+else
+{
+    @foreach (var template in Model.Templates)
+    {
+        <div class="session-panel" style="display:block; margin-bottom:20px;">
+            <div class="section-head">
+                <h2 class="mono">@template.Key</h2>
+                @if (template.UpdatedUtc is not null)
+                {
+                    <span class="session-sub">Last updated @template.UpdatedUtc.Value.ToString("MMM d, yyyy h:mm tt") UTC</span>
+                }
+            </div>
+            <div class="roster-list" style="margin-bottom:12px;">
+                @foreach (var placeholder in VeSessionManager.Web.Pages.Admin.EmailTemplatesModel.PlaceholdersFor(template.Key))
+                {
+                    <span class="chip chip-neutral">{{@placeholder}}</span>
+                }
+            </div>
+            <form method="post" asp-page-handler="Update">
+                <input type="hidden" name="templateId" value="@template.Id" />
+                <input type="hidden" name="teamId" value="@Model.TeamId" />
+                <div class="field"><label for="subject-@template.Id">Subject</label><input id="subject-@template.Id" name="subject" value="@template.Subject" required /></div>
+                <div class="field"><label for="body-@template.Id">Body</label><textarea id="body-@template.Id" name="body" rows="8" required>@template.Body</textarea></div>
+                <button type="submit" class="btn-primary btn-sm" style="margin-top:8px;">Save</button>
+            </form>
+        </div>
+    }
+}

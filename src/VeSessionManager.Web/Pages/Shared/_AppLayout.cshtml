@@ -41,6 +41,21 @@
             <a asp-page="/SessionManager/Index" class="@(activeNav == "Sessions" ? "active" : "")">Sessions</a>
             <a asp-page="/SessionManager/VeRoster" class="@(activeNav == "VeRoster" ? "active" : "")">VE Roster</a>
             <a asp-page="/SessionManager/VecSubmission" class="@(activeNav == "VecSubmission" ? "active" : "")">VEC Submission</a>
+            @if (currentUser?.Role is UserRole.SystemAdmin or UserRole.TeamAdmin)
+            {
+                <a asp-page="/Admin/Users" class="@(activeNav == "AdminUsers" ? "active" : "")">Users</a>
+                <a asp-page="/Admin/TeamSettings" class="@(activeNav == "AdminTeamSettings" ? "active" : "")">Team Settings</a>
+                <a asp-page="/Admin/FeeConfigurations" class="@(activeNav == "AdminFees" ? "active" : "")">Fees</a>
+                <a asp-page="/Admin/EmailTemplates" class="@(activeNav == "AdminEmailTemplates" ? "active" : "")">Email Templates</a>
+                <a asp-page="/Admin/AuditLog" class="@(activeNav == "AdminAuditLog" ? "active" : "")">Audit Log</a>
+                <a asp-page="/Admin/JobRunHistory" class="@(activeNav == "AdminJobHistory" ? "active" : "")">Job History</a>
+            }
+            @if (currentUser?.Role is UserRole.SystemAdmin)
+            {
+                <a asp-page="/Admin/Teams" class="@(activeNav == "AdminTeams" ? "active" : "")">Teams</a>
+                <a asp-page="/Admin/Vecs" class="@(activeNav == "AdminVecs" ? "active" : "")">VECs</a>
+                <a asp-page="/Admin/SystemSettings" class="@(activeNav == "AdminSystemSettings" ? "active" : "")">System Settings</a>
+            }
         </nav>
         <div class="who">
             <span class="role">@roleLabel</span>

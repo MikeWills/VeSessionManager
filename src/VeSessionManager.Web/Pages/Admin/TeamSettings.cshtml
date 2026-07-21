@@ -1,0 +1,104 @@
+@page
+@model VeSessionManager.Web.Pages.Admin.TeamSettingsModel
+@{
+    ViewData["Title"] = "Team Settings";
+    ViewData["ActiveNav"] = "AdminTeamSettings";
+    Layout = "_AppLayout";
+}
+
+<div class="page-head">
+    <div>
+        <p class="eyebrow">Per-team credentials</p>
+        <h1>Team Settings</h1>
+    </div>
+</div>
+
+@if (Model.IsSystemAdmin)
+{
+    <div class="filters" style="margin-bottom:16px;">
+        @foreach (var team in Model.AvailableTeams)
+        {
+            <a class="filter-pill @(team.Id == Model.TeamId ? "active" : "")" asp-page="./TeamSettings" asp-route-teamId="@team.Id">@team.Name</a>
+        }
+    </div>
+}
+
+@if (Model.Team is null)
+{
+    <p>@(Model.IsSystemAdmin ? "Pick a team above." : "No team assigned to this account.")</p>
+}
+else
+{
+    <div class="session-panel" style="display:block;">
+        <div class="section-head"><h2>ExamTools</h2></div>
+        <form method="post" asp-page-handler="UpdateExamTools">
+            <input type="hidden" name="TeamId" value="@Model.TeamId" />
+            <div class="meta-grid">
+                <div class="field" style="max-width:220px;"><label for="etTeamCode">Team code</label><input id="etTeamCode" name="teamCode" value="@Model.Team.ExamToolsTeamCode" /></div>
+                <div class="field" style="max-width:220px;"><label for="etUsername">Username</label><input id="etUsername" name="username" value="@Model.Team.ExamToolsUsername" /></div>
+                <div class="field" style="max-width:220px;"><label for="etPassword">Password</label><input id="etPassword" name="password" type="password" placeholder="@(Model.Team.IsExamToolsConfigured ? "•••••••• (unchanged)" : "Not set")" /></div>
+            </div>
+            <button type="submit" class="btn-primary btn-sm" style="margin-top:12px;">Save ExamTools</button>
+        </form>
+
+        <div class="section-head" style="margin-top:28px;"><h2>Zoom</h2></div>
+        <form method="post" asp-page-handler="UpdateZoom">
+            <input type="hidden" name="TeamId" value="@Model.TeamId" />
+            <div class="meta-grid">
+                <div class="field" style="max-width:220px;"><label for="zoomAccountId">Account ID</label><input id="zoomAccountId" name="accountId" value="@Model.Team.ZoomAccountId" /></div>
+                <div class="field" style="max-width:220px;"><label for="zoomClientId">Client ID</label><input id="zoomClientId" name="clientId" value="@Model.Team.ZoomClientId" /></div>
+                <div class="field" style="max-width:220px;"><label for="zoomClientSecret">Client secret</label><input id="zoomClientSecret" name="clientSecret" type="password" placeholder="@(Model.Team.IsZoomConfigured ? "•••••••• (unchanged)" : "Not set")" /></div>
+                <div class="field" style="max-width:220px;"><label for="zoomUserId">Zoom user ID</label><input id="zoomUserId" name="zoomUserId" value="@Model.Team.ZoomUserId" placeholder="me" /></div>
+            </div>
+            <button type="submit" class="btn-primary btn-sm" style="margin-top:12px;">Save Zoom</button>
+        </form>
+
+        <div class="section-head" style="margin-top:28px;"><h2>Discord</h2></div>
+        <form method="post" asp-page-handler="UpdateDiscord">
+            <input type="hidden" name="TeamId" value="@Model.TeamId" />
+            <div class="field" style="max-width:280px;"><label for="discordGuildId">Guild ID</label><input id="discordGuildId" name="guildId" value="@Model.Team.DiscordGuildId" /></div>
+            <p class="session-sub">The shared bot's token is a deployment-wide setting (Discord:BotToken), not editable per-team here.</p>
+            <button type="submit" class="btn-primary btn-sm" style="margin-top:8px;">Save Discord</button>
+        </form>
+
+        <div class="section-head" style="margin-top:28px;"><h2>Square</h2></div>
+        <form method="post" asp-page-handler="UpdateSquare">
+            <input type="hidden" name="TeamId" value="@Model.TeamId" />
+            <div class="meta-grid">
+                <div class="field" style="max-width:220px;"><label for="squareAccessToken">Access token</label><input id="squareAccessToken" name="accessToken" type="password" placeholder="@(Model.Team.IsSquareConfigured ? "•••••••• (unchanged)" : "Not set")" /></div>
+                <div class="field" style="max-width:220px;"><label for="squareLocationId">Location ID</label><input id="squareLocationId" name="locationId" value="@Model.Team.SquareLocationId" /></div>
+                <div class="field" style="max-width:220px;"><label for="squareWebhookKey">Webhook signature key</label><input id="squareWebhookKey" name="webhookSignatureKey" type="password" placeholder="@(Model.Team.IsSquareWebhookConfigured ? "•••••••• (unchanged)" : "Not set")" /></div>
+                <div class="field" style="max-width:280px;"><label for="squareWebhookUrl">Webhook notification URL</label><input id="squareWebhookUrl" name="webhookNotificationUrl" value="@Model.Team.SquareWebhookNotificationUrl" placeholder="https://host/webhooks/square/@Model.TeamId" /></div>
+            </div>
+            <button type="submit" class="btn-primary btn-sm" style="margin-top:12px;">Save Square</button>
+        </form>
+
+        <div class="section-head" style="margin-top:28px;"><h2>SMTP</h2></div>
+        <form method="post" asp-page-handler="UpdateSmtp">
+            <input type="hidden" name="TeamId" value="@Model.TeamId" />
+            <div class="meta-grid">
+                <div class="field" style="max-width:220px;"><label for="smtpHost">Host</label><input id="smtpHost" name="host" value="@Model.Team.SmtpHost" /></div>
+                <div class="field" style="max-width:120px;"><label for="smtpPort">Port</label><input id="smtpPort" name="port" type="number" value="@Model.Team.SmtpPort" placeholder="587" /></div>
+                <div class="field" style="max-width:220px;"><label for="smtpUsername">Username</label><input id="smtpUsername" name="username" value="@Model.Team.SmtpUsername" /></div>
+                <div class="field" style="max-width:220px;"><label for="smtpPassword">Password</label><input id="smtpPassword" name="password" type="password" placeholder="@(Model.Team.IsEmailConfigured ? "•••••••• (unchanged)" : "Not set")" /></div>
+                <div class="field" style="max-width:160px;">
+                    <label><input type="checkbox" name="useStartTls" value="true" checked="@(Model.Team.SmtpUseStartTls ?? true)" style="width:auto; display:inline-block;" /> Use STARTTLS</label>
+                </div>
+            </div>
+            <button type="submit" class="btn-primary btn-sm" style="margin-top:12px;">Save SMTP</button>
+        </form>
+
+        <div class="section-head" style="margin-top:28px;"><h2>Email Settings</h2></div>
+        <form method="post" asp-page-handler="UpdateEmailSettings">
+            <input type="hidden" name="TeamId" value="@Model.TeamId" />
+            <div class="meta-grid">
+                <div class="field" style="max-width:220px;"><label for="fromAddress">From address</label><input id="fromAddress" name="fromAddress" type="email" value="@Model.EmailSettings?.FromAddress" required /></div>
+                <div class="field" style="max-width:220px;"><label for="fromDisplayName">From display name</label><input id="fromDisplayName" name="fromDisplayName" value="@Model.EmailSettings?.FromDisplayName" /></div>
+                <div class="field" style="max-width:220px;"><label for="replyToAddress">Reply-to address</label><input id="replyToAddress" name="replyToAddress" type="email" value="@Model.EmailSettings?.ReplyToAddress" required /></div>
+                <div class="field" style="max-width:280px;"><label for="privacyPolicyUrl">Privacy policy URL</label><input id="privacyPolicyUrl" name="privacyPolicyUrl" value="@Model.EmailSettings?.PrivacyPolicyUrl" required /></div>
+                <div class="field" style="max-width:220px;"><label for="adminNotificationEmail">Admin notification email</label><input id="adminNotificationEmail" name="adminNotificationEmail" type="email" value="@Model.EmailSettings?.AdminNotificationEmail" required /></div>
+            </div>
+            <button type="submit" class="btn-primary btn-sm" style="margin-top:12px;">Save Email Settings</button>
+        </form>
+    </div>
+}

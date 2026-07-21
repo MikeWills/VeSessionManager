@@ -1,3 +1,6 @@
+using Microsoft.EntityFrameworkCore;
+using VeSessionManager.Core.Admin;
+using VeSessionManager.Core.Data;
 using VeSessionManager.Core.FccUls;
 using VeSessionManager.Core.Jobs;
 
@@ -17,7 +20,11 @@ public class FccDailyWatcherJob(
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var intervalHours = configuration.GetValue("Jobs:FccDailyWatcherIntervalHours", 24);
+        // Phase 9c: SystemSettings (DB, admin-editable) is authoritative as of the Worker's next
+        // restart after an edit — read once here, not re-checked mid-run. Falls back to the
+        // appsettings.json value only if the row is somehow missing (should always exist, seeded by
+        // the Phase9cSystemSettings migration).
+        var intervalHours = await GetDailyWatcherIntervalHoursAsync(stoppingToken);
         using var timer = new PeriodicTimer(TimeSpan.FromHours(intervalHours));
 
         do
@@ -33,5 +40,13 @@ public class FccDailyWatcherJob(
                 stoppingToken);
         }
         while (await timer.WaitForNextTickAsync(stoppingToken));
+    }
+
+    private async Task<int> GetDailyWatcherIntervalHoursAsync(CancellationToken cancellationToken)
+    {
+        using var scope = scopeFactory.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var settings = await dbContext.SystemSettings.FirstOrDefaultAsync(s => s.Id == SystemSettingsService.SingletonId, cancellationToken);
+        return settings?.FccDailyWatcherIntervalHours ?? configuration.GetValue("Jobs:FccDailyWatcherIntervalHours", 24);
     }
 }
