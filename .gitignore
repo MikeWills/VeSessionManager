@@ -485,3 +485,7 @@ $RECYCLE.BIN/
 *.db
 *.db-shm
 *.db-wal
+
+# Local-only server ops scripts (names internal server accounts/paths -- copy to the server by
+# hand, never commit; see docs/deployment.md)
+/ops/
