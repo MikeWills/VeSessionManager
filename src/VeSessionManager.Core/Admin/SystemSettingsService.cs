@@ -41,12 +41,21 @@ public class SystemSettingsService(AppDbContext dbContext, TimeProvider timeProv
         int fccWeeklyCatchupIntervalHours,
         DayOfWeek fccWeeklyCatchupDayOfWeek,
         int sessionIngestionIntervalMinutes,
+        bool testModeEnabled,
+        string? testModeOverrideEmail,
         int userId,
         CancellationToken cancellationToken)
     {
         if (fccDailyWatcherIntervalHours < 1 || fccWeeklyCatchupIntervalHours < 1 || piiRetentionWindowDays is < 1 || sessionIngestionIntervalMinutes < 1)
         {
             return SystemSettingsActionResult.InvalidValue;
+        }
+
+        // Turning test mode on with no override address would silently drop every email instead of
+        // redirecting it — require the address up front rather than discovering it at send time.
+        if (testModeEnabled && string.IsNullOrWhiteSpace(testModeOverrideEmail))
+        {
+            return SystemSettingsActionResult.TestModeMissingOverrideEmail;
         }
 
         var settings = await GetAsync(cancellationToken);
@@ -57,6 +66,8 @@ public class SystemSettingsService(AppDbContext dbContext, TimeProvider timeProv
         settings.FccWeeklyCatchupIntervalHours = fccWeeklyCatchupIntervalHours;
         settings.FccWeeklyCatchupDayOfWeek = fccWeeklyCatchupDayOfWeek;
         settings.SessionIngestionIntervalMinutes = sessionIngestionIntervalMinutes;
+        settings.TestModeEnabled = testModeEnabled;
+        settings.TestModeOverrideEmail = testModeOverrideEmail;
         settings.UpdatedByUserId = userId;
         settings.UpdatedUtc = now;
 
@@ -67,7 +78,9 @@ public class SystemSettingsService(AppDbContext dbContext, TimeProvider timeProv
             EntityType = nameof(SystemSettings),
             EntityId = SingletonId,
             TimestampUtc = now,
-            Details = $"PiiRetentionWindowDays={piiRetentionWindowDays?.ToString() ?? "null"}, FccDailyWatcherIntervalHours={fccDailyWatcherIntervalHours}, FccWeeklyCatchupIntervalHours={fccWeeklyCatchupIntervalHours}, FccWeeklyCatchupDayOfWeek={fccWeeklyCatchupDayOfWeek}, SessionIngestionIntervalMinutes={sessionIngestionIntervalMinutes}."
+            // TestModeOverrideEmail is deliberately omitted from the audit trail — it's an admin's
+            // own inbox address, not secret, but no other field here logs a raw email address either.
+            Details = $"PiiRetentionWindowDays={piiRetentionWindowDays?.ToString() ?? "null"}, FccDailyWatcherIntervalHours={fccDailyWatcherIntervalHours}, FccWeeklyCatchupIntervalHours={fccWeeklyCatchupIntervalHours}, FccWeeklyCatchupDayOfWeek={fccWeeklyCatchupDayOfWeek}, SessionIngestionIntervalMinutes={sessionIngestionIntervalMinutes}, TestModeEnabled={testModeEnabled}."
         });
 
         await dbContext.SaveChangesAsync(cancellationToken);
@@ -78,5 +91,6 @@ public class SystemSettingsService(AppDbContext dbContext, TimeProvider timeProv
 public enum SystemSettingsActionResult
 {
     Success,
-    InvalidValue
+    InvalidValue,
+    TestModeMissingOverrideEmail
 }
