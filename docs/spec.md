@@ -438,6 +438,8 @@ features (ARRL's own youth discount program), not a generic VEC concept.
 
 ### Phase 9b — Session Manager Candidate Actions
 
+**Done, 2026-07-21 — see CLAUDE.md's "Session Manager candidate actions" entry for full detail.**
+
 **Goal:** The full candidate table and all the manual actions listed under Session Manager above.
 
 - Session list + session detail view with the candidate table (registration, payment, application, license status)

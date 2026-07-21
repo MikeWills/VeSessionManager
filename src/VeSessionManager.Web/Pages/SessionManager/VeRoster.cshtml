@@ -1,0 +1,58 @@
+@page
+@model VeSessionManager.Web.Pages.SessionManager.VeRosterModel
+@{
+    ViewData["Title"] = "VE Roster";
+    ViewData["ActiveNav"] = "VeRoster";
+    Layout = "_AppLayout";
+}
+
+<div class="page-head">
+    <div>
+        <p class="eyebrow">Volunteer examiners</p>
+        <h1>VE Roster</h1>
+    </div>
+</div>
+
+<form method="get" class="row" style="display:flex;gap:16px;align-items:flex-end;margin-bottom:20px;flex-wrap:wrap">
+    <div class="field">
+        <label for="from">From</label>
+        <input type="date" id="from" name="From" value="@Model.From?.ToString("yyyy-MM-dd")" />
+    </div>
+    <div class="field">
+        <label for="to">To</label>
+        <input type="date" id="to" name="To" value="@Model.To?.ToString("yyyy-MM-dd")" />
+    </div>
+    <button type="submit" class="btn-secondary btn-sm">Filter</button>
+    <a class="btn-secondary btn-sm" asp-page="./VeRoster">Clear</a>
+</form>
+
+@if (!Model.HasTeamContext)
+{
+    <p>No team context for this account — VE reports are per-team.</p>
+}
+else
+{
+    <table>
+        <thead>
+            <tr>
+                <th>Call sign</th>
+                <th>Name</th>
+                <th>Sessions worked</th>
+            </tr>
+        </thead>
+        <tbody>
+            @if (Model.Counts.Count == 0)
+            {
+                <tr><td colspan="3">No VE session records in this range.</td></tr>
+            }
+            @foreach (var count in Model.Counts)
+            {
+                <tr>
+                    <td class="mono">@(count.CallSign ?? "—")</td>
+                    <td>@count.Name</td>
+                    <td class="count">@count.SessionCount</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}

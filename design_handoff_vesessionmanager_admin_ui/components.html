@@ -1,0 +1,140 @@
+<!-- @dsCard group="Components" -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Components — VeSessionManager</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --panel:#14181A; --panel-2:#1F262A;
+    --paper:#F5F6F4; --surface:#FFFFFF;
+    --ink:#1B2023; --ink-soft:#5B6460;
+    --amber:#E8A33D; --amber-dim:#F4D9A8;
+    --green:#3F8F5F; --green-dim:#CFE6D8;
+    --brick:#C24C3F; --brick-dim:#F1D4D0;
+    --line:#D8DBD6; --line-strong:#B8BEB9;
+    --focus:#2E6F8E;
+  }
+  :root[data-theme="dark"]{--panel:#14181A;--panel-2:#262E31;--paper:#101416;--surface:#1B2124;--ink:#EDEFEC;--ink-soft:#94A19B;--amber:#F0B15A;--amber-dim:#4A3A1E;--green:#54B37B;--green-dim:#1E3A2A;--brick:#E17262;--brick-dim:#4A241E;--line:#2B3236;--line-strong:#3D454A;--focus:#5AA6C9;color-scheme:dark}
+  :root[data-theme="dark"] .chip-green{color:#8FE0AE}
+  :root[data-theme="dark"] .chip-amber{color:#F5CE8C}
+  :root[data-theme="dark"] .chip-brick{color:#F3A79A}
+  :root[data-theme="dark"] .chip-neutral{background:#262E31}
+  :root[data-theme="dark"] .chip-neutral::before{background:#7C8985}
+  :root[data-theme="dark"] tbody tr:hover{background:#20272A}
+  :root[data-theme="dark"] .btn-ghost:hover,:root[data-theme="dark"] .kebab:hover{background:#262E31}
+  :root[data-theme="dark"] .flag-banner{color:#F5CE8C;border-color:#5A461F}
+  :root[data-theme="dark"] .menu .disabled{color:#4F585C}
+  .theme-toggle{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;background:var(--panel-2);color:#EDEFEC;border:none;border-radius:99px;cursor:pointer;padding:0}
+  .theme-toggle:hover{background:#2A3338}
+  .theme-toggle.fixed{position:fixed;top:20px;right:24px;z-index:50;box-shadow:0 4px 14px rgba(20,24,26,.2)}
+
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:"IBM Plex Sans",system-ui,sans-serif;padding:48px 56px 96px}
+  h1{font-size:22px;margin:0 0 4px}
+  .eyebrow{font-family:"IBM Plex Mono",monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-soft);margin:0 0 28px}
+  section{margin-top:48px}
+  h2{font-size:14px;font-family:"IBM Plex Mono",monospace;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-soft);border-bottom:1px solid var(--line);padding-bottom:10px;margin-bottom:20px}
+  .row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+
+  /* Buttons */
+  button{font-family:inherit;font-size:13px;font-weight:600;border-radius:5px;padding:9px 16px;cursor:pointer;border:1px solid transparent}
+  .btn-primary{background:var(--panel);color:#fff}
+  .btn-primary:hover{background:var(--panel-2)}
+  .btn-secondary{background:var(--surface);color:var(--ink);border-color:var(--line-strong)}
+  .btn-secondary:hover{border-color:var(--ink)}
+  .btn-danger{background:var(--surface);color:var(--brick);border-color:var(--brick-dim)}
+  .btn-danger:hover{background:var(--brick-dim)}
+  .btn-ghost{background:transparent;color:var(--ink-soft);border-color:transparent;padding:9px 10px}
+  .btn-ghost:hover{background:#E9EBE7}
+  :focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+
+  /* Chips */
+  .chip{display:inline-flex;align-items:center;gap:6px;font-family:"IBM Plex Mono",monospace;font-size:11.5px;font-weight:500;padding:4px 9px;border-radius:99px;letter-spacing:.02em}
+  .chip::before{content:"";width:6px;height:6px;border-radius:50%}
+  .chip-green{background:var(--green-dim);color:#245C3B}
+  .chip-green::before{background:var(--green)}
+  .chip-amber{background:var(--amber-dim);color:#7A5313}
+  .chip-amber::before{background:var(--amber)}
+  .chip-brick{background:var(--brick-dim);color:#7E2E24}
+  .chip-brick::before{background:var(--brick)}
+  .chip-neutral{background:#E9EBE7;color:var(--ink-soft)}
+  .chip-neutral::before{background:#9AA39D}
+
+  /* Kebab menu */
+  .menu-demo{position:relative;display:inline-block}
+  .menu{position:absolute;top:36px;right:0;background:var(--surface);border:1px solid var(--line);border-radius:8px;box-shadow:0 8px 24px rgba(20,24,26,.12);width:248px;padding:6px;font-size:13px}
+  .menu button{all:unset;display:block;width:100%;padding:8px 10px;border-radius:5px;cursor:pointer;font-size:13px}
+  .menu button:hover{background:var(--paper)}
+  .menu .danger{color:var(--brick)}
+  .menu hr{border:none;border-top:1px solid var(--line);margin:6px 2px}
+
+  /* Form */
+  .field{display:flex;flex-direction:column;gap:6px;max-width:280px}
+  .field label{font-family:"IBM Plex Mono",monospace;font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-soft)}
+  .field input{font-family:"IBM Plex Mono",monospace;font-size:14px;padding:9px 10px;border:1px solid var(--line-strong);border-radius:5px;background:var(--surface)}
+  .field input:focus{border-color:var(--focus)}
+</style>
+</head>
+<body>
+  <button id="themeToggle" class="theme-toggle fixed"></button>
+  <h1>Components</h1>
+  <p class="eyebrow">VeSessionManager Admin — shared UI vocabulary</p>
+
+  <section>
+    <h2>Buttons</h2>
+    <div class="row">
+      <button class="btn-primary">Mark session completed</button>
+      <button class="btn-secondary">Add walk-in candidate</button>
+      <button class="btn-danger">Delete candidate</button>
+      <button class="btn-ghost">⋮</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>Status chips</h2>
+    <div class="row">
+      <span class="chip chip-green">Paid</span>
+      <span class="chip chip-amber">Unpaid</span>
+      <span class="chip chip-brick">Expired</span>
+      <span class="chip chip-neutral">Not applicable</span>
+      <span class="chip chip-green">Granted</span>
+      <span class="chip chip-brick">Failed</span>
+      <span class="chip chip-neutral">No-show</span>
+      <span class="chip chip-amber">Reschedule flagged</span>
+    </div>
+  </section>
+
+  <section>
+    <h2>Row action menu</h2>
+    <div class="menu-demo">
+      <button class="btn-ghost" style="border:1px solid var(--line-strong)">⋮</button>
+      <div class="menu">
+        <button>Resend confirmation email</button>
+        <button>Mark paid manually</button>
+        <button>Edit FRN</button>
+        <hr>
+        <button>Mark failed</button>
+        <button>Move to another session</button>
+        <button>Create retest payment</button>
+        <button>Flag refund requested</button>
+        <button>Send Youth Program instructions</button>
+        <hr>
+        <button class="danger">Delete (no-show / withdrew)</button>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Form field</h2>
+    <div class="field">
+      <label for="frn">FRN</label>
+      <input id="frn" value="0012345678">
+    </div>
+  </section>
+<script>(function(){var KEY='vesm-theme';var root=document.documentElement;function apply(t){root.setAttribute('data-theme',t);var b=document.getElementById('themeToggle');if(b){b.innerHTML=t==='dark'?'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="4.2" fill="currentColor"/><g stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="12" y1="2" x2="12" y2="4.5"/><line x1="12" y1="19.5" x2="12" y2="22"/><line x1="2" y1="12" x2="4.5" y2="12"/><line x1="19.5" y1="12" x2="22" y2="12"/><line x1="4.9" y1="4.9" x2="6.6" y2="6.6"/><line x1="17.4" y1="17.4" x2="19.1" y2="19.1"/><line x1="4.9" y1="19.1" x2="6.6" y2="17.4"/><line x1="17.4" y1="6.6" x2="19.1" y2="4.9"/></g></svg>':'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M21 12.8A9 9 0 1111.2 3 7.2 7.2 0 0021 12.8z" fill="currentColor"/></svg>';b.setAttribute('aria-label',t==='dark'?'Switch to light mode':'Switch to dark mode');b.title=b.getAttribute('aria-label');}}apply(localStorage.getItem(KEY)||'light');var btn=document.getElementById('themeToggle');if(btn)btn.addEventListener('click',function(){var next=root.getAttribute('data-theme')==='dark'?'light':'dark';localStorage.setItem(KEY,next);apply(next);});})();</script>
+</body>
+</html>

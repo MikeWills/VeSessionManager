@@ -31,6 +31,8 @@ public class CandidateNotificationService(
 {
     private const string RegistrationConfirmationKey = "RegistrationConfirmation";
     private const string DayBeforeReminderKey = "DayBeforeReminder";
+    private const string YouthProgramInstructionsKey = "ArrlYouthProgramInstructions";
+    private const string FelonyDisclosureInstructionsKey = "FelonyDisclosureInstructions";
 
     public async Task<EmailNotificationResult> SendRegistrationConfirmationsAsync(Team team, CancellationToken cancellationToken)
     {
@@ -187,6 +189,171 @@ public class CandidateNotificationService(
 
         logger.LogInformation("Day-before reminders finished for team {TeamId} ({TeamName}): {Result}", team.Id, team.Name, result);
         return result;
+    }
+
+    /// <summary>
+    /// Phase 9b's "resend reminder email" action — re-renders and re-sends RegistrationConfirmation
+    /// on demand, regardless of RegistrationConfirmationSentUtc, and refreshes that timestamp.
+    /// Unlike the scan-based Send*Async methods above, this is a single-candidate, immediately-
+    /// triggered call from the admin UI, not a poll pass.
+    /// </summary>
+    public async Task<CandidateEmailSendResult> ResendRegistrationConfirmationAsync(int candidateId, CancellationToken cancellationToken)
+    {
+        var candidate = await dbContext.Candidates
+            .Include(c => c.Session).ThenInclude(s => s.Team)
+            .Include(c => c.Session).ThenInclude(s => s.FeeConfiguration)
+            .Include(c => c.Payments)
+            .FirstOrDefaultAsync(c => c.Id == candidateId, cancellationToken);
+        if (candidate is null)
+        {
+            return CandidateEmailSendResult.CandidateNotFound;
+        }
+
+        if (string.IsNullOrWhiteSpace(candidate.Email))
+        {
+            return CandidateEmailSendResult.NoEmailAddress;
+        }
+
+        var team = candidate.Session.Team;
+        if (!team.IsEmailConfigured)
+        {
+            return CandidateEmailSendResult.EmailNotConfigured;
+        }
+
+        var emailSettings = await dbContext.EmailSettings.FirstOrDefaultAsync(e => e.TeamId == team.Id, cancellationToken);
+        if (emailSettings is null)
+        {
+            return CandidateEmailSendResult.EmailNotConfigured;
+        }
+
+        var paymentLinkUrl = candidate.Session.FeeConfiguration.FeeCollectionEnabled
+            ? candidate.Payments.FirstOrDefault(p => p.Reason == PaymentReason.InitialExam)?.PaymentLinkUrl ?? ""
+            : "";
+
+        var placeholders = new Dictionary<string, string>
+        {
+            ["CandidateName"] = candidate.Name ?? "",
+            ["CandidateFirstName"] = candidate.FirstName ?? "",
+            ["SessionDate"] = FormatSessionDate(candidate.Session.ScheduledStartUtc),
+            ["ZoomJoinUrl"] = candidate.Session.ZoomJoinUrl ?? "",
+            ["PaymentLinkUrl"] = paymentLinkUrl,
+            ["PrivacyPolicyUrl"] = emailSettings.PrivacyPolicyUrl
+        };
+
+        var credentials = new EmailCredentials(team.Id, team.SmtpHost!, team.SmtpPort ?? 587, team.SmtpUsername!, team.SmtpPassword ?? "", team.SmtpUseStartTls ?? true);
+        if (!await TrySendAsync(team.Id, credentials, RegistrationConfirmationKey, candidate, emailSettings, placeholders, cancellationToken))
+        {
+            return CandidateEmailSendResult.TemplateMissing;
+        }
+
+        candidate.RegistrationConfirmationSentUtc = timeProvider.GetUtcNow().UtcDateTime;
+        await dbContext.SaveChangesAsync(cancellationToken);
+        logger.LogInformation("Resent RegistrationConfirmation for candidate {CandidateId}", candidate.Id);
+        return CandidateEmailSendResult.Sent;
+    }
+
+    /// <summary>
+    /// Phase 9b's "Send ARRL Youth Program instructions" row action — only meaningful when the
+    /// candidate's session is under a Vec with SupportsYouthProgram (the caller/UI should already
+    /// gate the button's visibility on that, but this is checked again here since it's the actual
+    /// authority, not just a UI nicety).
+    /// </summary>
+    public async Task<CandidateEmailSendResult> SendYouthProgramInstructionsAsync(int candidateId, CancellationToken cancellationToken)
+    {
+        var candidate = await dbContext.Candidates
+            .Include(c => c.Session).ThenInclude(s => s.Team)
+            .Include(c => c.Session).ThenInclude(s => s.Vec)
+            .FirstOrDefaultAsync(c => c.Id == candidateId, cancellationToken);
+        if (candidate is null)
+        {
+            return CandidateEmailSendResult.CandidateNotFound;
+        }
+
+        if (!candidate.Session.Vec.SupportsYouthProgram)
+        {
+            return CandidateEmailSendResult.VecDoesNotSupportYouthProgram;
+        }
+
+        if (string.IsNullOrWhiteSpace(candidate.Email))
+        {
+            return CandidateEmailSendResult.NoEmailAddress;
+        }
+
+        var team = candidate.Session.Team;
+        if (!team.IsEmailConfigured)
+        {
+            return CandidateEmailSendResult.EmailNotConfigured;
+        }
+
+        var emailSettings = await dbContext.EmailSettings.FirstOrDefaultAsync(e => e.TeamId == team.Id, cancellationToken);
+        if (emailSettings is null)
+        {
+            return CandidateEmailSendResult.EmailNotConfigured;
+        }
+
+        var placeholders = new Dictionary<string, string>
+        {
+            ["CandidateName"] = candidate.Name ?? "",
+            ["CallSign"] = candidate.CallSign ?? ""
+        };
+
+        var credentials = new EmailCredentials(team.Id, team.SmtpHost!, team.SmtpPort ?? 587, team.SmtpUsername!, team.SmtpPassword ?? "", team.SmtpUseStartTls ?? true);
+        if (!await TrySendAsync(team.Id, credentials, YouthProgramInstructionsKey, candidate, emailSettings, placeholders, cancellationToken))
+        {
+            return CandidateEmailSendResult.TemplateMissing;
+        }
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+        logger.LogInformation("Sent ArrlYouthProgramInstructions for candidate {CandidateId}", candidate.Id);
+        return CandidateEmailSendResult.Sent;
+    }
+
+    /// <summary>
+    /// Sent automatically (not a standalone button) by SessionActionService.MarkCompletedAsync for
+    /// each candidate whose Tested flag just flipped to true as part of that action and who has
+    /// HasFelonyDisclosure = true — tells them special FCC steps are required, nothing more.
+    /// </summary>
+    public async Task<CandidateEmailSendResult> SendFelonyDisclosureInstructionsAsync(int candidateId, CancellationToken cancellationToken)
+    {
+        var candidate = await dbContext.Candidates
+            .Include(c => c.Session).ThenInclude(s => s.Team)
+            .FirstOrDefaultAsync(c => c.Id == candidateId, cancellationToken);
+        if (candidate is null)
+        {
+            return CandidateEmailSendResult.CandidateNotFound;
+        }
+
+        if (string.IsNullOrWhiteSpace(candidate.Email))
+        {
+            return CandidateEmailSendResult.NoEmailAddress;
+        }
+
+        var team = candidate.Session.Team;
+        if (!team.IsEmailConfigured)
+        {
+            return CandidateEmailSendResult.EmailNotConfigured;
+        }
+
+        var emailSettings = await dbContext.EmailSettings.FirstOrDefaultAsync(e => e.TeamId == team.Id, cancellationToken);
+        if (emailSettings is null)
+        {
+            return CandidateEmailSendResult.EmailNotConfigured;
+        }
+
+        var placeholders = new Dictionary<string, string>
+        {
+            ["CandidateName"] = candidate.Name ?? ""
+        };
+
+        var credentials = new EmailCredentials(team.Id, team.SmtpHost!, team.SmtpPort ?? 587, team.SmtpUsername!, team.SmtpPassword ?? "", team.SmtpUseStartTls ?? true);
+        if (!await TrySendAsync(team.Id, credentials, FelonyDisclosureInstructionsKey, candidate, emailSettings, placeholders, cancellationToken))
+        {
+            return CandidateEmailSendResult.TemplateMissing;
+        }
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+        logger.LogInformation("Sent FelonyDisclosureInstructions for candidate {CandidateId}", candidate.Id);
+        return CandidateEmailSendResult.Sent;
     }
 
     private async Task<bool> TrySendAsync(

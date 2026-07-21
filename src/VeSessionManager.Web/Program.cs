@@ -2,9 +2,16 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
 using VeSessionManager.Core.Authorization;
+using VeSessionManager.Core.CandidateActions;
 using VeSessionManager.Core.Data;
+using VeSessionManager.Core.Email;
 using VeSessionManager.Core.Entities;
+using VeSessionManager.Core.Notifications;
+using VeSessionManager.Core.Payments;
+using VeSessionManager.Core.Sessions;
 using VeSessionManager.Core.Square;
+using VeSessionManager.Core.VecSubmissions;
+using VeSessionManager.Core.VolunteerExaminers;
 using VeSessionManager.Web;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -17,13 +24,32 @@ builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection")));
 
 builder.Services.AddSingleton(TimeProvider.System);
-// No SquareOptions here — WebhookSignatureKey/WebhookNotificationUrl now live on Team (multi-team,
-// each team verifies against its own key via the /webhooks/square/{teamId} route). Nothing else in
-// this project needs SquareOptions:Environment.
+builder.Services.Configure<SquareOptions>(builder.Configuration.GetSection(SquareOptions.SectionName));
+// Singleton: the Square SDK client owns its own HttpClient, same reasoning as the Worker's own
+// registration — CandidateActionService.CreateRetestPaymentAsync needs PaymentGenerationService,
+// which needs this, for the "create retest payment" admin action.
+builder.Services.AddSingleton<ISquareClient, SquareClient>();
+builder.Services.AddScoped<PaymentGenerationService>();
+// WebhookSignatureKey/WebhookNotificationUrl live on Team (multi-team, each team verifies against
+// its own key via the /webhooks/square/{teamId} route) — nothing else in this project needs
+// SquareOptions:Environment beyond what SquareClient itself reads above.
 builder.Services.AddScoped<SquareWebhookHandler>();
 
-// Phase 9a: stateless, no DB dependency of its own — safe as a singleton. Not wired into a real
-// data page yet (that's Phase 9b); registered now so it's ready.
+builder.Services.AddScoped<IEmailSender, SmtpEmailSender>();
+builder.Services.AddScoped<EmailTemplateRenderer>();
+builder.Services.AddScoped<CandidateNotificationService>();
+
+builder.Services.AddScoped<VecSubmissionService>();
+builder.Services.AddScoped<VecSubmissionReportService>();
+builder.Services.AddScoped<VolunteerExaminerReportService>();
+
+// Phase 9b: the actual UI-triggered wiring for every Session Manager action — see
+// Pages/SessionManager/Detail.cshtml.cs.
+builder.Services.AddScoped<CandidateActionService>();
+builder.Services.AddScoped<SessionActionService>();
+builder.Services.AddScoped<VolunteerExaminerRosterService>();
+
+// Phase 9a: stateless, no DB dependency of its own — safe as a singleton.
 builder.Services.AddSingleton<SessionAccessScope>();
 
 // AddIdentityCore, not AddIdentity — deliberately skips Identity's own Role tables (Role stays one

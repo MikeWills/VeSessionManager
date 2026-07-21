@@ -1,0 +1,262 @@
+<!-- @dsCard group="Pages" -->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Session detail — VeSessionManager</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --panel:#14181A; --panel-2:#1F262A;
+    --paper:#F5F6F4; --surface:#FFFFFF;
+    --ink:#1B2023; --ink-soft:#5B6460;
+    --amber:#E8A33D; --amber-dim:#F4D9A8;
+    --green:#3F8F5F; --green-dim:#CFE6D8;
+    --brick:#C24C3F; --brick-dim:#F1D4D0;
+    --line:#D8DBD6; --line-strong:#B8BEB9;
+    --focus:#2E6F8E;
+  }
+  :root[data-theme="dark"]{--panel:#14181A;--panel-2:#262E31;--paper:#101416;--surface:#1B2124;--ink:#EDEFEC;--ink-soft:#94A19B;--amber:#F0B15A;--amber-dim:#4A3A1E;--green:#54B37B;--green-dim:#1E3A2A;--brick:#E17262;--brick-dim:#4A241E;--line:#2B3236;--line-strong:#3D454A;--focus:#5AA6C9;color-scheme:dark}
+  :root[data-theme="dark"] .chip-green{color:#8FE0AE}
+  :root[data-theme="dark"] .chip-amber{color:#F5CE8C}
+  :root[data-theme="dark"] .chip-brick{color:#F3A79A}
+  :root[data-theme="dark"] .chip-neutral{background:#262E31}
+  :root[data-theme="dark"] .chip-neutral::before{background:#7C8985}
+  :root[data-theme="dark"] tbody tr:hover{background:#20272A}
+  :root[data-theme="dark"] .btn-ghost:hover,:root[data-theme="dark"] .kebab:hover{background:#262E31}
+  :root[data-theme="dark"] .flag-banner{color:#F5CE8C;border-color:#5A461F}
+  :root[data-theme="dark"] .menu .disabled{color:#4F585C}
+  .theme-toggle{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;background:var(--panel-2);color:#EDEFEC;border:none;border-radius:99px;cursor:pointer;padding:0}
+  .theme-toggle:hover{background:#2A3338}
+  .theme-toggle.fixed{position:fixed;top:20px;right:24px;z-index:50;box-shadow:0 4px 14px rgba(20,24,26,.2)}
+
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--paper);color:var(--ink);font-family:"IBM Plex Sans",system-ui,sans-serif}
+  a{color:inherit}
+
+  header.chassis{background:var(--panel);color:#EDEFEC;padding:0 28px;display:flex;align-items:center;gap:28px;height:56px}
+  .brand{font-family:"IBM Plex Mono",monospace;font-weight:600;font-size:13px;letter-spacing:.06em;display:flex;align-items:center;gap:8px}
+  .brand .dot{width:8px;height:8px;border-radius:50%;background:var(--green);box-shadow:0 0 6px rgba(63,143,95,.8)}
+  nav.chassis-nav{display:flex;gap:4px;flex:1}
+  nav.chassis-nav a{font-size:13px;padding:8px 12px;border-radius:5px;text-decoration:none;color:#B9C0BC}
+  nav.chassis-nav a.active{background:var(--panel-2);color:#fff}
+  .who{font-family:"IBM Plex Mono",monospace;font-size:11.5px;color:#9AA39D;display:flex;align-items:center;gap:8px}
+  .who .role{background:var(--panel-2);color:#EDEFEC;padding:3px 8px;border-radius:99px;letter-spacing:.05em}
+
+  main{max-width:1280px;margin:0 auto;padding:32px 28px 100px}
+  .crumb{font-family:"IBM Plex Mono",monospace;font-size:11.5px;color:var(--ink-soft);margin-bottom:14px}
+  .crumb a{color:var(--focus);text-decoration:none}
+
+  /* Session header panel */
+  .session-panel{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:22px 26px;display:flex;justify-content:space-between;gap:24px;flex-wrap:wrap;margin-bottom:28px}
+  .session-panel h1{font-size:21px;margin:0 0 6px;letter-spacing:-.01em}
+  .meta-grid{display:flex;gap:32px;flex-wrap:wrap;margin-top:14px}
+  .meta-item{display:flex;flex-direction:column;gap:3px}
+  .meta-item .k{font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-soft)}
+  .meta-item .v{font-size:13.5px;font-weight:500}
+  .meta-item .v a{color:var(--focus)}
+  .panel-actions{display:flex;flex-direction:column;gap:8px;align-items:flex-end}
+  .flag-banner{display:flex;align-items:center;gap:10px;background:var(--amber-dim);color:#7A5313;border:1px solid #E4C486;border-radius:8px;padding:10px 16px;font-size:13px;margin-bottom:20px}
+  .flag-banner b{font-weight:600}
+  .flag-banner button{margin-left:auto}
+
+  button{font-family:inherit;font-size:13px;font-weight:600;border-radius:5px;padding:9px 16px;cursor:pointer;border:1px solid transparent;white-space:nowrap}
+  .btn-primary{background:var(--panel);color:#fff}
+  .btn-primary:hover{background:var(--panel-2)}
+  .btn-secondary{background:var(--surface);color:var(--ink);border-color:var(--line-strong)}
+  .btn-secondary:hover{border-color:var(--ink)}
+  .btn-sm{padding:6px 11px;font-size:12px}
+  :focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+
+  .section-head{display:flex;justify-content:space-between;align-items:center;margin:8px 0 12px}
+  .section-head h2{font-size:15px;margin:0;font-weight:600}
+  .section-head .eyebrow{font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-soft)}
+
+  /* Candidate table */
+  table{width:100%;border-collapse:collapse;background:var(--surface);border:1px solid var(--line);border-radius:8px;overflow:visible}
+  thead th{text-align:left;font-family:"IBM Plex Mono",monospace;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-soft);padding:11px 14px;border-bottom:1px solid var(--line);background:#FAFAF8}
+  tbody td{padding:12px 14px;border-bottom:1px solid var(--line);font-size:13.5px;vertical-align:middle}
+  tbody tr:last-child td{border-bottom:none}
+  tbody tr:hover{background:#FBFBF9}
+  .cand-name{font-weight:600}
+  .cand-name .no-show{font-weight:400;color:var(--ink-soft);font-style:italic}
+  .mono{font-family:"IBM Plex Mono",monospace;font-size:12.5px}
+  .id-cell .frn{color:var(--ink-soft);font-size:11.5px;margin-top:2px}
+
+  .meter{display:inline-flex;gap:3px;padding:5px;background:var(--panel);border-radius:5px;vertical-align:middle}
+  .seg{width:11px;height:16px;border-radius:2px;background:#2A3236}
+  .seg.on-g{background:var(--green);box-shadow:0 0 5px rgba(63,143,95,.7)}
+  .seg.on-a{background:var(--amber);box-shadow:0 0 5px rgba(232,163,61,.7)}
+  .seg.on-r{background:var(--brick);box-shadow:0 0 5px rgba(194,76,63,.7)}
+  .seg.off-dim{background:#3A4247}
+  .status-row{display:flex;align-items:center;gap:9px}
+  .status-label{font-size:12.5px;color:var(--ink-soft)}
+
+  .chip{display:inline-flex;align-items:center;gap:6px;font-family:"IBM Plex Mono",monospace;font-size:11px;font-weight:500;padding:3px 9px;border-radius:99px}
+  .chip::before{content:"";width:6px;height:6px;border-radius:50%}
+  .chip-green{background:var(--green-dim);color:#245C3B}.chip-green::before{background:var(--green)}
+  .chip-amber{background:var(--amber-dim);color:#7A5313}.chip-amber::before{background:var(--amber)}
+  .chip-neutral{background:#E9EBE7;color:var(--ink-soft)}.chip-neutral::before{background:#9AA39D}
+  .chip-brick{background:var(--brick-dim);color:#7E2E24}.chip-brick::before{background:var(--brick)}
+  .refund-tag{font-size:11px;color:var(--brick);font-weight:600}
+
+  .tested-check{width:18px;height:18px;border-radius:4px;border:1.5px solid var(--line-strong);display:inline-flex;align-items:center;justify-content:center;font-size:12px;color:var(--green)}
+  .tested-check.on{border-color:var(--green);background:var(--green-dim)}
+
+  .row-actions{position:relative;text-align:right}
+  .kebab{background:transparent;border:1px solid transparent;color:var(--ink-soft);padding:6px 9px;border-radius:5px}
+  .kebab:hover{background:#E9EBE7;border-color:var(--line-strong)}
+  .menu{position:absolute;top:38px;right:0;background:var(--surface);border:1px solid var(--line);border-radius:8px;box-shadow:0 10px 28px rgba(20,24,26,.14);width:252px;padding:6px;font-size:13px;text-align:left;z-index:5}
+  .menu button.item{all:unset;display:block;width:100%;padding:8px 10px;border-radius:5px;cursor:pointer;font-size:13px;color:var(--ink)}
+  .menu button.item:hover{background:var(--paper)}
+  .menu .danger{color:var(--brick)}
+  .menu .disabled{color:#B8BEB9;cursor:not-allowed}
+  .menu hr{border:none;border-top:1px solid var(--line);margin:6px 2px}
+
+  footer.roster{margin-top:36px;background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:20px 24px}
+  .roster-list{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}
+  .ve-chip{font-family:"IBM Plex Mono",monospace;font-size:12px;background:var(--paper);border:1px solid var(--line);padding:6px 12px;border-radius:99px}
+  .ve-chip .x{color:var(--ink-soft);margin-left:8px;cursor:pointer}
+</style>
+</head>
+<body>
+  <header class="chassis">
+    <div class="brand"><span class="dot"></span>VESESSIONMGR</div>
+    <nav class="chassis-nav">
+      <a class="active" href="#">Sessions</a>
+      <a href="#">VE Roster</a>
+      <a href="#">VEC Submission</a>
+    </nav>
+    <div class="who"><span class="role">Session Manager</span>Mankato Amateur Radio Club<button id="themeToggle" class="theme-toggle"></button></div>
+  </header>
+
+  <main>
+    <div class="crumb"><a href="#">← Sessions</a> / exam-2026-0822-a</div>
+
+    <div class="flag-banner">
+      <span>⚑</span>
+      <span><b>Reschedule flagged for review</b> — original date Aug 15, moved to Aug 22 while 3 candidates were already registered.</span>
+      <button class="btn-secondary btn-sm">Clear flag</button>
+    </div>
+
+    <div class="session-panel">
+      <div>
+        <h1>Session — Sat, Aug 22, 2026 · 9:00 AM</h1>
+        <div class="meta-grid">
+          <div class="meta-item"><span class="k">VEC</span><span class="v">ARRL</span></div>
+          <div class="meta-item"><span class="k">Zoom</span><span class="v"><a href="#">Join link ↗</a></span></div>
+          <div class="meta-item"><span class="k">Discord event</span><span class="v"><a href="#">View ↗</a></span></div>
+          <div class="meta-item"><span class="k">Fee</span><span class="v mono">$15.00 exam · $7.00 retained</span></div>
+          <div class="meta-item"><span class="k">Testing status</span><span class="v">Not yet completed</span></div>
+          <div class="meta-item"><span class="k">VEC submission</span><span class="v"><span class="chip chip-neutral">Not submitted</span></span></div>
+        </div>
+      </div>
+      <div class="panel-actions">
+        <button class="btn-primary">Mark session completed</button>
+        <button class="btn-secondary">Add walk-in candidate</button>
+      </div>
+    </div>
+
+    <div class="section-head">
+      <div>
+        <p class="eyebrow">3 candidates</p>
+        <h2>Candidate roster</h2>
+      </div>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Candidate</th>
+          <th>Application status</th>
+          <th>Payment</th>
+          <th>Tested</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>
+            <div class="cand-name">Sarah Nguyen</div>
+            <div class="id-cell mono">KD9-XRT <span class="frn">FRN 0012345678</span></div>
+          </td>
+          <td>
+            <div class="status-row">
+              <div class="meter"><div class="seg on-a"></div><div class="seg on-g"></div><div class="seg on-g"></div></div>
+              <span class="status-label">Granted</span>
+            </div>
+          </td>
+          <td><span class="chip chip-green">Paid</span></td>
+          <td><span class="tested-check on">✓</span></td>
+          <td class="row-actions">
+            <button class="kebab">⋮</button>
+          </td>
+        </tr>
+        <tr>
+          <td>
+            <div class="cand-name">Marcus Webb</div>
+            <div class="id-cell mono">— <span class="frn">FRN missing at registration</span></div>
+          </td>
+          <td>
+            <div class="status-row">
+              <div class="meter"><div class="seg on-a"></div><div class="seg"></div><div class="seg"></div></div>
+              <span class="status-label">Received</span>
+            </div>
+          </td>
+          <td><span class="chip chip-amber">Unpaid</span> <span class="refund-tag" style="display:none">Refund requested</span></td>
+          <td><span class="tested-check">·</span></td>
+          <td class="row-actions">
+            <button class="kebab active">⋮</button>
+            <div class="menu">
+              <button class="item">Resend confirmation email</button>
+              <button class="item">Mark paid manually</button>
+              <button class="item">Add / edit FRN</button>
+              <hr>
+              <button class="item">Mark failed</button>
+              <button class="item">Move to another session</button>
+              <button class="item disabled">Create retest payment</button>
+              <button class="item">Flag refund requested</button>
+              <button class="item">Send Youth Program instructions</button>
+              <hr>
+              <button class="item danger">Delete (no-show / withdrew)</button>
+            </div>
+          </td>
+        </tr>
+        <tr>
+          <td>
+            <div class="cand-name"><span class="no-show">Withdrew — PII cleared</span></div>
+            <div class="id-cell mono">— <span class="frn">record retained for stats</span></div>
+          </td>
+          <td>
+            <div class="status-row">
+              <div class="meter"><div class="seg off-dim"></div><div class="seg off-dim"></div><div class="seg off-dim"></div></div>
+              <span class="status-label">Not tested</span>
+            </div>
+          </td>
+          <td><span class="chip chip-neutral">Not applicable</span></td>
+          <td><span class="tested-check">·</span></td>
+          <td class="row-actions"><button class="kebab" disabled style="opacity:.35">⋮</button></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <footer class="roster">
+      <div class="section-head" style="margin:0">
+        <div>
+          <p class="eyebrow">Volunteer examiners</p>
+          <h2>VE roster</h2>
+        </div>
+        <button class="btn-secondary btn-sm">+ Add VE</button>
+      </div>
+      <div class="roster-list">
+        <span class="ve-chip">W0ABC — R. Halvorsen <span class="x">✕</span></span>
+        <span class="ve-chip">KD9-XYZ — T. Okafor <span class="x">✕</span></span>
+        <span class="ve-chip">N0QRP — J. Lindqvist <span class="x">✕</span></span>
+      </div>
+    </footer>
+  </main>
+<script>(function(){var KEY='vesm-theme';var root=document.documentElement;function apply(t){root.setAttribute('data-theme',t);var b=document.getElementById('themeToggle');if(b){b.innerHTML=t==='dark'?'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="12" cy="12" r="4.2" fill="currentColor"/><g stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><line x1="12" y1="2" x2="12" y2="4.5"/><line x1="12" y1="19.5" x2="12" y2="22"/><line x1="2" y1="12" x2="4.5" y2="12"/><line x1="19.5" y1="12" x2="22" y2="12"/><line x1="4.9" y1="4.9" x2="6.6" y2="6.6"/><line x1="17.4" y1="17.4" x2="19.1" y2="19.1"/><line x1="4.9" y1="19.1" x2="6.6" y2="17.4"/><line x1="17.4" y1="6.6" x2="19.1" y2="4.9"/></g></svg>':'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M21 12.8A9 9 0 1111.2 3 7.2 7.2 0 0021 12.8z" fill="currentColor"/></svg>';b.setAttribute('aria-label',t==='dark'?'Switch to light mode':'Switch to dark mode');b.title=b.getAttribute('aria-label');}}apply(localStorage.getItem(KEY)||'light');var btn=document.getElementById('themeToggle');if(btn)btn.addEventListener('click',function(){var next=root.getAttribute('data-theme')==='dark'?'light':'dark';localStorage.setItem(KEY,next);apply(next);});})();</script>
+</body>
+</html>

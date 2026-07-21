@@ -1,0 +1,67 @@
+@using Microsoft.AspNetCore.Identity
+@using VeSessionManager.Core.Data
+@using VeSessionManager.Core.Entities
+@inject UserManager<User> UserManager
+@inject AppDbContext DbContext
+@{
+    var currentUser = await UserManager.GetUserAsync(User);
+    var teamName = "All Teams";
+    if (currentUser?.TeamId is int teamId)
+    {
+        var team = await DbContext.Teams.FindAsync(teamId);
+        teamName = team?.Name ?? "Unassigned Team";
+    }
+
+    var roleLabel = currentUser?.Role switch
+    {
+        UserRole.SystemAdmin => "System Admin",
+        UserRole.TeamAdmin => "Team Admin",
+        UserRole.SessionManager => "Session Manager",
+        UserRole.TeamLead => "Team Lead",
+        _ => ""
+    };
+
+    var activeNav = ViewData["ActiveNav"] as string;
+    var mainClass = "vesm-main" + (ViewData["WideMain"] is true ? " wide" : "");
+}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>@ViewData["Title"] - VeSessionManager</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="~/css/app.css" asp-append-version="true" />
+</head>
+<body class="vesm">
+    <header class="chassis">
+        <a class="brand" asp-page="/SessionManager/Index"><span class="dot"></span>VESESSIONMGR</a>
+        <nav class="chassis-nav">
+            <a asp-page="/SessionManager/Index" class="@(activeNav == "Sessions" ? "active" : "")">Sessions</a>
+            <a asp-page="/SessionManager/VeRoster" class="@(activeNav == "VeRoster" ? "active" : "")">VE Roster</a>
+            <a asp-page="/SessionManager/VecSubmission" class="@(activeNav == "VecSubmission" ? "active" : "")">VEC Submission</a>
+        </nav>
+        <div class="who">
+            <span class="role">@roleLabel</span>
+            @teamName
+            <button id="themeToggle" class="theme-toggle" type="button"></button>
+        </div>
+    </header>
+
+    <main class="@mainClass">
+        @if (TempData["StatusMessage"] is string statusMessage)
+        {
+            <div class="vesm-alert success">@statusMessage</div>
+        }
+        @if (TempData["ErrorMessage"] is string errorMessage)
+        {
+            <div class="vesm-alert error">@errorMessage</div>
+        }
+        @RenderBody()
+    </main>
+
+    <script src="~/js/app.js" asp-append-version="true"></script>
+    @await RenderSectionAsync("Scripts", required: false)
+</body>
+</html>

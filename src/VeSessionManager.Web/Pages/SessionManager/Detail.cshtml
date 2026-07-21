@@ -1,0 +1,300 @@
+@page "{id:int}"
+@model VeSessionManager.Web.Pages.SessionManager.DetailModel
+@{
+    ViewData["Title"] = Model.Session.ExamToolsSessionId;
+    ViewData["ActiveNav"] = "Sessions";
+    ViewData["WideMain"] = true;
+    Layout = "_AppLayout";
+}
+
+<div class="crumb"><a asp-page="./Index">← Sessions</a> / @Model.Session.ExamToolsSessionId</div>
+
+@if (Model.Session.RescheduleFlagged)
+{
+    <div class="flag-banner">
+        <span>⚑</span>
+        <span><b>Reschedule flagged for review</b> — this session's date changed while candidates were already registered.</span>
+        <form method="post" asp-page-handler="ClearFlag">
+            <button type="submit" class="btn-secondary btn-sm">Clear flag</button>
+        </form>
+    </div>
+}
+
+<div class="session-panel">
+    <div>
+        <h1>@Model.Session.Heading</h1>
+        <div class="meta-grid">
+            <div class="meta-item"><span class="k">VEC</span><span class="v">@Model.Session.VecName</span></div>
+            <div class="meta-item">
+                <span class="k">Zoom</span>
+                <span class="v">
+                    @if (Model.Session.ZoomJoinUrl is not null)
+                    {
+                        <a href="@Model.Session.ZoomJoinUrl" target="_blank" rel="noopener">Join link ↗</a>
+                    }
+                    else
+                    {
+                        <text>—</text>
+                    }
+                </span>
+            </div>
+            <div class="meta-item">
+                <span class="k">Discord event</span>
+                <span class="v">
+                    @if (Model.Session.DiscordEventUrl is not null)
+                    {
+                        <a href="@Model.Session.DiscordEventUrl" target="_blank" rel="noopener">View ↗</a>
+                    }
+                    else
+                    {
+                        <text>—</text>
+                    }
+                </span>
+            </div>
+            <div class="meta-item"><span class="k">Fee</span><span class="v mono">@Model.Session.FeeLine</span></div>
+            <div class="meta-item"><span class="k">Testing status</span><span class="v">@Model.Session.TestingStatusLine</span></div>
+            <div class="meta-item">
+                <span class="k">VEC submission</span>
+                <span class="v">
+                    <span class="chip @Model.Session.VecSubmissionChipClass">@Model.Session.VecSubmissionChipLabel</span>
+                    @if (!Model.Session.VecSubmitted)
+                    {
+                        <form method="post" asp-page-handler="ToggleVecSubmission" style="display:inline">
+                            <button type="submit" class="btn-secondary btn-sm">Mark submitted</button>
+                        </form>
+                    }
+                </span>
+            </div>
+        </div>
+    </div>
+    <div class="panel-actions">
+        @if (!Model.Session.TestingCompleted && !Model.Session.Cancelled)
+        {
+            <form method="post" asp-page-handler="MarkCompleted">
+                <button type="submit" class="btn-primary">Mark session completed</button>
+            </form>
+        }
+        <button type="button" class="btn-secondary" data-open-modal="addWalkInModal">Add walk-in candidate</button>
+    </div>
+</div>
+
+<div class="section-head">
+    <div>
+        <p class="eyebrow">@Model.Candidates.Count candidates</p>
+        <h2>Candidate roster</h2>
+    </div>
+</div>
+
+<table>
+    <thead>
+        <tr>
+            <th>Candidate</th>
+            <th>Application status</th>
+            <th>Payment</th>
+            <th>Tested</th>
+            <th></th>
+        </tr>
+    </thead>
+    <tbody>
+        @if (Model.Candidates.Count == 0)
+        {
+            <tr><td colspan="5">No candidates registered for this session yet.</td></tr>
+        }
+        @foreach (var candidate in Model.Candidates)
+        {
+            <tr>
+                <td>
+                    <div class="cand-name">
+                        @if (candidate.IsWithdrawn)
+                        {
+                            <span class="no-show">@candidate.DisplayName</span>
+                        }
+                        else
+                        {
+                            @candidate.DisplayName
+                        }
+                    </div>
+                    <div class="id-cell mono">@candidate.CallSignOrDash <span class="frn">@candidate.FrnLine</span></div>
+                </td>
+                <td>
+                    <div class="status-row">
+                        <div class="meter">
+                            @foreach (var seg in candidate.MeterSegments)
+                            {
+                                <div class="seg @seg"></div>
+                            }
+                        </div>
+                        <span class="status-label">@candidate.StatusLabel</span>
+                    </div>
+                </td>
+                <td>
+                    <span class="chip @candidate.PaymentChipClass">@candidate.PaymentChipLabel</span>
+                    @if (candidate.RefundRequested)
+                    {
+                        <span class="refund-tag">Refund requested</span>
+                    }
+                </td>
+                <td><span class="tested-check @(candidate.Tested ? "on" : "")">@(candidate.Tested ? "✓" : "·")</span></td>
+                <td class="row-actions">
+                    @if (candidate.IsWithdrawn)
+                    {
+                        <button class="kebab" disabled style="opacity:.35">⋮</button>
+                    }
+                    else
+                    {
+                        <button type="button" class="kebab">⋮</button>
+                        <div class="menu">
+                            <form method="post" asp-page-handler="ResendConfirmation">
+                                <input type="hidden" name="candidateId" value="@candidate.Id" />
+                                <button type="submit" class="item" disabled="@(!candidate.CanResendConfirmation)">Resend confirmation email</button>
+                            </form>
+                            <form method="post" asp-page-handler="MarkPaid">
+                                <input type="hidden" name="paymentId" value="@candidate.PrimaryPaymentId" />
+                                <button type="submit" class="item" disabled="@(!candidate.CanMarkPaid)">Mark paid manually</button>
+                            </form>
+                            <button type="button" class="item" data-open-modal="frnModal-@candidate.Id">Add / edit FRN</button>
+                            <hr>
+                            <form method="post" asp-page-handler="MarkFailed">
+                                <input type="hidden" name="candidateId" value="@candidate.Id" />
+                                <button type="submit" class="item" disabled="@(!candidate.CanMarkFailed)">Mark failed</button>
+                            </form>
+                            <button type="button" class="item" data-open-modal="moveModal-@candidate.Id" disabled="@(!candidate.CanMove)">Move to another session</button>
+                            <form method="post" asp-page-handler="CreateRetestPayment">
+                                <input type="hidden" name="candidateId" value="@candidate.Id" />
+                                <button type="submit" class="item" disabled="@(!candidate.CanCreateRetestPayment)">Create retest payment</button>
+                            </form>
+                            <button type="button" class="item" data-open-modal="refundModal-@candidate.Id" disabled="@(!candidate.CanFlagRefund)">Flag refund requested</button>
+                            @if (candidate.CanSendYouthProgram)
+                            {
+                                <form method="post" asp-page-handler="SendYouthProgram">
+                                    <input type="hidden" name="candidateId" value="@candidate.Id" />
+                                    <button type="submit" class="item">Send Youth Program instructions</button>
+                                </form>
+                            }
+                            <hr>
+                            <form method="post" asp-page-handler="DeleteCandidate">
+                                <input type="hidden" name="candidateId" value="@candidate.Id" />
+                                <button type="submit" class="item danger" disabled="@(!candidate.CanDelete)">Delete (no-show / withdrew)</button>
+                            </form>
+                        </div>
+                    }
+                </td>
+            </tr>
+        }
+    </tbody>
+</table>
+
+<footer class="roster">
+    <div class="section-head" style="margin:0">
+        <div>
+            <p class="eyebrow">Volunteer examiners</p>
+            <h2>VE roster</h2>
+        </div>
+        <button type="button" class="btn-secondary btn-sm" data-open-modal="addVeModal">+ Add VE</button>
+    </div>
+    <div class="roster-list">
+        @if (Model.VeRoster.Count == 0)
+        {
+            <span class="mono">No VEs on this session's roster yet.</span>
+        }
+        @foreach (var ve in Model.VeRoster)
+        {
+            <span class="ve-chip">
+                @ve.CallSign — @ve.Name
+                <form method="post" asp-page-handler="RemoveVe">
+                    <input type="hidden" name="volunteerExaminerId" value="@ve.Id" />
+                    <button type="submit" class="x" title="Remove from roster">✕</button>
+                </form>
+            </span>
+        }
+    </div>
+</footer>
+
+<!-- Add walk-in candidate modal -->
+<div class="modal-backdrop" id="addWalkInModal">
+    <div class="modal">
+        <h3>Add walk-in candidate</h3>
+        <form method="post" asp-page-handler="AddWalkIn">
+            <div class="field"><label for="wiName">Name</label><input id="wiName" name="name" required /></div>
+            <div class="field"><label for="wiFirstName">First name</label><input id="wiFirstName" name="firstName" /></div>
+            <div class="field"><label for="wiEmail">Email</label><input id="wiEmail" name="email" type="email" /></div>
+            <div class="field"><label for="wiFrn">FRN</label><input id="wiFrn" name="frn" /></div>
+            <div class="modal-actions">
+                <button type="button" class="btn-secondary btn-sm" data-close-modal>Cancel</button>
+                <button type="submit" class="btn-primary btn-sm">Add candidate</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Add VE modal -->
+<div class="modal-backdrop" id="addVeModal">
+    <div class="modal">
+        <h3>Add VE to roster</h3>
+        <form method="post" asp-page-handler="AddVe">
+            <div class="field"><label for="veCallSign">Call sign</label><input id="veCallSign" name="callSign" required /></div>
+            <div class="field"><label for="veName">Name</label><input id="veName" name="name" /></div>
+            <div class="modal-actions">
+                <button type="button" class="btn-secondary btn-sm" data-close-modal>Cancel</button>
+                <button type="submit" class="btn-primary btn-sm">Add VE</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+@foreach (var candidate in Model.Candidates.Where(c => !c.IsWithdrawn))
+{
+    <div class="modal-backdrop" id="frnModal-@candidate.Id">
+        <div class="modal">
+            <h3>Add / edit FRN</h3>
+            <form method="post" asp-page-handler="SetFrn">
+                <input type="hidden" name="candidateId" value="@candidate.Id" />
+                <div class="field"><label for="frn-@candidate.Id">FRN</label><input id="frn-@candidate.Id" name="frn" required /></div>
+                <div class="modal-actions">
+                    <button type="button" class="btn-secondary btn-sm" data-close-modal>Cancel</button>
+                    <button type="submit" class="btn-primary btn-sm">Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="modal-backdrop" id="moveModal-@candidate.Id">
+        <div class="modal">
+            <h3>Move to another session</h3>
+            <form method="post" asp-page-handler="Move">
+                <input type="hidden" name="candidateId" value="@candidate.Id" />
+                <div class="field">
+                    <label for="target-@candidate.Id">Target session (same VEC)</label>
+                    <select id="target-@candidate.Id" name="targetSessionId" required>
+                        @if (Model.MoveTargetSessions.Count == 0)
+                        {
+                            <option value="">No other active sessions under this VEC</option>
+                        }
+                        @foreach (var target in Model.MoveTargetSessions)
+                        {
+                            <option value="@target.Id">@target.Label</option>
+                        }
+                    </select>
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn-secondary btn-sm" data-close-modal>Cancel</button>
+                    <button type="submit" class="btn-primary btn-sm" disabled="@(Model.MoveTargetSessions.Count == 0)">Move</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="modal-backdrop" id="refundModal-@candidate.Id">
+        <div class="modal">
+            <h3>Flag refund requested</h3>
+            <form method="post" asp-page-handler="FlagRefund">
+                <input type="hidden" name="paymentId" value="@candidate.PrimaryPaymentId" />
+                <div class="field"><label for="notes-@candidate.Id">Notes</label><textarea id="notes-@candidate.Id" name="notes" rows="3"></textarea></div>
+                <div class="modal-actions">
+                    <button type="button" class="btn-secondary btn-sm" data-close-modal>Cancel</button>
+                    <button type="submit" class="btn-primary btn-sm">Flag refund</button>
+                </div>
+            </form>
+        </div>
+    </div>
+}

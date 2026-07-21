@@ -99,6 +99,33 @@ public static class EmailDefaultsSeeder
             <p>This is an internal notice — it goes to the Session Manager (EmailSettings.AdminNotificationEmail),
             not the candidate.</p>
             """);
+
+        // Phase 9b: sent automatically by SessionActionService.MarkCompletedAsync for a candidate
+        // whose Tested flag just flipped true and who has HasFelonyDisclosure = true — informational
+        // only, the club has no role beyond telling them special FCC steps are required.
+        await SeedTemplateIfMissingAsync(dbContext, logger, team, "FelonyDisclosureInstructions",
+            "Important: Additional FCC Steps Required",
+            """
+            <p>Hi {{CandidateName}},</p>
+            <p>Because you disclosed a felony conviction on your exam application, the FCC requires an
+            additional step before your license can be granted: you must submit an explanation of the
+            circumstances directly to the FCC as part of your application.</p>
+            <p>This is an FCC requirement, not something our club administers — we can't advise on the
+            content of your submission, only let you know it's required.</p>
+            <p>Questions about the process itself should go to the FCC directly.</p>
+            """);
+
+        // Phase 9b: manual, per-candidate trigger from the Session Manager ("Send ARRL Youth Program
+        // instructions"), only surfaced when the session's Vec.SupportsYouthProgram = true.
+        await SeedTemplateIfMissingAsync(dbContext, logger, team, "ArrlYouthProgramInstructions",
+            "ARRL Youth Program — Discount/Reimbursement Instructions",
+            """
+            <p>Hi {{CandidateName}},</p>
+            <p>Congratulations on your new call sign, {{CallSign}}! As a young ham, you may be eligible
+            for ARRL's youth discount/FCC-fee-reimbursement scholarship program.</p>
+            <p>Details and the submission form are available from ARRL — reach out to us if you have
+            questions about your eligibility.</p>
+            """);
     }
 
     private static async Task SeedTemplateIfMissingAsync(AppDbContext dbContext, ILogger logger, Team team, string key, string subject, string body)
