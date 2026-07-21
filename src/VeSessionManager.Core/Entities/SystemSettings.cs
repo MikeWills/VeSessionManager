@@ -24,6 +24,19 @@ public class SystemSettings
     /// </summary>
     public int SessionIngestionIntervalMinutes { get; set; }
 
+    /// <summary>
+    /// While on, SmtpEmailSender redirects every real send (registration confirmations, reminders,
+    /// felony-disclosure/youth-program instructions, payment expiration notices — everything) to
+    /// TestModeOverrideEmail instead of the real candidate/admin recipient, so a team can run real
+    /// ExamTools data through the full pipeline without emailing anyone for real. Deployment-wide,
+    /// not per-team, same as every other SystemSettings field — while it's on, nothing anywhere
+    /// sends a real email, regardless of which team's data is being exercised.
+    /// </summary>
+    public bool TestModeEnabled { get; set; }
+
+    /// <summary>Required whenever TestModeEnabled is true (enforced by SystemSettingsService.UpdateAsync) — every redirected email lands here.</summary>
+    public string? TestModeOverrideEmail { get; set; }
+
     public int? UpdatedByUserId { get; set; }
     public User? UpdatedByUser { get; set; }
     public DateTime? UpdatedUtc { get; set; }

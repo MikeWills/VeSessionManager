@@ -50,6 +50,18 @@
         </div>
         <p class="session-sub">How often each team's ExamTools poll (+ Zoom/Discord/Square/email follow-up) runs when none of that team's sessions are imminent. Automatically shortens to every few minutes for any team with a session starting within the next hour or still in progress, so a last-minute registrant is still caught quickly — this only controls the slower, everyday cadence.</p>
 
+        <div class="section-head" style="margin-top:24px;"><h2>Test Mode</h2></div>
+        <div class="field" style="max-width:400px; flex-direction:row; align-items:center; gap:8px;">
+            <input id="testModeEnabled" name="testModeEnabled" type="checkbox" value="true" checked="@Model.TestModeEnabled" style="width:auto;" />
+            <input name="testModeEnabled" type="hidden" value="false" />
+            <label for="testModeEnabled" style="margin:0;">Test mode is on — redirect every outgoing email</label>
+        </div>
+        <div class="field" style="max-width:400px; margin-top:8px;">
+            <label for="testModeOverrideEmail">Override email address</label>
+            <input id="testModeOverrideEmail" name="testModeOverrideEmail" type="email" value="@Model.TestModeOverrideEmail" placeholder="you@example.com" />
+        </div>
+        <p class="session-sub">While on, every email this app would send (registration confirmations, reminders, disclosure/youth-program instructions, payment expiration notices — everything, for every team) goes to this one address instead of the real recipient, with the original recipient noted in the email itself. Use this to run a session through the full pipeline with real ExamTools data without emailing anyone for real. A red bar appears across every page while this is on.</p>
+
         @if (Model.UpdatedUtc is not null)
         {
             <p class="session-sub" style="margin-top:16px;">Last updated @Model.UpdatedUtc.Value.ToString("MMM d, yyyy h:mm tt") UTC</p>

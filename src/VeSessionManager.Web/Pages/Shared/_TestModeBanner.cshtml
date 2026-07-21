@@ -1,0 +1,17 @@
+@using Microsoft.EntityFrameworkCore
+@using VeSessionManager.Core.Data
+@inject AppDbContext DbContext
+@{
+    // Read fresh on every request, no caching — same "admin change takes effect immediately"
+    // idiom every other setting in this app follows (EmailTemplateRenderer, FeeConfiguration,
+    // etc.). Queried directly against SystemSettings rather than going through
+    // SystemSettingsService.GetAsync, since that method also creates the singleton row if missing
+    // (a write) — a page render should never have a side effect, so this only reads.
+    var systemSettings = await DbContext.SystemSettings.FirstOrDefaultAsync(s => s.Id == VeSessionManager.Core.Admin.SystemSettingsService.SingletonId);
+}
+@if (systemSettings?.TestModeEnabled == true)
+{
+    <div style="background:#c0392b;color:#fff;text-align:center;font-weight:600;font-size:13px;padding:8px 16px;letter-spacing:.02em;">
+        TEST MODE — no real emails are being sent@(string.IsNullOrWhiteSpace(systemSettings.TestModeOverrideEmail) ? "" : $" (redirected to {systemSettings.TestModeOverrideEmail})")
+    </div>
+}
