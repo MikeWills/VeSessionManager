@@ -1,8 +1,9 @@
 /* VeSessionManager admin UI design system — recreated from design_handoff_vesessionmanager_admin_ui
    (Phase 9's Claude Design mockup handoff). Tokens/components documented in that bundle's README;
-   this file is the Razor Pages implementation, used by _AppLayout.cshtml and its child pages only
-   (Account/Index/Privacy keep the original Bootstrap _Layout.cshtml — this design pass covers the
-   authenticated admin screens, not the public/account ones). */
+   this file is the Razor Pages implementation, used by _AppLayout.cshtml (authenticated admin/SM
+   screens) and, as of Phase 9d, _PublicLayout.cshtml (the public /Privacy page — no chassis nav,
+   since an anonymous candidate shouldn't see links to authenticated-only pages). Account/Index
+   still keep the original Bootstrap _Layout.cshtml. */
 
 :root {
   --panel: #14181A; --panel-2: #1F262A;
@@ -186,4 +187,27 @@ footer.roster { margin-top: 36px; background: var(--surface); border: 1px solid 
 .modal { background: var(--surface); border-radius: 10px; padding: 22px 24px; width: 340px; max-width: calc(100vw - 32px); box-shadow: 0 20px 48px rgba(20, 24, 26, .25); }
 .modal h3 { margin: 0 0 14px; font-size: 15px; }
 .modal .field { margin-bottom: 14px; }
+
+/* Public auth pages (Login/AccessDenied/Logout/ExternalLoginCallback) */
+.auth-wrap { display: flex; justify-content: center; padding-top: 48px; }
+.auth-card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 32px 30px; width: 360px; max-width: 100%; }
+.auth-card h1 { font-size: 20px; margin: 0 0 22px; letter-spacing: -.01em; }
+.auth-card .field { margin-bottom: 16px; }
+.auth-card .btn-primary { width: 100%; }
+.auth-card .auth-divider { display: flex; align-items: center; gap: 10px; margin: 20px 0; color: var(--ink-soft); font-size: 11px; font-family: "IBM Plex Mono", monospace; text-transform: uppercase; letter-spacing: .08em; }
+.auth-card .auth-divider::before, .auth-card .auth-divider::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+.auth-card .btn-secondary { width: 100%; margin-bottom: 8px; }
+.auth-card .field-error { color: var(--brick); font-size: 12px; margin-top: -10px; margin-bottom: 14px; }
+.auth-card .auth-error { background: var(--brick-dim); color: var(--chip-brick-text); border-radius: 8px; padding: 10px 14px; font-size: 13px; margin-bottom: 18px; }
+.auth-card p { font-size: 13.5px; line-height: 1.6; color: var(--ink-soft); margin: 0; }
+.auth-card .auth-link { display: inline-block; margin-top: 16px; font-size: 13px; }
+
+/* Public policy page (e.g. Privacy) */
+.policy h1 { font-size: 24px; margin: 0 0 6px; letter-spacing: -.01em; }
+.policy .policy-updated { font-family: "IBM Plex Mono", monospace; font-size: 11.5px; color: var(--ink-soft); margin: 0 0 28px; }
+.policy h2 { font-size: 15px; font-weight: 600; margin: 28px 0 10px; }
+.policy p { font-size: 14px; line-height: 1.6; margin: 0 0 14px; }
+.policy ul { margin: 0 0 14px; padding-left: 20px; font-size: 14px; line-height: 1.6; }
+.policy li { margin-bottom: 4px; }
+.policy .policy-note { background: var(--chip-neutral-bg); border-radius: 8px; padding: 12px 16px; font-size: 13px; color: var(--ink-soft); }
 .modal .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }

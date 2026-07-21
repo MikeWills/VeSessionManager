@@ -1,8 +1,58 @@
-﻿@page
+@page
 @model PrivacyModel
 @{
     ViewData["Title"] = "Privacy Policy";
+    Layout = "_PublicLayout";
 }
-<h1>@ViewData["Title"]</h1>
 
-<p>Use this page to detail your site's privacy policy.</p>
+<div class="policy">
+    <h1>Privacy Policy</h1>
+    <p class="policy-updated">Amateur Radio License Exam Session Management</p>
+
+    <p class="policy-note">
+        This page describes what personal information we collect when you register for an amateur
+        radio license exam session, why we collect it, and how long we keep it. If you have questions
+        about your information, contact the Volunteer Examiner team running your session.
+    </p>
+
+    <h2>What we collect</h2>
+    <p>When you register for an exam session, we collect and store:</p>
+    <ul>
+        <li><strong>Name</strong> — to identify you at the session and on your exam paperwork</li>
+        <li><strong>Email address</strong> — to send session details, payment links, and result notifications</li>
+        <li><strong>FCC Registration Number (FRN)</strong> — required to submit your exam results to the FCC</li>
+    </ul>
+
+    <h2>Why we collect it</h2>
+    <ul>
+        <li><strong>Session administration</strong> — confirming your registration, sending Zoom/meeting details, and tracking attendance</li>
+        <li><strong>FCC application tracking</strong> — matching your exam results to your FCC application and license grant</li>
+        <li><strong>Payment processing</strong> — generating and tracking payment for exam fees</li>
+    </ul>
+
+    <h2>How long we keep it</h2>
+    @if (Model.PiiRetentionWindowDays is int days)
+    {
+        <p>
+            We retain your personal information for <strong>@days days</strong> after the relevant
+            outcome of your exam: for candidates who pass, @days days after your license is granted
+            by the FCC; for candidates who do not pass, @days days after your exam date. After that
+            window, your name, email, FCC Registration Number, and felony-disclosure answer are
+            permanently removed from our records. If you do not test (e.g. a no-show or withdrawal),
+            this information is removed immediately.
+        </p>
+    }
+    else
+    {
+        <p>
+            Our data retention window is currently being finalized. Personal information is retained
+            only as long as needed to complete session administration, FCC application tracking, and
+            payment processing described above, and is removed once no longer needed for those
+            purposes.
+        </p>
+    }
+    <p>
+        Non-personal exam statistics (such as call sign, license grant date, and pass/fail outcome)
+        may be retained longer for historical reporting.
+    </p>
+</div>

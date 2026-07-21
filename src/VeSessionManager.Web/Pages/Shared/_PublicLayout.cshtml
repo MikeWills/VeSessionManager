@@ -1,0 +1,28 @@
+@{
+    Layout = null;
+}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>@ViewData["Title"] - VeSessionManager</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="~/css/app.css" asp-append-version="true" />
+</head>
+<body class="vesm">
+    <header class="chassis">
+        <span class="brand"><span class="dot"></span>VESESSIONMGR</span>
+        <div style="flex:1"></div>
+        <button id="themeToggle" class="theme-toggle" type="button"></button>
+    </header>
+
+    <main class="vesm-main" style="max-width:760px;">
+        @RenderBody()
+    </main>
+
+    <script src="~/js/app.js" asp-append-version="true"></script>
+    @await RenderSectionAsync("Scripts", required: false)
+</body>
+</html>

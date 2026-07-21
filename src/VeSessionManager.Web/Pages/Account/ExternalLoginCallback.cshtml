@@ -2,12 +2,17 @@
 @model VeSessionManager.Web.Pages.Account.ExternalLoginCallbackModel
 @{
     ViewData["Title"] = "External login";
+    Layout = "_PublicLayout";
 }
 
-<h1>External login</h1>
+<div class="auth-wrap">
+    <div class="auth-card">
+        <h1>External login</h1>
 
-@if (Model.ErrorMessage is not null)
-{
-    <div class="alert alert-danger">@Model.ErrorMessage</div>
-    <a asp-page="./Login" class="btn btn-secondary">Back to log in</a>
-}
+        @if (Model.ErrorMessage is not null)
+        {
+            <div class="auth-error">@Model.ErrorMessage</div>
+            <a class="btn-secondary" style="display:block;text-align:center;" asp-page="./Login">Back to log in</a>
+        }
+    </div>
+</div>

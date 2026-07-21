@@ -2,38 +2,40 @@
 @model VeSessionManager.Web.Pages.Account.LoginModel
 @{
     ViewData["Title"] = "Log in";
+    Layout = "_PublicLayout";
 }
 
-<h1>Log in</h1>
+<div class="auth-wrap">
+    <div class="auth-card">
+        <h1>Log in</h1>
 
-<div class="row">
-    <div class="col-md-6">
         @if (Model.ErrorMessage is not null)
         {
-            <div class="alert alert-danger">@Model.ErrorMessage</div>
+            <div class="auth-error">@Model.ErrorMessage</div>
         }
+
         <form method="post">
-            <div asp-validation-summary="ModelOnly" class="text-danger"></div>
-            <div class="mb-3">
-                <label asp-for="Input.UserName" class="form-label"></label>
-                <input asp-for="Input.UserName" class="form-control" autocomplete="username" />
-                <span asp-validation-for="Input.UserName" class="text-danger"></span>
+            <div asp-validation-summary="ModelOnly" class="field-error"></div>
+            <div class="field">
+                <label asp-for="Input.UserName"></label>
+                <input asp-for="Input.UserName" autocomplete="username" />
+                <span asp-validation-for="Input.UserName" class="field-error"></span>
             </div>
-            <div class="mb-3">
-                <label asp-for="Input.Password" class="form-label"></label>
-                <input asp-for="Input.Password" class="form-control" autocomplete="current-password" />
-                <span asp-validation-for="Input.Password" class="text-danger"></span>
+            <div class="field">
+                <label asp-for="Input.Password"></label>
+                <input asp-for="Input.Password" autocomplete="current-password" />
+                <span asp-validation-for="Input.Password" class="field-error"></span>
             </div>
-            <button type="submit" class="btn btn-primary">Log in</button>
+            <button type="submit" class="btn-primary">Log in</button>
         </form>
 
         @if (Model.ExternalLogins.Count > 0)
         {
-            <hr />
+            <div class="auth-divider">or</div>
             <form method="post">
                 @foreach (var provider in Model.ExternalLogins)
                 {
-                    <button type="submit" class="btn btn-outline-secondary me-2" name="provider" value="@provider.Name" asp-page-handler="ExternalLogin">
+                    <button type="submit" class="btn-secondary" name="provider" value="@provider.Name" asp-page-handler="ExternalLogin">
                         Sign in with @provider.DisplayName
                     </button>
                 }

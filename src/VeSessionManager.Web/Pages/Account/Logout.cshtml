@@ -2,6 +2,13 @@
 @model VeSessionManager.Web.Pages.Account.LogoutModel
 @{
     ViewData["Title"] = "Log out";
+    Layout = "_PublicLayout";
 }
 
-<p>You have been logged out.</p>
+<div class="auth-wrap">
+    <div class="auth-card">
+        <h1>Logged out</h1>
+        <p>You have been logged out.</p>
+        <a class="auth-link view-link" asp-page="/Account/Login">Log back in</a>
+    </div>
+</div>

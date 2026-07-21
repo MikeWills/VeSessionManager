@@ -2,7 +2,13 @@
 @model VeSessionManager.Web.Pages.Account.AccessDeniedModel
 @{
     ViewData["Title"] = "Access denied";
+    Layout = "_PublicLayout";
 }
 
-<h1>Access denied</h1>
-<p>You don't have permission to view that page.</p>
+<div class="auth-wrap">
+    <div class="auth-card">
+        <h1>Access denied</h1>
+        <p>You don't have permission to view that page.</p>
+        <a class="auth-link view-link" asp-page="/Account/Login">Back to log in</a>
+    </div>
+</div>
