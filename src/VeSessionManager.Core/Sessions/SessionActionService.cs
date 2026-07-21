@@ -44,7 +44,7 @@ public class SessionActionService(
         session.TestingCompletedByUserId = userId;
 
         var candidatesJustTested = session.Candidates
-            .Where(c => c.ApplicationStatus is CandidateApplicationStatus.Unmatched or CandidateApplicationStatus.Received)
+            .Where(c => !c.ApplicationStatus.IsTerminal())
             .ToList();
 
         foreach (var candidate in candidatesJustTested)
@@ -52,29 +52,32 @@ public class SessionActionService(
             candidate.Tested = true;
         }
 
-        dbContext.AuditLogs.Add(new AuditLog
-        {
-            UserId = userId,
-            Action = "SessionMarkedCompleted",
-            EntityType = nameof(Session),
-            EntityId = session.Id,
-            TimestampUtc = now,
-            Details = $"Session {session.ExamToolsSessionId} marked completed; {candidatesJustTested.Count} candidate(s) flipped to Tested."
-        });
+        dbContext.AddAuditLog(userId, "SessionMarkedCompleted", nameof(Session), session.Id,
+            $"Session {session.ExamToolsSessionId} marked completed; {candidatesJustTested.Count} candidate(s) flipped to Tested.", now);
         await dbContext.SaveChangesAsync(cancellationToken);
 
+        // Each send is isolated — one candidate's SMTP failure must not stop the rest of the batch,
+        // nor bubble up and make the whole "mark completed" action look like it failed when the
+        // status flip above already succeeded and was saved.
         var felonyDisclosuresSent = 0;
         foreach (var candidate in candidatesJustTested.Where(c => c.HasFelonyDisclosure == true))
         {
-            var result = await candidateNotificationService.SendFelonyDisclosureInstructionsAsync(candidate.Id, cancellationToken);
-            if (result == CandidateEmailSendResult.Sent)
+            try
             {
-                felonyDisclosuresSent++;
+                var result = await candidateNotificationService.SendFelonyDisclosureInstructionsAsync(candidate.Id, cancellationToken);
+                if (result == CandidateEmailSendResult.Sent)
+                {
+                    felonyDisclosuresSent++;
+                }
+                else
+                {
+                    logger.LogWarning("FelonyDisclosureInstructions not sent for candidate {CandidateId} after session {SessionId} completion: {Result}",
+                        candidate.Id, session.Id, result);
+                }
             }
-            else
+            catch (Exception ex)
             {
-                logger.LogWarning("FelonyDisclosureInstructions not sent for candidate {CandidateId} after session {SessionId} completion: {Result}",
-                    candidate.Id, session.Id, result);
+                logger.LogError(ex, "Failed to send FelonyDisclosureInstructions for candidate {CandidateId} after session {SessionId} completion", candidate.Id, session.Id);
             }
         }
 
@@ -100,15 +103,7 @@ public class SessionActionService(
         var now = timeProvider.GetUtcNow().UtcDateTime;
         session.RescheduleFlaggedForReview = false;
 
-        dbContext.AuditLogs.Add(new AuditLog
-        {
-            UserId = userId,
-            Action = "RescheduleFlagCleared",
-            EntityType = nameof(Session),
-            EntityId = session.Id,
-            TimestampUtc = now,
-            Details = $"Reschedule review flag cleared for session {session.ExamToolsSessionId}."
-        });
+        dbContext.AddAuditLog(userId, "RescheduleFlagCleared", nameof(Session), session.Id, $"Reschedule review flag cleared for session {session.ExamToolsSessionId}.", now);
         await dbContext.SaveChangesAsync(cancellationToken);
         logger.LogInformation("Reschedule flag cleared for session {SessionId} by user {UserId}", session.Id, userId);
         return SessionActionResult.Success;

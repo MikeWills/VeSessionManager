@@ -54,6 +54,33 @@ public class EmailTemplateRendererTests
     }
 
     [Fact]
+    public async Task PlaceholderValue_WithHtml_IsEncodedInBody_ButNotInSubject()
+    {
+        // CandidateName (and similar placeholders) ultimately come from ExamTools' public
+        // registration intake — registrant-controlled data. Body is sent as real HTML
+        // (SmtpEmailSender's HtmlBody), so an HTML/script-bearing name must not be injected
+        // verbatim; Subject is plain text and stays unencoded.
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        dbContext.EmailTemplates.Add(new EmailTemplate
+        {
+            TeamId = team.Id,
+            Key = "Test",
+            Subject = "Hi {{CandidateName}}",
+            Body = "<p>Hi {{CandidateName}}, welcome.</p>"
+        });
+        await dbContext.SaveChangesAsync();
+
+        var result = await CreateRenderer(dbContext).RenderAsync(team.Id, "Test",
+            new Dictionary<string, string> { ["CandidateName"] = "<script>alert(1)</script>" },
+            CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.Equal("<p>Hi &lt;script&gt;alert(1)&lt;/script&gt;, welcome.</p>", result.Body);
+        Assert.Equal("Hi <script>alert(1)</script>", result.Subject);
+    }
+
+    [Fact]
     public async Task EmptyStringValue_ForAKnownPlaceholder_SubstitutesToBlank_NoWarning()
     {
         await using var dbContext = CreateContext();

@@ -45,13 +45,24 @@ public class VolunteerExaminerSyncService(
             .Where(s => s.TeamId == team.Id && s.Status == SessionStatus.Active)
             .ToListAsync(cancellationToken);
 
+        // Each session isolated and saved independently — same reasoning as every other scan-based
+        // service's per-item try/catch + save: one session's ExamTools call throwing must not skip
+        // every later session in this team's list, nor discard reconciliation already done for
+        // earlier ones by leaving it all pending on a single end-of-loop SaveChangesAsync.
         foreach (var session in sessions)
         {
-            var roster = await examToolsClient.GetSessionVeRosterAsync(credentials, session.ExamToolsSessionId, cancellationToken);
-            ReconcileSession(team, session, roster, knownVes, result);
+            try
+            {
+                var roster = await examToolsClient.GetSessionVeRosterAsync(credentials, session.ExamToolsSessionId, cancellationToken);
+                ReconcileSession(team, session, roster, knownVes, result);
+                await dbContext.SaveChangesAsync(cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Failed to sync VE roster for session {SessionId} ({ExamToolsSessionId})", session.Id, session.ExamToolsSessionId);
+            }
         }
 
-        await dbContext.SaveChangesAsync(cancellationToken);
         logger.LogInformation("VE roster sync finished for team {TeamId} ({TeamName}): {Result}", team.Id, team.Name, result);
         return result;
     }

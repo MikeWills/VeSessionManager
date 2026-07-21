@@ -15,6 +15,7 @@ public class VolunteerExaminerSyncServiceTests
     private sealed class FakeExamToolsClient : IExamToolsClient
     {
         public Dictionary<(int TeamId, string SessionId), List<ExamToolsVe>> RostersByTeamAndSession { get; } = [];
+        public HashSet<string> FailingSessionIds { get; } = [];
         public List<string> RosterFetches { get; } = [];
         public List<ExamToolsCredentials> CredentialsUsed { get; } = [];
 
@@ -31,6 +32,11 @@ public class VolunteerExaminerSyncServiceTests
         {
             CredentialsUsed.Add(credentials);
             RosterFetches.Add(examToolsSessionId);
+            if (FailingSessionIds.Contains(examToolsSessionId))
+            {
+                throw new InvalidOperationException($"Simulated ExamTools failure for session {examToolsSessionId}");
+            }
+
             return Task.FromResult<IReadOnlyList<ExamToolsVe>>(
                 RostersByTeamAndSession.TryGetValue((credentials.TeamId, examToolsSessionId), out var list) ? list : []);
         }
@@ -239,6 +245,31 @@ public class VolunteerExaminerSyncServiceTests
         var veB = dbContext.VolunteerExaminers.Single(v => v.TeamId == teamB.Id);
         Assert.Equal("Team A's VE", veA.Name);
         Assert.Equal("Team B's VE", veB.Name);
+    }
+
+    [Fact]
+    public async Task OneSessionFailing_DoesNotBlockOtherSessionsInSameRun_AndSavesEachIndependently()
+    {
+        // Same reasoning as every other scan-based service's per-item try/catch + save: one
+        // session's ExamTools call throwing must not skip every later session in this team's list,
+        // nor discard reconciliation already done for an earlier one.
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        var sessionA = await SeedSessionAsync(dbContext, team, "session-a");
+        var sessionB = await SeedSessionAsync(dbContext, team, "session-b");
+        var client = new FakeExamToolsClient();
+        client.SetRoster(team.Id, sessionA.ExamToolsSessionId, new ExamToolsVe { Call = "N2SPG", Name = "Team A's VE" });
+        client.FailingSessionIds.Add(sessionA.ExamToolsSessionId);
+        client.SetRoster(team.Id, sessionB.ExamToolsSessionId, new ExamToolsVe { Call = "NP2UU", Name = "Team B's VE" });
+
+        var result = await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+
+        // sessionA's failure doesn't throw out of RunAsync, and sessionB is still processed.
+        Assert.Equal(1, result.LinksAdded);
+        var ve = Assert.Single(dbContext.VolunteerExaminers);
+        Assert.Equal("NP2UU", ve.CallSign);
+        var link = Assert.Single(dbContext.SessionVolunteerExaminers);
+        Assert.Equal(sessionB.Id, link.SessionId);
     }
 
     [Fact]

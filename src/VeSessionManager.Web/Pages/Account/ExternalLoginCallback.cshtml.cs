@@ -40,6 +40,17 @@ public class ExternalLoginCallbackModel(SignInManager<User> signInManager, UserM
             return Page();
         }
 
+        // Linking/signing in purely on an email-claim match is only safe if the provider actually
+        // verified that email belongs to this visitor. Only Google's handler surfaces this claim
+        // today (mapped explicitly in Program.cs); a provider that doesn't send it at all (e.g.
+        // Microsoft) falls through unblocked, same as before this check existed.
+        var emailVerifiedClaim = info.Principal.FindFirstValue("email_verified");
+        if (bool.TryParse(emailVerifiedClaim, out var emailVerified) && !emailVerified)
+        {
+            ErrorMessage = "This external account's email address is not verified with the provider. Contact your administrator.";
+            return Page();
+        }
+
         var linkResult = await userManager.AddLoginAsync(existingUser, info);
         if (!linkResult.Succeeded)
         {

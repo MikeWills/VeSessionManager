@@ -54,15 +54,7 @@ public class VolunteerExaminerRosterService(AppDbContext dbContext, TimeProvider
         dbContext.SessionVolunteerExaminers.Add(new SessionVolunteerExaminer { SessionId = session.Id, VolunteerExaminerId = volunteerExaminer.Id });
 
         var now = timeProvider.GetUtcNow().UtcDateTime;
-        dbContext.AuditLogs.Add(new AuditLog
-        {
-            UserId = userId,
-            Action = "VeAddedToSessionRoster",
-            EntityType = nameof(Session),
-            EntityId = session.Id,
-            TimestampUtc = now,
-            Details = $"VE {normalizedCallSign} added to session {session.ExamToolsSessionId} roster."
-        });
+        dbContext.AddAuditLog(userId, "VeAddedToSessionRoster", nameof(Session), session.Id, $"VE {normalizedCallSign} added to session {session.ExamToolsSessionId} roster.", now);
         await dbContext.SaveChangesAsync(cancellationToken);
         logger.LogInformation("VE {CallSign} added to session {SessionId} roster by user {UserId}", normalizedCallSign, session.Id, userId);
         return VeRosterActionResult.Success;
@@ -82,15 +74,7 @@ public class VolunteerExaminerRosterService(AppDbContext dbContext, TimeProvider
         dbContext.SessionVolunteerExaminers.Remove(link);
 
         var now = timeProvider.GetUtcNow().UtcDateTime;
-        dbContext.AuditLogs.Add(new AuditLog
-        {
-            UserId = userId,
-            Action = "VeRemovedFromSessionRoster",
-            EntityType = nameof(Session),
-            EntityId = sessionId,
-            TimestampUtc = now,
-            Details = $"VE {link.VolunteerExaminer.CallSign} removed from session {link.Session.ExamToolsSessionId} roster."
-        });
+        dbContext.AddAuditLog(userId, "VeRemovedFromSessionRoster", nameof(Session), sessionId, $"VE {link.VolunteerExaminer.CallSign} removed from session {link.Session.ExamToolsSessionId} roster.", now);
         await dbContext.SaveChangesAsync(cancellationToken);
         logger.LogInformation("VE {VolunteerExaminerId} removed from session {SessionId} roster by user {UserId}", volunteerExaminerId, sessionId, userId);
         return VeRosterActionResult.Success;

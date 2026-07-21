@@ -1,3 +1,5 @@
+using System.Linq;
+
 namespace VeSessionManager.Core.Entities;
 
 public enum SessionStatus
@@ -19,6 +21,26 @@ public enum CandidateApplicationStatus
     Granted,
     Failed,
     NotTested
+}
+
+/// <summary>
+/// Single definition of which CandidateApplicationStatus values are "terminal" (settled — no
+/// further FCC/session processing expected). Previously reimplemented independently in
+/// SessionIngestionService/VecSubmissionReportService/PaymentReminderService/SessionActionService/
+/// CandidateActionService with no shared source of truth. TerminalStatuses is a static array so a
+/// LINQ `.Contains(...)` against it translates to SQL IN in EF Core queries; IsTerminal is for
+/// in-memory checks on an already-materialized Candidate.
+/// </summary>
+public static class CandidateApplicationStatusExtensions
+{
+    public static readonly CandidateApplicationStatus[] TerminalStatuses =
+    [
+        CandidateApplicationStatus.Granted,
+        CandidateApplicationStatus.Failed,
+        CandidateApplicationStatus.NotTested
+    ];
+
+    public static bool IsTerminal(this CandidateApplicationStatus status) => TerminalStatuses.Contains(status);
 }
 
 public enum PaymentReason

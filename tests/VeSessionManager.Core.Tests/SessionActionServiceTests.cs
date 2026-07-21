@@ -21,9 +21,15 @@ public class SessionActionServiceTests
     private sealed class FakeEmailSender : IEmailSender
     {
         public List<EmailMessage> SentMessages { get; } = [];
+        public HashSet<string> FailingRecipients { get; } = [];
 
         public Task SendAsync(EmailCredentials credentials, EmailMessage message, CancellationToken cancellationToken)
         {
+            if (FailingRecipients.Contains(message.ToAddress))
+            {
+                throw new InvalidOperationException($"Simulated SMTP failure sending to {message.ToAddress}");
+            }
+
             SentMessages.Add(message);
             return Task.CompletedTask;
         }
@@ -139,6 +145,33 @@ public class SessionActionServiceTests
         Assert.Equal(1, result.FelonyDisclosureEmailsSent);
         var message = Assert.Single(sender.SentMessages);
         Assert.Contains("additional FCC steps are required", message.HtmlBody);
+    }
+
+    [Fact]
+    public async Task MarkCompleted_OneFelonyDisclosureEmailFails_DoesNotThrow_StillSendsToOtherCandidates()
+    {
+        // One candidate's SMTP failure must not stop the rest of the batch, nor bubble up and make
+        // the whole "mark completed" action look like it failed when the status flip already
+        // succeeded and was saved.
+        await using var dbContext = CreateContext();
+        var (_, user, session) = await SeedSessionAsync(dbContext);
+        AddCandidate(dbContext, session, CandidateApplicationStatus.Received, hasFelonyDisclosure: true).Email = "fails@example.com";
+        var succeeds = AddCandidate(dbContext, session, CandidateApplicationStatus.Received, hasFelonyDisclosure: true);
+        succeeds.Email = "succeeds@example.com";
+        await dbContext.SaveChangesAsync();
+
+        var sender = new FakeEmailSender();
+        sender.FailingRecipients.Add("fails@example.com");
+
+        var result = await CreateService(dbContext, sender).MarkCompletedAsync(session.Id, user.Id, CancellationToken.None);
+
+        Assert.Equal(SessionActionResult.Success, result.Result);
+        Assert.Equal(2, result.CandidatesTested);
+        Assert.Equal(1, result.FelonyDisclosureEmailsSent);
+        var message = Assert.Single(sender.SentMessages);
+        Assert.Equal("succeeds@example.com", message.ToAddress);
+        // The status flip itself must not have been rolled back by the later email failure.
+        Assert.True(dbContext.Candidates.Single(c => c.Email == "fails@example.com").Tested);
     }
 
     [Fact]

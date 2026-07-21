@@ -13,7 +13,7 @@ namespace VeSessionManager.Web.Pages.Admin;
 
 /// <summary>Phase 9c: per-Team EmailTemplate Subject/Body editing, with the available-placeholder chip list per Key. Same team-picker/lock pattern as TeamSettings.</summary>
 [Authorize(Roles = "SystemAdmin,TeamAdmin")]
-public class EmailTemplatesModel(AppDbContext dbContext, UserManager<User> userManager, SessionAccessScope accessScope, AdminAccessScope adminAccessScope, EmailTemplateAdminService emailTemplateAdminService) : PageModel
+public class EmailTemplatesModel(AppDbContext dbContext, UserManager<User> userManager, AdminAccessScope adminAccessScope, EmailTemplateAdminService emailTemplateAdminService) : PageModel
 {
     [BindProperty(SupportsGet = true)]
     public int? TeamId { get; set; }
@@ -35,15 +35,10 @@ public class EmailTemplatesModel(AppDbContext dbContext, UserManager<User> userM
             ? await dbContext.Teams.OrderBy(t => t.Name).Select(t => new ValueTuple<int, string>(t.Id, t.Name)).ToListAsync()
             : [];
 
-        var effectiveTeamId = IsSystemAdmin ? TeamId : accessScope.GetEffectiveTeamId(user);
+        var effectiveTeamId = adminAccessScope.TryResolveManageableTeamId(user, TeamId);
         if (effectiveTeamId is null)
         {
             return Page();
-        }
-
-        if (!adminAccessScope.CanManageTeam(user, effectiveTeamId.Value))
-        {
-            return Forbid();
         }
 
         TeamId = effectiveTeamId.Value;

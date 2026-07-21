@@ -171,15 +171,7 @@ public class TeamSettingsService(AppDbContext dbContext, TimeProvider timeProvid
     }
 
     private void AddAudit(int userId, string action, int entityId, string details, DateTime now) =>
-        dbContext.AuditLogs.Add(new AuditLog
-        {
-            UserId = userId,
-            Action = action,
-            EntityType = nameof(Team),
-            EntityId = entityId,
-            TimestampUtc = now,
-            Details = details
-        });
+        dbContext.AddAuditLog(userId, action, nameof(Team), entityId, details, now);
 }
 
 public enum TeamActionResult

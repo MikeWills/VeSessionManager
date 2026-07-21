@@ -20,9 +20,6 @@ public class VecSubmissionReportService(AppDbContext dbContext)
             .Where(s => s.TeamId == teamId
                 && s.Status == SessionStatus.Active
                 && s.VecSubmissionStatus == VecSubmissionStatus.NotSubmitted
-                && s.Candidates.Any(c =>
-                    c.ApplicationStatus == CandidateApplicationStatus.Granted
-                    || c.ApplicationStatus == CandidateApplicationStatus.Failed
-                    || c.ApplicationStatus == CandidateApplicationStatus.NotTested))
+                && s.Candidates.Any(c => CandidateApplicationStatusExtensions.TerminalStatuses.Contains(c.ApplicationStatus)))
             .CountAsync(cancellationToken);
 }

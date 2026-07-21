@@ -35,15 +35,7 @@ public class VecSubmissionService(AppDbContext dbContext, TimeProvider timeProvi
         session.VecSubmittedDate = now;
         session.VecSubmittedByUserId = userId;
 
-        dbContext.AuditLogs.Add(new AuditLog
-        {
-            UserId = userId,
-            Action = "VecSubmissionMarked",
-            EntityType = nameof(Session),
-            EntityId = session.Id,
-            TimestampUtc = now,
-            Details = $"Session {session.ExamToolsSessionId} marked as submitted to {session.Vec.Name}."
-        });
+        dbContext.AddAuditLog(userId, "VecSubmissionMarked", nameof(Session), session.Id, $"Session {session.ExamToolsSessionId} marked as submitted to {session.Vec.Name}.", now);
 
         await dbContext.SaveChangesAsync(cancellationToken);
         return VecSubmissionMarkResult.Marked;

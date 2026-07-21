@@ -168,7 +168,7 @@ public class SessionIngestionService(
             return;
         }
 
-        var hasBlockingCandidates = local.Candidates.Any(c => !IsTerminal(c.ApplicationStatus));
+        var hasBlockingCandidates = local.Candidates.Any(c => !c.ApplicationStatus.IsTerminal());
         if (!hasBlockingCandidates)
         {
             logger.LogInformation("Session {ExamToolsSessionId} rescheduled {OldStart:u} -> {NewStart:u} (no candidates — applied automatically)",
@@ -227,7 +227,7 @@ public class SessionIngestionService(
             }
 
             // Purged rows must stay purged, and terminal candidates are frozen for reporting.
-            if (existing.PiiPurgedUtc is not null || IsTerminal(existing.ApplicationStatus))
+            if (existing.PiiPurgedUtc is not null || existing.ApplicationStatus.IsTerminal())
             {
                 continue;
             }
@@ -277,9 +277,4 @@ public class SessionIngestionService(
         // Applicants that disappear upstream are intentionally left alone: withdrawal/no-show is a
         // manual Session Manager action (Phase 9's delete flow), not something the poller infers.
     }
-
-    private static bool IsTerminal(CandidateApplicationStatus status) =>
-        status is CandidateApplicationStatus.Granted
-            or CandidateApplicationStatus.Failed
-            or CandidateApplicationStatus.NotTested;
 }

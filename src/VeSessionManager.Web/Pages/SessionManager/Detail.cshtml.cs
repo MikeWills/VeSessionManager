@@ -115,6 +115,7 @@ public class DetailModel(
     {
         var auth = await AuthorizeAsync();
         if (auth is null) return Forbid();
+        if (!await CandidateBelongsToSessionAsync(candidateId)) return Forbid();
 
         var result = await candidateNotificationService.ResendRegistrationConfirmationAsync(candidateId, CancellationToken.None);
         SetStatus(result == CandidateEmailSendResult.Sent, "Confirmation email resent.", $"Could not resend confirmation email: {result}.");
@@ -125,6 +126,7 @@ public class DetailModel(
     {
         var auth = await AuthorizeAsync();
         if (auth is null) return Forbid();
+        if (!await CandidateBelongsToSessionAsync(candidateId)) return Forbid();
 
         var result = await candidateActionService.MarkFailedAsync(candidateId, auth.Value.User.Id, CancellationToken.None);
         SetStatus(result == CandidateActionResult.Success, "Candidate marked failed.", "Could not mark candidate failed.");
@@ -135,6 +137,7 @@ public class DetailModel(
     {
         var auth = await AuthorizeAsync();
         if (auth is null) return Forbid();
+        if (!await CandidateBelongsToSessionAsync(candidateId)) return Forbid();
 
         var result = await candidateActionService.DeleteAsync(candidateId, auth.Value.User.Id, CancellationToken.None);
         SetStatus(result == CandidateActionResult.Success, "Candidate marked as withdrew/no-show; PII cleared.", "Could not delete candidate — testing already completed for this session.");
@@ -145,6 +148,7 @@ public class DetailModel(
     {
         var auth = await AuthorizeAsync();
         if (auth is null) return Forbid();
+        if (!await CandidateBelongsToSessionAsync(candidateId)) return Forbid();
 
         if (string.IsNullOrWhiteSpace(frn))
         {
@@ -161,6 +165,7 @@ public class DetailModel(
     {
         var auth = await AuthorizeAsync();
         if (auth is null) return Forbid();
+        if (!await PaymentBelongsToSessionAsync(paymentId)) return Forbid();
 
         var result = await candidateActionService.MarkPaidManuallyAsync(paymentId, auth.Value.User.Id, CancellationToken.None);
         SetStatus(result == CandidateActionResult.Success, "Payment marked paid.", "Could not mark payment paid.");
@@ -171,6 +176,7 @@ public class DetailModel(
     {
         var auth = await AuthorizeAsync();
         if (auth is null) return Forbid();
+        if (!await PaymentBelongsToSessionAsync(paymentId)) return Forbid();
 
         var result = await candidateActionService.FlagRefundRequestedAsync(paymentId, auth.Value.User.Id, notes, CancellationToken.None);
         SetStatus(result == CandidateActionResult.Success, "Refund requested flagged.", "Could not flag refund requested.");
@@ -181,6 +187,7 @@ public class DetailModel(
     {
         var auth = await AuthorizeAsync();
         if (auth is null) return Forbid();
+        if (!await CandidateBelongsToSessionAsync(candidateId)) return Forbid();
 
         var result = await candidateActionService.CreateRetestPaymentAsync(candidateId, auth.Value.User.Id, CancellationToken.None);
         SetStatus(result == CandidateActionResult.Success, "Retest payment created.", "Could not create retest payment — candidate must be marked Failed first.");
@@ -191,6 +198,7 @@ public class DetailModel(
     {
         var auth = await AuthorizeAsync();
         if (auth is null) return Forbid();
+        if (!await CandidateBelongsToSessionAsync(candidateId)) return Forbid();
 
         var result = await candidateNotificationService.SendYouthProgramInstructionsAsync(candidateId, CancellationToken.None);
         SetStatus(result == CandidateEmailSendResult.Sent, "Youth program instructions sent.", $"Could not send youth program instructions: {result}.");
@@ -215,6 +223,17 @@ public class DetailModel(
 
         return (user, session);
     }
+
+    // AuthorizeAsync only proves the acting user may edit the session named by the page's own Id
+    // route parameter — every candidate/payment action also submits a separate candidateId/paymentId
+    // form value that must independently be checked to actually belong to that session. Without
+    // this, an authorized Session Manager for one session could act on any candidate/payment id in
+    // the whole database (cross-tenant IDOR) just by editing the posted form value.
+    private Task<bool> CandidateBelongsToSessionAsync(int candidateId) =>
+        dbContext.Candidates.AnyAsync(c => c.Id == candidateId && c.SessionId == Id);
+
+    private Task<bool> PaymentBelongsToSessionAsync(int paymentId) =>
+        dbContext.Payments.AnyAsync(p => p.Id == paymentId && p.Candidate.SessionId == Id);
 
     private void SetStatus(bool success, string successMessage, string errorMessage)
     {

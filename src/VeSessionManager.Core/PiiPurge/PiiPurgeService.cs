@@ -102,34 +102,13 @@ public class PiiPurgeService(
         return candidates.Count;
     }
 
-    // Name/Email/Frn/HasFelonyDisclosure is the exact same PII field set CandidateActionService's
-    // immediate delete/no-show purge nulls (Phase 9) — CallSign/LicenseGrantDateUtc/ApplicationStatus
-    // /SessionId and every Payment.Amount/Status/Reason are deliberately left untouched, since they're
-    // needed for historical session/VE/financial stats. Unlike the delete action, this purge never
-    // touches ApplicationStatus/ResultMarkedBy* — it's a privacy retention action, not a status change.
-    private static void PurgeCandidate(Candidate candidate, DateTime now)
-    {
-        candidate.Name = null;
-        candidate.Email = null;
-        candidate.Frn = null;
-        candidate.HasFelonyDisclosure = null;
-        candidate.PiiPurgedUtc = now;
-
-        foreach (var payment in candidate.Payments)
-        {
-            payment.PaymentLinkUrl = null;
-            payment.SquarePaymentReferenceId = null;
-        }
-    }
+    // CandidatePiiFields.Clear is the shared definition of "PII cleared" — CallSign/LicenseGrantDateUtc
+    // /ApplicationStatus/SessionId and every Payment.Amount/Status/Reason are deliberately left
+    // untouched, since they're needed for historical session/VE/financial stats. Unlike the delete
+    // action, this purge never touches ApplicationStatus/ResultMarkedBy* — it's a privacy retention
+    // action, not a status change.
+    private static void PurgeCandidate(Candidate candidate, DateTime now) => CandidatePiiFields.Clear(candidate, now);
 
     private void AddAudit(int candidateId, string details, DateTime now) =>
-        dbContext.AuditLogs.Add(new AuditLog
-        {
-            UserId = null, // system action, not a person
-            Action = "CandidatePiiPurged",
-            EntityType = nameof(Candidate),
-            EntityId = candidateId,
-            TimestampUtc = now,
-            Details = details
-        });
+        dbContext.AddAuditLog(null, "CandidatePiiPurged", nameof(Candidate), candidateId, details, now); // system action, not a person
 }

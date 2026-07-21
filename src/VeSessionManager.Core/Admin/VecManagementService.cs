@@ -53,15 +53,7 @@ public class VecManagementService(AppDbContext dbContext, TimeProvider timeProvi
     }
 
     private void AddAudit(int userId, string action, int entityId, string details, DateTime now) =>
-        dbContext.AuditLogs.Add(new AuditLog
-        {
-            UserId = userId,
-            Action = action,
-            EntityType = nameof(Vec),
-            EntityId = entityId,
-            TimestampUtc = now,
-            Details = details
-        });
+        dbContext.AddAuditLog(userId, action, nameof(Vec), entityId, details, now);
 }
 
 public enum VecActionResult
