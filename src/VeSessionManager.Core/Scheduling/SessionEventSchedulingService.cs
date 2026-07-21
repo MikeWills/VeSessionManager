@@ -33,6 +33,13 @@ namespace VeSessionManager.Core.Scheduling;
 /// This means a poll that crashes or fails partway always resumes correctly next run purely by
 /// re-reading Session state — matching Phase 1's polling philosophy. Multi-team: this service now
 /// operates on one Team's sessions per call — see docs/multi-team.md.
+///
+/// SyncZoomAndDiscordAsync calls SaveChangesAsync itself immediately after a newly-created
+/// ZoomMeetingId/DiscordEventId is set — the id is the only handle back to a resource that already
+/// exists externally (needed for every future update/delete), so the window where it's known only
+/// in memory is kept as small as possible rather than deferred to RunAsync's own end-of-session
+/// save. FindExistingMeetingAsync/FindExistingEventAsync are the backstop for what's left of that
+/// window (and for the case where the previous poll never even reached the save).
 /// Per spec: cancellation cleanup never sends any candidate-facing notification — that is a
 /// manual Session Manager action, not something this job (or any later phase) should do.
 /// </summary>
@@ -156,6 +163,13 @@ public class SessionEventSchedulingService(
                     session.ZoomMeetingId = meeting.Id;
                     session.ZoomJoinUrl = meeting.JoinUrl;
                 }
+
+                // Save the instant the id is known, before Discord's work (a second round trip)
+                // even starts for this session — the id is the only handle back to this meeting
+                // for every future update/delete, so the window where it's known only in memory
+                // needs to be as small as possible, not "however long the rest of this method
+                // takes." The dedup check above is the backstop for what's left of that window.
+                await dbContext.SaveChangesAsync(cancellationToken);
             }
             else
             {
@@ -196,6 +210,11 @@ public class SessionEventSchedulingService(
                     var scheduledEvent = await discordEventClient.CreateEventAsync(guildId, discordRequest, cancellationToken);
                     session.DiscordEventId = scheduledEvent.Id;
                 }
+
+                // Save immediately for the same reason as Zoom's id above — this is the last step
+                // in the method, but the caller (RunAsync) still does other work (computing/logging
+                // the result) before its own save, so this isn't redundant.
+                await dbContext.SaveChangesAsync(cancellationToken);
             }
             else
             {
