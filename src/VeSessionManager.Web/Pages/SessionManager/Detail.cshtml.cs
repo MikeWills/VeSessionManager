@@ -42,7 +42,6 @@ public class DetailModel(
     public SessionSummary Session { get; private set; } = null!;
     public IReadOnlyList<CandidateRow> Candidates { get; private set; } = [];
     public IReadOnlyList<VeChip> VeRoster { get; private set; } = [];
-    public IReadOnlyList<(int Id, string Label)> MoveTargetSessions { get; private set; } = [];
 
     public async Task<IActionResult> OnGetAsync()
     {
@@ -81,22 +80,6 @@ public class DetailModel(
 
         var result = await vecSubmissionService.MarkSubmittedAsync(Id, auth.Value.User.Id, CancellationToken.None);
         SetStatus(result == VecSubmissionMarkResult.Marked, "Session marked submitted to VEC.", "Session is already marked submitted.");
-        return RedirectToPage(new { id = Id });
-    }
-
-    public async Task<IActionResult> OnPostAddWalkInAsync(string name, string? firstName, string? email, string? frn)
-    {
-        var auth = await AuthorizeAsync();
-        if (auth is null) return Forbid();
-
-        if (string.IsNullOrWhiteSpace(name))
-        {
-            SetStatus(false, "", "Walk-in candidate needs a name.");
-            return RedirectToPage(new { id = Id });
-        }
-
-        await candidateActionService.AddWalkInAsync(Id, name.Trim(), firstName?.Trim(), email?.Trim(), frn?.Trim(), auth.Value.User.Id, CancellationToken.None);
-        SetStatus(true, "Walk-in candidate added.", "");
         return RedirectToPage(new { id = Id });
     }
 
@@ -155,16 +138,6 @@ public class DetailModel(
 
         var result = await candidateActionService.DeleteAsync(candidateId, auth.Value.User.Id, CancellationToken.None);
         SetStatus(result == CandidateActionResult.Success, "Candidate marked as withdrew/no-show; PII cleared.", "Could not delete candidate — testing already completed for this session.");
-        return RedirectToPage(new { id = Id });
-    }
-
-    public async Task<IActionResult> OnPostMoveAsync(int candidateId, int targetSessionId)
-    {
-        var auth = await AuthorizeAsync();
-        if (auth is null) return Forbid();
-
-        var result = await candidateActionService.MoveAsync(candidateId, targetSessionId, auth.Value.User.Id, CancellationToken.None);
-        SetStatus(result == CandidateMoveResult.Success, "Candidate moved to the selected session.", $"Could not move candidate: {result}.");
         return RedirectToPage(new { id = Id });
     }
 
@@ -310,15 +283,6 @@ public class DetailModel(
             .Select(l => new VeChip(l.VolunteerExaminer.Id, l.VolunteerExaminer.CallSign ?? "—", l.VolunteerExaminer.Name))
             .ToList();
 
-        var candidateMoveTargets = await dbContext.Sessions
-            .Where(s => s.Id != session.Id && s.VecId == session.VecId && s.Status == SessionStatus.Active)
-            .OrderBy(s => s.ScheduledStartUtc)
-            .Select(s => new { s.Id, s.ExamToolsSessionId, s.ScheduledStartUtc })
-            .ToListAsync();
-        MoveTargetSessions = candidateMoveTargets
-            .Select(s => (s.Id, $"{s.ScheduledStartUtc:MMM d, yyyy} — {s.ExamToolsSessionId}"))
-            .ToList();
-
         return true;
     }
 
@@ -375,7 +339,6 @@ public class DetailModel(
             !isWithdrawn && candidate.Email is not null,
             !isWithdrawn && primaryPayment is { Status: PaymentStatus.Unpaid },
             !isWithdrawn && candidate.ApplicationStatus is CandidateApplicationStatus.Unmatched or CandidateApplicationStatus.Received,
-            !isWithdrawn && !candidate.Tested,
             !isWithdrawn && candidate.ApplicationStatus == CandidateApplicationStatus.Failed,
             !isWithdrawn && primaryPayment is not null,
             !isWithdrawn,
@@ -414,7 +377,6 @@ public class DetailModel(
         bool CanResendConfirmation,
         bool CanMarkPaid,
         bool CanMarkFailed,
-        bool CanMove,
         bool CanCreateRetestPayment,
         bool CanFlagRefund,
         bool CanSendYouthProgram,

@@ -74,7 +74,6 @@
                 <button type="submit" class="btn-primary">Mark session completed</button>
             </form>
         }
-        <button type="button" class="btn-secondary" data-open-modal="addWalkInModal">Add walk-in candidate</button>
     </div>
 </div>
 
@@ -158,7 +157,6 @@
                                 <input type="hidden" name="candidateId" value="@candidate.Id" />
                                 <button type="submit" class="item" disabled="@(!candidate.CanMarkFailed)">Mark failed</button>
                             </form>
-                            <button type="button" class="item" data-open-modal="moveModal-@candidate.Id" disabled="@(!candidate.CanMove)">Move to another session</button>
                             <form method="post" asp-page-handler="CreateRetestPayment">
                                 <input type="hidden" name="candidateId" value="@candidate.Id" />
                                 <button type="submit" class="item" disabled="@(!candidate.CanCreateRetestPayment)">Create retest payment</button>
@@ -210,23 +208,6 @@
     </div>
 </footer>
 
-<!-- Add walk-in candidate modal -->
-<div class="modal-backdrop" id="addWalkInModal">
-    <div class="modal">
-        <h3>Add walk-in candidate</h3>
-        <form method="post" asp-page-handler="AddWalkIn">
-            <div class="field"><label for="wiName">Name</label><input id="wiName" name="name" required /></div>
-            <div class="field"><label for="wiFirstName">First name</label><input id="wiFirstName" name="firstName" /></div>
-            <div class="field"><label for="wiEmail">Email</label><input id="wiEmail" name="email" type="email" /></div>
-            <div class="field"><label for="wiFrn">FRN</label><input id="wiFrn" name="frn" /></div>
-            <div class="modal-actions">
-                <button type="button" class="btn-secondary btn-sm" data-close-modal>Cancel</button>
-                <button type="submit" class="btn-primary btn-sm">Add candidate</button>
-            </div>
-        </form>
-    </div>
-</div>
-
 <!-- Add VE modal -->
 <div class="modal-backdrop" id="addVeModal">
     <div class="modal">
@@ -253,32 +234,6 @@
                 <div class="modal-actions">
                     <button type="button" class="btn-secondary btn-sm" data-close-modal>Cancel</button>
                     <button type="submit" class="btn-primary btn-sm">Save</button>
-                </div>
-            </form>
-        </div>
-    </div>
-
-    <div class="modal-backdrop" id="moveModal-@candidate.Id">
-        <div class="modal">
-            <h3>Move to another session</h3>
-            <form method="post" asp-page-handler="Move">
-                <input type="hidden" name="candidateId" value="@candidate.Id" />
-                <div class="field">
-                    <label for="target-@candidate.Id">Target session (same VEC)</label>
-                    <select id="target-@candidate.Id" name="targetSessionId" required>
-                        @if (Model.MoveTargetSessions.Count == 0)
-                        {
-                            <option value="">No other active sessions under this VEC</option>
-                        }
-                        @foreach (var target in Model.MoveTargetSessions)
-                        {
-                            <option value="@target.Id">@target.Label</option>
-                        }
-                    </select>
-                </div>
-                <div class="modal-actions">
-                    <button type="button" class="btn-secondary btn-sm" data-close-modal>Cancel</button>
-                    <button type="submit" class="btn-primary btn-sm" disabled="@(Model.MoveTargetSessions.Count == 0)">Move</button>
                 </div>
             </form>
         </div>

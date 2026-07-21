@@ -92,90 +92,6 @@ public class CandidateActionService(
         return CandidateActionResult.Success;
     }
 
-    /// <summary>
-    /// "Move" to another session — only while Tested = false, and only between sessions under the
-    /// same Vec (cross-VEC moves are rare enough per the spec's own note to be handled manually
-    /// instead). Payment rows carry over unchanged since they're keyed to the Candidate, not the
-    /// Session — no new charge is generated.
-    /// </summary>
-    public async Task<CandidateMoveResult> MoveAsync(int candidateId, int targetSessionId, int userId, CancellationToken cancellationToken)
-    {
-        var candidate = await dbContext.Candidates
-            .Include(c => c.Session)
-            .FirstOrDefaultAsync(c => c.Id == candidateId, cancellationToken);
-        if (candidate is null)
-        {
-            return CandidateMoveResult.CandidateNotFound;
-        }
-
-        if (candidate.SessionId == targetSessionId)
-        {
-            return CandidateMoveResult.SameSession;
-        }
-
-        var targetSession = await dbContext.Sessions.FirstOrDefaultAsync(s => s.Id == targetSessionId, cancellationToken);
-        if (targetSession is null)
-        {
-            return CandidateMoveResult.TargetSessionNotFound;
-        }
-
-        if (targetSession.Status != SessionStatus.Active)
-        {
-            return CandidateMoveResult.TargetSessionNotActive;
-        }
-
-        if (candidate.Tested)
-        {
-            return CandidateMoveResult.AlreadyTested;
-        }
-
-        if (candidate.Session.VecId != targetSession.VecId)
-        {
-            return CandidateMoveResult.DifferentVec;
-        }
-
-        var originalSessionId = candidate.SessionId;
-        candidate.SessionId = targetSessionId;
-
-        var now = timeProvider.GetUtcNow().UtcDateTime;
-        AddAudit(userId, "CandidateMoved", candidate.Id, $"Candidate {candidate.Id} moved from session {originalSessionId} to session {targetSessionId}.", now);
-        await dbContext.SaveChangesAsync(cancellationToken);
-        logger.LogInformation("Candidate {CandidateId} moved from session {FromSessionId} to session {ToSessionId} by user {UserId}",
-            candidate.Id, originalSessionId, targetSessionId, userId);
-        return CandidateMoveResult.Success;
-    }
-
-    /// <summary>
-    /// "Add walk-in candidate" — a manual Candidate row with no ExamToolsApplicantId. Its InitialExam
-    /// Payment row is not created inline here; PaymentGenerationService's own scan picks up any
-    /// candidate with no InitialExam Payment yet on the very next poll, same as an ExamTools-sourced
-    /// registration — no need to duplicate that logic.
-    /// </summary>
-    public async Task<Candidate> AddWalkInAsync(int sessionId, string name, string? firstName, string? email, string? frn, int userId, CancellationToken cancellationToken)
-    {
-        var session = await dbContext.Sessions.FirstOrDefaultAsync(s => s.Id == sessionId, cancellationToken)
-            ?? throw new InvalidOperationException($"Session {sessionId} not found.");
-
-        var now = timeProvider.GetUtcNow().UtcDateTime;
-        var candidate = new Candidate
-        {
-            SessionId = sessionId,
-            Name = name,
-            FirstName = firstName,
-            Email = email,
-            Frn = string.IsNullOrWhiteSpace(frn) ? null : frn,
-            FrnMissingAtRegistration = string.IsNullOrWhiteSpace(frn),
-            DateRegisteredUtc = now
-        };
-        dbContext.Candidates.Add(candidate);
-        await dbContext.SaveChangesAsync(cancellationToken);
-
-        AddAudit(userId, "WalkInCandidateAdded", candidate.Id, $"Walk-in candidate added to session {sessionId}.", now);
-        await dbContext.SaveChangesAsync(cancellationToken);
-        logger.LogInformation("Walk-in candidate {CandidateId} added to session {SessionId} by user {UserId}", candidate.Id, sessionId, userId);
-        return candidate;
-    }
-
     /// <summary>"add/edit a candidate's FRN if missing at registration" — FrnMissingAtRegistration is left untouched, since it documents a fact about registration time, not current state.</summary>
     public async Task<CandidateActionResult> SetFrnAsync(int candidateId, string frn, int userId, CancellationToken cancellationToken)
     {
@@ -290,15 +206,4 @@ public enum CandidateActionResult
     InvalidState,
     AlreadyTested,
     AlreadyDone
-}
-
-public enum CandidateMoveResult
-{
-    Success,
-    CandidateNotFound,
-    TargetSessionNotFound,
-    TargetSessionNotActive,
-    AlreadyTested,
-    DifferentVec,
-    SameSession
 }
