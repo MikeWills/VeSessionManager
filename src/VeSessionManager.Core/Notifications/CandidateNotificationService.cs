@@ -66,7 +66,7 @@ public class CandidateNotificationService(
             return result;
         }
 
-        var credentials = new EmailCredentials(team.Id, team.SmtpHost!, team.SmtpPort ?? 587, team.SmtpUsername!, team.SmtpPassword ?? "", team.SmtpUseStartTls ?? true);
+        var credentials = team.ToEmailCredentials();
 
         foreach (var candidate in candidates)
         {
@@ -147,7 +147,7 @@ public class CandidateNotificationService(
             return result;
         }
 
-        var credentials = new EmailCredentials(team.Id, team.SmtpHost!, team.SmtpPort ?? 587, team.SmtpUsername!, team.SmtpPassword ?? "", team.SmtpUseStartTls ?? true);
+        var credentials = team.ToEmailCredentials();
 
         foreach (var candidate in candidates)
         {
@@ -240,7 +240,7 @@ public class CandidateNotificationService(
             ["PrivacyPolicyUrl"] = emailSettings.PrivacyPolicyUrl
         };
 
-        var credentials = new EmailCredentials(team.Id, team.SmtpHost!, team.SmtpPort ?? 587, team.SmtpUsername!, team.SmtpPassword ?? "", team.SmtpUseStartTls ?? true);
+        var credentials = team.ToEmailCredentials();
         if (!await TrySendAsync(team.Id, credentials, RegistrationConfirmationKey, candidate, emailSettings, placeholders, cancellationToken))
         {
             return CandidateEmailSendResult.TemplateMissing;
@@ -297,7 +297,7 @@ public class CandidateNotificationService(
             ["CallSign"] = candidate.CallSign ?? ""
         };
 
-        var credentials = new EmailCredentials(team.Id, team.SmtpHost!, team.SmtpPort ?? 587, team.SmtpUsername!, team.SmtpPassword ?? "", team.SmtpUseStartTls ?? true);
+        var credentials = team.ToEmailCredentials();
         if (!await TrySendAsync(team.Id, credentials, YouthProgramInstructionsKey, candidate, emailSettings, placeholders, cancellationToken))
         {
             return CandidateEmailSendResult.TemplateMissing;
@@ -345,7 +345,7 @@ public class CandidateNotificationService(
             ["CandidateName"] = candidate.Name ?? ""
         };
 
-        var credentials = new EmailCredentials(team.Id, team.SmtpHost!, team.SmtpPort ?? 587, team.SmtpUsername!, team.SmtpPassword ?? "", team.SmtpUseStartTls ?? true);
+        var credentials = team.ToEmailCredentials();
         if (!await TrySendAsync(team.Id, credentials, FelonyDisclosureInstructionsKey, candidate, emailSettings, placeholders, cancellationToken))
         {
             return CandidateEmailSendResult.TemplateMissing;

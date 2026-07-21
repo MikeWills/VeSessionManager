@@ -73,6 +73,19 @@ public class UserManagementService(UserManager<User> userManager, AppDbContext d
             return UserActionResult.NotFound;
         }
 
+        // A manager must actually belong to the same team as the TeamLead being assigned, and hold
+        // a role that's allowed to manage anyone at all — otherwise SessionAccessScope.GetEffectiveTeamId
+        // (which resolves a TeamLead's team via ManagedByUser.TeamId) would grant them cross-team
+        // session/candidate visibility just by a TeamAdmin picking a manager from another team.
+        if (managerUserId is not null)
+        {
+            var manager = await userManager.FindByIdAsync(managerUserId.Value.ToString());
+            if (manager is null || manager.TeamId != user.TeamId || manager.Role is not (UserRole.SessionManager or UserRole.TeamAdmin))
+            {
+                return UserActionResult.InvalidManager;
+            }
+        }
+
         user.ManagedByUserId = managerUserId;
         await userManager.UpdateAsync(user);
 
@@ -99,6 +112,12 @@ public class UserManagementService(UserManager<User> userManager, AppDbContext d
         await userManager.SetLockoutEnabledAsync(user, true);
         await userManager.SetLockoutEndDateAsync(user, DateTimeOffset.MaxValue);
 
+        // Lockout alone only blocks *future* sign-ins (SignInManager's PreSignInCheck) — it does
+        // nothing about a cookie this user already holds. Bumping the security stamp invalidates
+        // that existing cookie on its next SecurityStampValidator check (default ~30 min), so
+        // deactivation actually revokes access instead of just blocking the next login attempt.
+        await userManager.UpdateSecurityStampAsync(user);
+
         var now = timeProvider.GetUtcNow().UtcDateTime;
         AddAudit(actingUserId, "UserDeactivated", user.Id, $"User {user.Id} deactivated.", now);
         await dbContext.SaveChangesAsync(cancellationToken);
@@ -124,15 +143,7 @@ public class UserManagementService(UserManager<User> userManager, AppDbContext d
     }
 
     private void AddAudit(int userId, string action, int entityId, string details, DateTime now) =>
-        dbContext.AuditLogs.Add(new AuditLog
-        {
-            UserId = userId,
-            Action = action,
-            EntityType = nameof(User),
-            EntityId = entityId,
-            TimestampUtc = now,
-            Details = details
-        });
+        dbContext.AddAuditLog(userId, action, nameof(User), entityId, details, now);
 }
 
 public enum UserActionResult
@@ -141,5 +152,6 @@ public enum UserActionResult
     NotFound,
     DuplicateEmail,
     InvalidPassword,
-    CannotDeactivateSelf
+    CannotDeactivateSelf,
+    InvalidManager
 }

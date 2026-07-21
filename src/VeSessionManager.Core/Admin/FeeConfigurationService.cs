@@ -72,15 +72,7 @@ public class FeeConfigurationService(AppDbContext dbContext, TimeProvider timePr
     }
 
     private void AddAudit(int userId, string action, int entityId, string details, DateTime now) =>
-        dbContext.AuditLogs.Add(new AuditLog
-        {
-            UserId = userId,
-            Action = action,
-            EntityType = nameof(FeeConfiguration),
-            EntityId = entityId,
-            TimestampUtc = now,
-            Details = details
-        });
+        dbContext.AddAuditLog(userId, action, nameof(FeeConfiguration), entityId, details, now);
 }
 
 public enum FeeConfigActionResult

@@ -113,7 +113,12 @@ public class UsersModel(AppDbContext dbContext, UserManager<User> userManager, S
         if (auth is null) return Forbid();
 
         var result = await userManagementService.SetManagerAsync(targetUserId, managerUserId, auth.Value.ActingUser.Id, CancellationToken.None);
-        TempData[result == UserActionResult.Success ? "StatusMessage" : "ErrorMessage"] = result == UserActionResult.Success ? "Manager updated." : "User not found.";
+        TempData[result == UserActionResult.Success ? "StatusMessage" : "ErrorMessage"] = result switch
+        {
+            UserActionResult.Success => "Manager updated.",
+            UserActionResult.InvalidManager => "That manager is not on the same team, or doesn't hold a role that can manage a TeamLead.",
+            _ => "User not found."
+        };
         return RedirectToPage(new { teamId = TeamId });
     }
 

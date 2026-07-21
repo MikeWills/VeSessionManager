@@ -16,6 +16,22 @@ public class AdminAccessScope(SessionAccessScope sessionAccessScope)
     public bool CanManageTeam(User actingUser, int targetTeamId) =>
         actingUser.Role == UserRole.SystemAdmin || (actingUser.Role == UserRole.TeamAdmin && actingUser.TeamId == targetTeamId);
 
+    /// <summary>
+    /// The single "which team is this SystemAdmin/TeamAdmin actually allowed to manage right now"
+    /// resolution: SystemAdmin uses whatever teamId was requested (their own team-picker choice, or
+    /// null if they haven't picked one yet); TeamAdmin is always locked to their own effective team
+    /// regardless of what a tampered ?teamId= query string requests. Returns null for "nothing to
+    /// show yet" (SystemAdmin hasn't picked) as well as "not allowed" (TeamAdmin requesting another
+    /// team) — the caller decides which response that maps to (an empty Page() vs. Forbid()).
+    /// Previously this exact resolution was hand-written independently at every admin config page's
+    /// OnGetAsync/AuthorizeAsync, including twice within TeamSettingsModel itself.
+    /// </summary>
+    public int? TryResolveManageableTeamId(User actingUser, int? requestedTeamId)
+    {
+        var effectiveTeamId = actingUser.Role == UserRole.SystemAdmin ? requestedTeamId : GetEffectiveTeamId(actingUser);
+        return effectiveTeamId is not null && CanManageTeam(actingUser, effectiveTeamId.Value) ? effectiveTeamId : null;
+    }
+
     /// <summary>TeamAdmin may only manage SessionManager/TeamLead users on their own team — never another TeamAdmin or a SystemAdmin, and never cross-team.</summary>
     public bool CanManageUser(User actingUser, User targetUser)
     {

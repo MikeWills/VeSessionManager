@@ -99,7 +99,7 @@ public class PaymentReminderService(
             return;
         }
 
-        var credentials = new EmailCredentials(team.Id, team.SmtpHost!, team.SmtpPort ?? 587, team.SmtpUsername!, team.SmtpPassword ?? "", team.SmtpUseStartTls ?? true);
+        var credentials = team.ToEmailCredentials();
 
         foreach (var payment in payments)
         {
@@ -148,9 +148,7 @@ public class PaymentReminderService(
             .Include(p => p.Candidate).ThenInclude(c => c.Session)
             .Where(p => p.Status == PaymentStatus.Unpaid
                         && !p.ExpiredUnpaid
-                        && p.Candidate.ApplicationStatus != CandidateApplicationStatus.Granted
-                        && p.Candidate.ApplicationStatus != CandidateApplicationStatus.Failed
-                        && p.Candidate.ApplicationStatus != CandidateApplicationStatus.NotTested
+                        && !CandidateApplicationStatusExtensions.TerminalStatuses.Contains(p.Candidate.ApplicationStatus)
                         && p.Candidate.ApplicationDateEnteredUtc != null
                         && p.Candidate.ApplicationDateEnteredUtc <= threshold
                         && p.Candidate.Session.TeamId == team.Id
@@ -163,7 +161,7 @@ public class PaymentReminderService(
             return;
         }
 
-        var credentials = new EmailCredentials(team.Id, team.SmtpHost!, team.SmtpPort ?? 587, team.SmtpUsername!, team.SmtpPassword ?? "", team.SmtpUseStartTls ?? true);
+        var credentials = team.ToEmailCredentials();
 
         foreach (var payment in payments)
         {

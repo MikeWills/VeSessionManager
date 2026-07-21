@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
@@ -104,6 +105,9 @@ if (!string.IsNullOrWhiteSpace(googleClientId) && !string.IsNullOrWhiteSpace(goo
         options.SignInScheme = IdentityConstants.ExternalScheme;
         options.ClientId = googleClientId;
         options.ClientSecret = googleClientSecret;
+        // Not mapped by this handler's own defaults — ExternalLoginCallbackModel checks this before
+        // trusting an email-claim match enough to link/sign in to an existing local account.
+        options.ClaimActions.MapJsonKey("email_verified", "email_verified");
     });
 }
 

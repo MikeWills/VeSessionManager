@@ -30,15 +30,7 @@ public partial class EmailTemplateAdminService(AppDbContext dbContext, TimeProvi
         template.UpdatedByUserId = userId;
         template.UpdatedUtc = now;
 
-        dbContext.AuditLogs.Add(new AuditLog
-        {
-            UserId = userId,
-            Action = "EmailTemplateUpdated",
-            EntityType = nameof(EmailTemplate),
-            EntityId = template.Id,
-            TimestampUtc = now,
-            Details = $"Team {template.TeamId} template '{template.Key}' Subject/Body updated."
-        });
+        dbContext.AddAuditLog(userId, "EmailTemplateUpdated", nameof(EmailTemplate), template.Id, $"Team {template.TeamId} template '{template.Key}' Subject/Body updated.", now);
 
         await dbContext.SaveChangesAsync(cancellationToken);
         return EmailTemplateActionResult.Success;

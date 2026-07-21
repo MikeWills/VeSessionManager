@@ -135,7 +135,7 @@ public class UserManagementServiceTests
         await using var dbContext = CreateContext();
         var userManager = CreateUserManager(dbContext);
         var manager = new User { UserName = "manager@example.com", Email = "manager@example.com", Name = "Manager", Role = UserRole.SessionManager, TeamId = 1 };
-        var teamLead = new User { UserName = "lead@example.com", Email = "lead@example.com", Name = "Lead", Role = UserRole.TeamLead };
+        var teamLead = new User { UserName = "lead@example.com", Email = "lead@example.com", Name = "Lead", Role = UserRole.TeamLead, TeamId = 1 };
         await userManager.CreateAsync(manager, ValidPassword);
         await userManager.CreateAsync(teamLead, ValidPassword);
 
@@ -147,6 +147,28 @@ public class UserManagementServiceTests
     }
 
     [Fact]
+    public async Task SetManagerAsync_ManagerOnDifferentTeam_ReturnsInvalidManager_DoesNotAssign()
+    {
+        // Cross-tenant guard: a TeamAdmin must not be able to grant a TeamLead effective read
+        // access into another team's sessions/candidates by assigning them a manager who belongs
+        // to a different team (SessionAccessScope resolves a TeamLead's scope via
+        // ManagedByUser.TeamId).
+        await using var dbContext = CreateContext();
+        var userManager = CreateUserManager(dbContext);
+        var otherTeamManager = new User { UserName = "manager@example.com", Email = "manager@example.com", Name = "Manager", Role = UserRole.SessionManager, TeamId = 2 };
+        var teamLead = new User { UserName = "lead@example.com", Email = "lead@example.com", Name = "Lead", Role = UserRole.TeamLead, TeamId = 1 };
+        await userManager.CreateAsync(otherTeamManager, ValidPassword);
+        await userManager.CreateAsync(teamLead, ValidPassword);
+
+        var result = await CreateService(dbContext, userManager).SetManagerAsync(teamLead.Id, otherTeamManager.Id, actingUserId: 1, CancellationToken.None);
+
+        Assert.Equal(UserActionResult.InvalidManager, result);
+        var updated = await userManager.FindByIdAsync(teamLead.Id.ToString());
+        Assert.Null(updated!.ManagedByUserId);
+        Assert.Empty(await dbContext.AuditLogs.ToListAsync());
+    }
+
+    [Fact]
     public async Task DeactivateAsync_OtherUser_SetsLockout_WritesAudit()
     {
         await using var dbContext = CreateContext();
@@ -155,12 +177,17 @@ public class UserManagementServiceTests
         var target = new User { UserName = "target@example.com", Email = "target@example.com", Name = "Target", Role = UserRole.SessionManager, TeamId = 1 };
         await userManager.CreateAsync(actingUser, ValidPassword);
         await userManager.CreateAsync(target, ValidPassword);
+        var originalSecurityStamp = target.SecurityStamp;
 
         var result = await CreateService(dbContext, userManager).DeactivateAsync(target.Id, actingUser.Id, CancellationToken.None);
 
         Assert.Equal(UserActionResult.Success, result);
         var updated = await userManager.FindByIdAsync(target.Id.ToString());
         Assert.True(await userManager.IsLockedOutAsync(updated!));
+        // Lockout alone only blocks future sign-ins — the security stamp must also change so an
+        // already-issued auth cookie is rejected on its next SecurityStampValidator check instead
+        // of continuing to work until it naturally expires.
+        Assert.NotEqual(originalSecurityStamp, updated!.SecurityStamp);
         var audit = await dbContext.AuditLogs.SingleAsync();
         Assert.Equal("UserDeactivated", audit.Action);
     }

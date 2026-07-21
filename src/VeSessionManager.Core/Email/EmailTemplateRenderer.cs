@@ -1,3 +1,4 @@
+using System.Net;
 using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -11,6 +12,12 @@ namespace VeSessionManager.Core.Email;
 /// nothing's outstanding) substitutes cleanly. A placeholder the caller never provided a value
 /// for at all — almost always a template typo — is left as the literal "{{Typo}}" text (so a
 /// broken template is visibly broken, not silently mangled) and logged as a warning, per the spec.
+///
+/// Body is sent as real HTML (SmtpEmailSender sets HtmlBody), so placeholder values there are
+/// HTML-encoded before substitution — several placeholders (CandidateName, etc.) ultimately come
+/// from ExamTools' public registration intake, i.e. registrant-controlled data, and without
+/// encoding an HTML/script-bearing name would be injected verbatim into a real HTML email rendered
+/// by the recipient's mail client. Subject is plain text, so it's left unencoded.
 ///
 /// Multi-team: template content is per-team customizable (confirmed with the user), not shared —
 /// each Team has its own full set of templates, keyed by (TeamId, Key). See docs/multi-team.md.
@@ -27,17 +34,17 @@ public partial class EmailTemplateRenderer(AppDbContext dbContext, ILogger<Email
         }
 
         return new RenderedEmail(
-            Substitute(template.Subject, placeholders, templateKey, "Subject"),
-            Substitute(template.Body, placeholders, templateKey, "Body"));
+            Substitute(template.Subject, placeholders, templateKey, "Subject", encodeHtml: false),
+            Substitute(template.Body, placeholders, templateKey, "Body", encodeHtml: true));
     }
 
-    private string Substitute(string text, IReadOnlyDictionary<string, string> placeholders, string templateKey, string field) =>
+    private string Substitute(string text, IReadOnlyDictionary<string, string> placeholders, string templateKey, string field, bool encodeHtml) =>
         PlaceholderPattern().Replace(text, match =>
         {
             var name = match.Groups[1].Value;
             if (placeholders.TryGetValue(name, out var value))
             {
-                return value;
+                return encodeHtml ? WebUtility.HtmlEncode(value) : value;
             }
 
             logger.LogWarning("EmailTemplate {TemplateKey}.{Field} references unknown placeholder '{Placeholder}' — left unsubstituted, check for a typo",

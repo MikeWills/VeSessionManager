@@ -35,7 +35,7 @@ public class CandidateActionService(
             return CandidateActionResult.NotFound;
         }
 
-        if (candidate.ApplicationStatus is not (CandidateApplicationStatus.Unmatched or CandidateApplicationStatus.Received))
+        if (candidate.ApplicationStatus.IsTerminal())
         {
             return CandidateActionResult.InvalidState;
         }
@@ -53,14 +53,15 @@ public class CandidateActionService(
 
     /// <summary>
     /// "Delete" (withdrew/no-showed) — only available while Tested = false, per spec. Sets
-    /// ApplicationStatus = NotTested and immediately nulls PII (distinct from Phase 10's scheduled
-    /// purge window — a no-show has no reporting relevance to preserve), keeping the row for stats.
-    /// Idempotent: a candidate already NotTested is left alone rather than re-nulling already-null
-    /// fields and writing a duplicate audit entry.
+    /// ApplicationStatus = NotTested and immediately nulls PII via the same CandidatePiiFields.Clear
+    /// PiiPurgeService's scheduled purge uses (distinct from Phase 10's scheduled purge window — a
+    /// no-show has no reporting relevance to preserve), keeping the row for stats. Idempotent: a
+    /// candidate already NotTested is left alone rather than re-nulling already-null fields and
+    /// writing a duplicate audit entry.
     /// </summary>
     public async Task<CandidateActionResult> DeleteAsync(int candidateId, int userId, CancellationToken cancellationToken)
     {
-        var candidate = await dbContext.Candidates.FirstOrDefaultAsync(c => c.Id == candidateId, cancellationToken);
+        var candidate = await dbContext.Candidates.Include(c => c.Payments).FirstOrDefaultAsync(c => c.Id == candidateId, cancellationToken);
         if (candidate is null)
         {
             return CandidateActionResult.NotFound;
@@ -78,11 +79,7 @@ public class CandidateActionService(
 
         var now = timeProvider.GetUtcNow().UtcDateTime;
         candidate.ApplicationStatus = CandidateApplicationStatus.NotTested;
-        candidate.Name = null;
-        candidate.Email = null;
-        candidate.Frn = null;
-        candidate.HasFelonyDisclosure = null;
-        candidate.PiiPurgedUtc = now;
+        CandidatePiiFields.Clear(candidate, now);
         candidate.ResultMarkedByUserId = userId;
         candidate.ResultMarkedUtc = now;
 
@@ -188,15 +185,7 @@ public class CandidateActionService(
     }
 
     private void AddAudit(int userId, string action, int entityId, string details, DateTime now) =>
-        dbContext.AuditLogs.Add(new AuditLog
-        {
-            UserId = userId,
-            Action = action,
-            EntityType = nameof(Candidate),
-            EntityId = entityId,
-            TimestampUtc = now,
-            Details = details
-        });
+        dbContext.AddAuditLog(userId, action, nameof(Candidate), entityId, details, now);
 }
 
 public enum CandidateActionResult

@@ -17,7 +17,7 @@ namespace VeSessionManager.Web.Pages.Admin;
 /// shape.
 /// </summary>
 [Authorize(Roles = "SystemAdmin,TeamAdmin")]
-public class TeamSettingsModel(AppDbContext dbContext, UserManager<User> userManager, SessionAccessScope accessScope, AdminAccessScope adminAccessScope, TeamSettingsService teamSettingsService) : PageModel
+public class TeamSettingsModel(AppDbContext dbContext, UserManager<User> userManager, AdminAccessScope adminAccessScope, TeamSettingsService teamSettingsService) : PageModel
 {
     [BindProperty(SupportsGet = true)]
     public int? TeamId { get; set; }
@@ -40,17 +40,14 @@ public class TeamSettingsModel(AppDbContext dbContext, UserManager<User> userMan
             ? await dbContext.Teams.OrderBy(t => t.Name).Select(t => new ValueTuple<int, string>(t.Id, t.Name)).ToListAsync()
             : [];
 
-        var effectiveTeamId = IsSystemAdmin ? TeamId : accessScope.GetEffectiveTeamId(user);
+        var effectiveTeamId = adminAccessScope.TryResolveManageableTeamId(user, TeamId);
         if (effectiveTeamId is null)
         {
             // SystemAdmin hasn't picked a team yet, or a TeamAdmin/SessionManager isn't assigned to
-            // one — a benign empty state, not a permission failure.
+            // one — a benign empty state, not a permission failure. (A TeamAdmin requesting another
+            // team via a tampered ?teamId= also lands here rather than Forbid() on the GET, matching
+            // this page's pre-existing behavior; the POST handlers below are the enforcement point.)
             return Page();
-        }
-
-        if (!adminAccessScope.CanManageTeam(user, effectiveTeamId.Value))
-        {
-            return Forbid();
         }
 
         Team = await dbContext.Teams.FirstOrDefaultAsync(t => t.Id == effectiveTeamId.Value);
@@ -149,13 +146,8 @@ public class TeamSettingsModel(AppDbContext dbContext, UserManager<User> userMan
             ? await dbContext.Teams.OrderBy(t => t.Name).Select(t => new ValueTuple<int, string>(t.Id, t.Name)).ToListAsync()
             : [];
 
-        var effectiveTeamId = IsSystemAdmin ? TeamId : accessScope.GetEffectiveTeamId(user);
+        var effectiveTeamId = adminAccessScope.TryResolveManageableTeamId(user, TeamId);
         if (effectiveTeamId is null)
-        {
-            return null;
-        }
-
-        if (!adminAccessScope.CanManageTeam(user, effectiveTeamId.Value))
         {
             return null;
         }

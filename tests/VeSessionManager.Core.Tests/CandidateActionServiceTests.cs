@@ -130,6 +130,17 @@ public class CandidateActionServiceTests
         var candidate = await SeedCandidateAsync(dbContext, session);
         candidate.Frn = "0012345678";
         candidate.HasFelonyDisclosure = true;
+        var payment = new Payment
+        {
+            CandidateId = candidate.Id,
+            Reason = PaymentReason.InitialExam,
+            Amount = 15m,
+            Status = PaymentStatus.Unpaid,
+            CreatedUtc = Now,
+            PaymentLinkUrl = "https://square.link/u/abc123",
+            SquarePaymentReferenceId = "order-abc123"
+        };
+        dbContext.Payments.Add(payment);
         await dbContext.SaveChangesAsync();
 
         var result = await CreateService(dbContext).DeleteAsync(candidate.Id, user.Id, CancellationToken.None);
@@ -142,6 +153,13 @@ public class CandidateActionServiceTests
         Assert.Null(updated.Frn);
         Assert.Null(updated.HasFelonyDisclosure);
         Assert.Equal(Now, updated.PiiPurgedUtc); // immediate, not the delayed Phase 10 window
+
+        // A no-show's outstanding/paid Square payment link is PII too — must be cleared immediately
+        // alongside the candidate fields, not left live indefinitely (NotTested candidates are
+        // excluded from the later Phase 10 scheduled purge, so this is the only chance to clear it).
+        var updatedPayment = dbContext.Payments.Single();
+        Assert.Null(updatedPayment.PaymentLinkUrl);
+        Assert.Null(updatedPayment.SquarePaymentReferenceId);
     }
 
     [Fact]
