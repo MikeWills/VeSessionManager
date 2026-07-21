@@ -23,6 +23,13 @@
 
     var activeNav = ViewData["ActiveNav"] as string;
     var mainClass = "vesm-main" + (ViewData["WideMain"] is true ? " wide" : "");
+
+    // Grouped nav dropdowns — whether the trigger itself should show as "active" because the
+    // current page is one of its children (the individual links inside still get their own
+    // .active state too, same as before).
+    var teamGroupActive = activeNav is "AdminTeams" or "AdminTeamSettings" or "AdminUsers" or "AdminEmailTemplates";
+    var vecFeesGroupActive = activeNav is "AdminVecs" or "AdminFees";
+    var reportsGroupActive = activeNav is "AdminAuditLog" or "AdminJobHistory";
 }
 <!DOCTYPE html>
 <html lang="en">
@@ -43,17 +50,38 @@
             <a asp-page="/SessionManager/VecSubmission" class="@(activeNav == "VecSubmission" ? "active" : "")">VEC Submission</a>
             @if (currentUser?.Role is UserRole.SystemAdmin or UserRole.TeamAdmin)
             {
-                <a asp-page="/Admin/Users" class="@(activeNav == "AdminUsers" ? "active" : "")">Users</a>
-                <a asp-page="/Admin/TeamSettings" class="@(activeNav == "AdminTeamSettings" ? "active" : "")">Team Settings</a>
-                <a asp-page="/Admin/FeeConfigurations" class="@(activeNav == "AdminFees" ? "active" : "")">Fees</a>
-                <a asp-page="/Admin/EmailTemplates" class="@(activeNav == "AdminEmailTemplates" ? "active" : "")">Email Templates</a>
-                <a asp-page="/Admin/AuditLog" class="@(activeNav == "AdminAuditLog" ? "active" : "")">Audit Log</a>
-                <a asp-page="/Admin/JobRunHistory" class="@(activeNav == "AdminJobHistory" ? "active" : "")">Job History</a>
+                <div class="nav-group">
+                    <button type="button" class="kebab @(teamGroupActive ? "active" : "")">Team ▾</button>
+                    <div class="menu">
+                        @if (currentUser?.Role is UserRole.SystemAdmin)
+                        {
+                            <a class="item @(activeNav == "AdminTeams" ? "active" : "")" asp-page="/Admin/Teams">Teams</a>
+                        }
+                        <a class="item @(activeNav == "AdminTeamSettings" ? "active" : "")" asp-page="/Admin/TeamSettings">Team Settings</a>
+                        <a class="item @(activeNav == "AdminUsers" ? "active" : "")" asp-page="/Admin/Users">Users</a>
+                        <a class="item @(activeNav == "AdminEmailTemplates" ? "active" : "")" asp-page="/Admin/EmailTemplates">Email Templates</a>
+                    </div>
+                </div>
+                <div class="nav-group">
+                    <button type="button" class="kebab @(vecFeesGroupActive ? "active" : "")">VEC &amp; Fees ▾</button>
+                    <div class="menu">
+                        <a class="item @(activeNav == "AdminFees" ? "active" : "")" asp-page="/Admin/FeeConfigurations">Fees</a>
+                        @if (currentUser?.Role is UserRole.SystemAdmin)
+                        {
+                            <a class="item @(activeNav == "AdminVecs" ? "active" : "")" asp-page="/Admin/Vecs">VECs</a>
+                        }
+                    </div>
+                </div>
+                <div class="nav-group">
+                    <button type="button" class="kebab @(reportsGroupActive ? "active" : "")">Reports ▾</button>
+                    <div class="menu">
+                        <a class="item @(activeNav == "AdminAuditLog" ? "active" : "")" asp-page="/Admin/AuditLog">Audit Log</a>
+                        <a class="item @(activeNav == "AdminJobHistory" ? "active" : "")" asp-page="/Admin/JobRunHistory">Job History</a>
+                    </div>
+                </div>
             }
             @if (currentUser?.Role is UserRole.SystemAdmin)
             {
-                <a asp-page="/Admin/Teams" class="@(activeNav == "AdminTeams" ? "active" : "")">Teams</a>
-                <a asp-page="/Admin/Vecs" class="@(activeNav == "AdminVecs" ? "active" : "")">VECs</a>
                 <a asp-page="/Admin/SystemSettings" class="@(activeNav == "AdminSystemSettings" ? "active" : "")">System Settings</a>
             }
         </nav>
