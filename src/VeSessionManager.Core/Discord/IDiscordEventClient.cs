@@ -15,4 +15,13 @@ public interface IDiscordEventClient
     Task UpdateEventAsync(ulong guildId, string eventId, DiscordEventRequest request, CancellationToken cancellationToken);
 
     Task DeleteEventAsync(ulong guildId, string eventId, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// All non-cancelled, non-completed scheduled events currently in the guild. Used by
+    /// SessionEventSchedulingService to check for an already-existing event (matched by name +
+    /// start time) before calling CreateEventAsync, so a poll that crashed after Discord's API
+    /// call succeeded but before the returned id was persisted doesn't create a duplicate on
+    /// retry — see TODO.md's "Duplicate Discord scheduled events" entry.
+    /// </summary>
+    Task<IReadOnlyList<DiscordEvent>> ListEventsAsync(ulong guildId, CancellationToken cancellationToken);
 }

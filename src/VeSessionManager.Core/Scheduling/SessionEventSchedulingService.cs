@@ -164,8 +164,23 @@ public class SessionEventSchedulingService(
 
             if (session.DiscordEventId is null)
             {
-                var scheduledEvent = await discordEventClient.CreateEventAsync(guildId, discordRequest, cancellationToken);
-                session.DiscordEventId = scheduledEvent.Id;
+                // Guard against a previous poll that crashed/restarted after Discord's API call
+                // succeeded but before the returned id was persisted (see TODO.md's "Duplicate
+                // Discord scheduled events" entry) — adopt a matching existing event instead of
+                // creating a second one for the same session.
+                var existingEvent = await FindExistingEventAsync(guildId, session, cancellationToken);
+                if (existingEvent is not null)
+                {
+                    logger.LogWarning(
+                        "Found an existing Discord event {DiscordEventId} matching session {ExamToolsSessionId} by name/time — adopting it instead of creating a duplicate (likely a previous poll crashed after creating it but before saving its id)",
+                        existingEvent.Id, session.ExamToolsSessionId);
+                    session.DiscordEventId = existingEvent.Id;
+                }
+                else
+                {
+                    var scheduledEvent = await discordEventClient.CreateEventAsync(guildId, discordRequest, cancellationToken);
+                    session.DiscordEventId = scheduledEvent.Id;
+                }
             }
             else
             {
@@ -182,6 +197,16 @@ public class SessionEventSchedulingService(
         {
             session.ZoomDiscordSyncedStartUtc = session.ScheduledStartUtc;
         }
+    }
+
+    /// <summary>Matches by name + start time (within a minute — Discord's own timestamp granularity plus float/round-trip slack) rather than requiring an exact tick match.</summary>
+    private async Task<DiscordEvent?> FindExistingEventAsync(ulong guildId, Session session, CancellationToken cancellationToken)
+    {
+        var events = await discordEventClient.ListEventsAsync(guildId, cancellationToken);
+        return events.FirstOrDefault(e =>
+            e.Name == session.Title &&
+            e.StartTimeUtc is not null &&
+            (e.StartTimeUtc.Value - session.ScheduledStartUtc).Duration() < TimeSpan.FromMinutes(1));
     }
 
     private async Task CleanupZoomAndDiscordAsync(Team team, Session session, DateTime now, CancellationToken cancellationToken)

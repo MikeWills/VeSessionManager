@@ -60,6 +60,16 @@ public sealed class DiscordEventClient : IDiscordEventClient, IDisposable
         _logger.LogInformation("Updated Discord scheduled event {DiscordEventId} in guild {GuildId}", eventId, guildId);
     }
 
+    public async Task<IReadOnlyList<DiscordEvent>> ListEventsAsync(ulong guildId, CancellationToken cancellationToken)
+    {
+        var guild = await GetGuildAsync(guildId, cancellationToken);
+        var events = await guild.GetEventsAsync();
+        return events
+            .Where(e => e.Status is GuildScheduledEventStatus.Scheduled or GuildScheduledEventStatus.Active)
+            .Select(e => new DiscordEvent { Id = e.Id.ToString(), Name = e.Name, StartTimeUtc = e.StartTime.UtcDateTime })
+            .ToList();
+    }
+
     public async Task DeleteEventAsync(ulong guildId, string eventId, CancellationToken cancellationToken)
     {
         var guild = await GetGuildAsync(guildId, cancellationToken);

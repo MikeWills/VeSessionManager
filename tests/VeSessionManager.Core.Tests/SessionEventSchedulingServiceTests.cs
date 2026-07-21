@@ -66,6 +66,7 @@ public class SessionEventSchedulingServiceTests
         public List<string> UpdateCalls { get; } = [];
         public List<string> DeleteCalls { get; } = [];
         public List<ulong> GuildIdsUsed { get; } = [];
+        public List<DiscordEvent> ExistingEvents { get; } = [];
         public Exception? ThrowOnCreate { get; set; }
         public bool IsConfigured { get; set; } = true;
         private int _nextId = 2000;
@@ -93,6 +94,12 @@ public class SessionEventSchedulingServiceTests
             GuildIdsUsed.Add(guildId);
             DeleteCalls.Add(eventId);
             return Task.CompletedTask;
+        }
+
+        public Task<IReadOnlyList<DiscordEvent>> ListEventsAsync(ulong guildId, CancellationToken cancellationToken)
+        {
+            GuildIdsUsed.Add(guildId);
+            return Task.FromResult<IReadOnlyList<DiscordEvent>>(ExistingEvents);
         }
     }
 
@@ -182,6 +189,32 @@ public class SessionEventSchedulingServiceTests
         Assert.NotNull(saved.ZoomMeetingId);
         Assert.StartsWith("https://zoom.us/j/", saved.ZoomJoinUrl);
         Assert.NotNull(saved.DiscordEventId);
+        Assert.Equal(SessionStart, saved.ZoomDiscordSyncedStartUtc);
+    }
+
+    [Fact]
+    public async Task NewSession_MatchingEventAlreadyExistsInGuild_AdoptsIt_DoesNotCreateDuplicate()
+    {
+        // Simulates a previous poll whose Discord CreateEventAsync call succeeded but crashed
+        // before the returned id was persisted — see TODO.md's "Duplicate Discord scheduled
+        // events" entry. The next poll must find that already-created event (by name/time) and
+        // adopt its id rather than calling CreateEventAsync again.
+        await using var dbContext = CreateContext();
+        var (vec, feeConfig) = await SeedRefsAsync(dbContext);
+        var team = await SeedTeamAsync(dbContext);
+        var session = NewSession(vec, feeConfig, team);
+        dbContext.Sessions.Add(session);
+        await dbContext.SaveChangesAsync();
+
+        var zoom = new FakeZoomClient();
+        var discord = new FakeDiscordEventClient();
+        discord.ExistingEvents.Add(new DiscordEvent { Id = "orphaned-discord-event", Name = session.Title, StartTimeUtc = SessionStart });
+        var result = await CreateService(dbContext, zoom, discord).RunAsync(team, CancellationToken.None);
+
+        Assert.Equal(1, result.SessionsSynced);
+        Assert.Empty(discord.CreateCalls);
+        var saved = dbContext.Sessions.Single();
+        Assert.Equal("orphaned-discord-event", saved.DiscordEventId);
         Assert.Equal(SessionStart, saved.ZoomDiscordSyncedStartUtc);
     }
 
@@ -545,6 +578,8 @@ public class SessionEventSchedulingServiceTests
         await CreateService(dbContext, new FakeZoomClient(), discord).RunAsync(teamA, CancellationToken.None);
         await CreateService(dbContext, new FakeZoomClient(), discord).RunAsync(teamB, CancellationToken.None);
 
-        Assert.Equal([111UL, 222UL], discord.GuildIdsUsed);
+        // Each create now also does a ListEventsAsync dedup check first (same guildId), so assert
+        // the distinct set used rather than an exact call count.
+        Assert.Equal([111UL, 222UL], discord.GuildIdsUsed.Distinct());
     }
 }
