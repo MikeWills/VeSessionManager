@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Serilog;
+using VeSessionManager.Core.Admin;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Discord;
 using VeSessionManager.Core.Email;
@@ -9,6 +10,7 @@ using VeSessionManager.Core.Ingestion;
 using VeSessionManager.Core.Jobs;
 using VeSessionManager.Core.Notifications;
 using VeSessionManager.Core.Payments;
+using VeSessionManager.Core.PiiPurge;
 using VeSessionManager.Core.Scheduling;
 using VeSessionManager.Core.Square;
 using VeSessionManager.Core.VecSubmissions;
@@ -70,6 +72,10 @@ builder.Services.AddScoped<PaymentReminderService>();
 builder.Services.AddScoped<VecSubmissionService>();
 builder.Services.AddScoped<VecSubmissionReportService>();
 
+// Phase 10: also used by VeSessionManager.Web's Admin/SystemSettings page to edit the same row.
+builder.Services.AddScoped<SystemSettingsService>();
+builder.Services.AddScoped<PiiPurgeService>();
+
 builder.Services.AddScoped<JobRunHistoryLogger>();
 builder.Services.AddHostedService<HelloWorldJob>();
 builder.Services.AddHostedService<SessionIngestionJob>();
@@ -77,6 +83,7 @@ builder.Services.AddHostedService<DayBeforeReminderJob>();
 builder.Services.AddHostedService<FccDailyWatcherJob>();
 builder.Services.AddHostedService<FccWeeklyCatchupJob>();
 builder.Services.AddHostedService<PaymentReminderJob>();
+builder.Services.AddHostedService<PiiPurgeJob>();
 
 var host = builder.Build();
 

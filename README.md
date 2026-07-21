@@ -107,8 +107,8 @@ someone actually sets them, not the instant the repo is cloned). `EmailSettings`
 `EmailTemplate` are both per-team now too — each team gets its own From/Reply-To/privacy-policy
 settings row and its own template wording, seeded once with placeholder content on first run and
 meant to be **hand-edited by a human** (not generated content) before real use; see
-[`docs/email-notifications.md`](docs/email-notifications.md) for how to edit them today, without
-waiting on Phase 9's admin UI, plus the full placeholder reference.
+[`docs/email-notifications.md`](docs/email-notifications.md) for the full placeholder reference —
+editable either directly in the DB or via the Phase 9c admin UI's Email Templates screen.
 
 The FCC ULS watcher (Phase 5) needs **no credentials at all** — `data.fcc.gov` is a public
 dataset — so there's nothing to configure beyond the `FccUls:BaseUrl` default already in
@@ -125,6 +125,11 @@ The admin backend's login (Phase 9a) supports username/password out of the box; 
 Microsoft sign-in are **optional**, same pattern as everything else — no credentials configured
 just means that sign-in button doesn't render on the login page. Apple sign-in is deliberately not
 built yet (cost tradeoff, see [`docs/admin-auth.md`](docs/admin-auth.md)).
+
+The PII purge job (Phase 10) needs no credentials either — its one input,
+`SystemSettings.PiiRetentionWindowDays`, is a deployment-wide value with **no default assumed**
+(seeded `null`, must be set explicitly via the Phase 9c System Settings admin screen before the job
+purges anything); see [`docs/pii-purge.md`](docs/pii-purge.md).
 
 ```bash
 dotnet user-secrets set "Authentication:Google:ClientId" "<Google OAuth client id>" --project src/VeSessionManager.Web

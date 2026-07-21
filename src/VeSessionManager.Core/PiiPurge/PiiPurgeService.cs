@@ -1,0 +1,135 @@
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+using VeSessionManager.Core.Admin;
+using VeSessionManager.Core.Data;
+using VeSessionManager.Core.Entities;
+
+namespace VeSessionManager.Core.PiiPurge;
+
+/// <summary>
+/// Phase 10: nulls candidate PII once the admin-configured retention window has elapsed, anchored
+/// to whichever end-of-process date fits the candidate's outcome. Global, not per-team —
+/// SystemSettings.PiiRetentionWindowDays is a single deployment-wide value (see docs/pii-purge.md),
+/// unlike every Team-scoped credential/setting from Phases 2-4/6.
+///
+///   - Trigger A (passed): LicenseGrantDateUtc is set and at least RetentionWindowDays days old.
+///   - Trigger B (failed): ApplicationStatus = Failed and the session's ScheduledStartUtc is at
+///     least RetentionWindowDays days old — there's no FCC process to track once a Session Manager
+///     has recorded a failing result, so the exam date itself is the anchor instead of a license date.
+///
+/// NotTested is deliberately excluded from both triggers — that PII is nulled immediately at the
+/// moment of the Phase 9 delete/no-show action, not on this scheduled window. Unmatched/Received
+/// candidates never match either trigger (LicenseGrantDateUtc is only ever set on Granted, and
+/// ApplicationStatus == Failed excludes them), so they're naturally never purged regardless of age.
+///
+/// PiiPurgedUtc null is both the query filter and the idempotency guard, same idiom as every other
+/// scan-based service's ...Utc tracking field — a candidate is never reprocessed once purged.
+/// </summary>
+public class PiiPurgeService(
+    AppDbContext dbContext,
+    SystemSettingsService systemSettingsService,
+    TimeProvider timeProvider,
+    ILogger<PiiPurgeService> logger)
+{
+    public async Task<PiiPurgeResult> RunAsync(CancellationToken cancellationToken)
+    {
+        var result = new PiiPurgeResult();
+        var settings = await systemSettingsService.GetAsync(cancellationToken);
+
+        if (settings.PiiRetentionWindowDays is null)
+        {
+            // No default assumed per spec — an admin must set this explicitly before the purge job
+            // can run. Same "skip quietly, one aggregate INFO line" idiom as an unconfigured optional
+            // integration (Zoom/Discord/Square/Email), even though this isn't external-API-shaped.
+            logger.LogInformation("PII purge skipped: SystemSettings.PiiRetentionWindowDays is not configured");
+            return result;
+        }
+
+        var retentionWindowDays = settings.PiiRetentionWindowDays.Value;
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+
+        // A candidate is purge-eligible once "today - anchorDate >= retentionWindowDays" measured in
+        // whole calendar days. Expressed as an exclusive upper bound (anchorDate < cutoffExclusive)
+        // rather than comparing anchorDate.Date against a threshold, so the comparison stays a plain
+        // translatable DateTime comparison — same idiom CandidateNotificationService uses for its
+        // own "tomorrow" range — regardless of what time-of-day the anchor field carries (a Session's
+        // ScheduledStartUtc has a real time-of-day; LicenseGrantDateUtc effectively doesn't).
+        var cutoffExclusive = now.Date.AddDays(-retentionWindowDays + 1);
+
+        result.GrantedCandidatesPurged = await PurgeGrantedCandidatesAsync(cutoffExclusive, retentionWindowDays, now, cancellationToken);
+        result.FailedCandidatesPurged = await PurgeFailedCandidatesAsync(cutoffExclusive, retentionWindowDays, now, cancellationToken);
+
+        logger.LogInformation("PII purge run finished: {Result}", result);
+        return result;
+    }
+
+    private async Task<int> PurgeGrantedCandidatesAsync(DateTime cutoffExclusive, int retentionWindowDays, DateTime now, CancellationToken cancellationToken)
+    {
+        var candidates = await dbContext.Candidates
+            .Include(c => c.Payments)
+            .Where(c => c.PiiPurgedUtc == null
+                        && c.LicenseGrantDateUtc != null
+                        && c.LicenseGrantDateUtc < cutoffExclusive)
+            .ToListAsync(cancellationToken);
+
+        foreach (var candidate in candidates)
+        {
+            PurgeCandidate(candidate, now);
+            AddAudit(candidate.Id, $"PII purged (Trigger A: license granted {candidate.LicenseGrantDateUtc:d}, {retentionWindowDays}-day retention window elapsed).", now);
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+
+        return candidates.Count;
+    }
+
+    private async Task<int> PurgeFailedCandidatesAsync(DateTime cutoffExclusive, int retentionWindowDays, DateTime now, CancellationToken cancellationToken)
+    {
+        var candidates = await dbContext.Candidates
+            .Include(c => c.Session)
+            .Include(c => c.Payments)
+            .Where(c => c.PiiPurgedUtc == null
+                        && c.ApplicationStatus == CandidateApplicationStatus.Failed
+                        && c.Session.ScheduledStartUtc < cutoffExclusive)
+            .ToListAsync(cancellationToken);
+
+        foreach (var candidate in candidates)
+        {
+            PurgeCandidate(candidate, now);
+            AddAudit(candidate.Id, $"PII purged (Trigger B: exam date {candidate.Session.ScheduledStartUtc:d}, {retentionWindowDays}-day retention window elapsed).", now);
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+
+        return candidates.Count;
+    }
+
+    // Name/Email/Frn/HasFelonyDisclosure is the exact same PII field set CandidateActionService's
+    // immediate delete/no-show purge nulls (Phase 9) — CallSign/LicenseGrantDateUtc/ApplicationStatus
+    // /SessionId and every Payment.Amount/Status/Reason are deliberately left untouched, since they're
+    // needed for historical session/VE/financial stats. Unlike the delete action, this purge never
+    // touches ApplicationStatus/ResultMarkedBy* — it's a privacy retention action, not a status change.
+    private static void PurgeCandidate(Candidate candidate, DateTime now)
+    {
+        candidate.Name = null;
+        candidate.Email = null;
+        candidate.Frn = null;
+        candidate.HasFelonyDisclosure = null;
+        candidate.PiiPurgedUtc = now;
+
+        foreach (var payment in candidate.Payments)
+        {
+            payment.PaymentLinkUrl = null;
+            payment.SquarePaymentReferenceId = null;
+        }
+    }
+
+    private void AddAudit(int candidateId, string details, DateTime now) =>
+        dbContext.AuditLogs.Add(new AuditLog
+        {
+            UserId = null, // system action, not a person
+            Action = "CandidatePiiPurged",
+            EntityType = nameof(Candidate),
+            EntityId = candidateId,
+            TimestampUtc = now,
+            Details = details
+        });
+}
