@@ -38,6 +38,7 @@ public class SystemSettingsServiceTests
         Assert.Equal(24, settings.FccDailyWatcherIntervalHours);
         Assert.Equal(24, settings.FccWeeklyCatchupIntervalHours);
         Assert.Equal(DayOfWeek.Monday, settings.FccWeeklyCatchupDayOfWeek);
+        Assert.Equal(60, settings.SessionIngestionIntervalMinutes);
     }
 
     [Fact]
@@ -68,7 +69,7 @@ public class SystemSettingsServiceTests
         dbContext.Users.Add(user);
         await dbContext.SaveChangesAsync();
 
-        var result = await CreateService(dbContext).UpdateAsync(90, 12, 48, DayOfWeek.Sunday, user.Id, CancellationToken.None);
+        var result = await CreateService(dbContext).UpdateAsync(90, 12, 48, DayOfWeek.Sunday, 15, user.Id, CancellationToken.None);
 
         Assert.Equal(SystemSettingsActionResult.Success, result);
         var settings = await dbContext.SystemSettings.SingleAsync();
@@ -76,6 +77,7 @@ public class SystemSettingsServiceTests
         Assert.Equal(12, settings.FccDailyWatcherIntervalHours);
         Assert.Equal(48, settings.FccWeeklyCatchupIntervalHours);
         Assert.Equal(DayOfWeek.Sunday, settings.FccWeeklyCatchupDayOfWeek);
+        Assert.Equal(15, settings.SessionIngestionIntervalMinutes);
         Assert.Equal(user.Id, settings.UpdatedByUserId);
         Assert.Equal(Now, settings.UpdatedUtc);
 
@@ -94,7 +96,7 @@ public class SystemSettingsServiceTests
         dbContext.Users.Add(user);
         await dbContext.SaveChangesAsync();
 
-        var result = await CreateService(dbContext).UpdateAsync(null, 24, 24, DayOfWeek.Monday, user.Id, CancellationToken.None);
+        var result = await CreateService(dbContext).UpdateAsync(null, 24, 24, DayOfWeek.Monday, 60, user.Id, CancellationToken.None);
 
         Assert.Equal(SystemSettingsActionResult.Success, result);
         var settings = await dbContext.SystemSettings.SingleAsync();
@@ -102,10 +104,11 @@ public class SystemSettingsServiceTests
     }
 
     [Theory]
-    [InlineData(0, 24, 24)]
-    [InlineData(24, 0, 24)]
-    [InlineData(24, 24, 0)]
-    public async Task UpdateAsync_InvalidIntervalOrRetention_ReturnsInvalidValue_ChangesNothing(int daily, int weekly, int retention)
+    [InlineData(0, 24, 24, 60)]
+    [InlineData(24, 0, 24, 60)]
+    [InlineData(24, 24, 0, 60)]
+    [InlineData(24, 24, 24, 0)]
+    public async Task UpdateAsync_InvalidIntervalOrRetention_ReturnsInvalidValue_ChangesNothing(int daily, int weekly, int retention, int sessionIngestionMinutes)
     {
         await using var dbContext = CreateContext();
         var user = new User { Name = "Sys Admin", Role = UserRole.SystemAdmin };
@@ -114,7 +117,7 @@ public class SystemSettingsServiceTests
         var original = await CreateService(dbContext).GetAsync(CancellationToken.None);
         var originalDaily = original.FccDailyWatcherIntervalHours;
 
-        var result = await CreateService(dbContext).UpdateAsync(retention, daily, weekly, DayOfWeek.Monday, user.Id, CancellationToken.None);
+        var result = await CreateService(dbContext).UpdateAsync(retention, daily, weekly, DayOfWeek.Monday, sessionIngestionMinutes, user.Id, CancellationToken.None);
 
         Assert.Equal(SystemSettingsActionResult.InvalidValue, result);
         var settings = await dbContext.SystemSettings.SingleAsync();

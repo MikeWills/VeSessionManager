@@ -15,6 +15,7 @@ public class SystemSettingsModel(UserManager<User> userManager, SystemSettingsSe
     public int FccDailyWatcherIntervalHours { get; private set; }
     public int FccWeeklyCatchupIntervalHours { get; private set; }
     public DayOfWeek FccWeeklyCatchupDayOfWeek { get; private set; }
+    public int SessionIngestionIntervalMinutes { get; private set; }
     public DateTime? UpdatedUtc { get; private set; }
 
     public async Task OnGetAsync()
@@ -24,10 +25,11 @@ public class SystemSettingsModel(UserManager<User> userManager, SystemSettingsSe
         FccDailyWatcherIntervalHours = settings.FccDailyWatcherIntervalHours;
         FccWeeklyCatchupIntervalHours = settings.FccWeeklyCatchupIntervalHours;
         FccWeeklyCatchupDayOfWeek = settings.FccWeeklyCatchupDayOfWeek;
+        SessionIngestionIntervalMinutes = settings.SessionIngestionIntervalMinutes;
         UpdatedUtc = settings.UpdatedUtc;
     }
 
-    public async Task<IActionResult> OnPostAsync(int? piiRetentionWindowDays, int fccDailyWatcherIntervalHours, int fccWeeklyCatchupIntervalHours, DayOfWeek fccWeeklyCatchupDayOfWeek)
+    public async Task<IActionResult> OnPostAsync(int? piiRetentionWindowDays, int fccDailyWatcherIntervalHours, int fccWeeklyCatchupIntervalHours, DayOfWeek fccWeeklyCatchupDayOfWeek, int sessionIngestionIntervalMinutes)
     {
         var user = await userManager.GetUserAsync(User);
         if (user is null)
@@ -35,14 +37,14 @@ public class SystemSettingsModel(UserManager<User> userManager, SystemSettingsSe
             return Forbid();
         }
 
-        var result = await systemSettingsService.UpdateAsync(piiRetentionWindowDays, fccDailyWatcherIntervalHours, fccWeeklyCatchupIntervalHours, fccWeeklyCatchupDayOfWeek, user.Id, CancellationToken.None);
+        var result = await systemSettingsService.UpdateAsync(piiRetentionWindowDays, fccDailyWatcherIntervalHours, fccWeeklyCatchupIntervalHours, fccWeeklyCatchupDayOfWeek, sessionIngestionIntervalMinutes, user.Id, CancellationToken.None);
         if (result == SystemSettingsActionResult.Success)
         {
             TempData["StatusMessage"] = "System settings updated.";
         }
         else
         {
-            TempData["ErrorMessage"] = "Could not save — intervals must be at least 1 hour and retention window (if set) at least 1 day.";
+            TempData["ErrorMessage"] = "Could not save — intervals must be at least 1 minute (session ingestion) or 1 hour (ULS polling), and retention window (if set) at least 1 day.";
         }
 
         return RedirectToPage();

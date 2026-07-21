@@ -32,6 +32,7 @@ builder.Services.Configure<ExamToolsOptions>(builder.Configuration.GetSection(Ex
 // Singleton so the login cookie jar survives between poll cycles.
 builder.Services.AddSingleton<IExamToolsClient, ExamToolsClient>();
 builder.Services.AddScoped<SessionIngestionService>();
+builder.Services.AddScoped<IngestionScheduleService>();
 
 // Phase 7: reuses IExamToolsClient, no new client/credentials needed.
 builder.Services.AddScoped<VolunteerExaminerSyncService>();

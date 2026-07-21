@@ -6,8 +6,9 @@ namespace VeSessionManager.Core.Admin;
 
 /// <summary>
 /// Phase 9c: SystemAdmin-only deployment-wide settings (PII retention window, ULS polling
-/// intervals). Backed by a single seeded singleton row (Id = 1, see migration
-/// Phase9cSystemSettings) — GetAsync's get-or-create is a safety net, not the primary seed path.
+/// intervals, session ingestion interval). Backed by a single seeded singleton row (Id = 1, see
+/// migration Phase9cSystemSettings) — GetAsync's get-or-create is a safety net, not the primary
+/// seed path.
 /// </summary>
 public class SystemSettingsService(AppDbContext dbContext, TimeProvider timeProvider)
 {
@@ -26,7 +27,8 @@ public class SystemSettingsService(AppDbContext dbContext, TimeProvider timeProv
             Id = SingletonId,
             FccDailyWatcherIntervalHours = 24,
             FccWeeklyCatchupIntervalHours = 24,
-            FccWeeklyCatchupDayOfWeek = DayOfWeek.Monday
+            FccWeeklyCatchupDayOfWeek = DayOfWeek.Monday,
+            SessionIngestionIntervalMinutes = 60
         };
         dbContext.SystemSettings.Add(settings);
         await dbContext.SaveChangesAsync(cancellationToken);
@@ -38,10 +40,11 @@ public class SystemSettingsService(AppDbContext dbContext, TimeProvider timeProv
         int fccDailyWatcherIntervalHours,
         int fccWeeklyCatchupIntervalHours,
         DayOfWeek fccWeeklyCatchupDayOfWeek,
+        int sessionIngestionIntervalMinutes,
         int userId,
         CancellationToken cancellationToken)
     {
-        if (fccDailyWatcherIntervalHours < 1 || fccWeeklyCatchupIntervalHours < 1 || piiRetentionWindowDays is < 1)
+        if (fccDailyWatcherIntervalHours < 1 || fccWeeklyCatchupIntervalHours < 1 || piiRetentionWindowDays is < 1 || sessionIngestionIntervalMinutes < 1)
         {
             return SystemSettingsActionResult.InvalidValue;
         }
@@ -53,6 +56,7 @@ public class SystemSettingsService(AppDbContext dbContext, TimeProvider timeProv
         settings.FccDailyWatcherIntervalHours = fccDailyWatcherIntervalHours;
         settings.FccWeeklyCatchupIntervalHours = fccWeeklyCatchupIntervalHours;
         settings.FccWeeklyCatchupDayOfWeek = fccWeeklyCatchupDayOfWeek;
+        settings.SessionIngestionIntervalMinutes = sessionIngestionIntervalMinutes;
         settings.UpdatedByUserId = userId;
         settings.UpdatedUtc = now;
 
@@ -63,7 +67,7 @@ public class SystemSettingsService(AppDbContext dbContext, TimeProvider timeProv
             EntityType = nameof(SystemSettings),
             EntityId = SingletonId,
             TimestampUtc = now,
-            Details = $"PiiRetentionWindowDays={piiRetentionWindowDays?.ToString() ?? "null"}, FccDailyWatcherIntervalHours={fccDailyWatcherIntervalHours}, FccWeeklyCatchupIntervalHours={fccWeeklyCatchupIntervalHours}, FccWeeklyCatchupDayOfWeek={fccWeeklyCatchupDayOfWeek}."
+            Details = $"PiiRetentionWindowDays={piiRetentionWindowDays?.ToString() ?? "null"}, FccDailyWatcherIntervalHours={fccDailyWatcherIntervalHours}, FccWeeklyCatchupIntervalHours={fccWeeklyCatchupIntervalHours}, FccWeeklyCatchupDayOfWeek={fccWeeklyCatchupDayOfWeek}, SessionIngestionIntervalMinutes={sessionIngestionIntervalMinutes}."
         });
 
         await dbContext.SaveChangesAsync(cancellationToken);

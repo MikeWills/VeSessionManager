@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using VeSessionManager.Core.Admin;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Ingestion;
 using VeSessionManager.Core.Jobs;
@@ -24,6 +25,18 @@ namespace VeSessionManager.Worker;
 /// its own JobRunHistory entry: a failure in one step (or one team's turn) shouldn't read as a
 /// failure in another on the ops dashboard, and each later step should still run against whatever
 /// the earlier ones already committed even if it itself later fails.
+///
+/// **Self-throttling (added after launch):** the whole per-team block above only actually runs when
+/// IngestionScheduleService.IsDueAsync says so — most teams run a session once a day or less, so
+/// hitting ExamTools every tick around the clock has no real upside almost all the time.
+/// SystemSettings.SessionIngestionIntervalMinutes (SystemAdmin-configurable, default 60) is the
+/// "normal" cadence; a team automatically "surges" back to this job's own tick cadence (still
+/// Jobs:SessionIngestionIntervalSeconds, unchanged, default 300s) whenever it has an Active session
+/// starting within the next hour or still in progress, so a last-minute registrant is still caught
+/// quickly without every team being polled aggressively all day, every day. The whole block is
+/// gated together (not just the ExamTools-touching steps) — a deliberate simplicity tradeoff, see
+/// CLAUDE.md. Team.LastIngestionRunUtc is the bookkeeping field this reads/writes; skipped teams get
+/// no JobRunHistory entries that tick.
 /// </summary>
 public class SessionIngestionJob(
     IServiceScopeFactory scopeFactory,
@@ -38,16 +51,29 @@ public class SessionIngestionJob(
         {
             using var scope = scopeFactory.CreateScope();
             var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var timeProvider = scope.ServiceProvider.GetRequiredService<TimeProvider>();
             var jobRunHistoryLogger = scope.ServiceProvider.GetRequiredService<JobRunHistoryLogger>();
+            var systemSettingsService = scope.ServiceProvider.GetRequiredService<SystemSettingsService>();
+            var scheduleService = scope.ServiceProvider.GetRequiredService<IngestionScheduleService>();
             var ingestionService = scope.ServiceProvider.GetRequiredService<SessionIngestionService>();
             var veRosterSyncService = scope.ServiceProvider.GetRequiredService<VolunteerExaminerSyncService>();
             var schedulingService = scope.ServiceProvider.GetRequiredService<SessionEventSchedulingService>();
             var paymentGenerationService = scope.ServiceProvider.GetRequiredService<PaymentGenerationService>();
             var notificationService = scope.ServiceProvider.GetRequiredService<CandidateNotificationService>();
 
+            // Read fresh every tick (not once at startup like FccDailyWatcherJob's own interval) —
+            // the query is trivial (once per tick, not once per team) and means an admin's edit
+            // takes effect on the very next tick, not after a Worker restart.
+            var normalIntervalMinutes = (await systemSettingsService.GetAsync(stoppingToken)).SessionIngestionIntervalMinutes;
+
             var teams = await dbContext.Teams.ToListAsync(stoppingToken);
             foreach (var team in teams)
             {
+                if (!await scheduleService.IsDueAsync(team, normalIntervalMinutes, stoppingToken))
+                {
+                    continue;
+                }
+
                 await jobRunHistoryLogger.RunAsync(
                     "SessionIngestion",
                     ct => ingestionService.RunAsync(team, ct),
@@ -77,6 +103,9 @@ public class SessionIngestionJob(
                     ct => notificationService.SendRegistrationConfirmationsAsync(team, ct),
                     team.Id,
                     stoppingToken);
+
+                team.LastIngestionRunUtc = timeProvider.GetUtcNow().UtcDateTime;
+                await dbContext.SaveChangesAsync(stoppingToken);
             }
         }
         while (await timer.WaitForNextTickAsync(stoppingToken));

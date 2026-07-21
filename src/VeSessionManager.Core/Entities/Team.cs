@@ -56,6 +56,14 @@ public class Team
 
     public DateTime CreatedUtc { get; set; }
 
+    /// <summary>
+    /// Internal bookkeeping only — not a user-facing setting, no admin UI. Tracks when
+    /// SessionIngestionJob's per-team pipeline last actually ran for this team, so it can throttle
+    /// to SystemSettings.SessionIngestionIntervalMinutes outside any session's surge window. See
+    /// IngestionScheduleService.
+    /// </summary>
+    public DateTime? LastIngestionRunUtc { get; set; }
+
     public List<Session> Sessions { get; } = [];
 
     public bool IsExamToolsConfigured =>

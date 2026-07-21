@@ -20,7 +20,7 @@
             <label for="piiRetentionWindowDays">Retention window (days)</label>
             <input id="piiRetentionWindowDays" name="piiRetentionWindowDays" type="number" min="1" value="@Model.PiiRetentionWindowDays" placeholder="Not yet set" />
         </div>
-        <p class="session-sub">Used by the (not yet built) PII purge job. Leave blank until an explicit value is decided — no default is assumed.</p>
+        <p class="session-sub">Used by the PII purge job. Leave blank until an explicit value is decided — no default is assumed.</p>
 
         <div class="section-head" style="margin-top:24px;"><h2>ULS Polling</h2></div>
         <div class="meta-grid">
@@ -42,6 +42,13 @@
                 </select>
             </div>
         </div>
+
+        <div class="section-head" style="margin-top:24px;"><h2>Session Ingestion</h2></div>
+        <div class="field" style="max-width:280px;">
+            <label for="sessionIngestionIntervalMinutes">Normal polling interval (minutes)</label>
+            <input id="sessionIngestionIntervalMinutes" name="sessionIngestionIntervalMinutes" type="number" min="1" value="@Model.SessionIngestionIntervalMinutes" required />
+        </div>
+        <p class="session-sub">How often each team's ExamTools poll (+ Zoom/Discord/Square/email follow-up) runs when none of that team's sessions are imminent. Automatically shortens to every few minutes for any team with a session starting within the next hour or still in progress, so a last-minute registrant is still caught quickly — this only controls the slower, everyday cadence.</p>
 
         @if (Model.UpdatedUtc is not null)
         {
