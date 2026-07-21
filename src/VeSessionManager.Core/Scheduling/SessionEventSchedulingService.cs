@@ -138,9 +138,24 @@ public class SessionEventSchedulingService(
             var zoomRequest = new ZoomMeetingRequest(session.Title, session.ScheduledStartUtc, session.DurationMinutes);
             if (session.ZoomMeetingId is null)
             {
-                var meeting = await zoomClient.CreateMeetingAsync(zoomCredentials, zoomRequest, cancellationToken);
-                session.ZoomMeetingId = meeting.Id;
-                session.ZoomJoinUrl = meeting.JoinUrl;
+                // Same reasoning as the Discord dedup check below: guard against a previous poll
+                // that crashed/restarted after Zoom's API call succeeded but before the returned
+                // id was persisted.
+                var existingMeeting = await FindExistingMeetingAsync(zoomCredentials, session, cancellationToken);
+                if (existingMeeting is not null)
+                {
+                    logger.LogWarning(
+                        "Found an existing Zoom meeting {ZoomMeetingId} matching session {ExamToolsSessionId} by topic/time — adopting it instead of creating a duplicate (likely a previous poll crashed after creating it but before saving its id)",
+                        existingMeeting.Id, session.ExamToolsSessionId);
+                    session.ZoomMeetingId = existingMeeting.Id;
+                    session.ZoomJoinUrl = existingMeeting.JoinUrl;
+                }
+                else
+                {
+                    var meeting = await zoomClient.CreateMeetingAsync(zoomCredentials, zoomRequest, cancellationToken);
+                    session.ZoomMeetingId = meeting.Id;
+                    session.ZoomJoinUrl = meeting.JoinUrl;
+                }
             }
             else
             {
@@ -207,6 +222,16 @@ public class SessionEventSchedulingService(
             e.Name == session.Title &&
             e.StartTimeUtc is not null &&
             (e.StartTimeUtc.Value - session.ScheduledStartUtc).Duration() < TimeSpan.FromMinutes(1));
+    }
+
+    /// <summary>Matches by topic + start time (within a minute, same slack as FindExistingEventAsync) rather than requiring an exact tick match.</summary>
+    private async Task<ZoomMeeting?> FindExistingMeetingAsync(ZoomCredentials credentials, Session session, CancellationToken cancellationToken)
+    {
+        var meetings = await zoomClient.ListMeetingsAsync(credentials, cancellationToken);
+        return meetings.FirstOrDefault(m =>
+            m.Topic == session.Title &&
+            m.StartTimeUtc is not null &&
+            (m.StartTimeUtc.Value - session.ScheduledStartUtc).Duration() < TimeSpan.FromMinutes(1));
     }
 
     private async Task CleanupZoomAndDiscordAsync(Team team, Session session, DateTime now, CancellationToken cancellationToken)

@@ -50,7 +50,7 @@ public sealed class SquareClient : ISquareClient
         var response = await client.Checkout.PaymentLinks.CreateAsync(
             new CreatePaymentLinkRequest
             {
-                IdempotencyKey = Guid.NewGuid().ToString(),
+                IdempotencyKey = request.IdempotencyKey,
                 Order = new Order
                 {
                     LocationId = credentials.LocationId,

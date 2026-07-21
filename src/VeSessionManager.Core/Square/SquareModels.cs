@@ -1,7 +1,7 @@
 namespace VeSessionManager.Core.Square;
 
-/// <summary>Domain-facing request for creating a payment link — SquareClient maps this to the Square SDK's Order-based CreatePaymentLinkRequest.</summary>
-public record SquarePaymentLinkRequest(string ReferenceId, string ItemName, decimal AmountUsd);
+/// <summary>Domain-facing request for creating a payment link — SquareClient maps this to the Square SDK's Order-based CreatePaymentLinkRequest. IdempotencyKey must be generated and persisted by the caller *before* this call (see Payment.SquareIdempotencyKey) so a retry after a crash reuses the same key rather than creating a duplicate link.</summary>
+public record SquarePaymentLinkRequest(string ReferenceId, string ItemName, decimal AmountUsd, string IdempotencyKey);
 
 public class SquarePaymentLink
 {

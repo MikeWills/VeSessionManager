@@ -19,6 +19,15 @@ public class Payment
     public string? SquarePaymentReferenceId { get; set; }
     public DateTime? PaidDateUtc { get; set; }
 
+    /// <summary>
+    /// Generated and persisted *before* calling Square's Create Payment Link API, then reused on
+    /// every retry for this Payment — Square's own idempotency guarantee means a retried request
+    /// with the same key returns the original link/order rather than creating a second one. Guards
+    /// against a crash between Square's API call succeeding and PaymentLinkUrl being saved (same
+    /// class of bug as the Discord/Zoom duplicate-event issue, see TODO.md).
+    /// </summary>
+    public string? SquareIdempotencyKey { get; set; }
+
     /// <summary>True if the 10-day unpaid window passed.</summary>
     public bool ExpiredUnpaid { get; set; }
     public DateTime? PaymentReminderSentUtc { get; set; }

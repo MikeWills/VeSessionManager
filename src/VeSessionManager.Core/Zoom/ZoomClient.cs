@@ -69,6 +69,20 @@ public sealed class ZoomClient : IZoomClient, IDisposable
         _logger.LogInformation("Deleted Zoom meeting {ZoomMeetingId} for team {TeamId}", meetingId, credentials.TeamId);
     }
 
+    public async Task<IReadOnlyList<ZoomMeeting>> ListMeetingsAsync(ZoomCredentials credentials, CancellationToken cancellationToken)
+    {
+        var response = await SendAsync(
+            credentials, HttpMethod.Get, $"{ApiBaseUrl}/v2/users/{Uri.EscapeDataString(credentials.UserId)}/meetings?type=scheduled",
+            body: null, cancellationToken);
+
+        var list = await response.Content.ReadFromJsonAsync<ZoomMeetingListWireResponse>(JsonOptions, cancellationToken)
+            ?? throw new InvalidOperationException("Zoom list-meetings response body was empty.");
+
+        return list.Meetings
+            .Select(m => new ZoomMeeting { Id = m.Id.ToString(), JoinUrl = m.JoinUrl, Topic = m.Topic, StartTimeUtc = DateTime.SpecifyKind(m.StartTime, DateTimeKind.Utc) })
+            .ToList();
+    }
+
     private static ZoomMeetingWireRequest ToWireRequest(ZoomMeetingRequest request) => new()
     {
         Topic = request.Topic,

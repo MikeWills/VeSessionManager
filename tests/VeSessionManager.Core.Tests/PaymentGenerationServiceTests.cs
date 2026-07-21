@@ -17,7 +17,7 @@ public class PaymentGenerationServiceTests
         public override DateTimeOffset GetUtcNow() => new(utcNow, TimeSpan.Zero);
     }
 
-    private sealed record CapturedCall(string ReferenceId, string ItemName, decimal AmountUsd);
+    private sealed record CapturedCall(string ReferenceId, string ItemName, decimal AmountUsd, string IdempotencyKey);
 
     private sealed class FakeSquareClient : ISquareClient
     {
@@ -29,7 +29,7 @@ public class PaymentGenerationServiceTests
         public Task<SquarePaymentLink> CreatePaymentLinkAsync(SquareCredentials credentials, SquarePaymentLinkRequest request, CancellationToken cancellationToken)
         {
             CredentialsUsed.Add(credentials);
-            Calls.Add(new CapturedCall(request.ReferenceId, request.ItemName, request.AmountUsd));
+            Calls.Add(new CapturedCall(request.ReferenceId, request.ItemName, request.AmountUsd, request.IdempotencyKey));
             if (ThrowOnNextCall is not null)
             {
                 var ex = ThrowOnNextCall;
@@ -133,6 +133,12 @@ public class PaymentGenerationServiceTests
         Assert.Equal(payment.Id.ToString(), call.ReferenceId);
         Assert.Equal(15m, call.AmountUsd);
         Assert.Equal(team.Id, Assert.Single(square.CredentialsUsed).TeamId);
+
+        // The idempotency key sent to Square must already be the one persisted on the row (see
+        // GenerateLinkAsync's remarks) — not a value only known in memory — so a retry after a
+        // crash reuses it instead of generating a fresh one.
+        Assert.False(string.IsNullOrWhiteSpace(payment.SquareIdempotencyKey));
+        Assert.Equal(payment.SquareIdempotencyKey, call.IdempotencyKey);
     }
 
     [Fact]
@@ -195,6 +201,13 @@ public class PaymentGenerationServiceTests
         Assert.Single(dbContext.Payments);
         Assert.NotNull(dbContext.Payments.Single().PaymentLinkUrl);
         Assert.Equal(2, square.Calls.Count); // failed attempt + successful retry
+
+        // Same idempotency key both times: if the "failed" attempt actually succeeded on Square's
+        // side (e.g. the process crashed after Square created the link but before it was saved),
+        // Square's own idempotency guarantee means the retry replays the original link instead of
+        // creating a second, orphaned one.
+        Assert.Equal(square.Calls[0].IdempotencyKey, square.Calls[1].IdempotencyKey);
+        Assert.Equal(dbContext.Payments.Single().SquareIdempotencyKey, square.Calls[1].IdempotencyKey);
     }
 
     [Fact]

@@ -24,6 +24,7 @@ public class SessionEventSchedulingServiceTests
         public List<string> CreateCalls { get; } = [];
         public List<string> UpdateCalls { get; } = [];
         public List<string> DeleteCalls { get; } = [];
+        public List<ZoomMeeting> ExistingMeetings { get; } = [];
         public Exception? ThrowOnCreate { get; set; }
         public Exception? ThrowOnUpdate { get; set; }
         public List<ZoomCredentials> CredentialsUsed { get; } = [];
@@ -57,6 +58,12 @@ public class SessionEventSchedulingServiceTests
             CredentialsUsed.Add(credentials);
             DeleteCalls.Add(meetingId);
             return Task.CompletedTask;
+        }
+
+        public Task<IReadOnlyList<ZoomMeeting>> ListMeetingsAsync(ZoomCredentials credentials, CancellationToken cancellationToken)
+        {
+            CredentialsUsed.Add(credentials);
+            return Task.FromResult<IReadOnlyList<ZoomMeeting>>(ExistingMeetings);
         }
     }
 
@@ -183,12 +190,38 @@ public class SessionEventSchedulingServiceTests
         Assert.Single(discord.CreateCalls);
         Assert.Empty(zoom.UpdateCalls);
         Assert.Empty(discord.UpdateCalls);
-        Assert.Equal(team.Id, Assert.Single(zoom.CredentialsUsed).TeamId);
+        // A create is now preceded by a ListMeetingsAsync dedup check (same credentials), so
+        // assert every recorded call used the right team rather than expecting exactly one call.
+        Assert.All(zoom.CredentialsUsed, c => Assert.Equal(team.Id, c.TeamId));
 
         var saved = dbContext.Sessions.Single();
         Assert.NotNull(saved.ZoomMeetingId);
         Assert.StartsWith("https://zoom.us/j/", saved.ZoomJoinUrl);
         Assert.NotNull(saved.DiscordEventId);
+        Assert.Equal(SessionStart, saved.ZoomDiscordSyncedStartUtc);
+    }
+
+    [Fact]
+    public async Task NewSession_MatchingMeetingAlreadyExistsInZoom_AdoptsIt_DoesNotCreateDuplicate()
+    {
+        // Same reasoning as the Discord dedup test below, but for Zoom's half of SyncZoomAndDiscordAsync.
+        await using var dbContext = CreateContext();
+        var (vec, feeConfig) = await SeedRefsAsync(dbContext);
+        var team = await SeedTeamAsync(dbContext);
+        var session = NewSession(vec, feeConfig, team);
+        dbContext.Sessions.Add(session);
+        await dbContext.SaveChangesAsync();
+
+        var zoom = new FakeZoomClient();
+        zoom.ExistingMeetings.Add(new ZoomMeeting { Id = "orphaned-zoom-meeting", JoinUrl = "https://zoom.us/j/orphaned-zoom-meeting", Topic = session.Title, StartTimeUtc = SessionStart });
+        var discord = new FakeDiscordEventClient();
+        var result = await CreateService(dbContext, zoom, discord).RunAsync(team, CancellationToken.None);
+
+        Assert.Equal(1, result.SessionsSynced);
+        Assert.Empty(zoom.CreateCalls);
+        var saved = dbContext.Sessions.Single();
+        Assert.Equal("orphaned-zoom-meeting", saved.ZoomMeetingId);
+        Assert.Equal("https://zoom.us/j/orphaned-zoom-meeting", saved.ZoomJoinUrl);
         Assert.Equal(SessionStart, saved.ZoomDiscordSyncedStartUtc);
     }
 
@@ -377,6 +410,9 @@ public class SessionEventSchedulingServiceTests
 
         public Task DeleteMeetingAsync(ZoomCredentials credentials, string meetingId, CancellationToken cancellationToken) =>
             Task.CompletedTask;
+
+        public Task<IReadOnlyList<ZoomMeeting>> ListMeetingsAsync(ZoomCredentials credentials, CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<ZoomMeeting>>([]);
     }
 
     [Fact]

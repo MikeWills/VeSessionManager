@@ -19,6 +19,12 @@ namespace VeSessionManager.Core.Payments;
 /// Multi-team: this service now operates on one Team's candidates/payments per RunAsync call —
 /// each team has its own separate Square merchant account (Team.IsSquareConfigured). See
 /// docs/multi-team.md.
+///
+/// GenerateLinkAsync persists a Payment.SquareIdempotencyKey *before* calling Square and reuses it
+/// on every retry, so a crash between Square's call succeeding and PaymentLinkUrl being saved
+/// replays the same request (Square returns the original link) instead of creating a duplicate —
+/// same bug class as the Discord/Zoom duplicate-event issue fixed in SessionEventSchedulingService,
+/// see TODO.md.
 /// </summary>
 public class PaymentGenerationService(
     AppDbContext dbContext,
@@ -152,9 +158,21 @@ public class PaymentGenerationService(
             ? $"VE Exam Retest Fee - {sessionTitle}"
             : $"VE Exam Fee - {sessionTitle}";
 
+        // Persisted *before* calling Square, and reused as-is if already set from a previous
+        // attempt — a crash between Square's API call succeeding and PaymentLinkUrl being saved
+        // would otherwise generate a second, different link for the same fee on the next poll
+        // (same class of bug as the Discord/Zoom duplicate-event issue, see TODO.md). Square's own
+        // idempotency guarantee means replaying the same key returns the original link instead of
+        // creating a new one.
+        if (payment.SquareIdempotencyKey is null)
+        {
+            payment.SquareIdempotencyKey = Guid.NewGuid().ToString();
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+
         var link = await squareClient.CreatePaymentLinkAsync(
             credentials,
-            new SquarePaymentLinkRequest(payment.Id.ToString(), itemName, payment.Amount),
+            new SquarePaymentLinkRequest(payment.Id.ToString(), itemName, payment.Amount, payment.SquareIdempotencyKey),
             cancellationToken);
 
         payment.PaymentLinkUrl = link.Url;
