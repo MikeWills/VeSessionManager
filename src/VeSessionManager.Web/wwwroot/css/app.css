@@ -56,10 +56,19 @@
 header.chassis { background: var(--panel); color: #EDEFEC; padding: 0 28px; display: flex; align-items: center; gap: 28px; height: 56px; }
 .brand { font-family: "IBM Plex Mono", monospace; font-weight: 600; font-size: 13px; letter-spacing: .06em; display: flex; align-items: center; gap: 8px; text-decoration: none; }
 .brand .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); box-shadow: 0 0 6px rgba(63, 143, 95, .8); }
-nav.chassis-nav { display: flex; gap: 4px; flex: 1; }
+nav.chassis-nav { display: flex; gap: 4px; flex: 1; align-items: center; }
 nav.chassis-nav a { font-size: 13px; padding: 8px 12px; border-radius: 5px; text-decoration: none; color: #B9C0BC; }
 nav.chassis-nav a.active { background: var(--panel-2); color: #fff; }
 nav.chassis-nav a:hover { color: #fff; }
+
+/* Grouped nav dropdowns (Team / VEC & Fees / Reports) — same row-action kebab/menu component as
+   everywhere else, restyled so the trigger reads as just another chassis-nav link. */
+.nav-group { position: relative; display: inline-flex; }
+.nav-group > .kebab { background: transparent; border: none; font-family: inherit; font-size: 13px; padding: 8px 12px; border-radius: 5px; color: #B9C0BC; cursor: pointer; }
+.nav-group > .kebab:hover { color: #fff; }
+.nav-group > .kebab.active { background: var(--panel-2); color: #fff; }
+.nav-group .menu { top: 38px; left: 0; right: auto; }
+.menu a.item.active { font-weight: 600; background: var(--paper); }
 .who { font-family: "IBM Plex Mono", monospace; font-size: 11.5px; color: #9AA39D; display: flex; align-items: center; gap: 8px; }
 .who .role { background: var(--panel-2); color: #EDEFEC; padding: 3px 8px; border-radius: 99px; letter-spacing: .05em; }
 
