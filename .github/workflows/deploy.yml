@@ -1,0 +1,152 @@
+# Deploys VeSessionManager (Worker + Web) to the production Ubuntu server over Tailscale.
+#
+# Trigger: pushing a version tag (v*.*.*) -- never on every commit to main.
+#
+# Required repo secrets (see docs/deployment.md for setup):
+#   TS_OAUTH_CLIENT_ID  - Tailscale OAuth client ID (tag:ci) -- same client already used by NcsScheduler
+#   TS_OAUTH_SECRET     - Tailscale OAuth client secret
+#   SSH_PRIVATE_KEY     - private half of the shared 'deploy' keypair (same as NcsScheduler)
+#   DEPLOY_HOST         - server's Tailscale hostname/IP (e.g. myserver.tailXXXX.ts.net)
+#   DEPLOY_USER         - deploy
+
+name: Deploy
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+env:
+  DEPLOY_PATH: /opt/vesessionmanager
+  DB_PATH: /var/lib/vesessionmanager/vesessionmanager.db
+  WORKER_SERVICE: vesessionmanager-worker
+  WEB_SERVICE: vesessionmanager-web
+  # Must match ASPNETCORE_URLS in the web systemd unit -- change this (and the unit file) if it
+  # collides with anything else already running on the box (NcsScheduler already occupies 5000).
+  WEB_PORT: 5100
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - run: dotnet restore
+
+      - run: dotnet build --configuration Release --no-restore
+
+      - run: dotnet test --configuration Release --no-build
+
+  deploy:
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Restore
+        run: dotnet restore
+
+      - name: Publish Worker
+        run: dotnet publish src/VeSessionManager.Worker/VeSessionManager.Worker.csproj -c Release -o publish/worker -p:InformationalVersion=${{ github.ref_name }}
+
+      - name: Publish Web
+        run: dotnet publish src/VeSessionManager.Web/VeSessionManager.Web.csproj -c Release -o publish/web -p:InformationalVersion=${{ github.ref_name }}
+
+      - name: Connect to Tailscale
+        uses: tailscale/github-action@v3
+        with:
+          oauth-client-id: ${{ secrets.TS_OAUTH_CLIENT_ID }}
+          oauth-secret: ${{ secrets.TS_OAUTH_SECRET }}
+          tags: tag:ci
+
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Backup database
+        run: |
+          ssh -i ~/.ssh/deploy_key "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
+            "sudo cp '$DB_PATH' '$DB_PATH.bak-\$(date +%Y%m%d%H%M%S)'"
+
+      - name: Stop services
+        run: |
+          ssh -i ~/.ssh/deploy_key "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
+            "sudo systemctl stop $WEB_SERVICE $WORKER_SERVICE"
+
+      - name: Sync Worker files
+        run: |
+          # deploy isn't the owner of the existing vesessionmanager-owned files, so it can't
+          # reliably delete/overwrite/chown/chmod them as itself. --rsync-path runs the remote-side
+          # rsync as root (via a narrowly-scoped NOPASSWD sudo rule) so it can freely write, delete,
+          # and set final ownership via --chown. *.db* is excluded defensively even though the DB
+          # actually lives outside this tree entirely, at $DB_PATH.
+          rsync -avz --delete \
+            --rsync-path="sudo rsync" \
+            --chown=vesessionmanager:vesessionmanager \
+            --exclude '*.db' \
+            --exclude '*.db-shm' \
+            --exclude '*.db-wal' \
+            --exclude '*.bak-*' \
+            -e "ssh -i ~/.ssh/deploy_key" \
+            publish/worker/ "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:$DEPLOY_PATH/worker/"
+
+      - name: Sync Web files
+        run: |
+          rsync -avz --delete \
+            --rsync-path="sudo rsync" \
+            --chown=vesessionmanager:vesessionmanager \
+            --exclude '*.db' \
+            --exclude '*.db-shm' \
+            --exclude '*.db-wal' \
+            --exclude '*.bak-*' \
+            -e "ssh -i ~/.ssh/deploy_key" \
+            publish/web/ "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:$DEPLOY_PATH/web/"
+
+      - name: Start Worker, confirm it's healthy before starting Web
+        run: |
+          # Worker and Web both call dbContext.Database.Migrate() on startup (see Program.cs in
+          # each project) -- starting them serially and confirming Worker is actually up first
+          # avoids both processes racing to apply the same SQLite migration concurrently.
+          ssh -i ~/.ssh/deploy_key "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" "
+            sudo systemctl start $WORKER_SERVICE
+            sleep 5
+            if ! systemctl is-active --quiet $WORKER_SERVICE; then
+              echo 'Worker failed to start (possibly a migration or startup error); recent logs:'
+              sudo journalctl -u $WORKER_SERVICE -n 50 --no-pager
+              exit 1
+            fi
+          "
+
+      - name: Start Web
+        run: |
+          ssh -i ~/.ssh/deploy_key "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
+            "sudo systemctl start $WEB_SERVICE"
+
+      - name: Health check
+        run: |
+          ssh -i ~/.ssh/deploy_key "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" "
+            for i in \$(seq 1 30); do
+              code=\$(curl -s -o /dev/null -w '%{http_code}' http://localhost:$WEB_PORT/)
+              if [ \"\$code\" != \"000\" ]; then
+                echo \"Web responded with HTTP \$code\"
+                exit 0
+              fi
+              sleep 3
+            done
+            echo 'Web failed to respond within 90s; recent logs:'
+            sudo journalctl -u $WEB_SERVICE -n 50 --no-pager
+            exit 1
+          "
