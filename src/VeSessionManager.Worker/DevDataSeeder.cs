@@ -33,7 +33,7 @@ public static class DevDataSeeder
         {
             Name = "System",
             Email = "system@localhost",
-            Role = UserRole.Admin
+            Role = UserRole.SystemAdmin
         };
 
         dbContext.FeeConfigurations.Add(new FeeConfiguration

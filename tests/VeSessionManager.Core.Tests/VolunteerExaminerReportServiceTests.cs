@@ -36,7 +36,7 @@ public class VolunteerExaminerReportServiceTests
 
     private static async Task<FeeConfiguration> SeedFeeConfigurationAsync(AppDbContext dbContext, Vec vec)
     {
-        var user = new User { Name = "System", Email = "system@localhost", Role = UserRole.Admin };
+        var user = new User { Name = "System", Email = "system@localhost", Role = UserRole.SystemAdmin };
         var feeConfiguration = new FeeConfiguration
         {
             Vec = vec,

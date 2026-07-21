@@ -1,9 +1,16 @@
+using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using VeSessionManager.Core.Entities;
 
 namespace VeSessionManager.Core.Data;
 
-public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(options)
+/// <summary>
+/// Base changed from plain DbContext to IdentityUserContext&lt;User, int&gt; in Phase 9a — gives
+/// Users/UserClaims/UserLogins/UserTokens for ASP.NET Core Identity (external logins need
+/// UserLogins) without the unused Identity Role tables IdentityDbContext would also add (Role
+/// stays one plain enum column on User, not Identity's own Role system — see docs/admin-auth.md).
+/// </summary>
+public class AppDbContext(DbContextOptions<AppDbContext> options) : IdentityUserContext<User, int>(options)
 {
     public DbSet<Team> Teams => Set<Team>();
     public DbSet<Vec> Vecs => Set<Vec>();
@@ -15,12 +22,15 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<Payment> Payments => Set<Payment>();
     public DbSet<VolunteerExaminer> VolunteerExaminers => Set<VolunteerExaminer>();
     public DbSet<SessionVolunteerExaminer> SessionVolunteerExaminers => Set<SessionVolunteerExaminer>();
-    public DbSet<User> Users => Set<User>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<JobRunHistory> JobRunHistories => Set<JobRunHistory>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        // Required so IdentityUserContext's own entity configuration (Users/UserClaims/UserLogins/
+        // UserTokens table mapping and indexes) actually applies.
+        base.OnModelCreating(modelBuilder);
+
         // The app never hard-deletes rows with dependents (PII is nulled in place, not the row
         // removed — see Candidate/Payment purge behavior in the spec), so every FK below is
         // Restrict rather than Cascade. This also sidesteps SQL Server-style "multiple cascade
@@ -79,6 +89,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         modelBuilder.Entity<User>(b =>
         {
             b.HasOne(u => u.ManagedByUser).WithMany().HasForeignKey(u => u.ManagedByUserId).OnDelete(DeleteBehavior.Restrict);
+            b.HasOne(u => u.Team).WithMany().HasForeignKey(u => u.TeamId).OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<EmailTemplate>(b =>

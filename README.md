@@ -121,6 +121,24 @@ expiration notice goes — the Session Manager's inbox, not the candidate's), se
 placeholder alongside the From/Reply-To/privacy-policy fields; see
 [`docs/payment-reminders.md`](docs/payment-reminders.md).
 
+The admin backend's login (Phase 9a) supports username/password out of the box; Google and
+Microsoft sign-in are **optional**, same pattern as everything else — no credentials configured
+just means that sign-in button doesn't render on the login page. Apple sign-in is deliberately not
+built yet (cost tradeoff, see [`docs/admin-auth.md`](docs/admin-auth.md)).
+
+```bash
+dotnet user-secrets set "Authentication:Google:ClientId" "<Google OAuth client id>" --project src/VeSessionManager.Web
+dotnet user-secrets set "Authentication:Google:ClientSecret" "<Google OAuth client secret>" --project src/VeSessionManager.Web
+dotnet user-secrets set "Authentication:Microsoft:ClientId" "<Entra app registration client id>" --project src/VeSessionManager.Web
+dotnet user-secrets set "Authentication:Microsoft:ClientSecret" "<Entra app registration client secret>" --project src/VeSessionManager.Web
+```
+
+On the server: `Authentication__Google__ClientId` / `Authentication__Google__ClientSecret` /
+`Authentication__Microsoft__ClientId` / `Authentication__Microsoft__ClientSecret` environment
+variables. In Development, four test users (one per role — SystemAdmin/TeamAdmin/SessionManager/
+TeamLead) are seeded automatically on first run by `DevAuthSeeder`; see
+[`docs/admin-auth.md`](docs/admin-auth.md) for their emails and shared dev password.
+
 ## Environments
 
 Config is selected by environment name (`Test` or `Production`; there is no separate

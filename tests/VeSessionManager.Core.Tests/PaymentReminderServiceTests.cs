@@ -101,7 +101,7 @@ public class PaymentReminderServiceTests
         DateTime? paymentReminderSentUtc = null)
     {
         var vec = new Vec { Name = "ARRL" };
-        var user = new User { Name = "System", Email = "system@localhost", Role = UserRole.Admin };
+        var user = new User { Name = "System", Email = "system@localhost", Role = UserRole.SystemAdmin };
         var feeConfiguration = new FeeConfiguration
         {
             Vec = vec, EffectiveDate = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc),

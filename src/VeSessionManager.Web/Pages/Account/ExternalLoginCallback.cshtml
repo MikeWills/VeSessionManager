@@ -1,0 +1,13 @@
+@page
+@model VeSessionManager.Web.Pages.Account.ExternalLoginCallbackModel
+@{
+    ViewData["Title"] = "External login";
+}
+
+<h1>External login</h1>
+
+@if (Model.ErrorMessage is not null)
+{
+    <div class="alert alert-danger">@Model.ErrorMessage</div>
+    <a asp-page="./Login" class="btn btn-secondary">Back to log in</a>
+}

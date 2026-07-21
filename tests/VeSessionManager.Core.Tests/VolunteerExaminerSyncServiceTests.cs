@@ -62,7 +62,7 @@ public class VolunteerExaminerSyncServiceTests
     private static async Task<Session> SeedSessionAsync(AppDbContext dbContext, Team team, string examToolsSessionId = "session-1", SessionStatus status = SessionStatus.Active)
     {
         var vec = new Vec { Name = "ARRL" };
-        var user = new User { Name = "System", Email = "system@localhost", Role = UserRole.Admin };
+        var user = new User { Name = "System", Email = "system@localhost", Role = UserRole.SystemAdmin };
         var feeConfiguration = new FeeConfiguration
         {
             Vec = vec,

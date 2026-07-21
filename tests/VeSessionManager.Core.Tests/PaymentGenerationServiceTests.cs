@@ -73,7 +73,7 @@ public class PaymentGenerationServiceTests
         SessionStatus sessionStatus = SessionStatus.Active, bool purged = false)
     {
         var vec = new Vec { Name = "ARRL" };
-        var user = new User { Name = "System", Email = "system@localhost", Role = UserRole.Admin };
+        var user = new User { Name = "System", Email = "system@localhost", Role = UserRole.SystemAdmin };
         var feeConfiguration = new FeeConfiguration
         {
             Vec = vec,

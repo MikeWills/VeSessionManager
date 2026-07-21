@@ -68,7 +68,7 @@ public class FccUlsWatcherServiceTests
         AppDbContext dbContext, string? frn, CandidateApplicationStatus status = CandidateApplicationStatus.Unmatched)
     {
         var vec = new Vec { Name = "ARRL" };
-        var user = new User { Name = "System", Email = "system@localhost", Role = UserRole.Admin };
+        var user = new User { Name = "System", Email = "system@localhost", Role = UserRole.SystemAdmin };
         var feeConfiguration = new FeeConfiguration
         {
             Vec = vec,

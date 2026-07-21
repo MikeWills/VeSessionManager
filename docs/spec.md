@@ -131,8 +131,9 @@ User (admin backend)
   Id
   Name
   Email
-  Role (Admin | SessionManager | TeamLead)
-  ManagedByUserId (nullable — TeamLead's assigned SessionManager)
+  Role (SystemAdmin | TeamAdmin | SessionManager | TeamLead) -- expanded from (Admin | SessionManager | TeamLead) in Phase 9a (2026-07-21); see docs/admin-auth.md
+  TeamId (nullable — null for SystemAdmin/deployment-wide; the TeamAdmin/SessionManager's own team otherwise. Added in Phase 9a, not in the original shared model.)
+  ManagedByUserId (nullable — TeamLead's assigned manager, a SessionManager or TeamAdmin)
 
 AuditLog
   Id
@@ -391,13 +392,14 @@ features (ARRL's own youth discount program), not a generic VEC concept.
 
 ## Phase 9 — Admin Backend (RBAC)
 
-**Design checkpoint:** This is the only phase with a real user-facing UI (Phases 0–8 are background jobs and API integrations with no interface). Before starting the build, do a design pass with Claude Design to mock up the three role views (Admin, Session Manager, Team Lead) — settle on layout/look first, then hand the approved mockups to Claude Code as part of this phase's brief so it builds to a spec rather than improvising UI as it goes.
+**Design checkpoint:** This is the only phase with a real user-facing UI (Phases 0–8 are background jobs and API integrations with no interface). Before starting the build, do a design pass with Claude Design to mock up the role views — settle on layout/look first, then hand the approved mockups to Claude Code as part of this phase's brief so it builds to a spec rather than improvising UI as it goes.
 
 **This phase is large enough to split into four sub-phases.** Run each as its own Claude Code session, in order — 9a establishes the auth/scaffolding everything else builds on.
 
-**Roles (already in shared `User` model, referenced by all four sub-phases below):**
-- **Admin:** full system access — user management (create/deactivate, assign roles, assign Team Leads to Session Managers), system config (Zoom/Square/Discord credentials, SMTP settings including From address and Reply-To address, ULS polling settings, PII retention window setting, VEC management — add/edit `Vec` records including `SupportsYouthProgram`, fee configuration — set `ExamFeeAmount`/`RetainedAmount`/`FeeCollectionEnabled` per VEC for new sessions going forward; past sessions keep whatever config was active at their creation, never retroactively changed, email template management — edit Subject/Body for every `EmailTemplate.Key` in the system, with the available placeholders for each shown in the editor so content can be changed without touching code), global visibility across all sessions, full audit log, job run history/ops dashboard (see `JobRunHistory` table)
-- **Session Manager:** full visibility/edit on their own sessions — candidate table (registration, payment, application, license status), manual actions:
+**Roles — expanded to four during Phase 9a (2026-07-21, user request), not the three originally described here.** The original single "Admin" role didn't fit well once the multi-team foundation (Phase 6.5) gave each `Team` its own credentials/settings — see `docs/admin-auth.md` for the full rationale. `User.Role` (`UserRole` enum) is now `{ SystemAdmin, TeamAdmin, SessionManager, TeamLead }`:
+- **SystemAdmin** (renamed from "Admin"): full system access — user management (create/deactivate, assign roles, assign Team Leads to Session Managers/Team Admins), creates `Team` rows and grants the TeamAdmin role, system config that's genuinely deployment-wide (ULS polling settings, PII retention window setting, VEC management — add/edit `Vec` records including `SupportsYouthProgram`, since VECs are shared/global not per-team), global visibility across all sessions, full audit log, job run history/ops dashboard (see `JobRunHistory` table). Kept as a full superset of every role below it, not narrowed to provisioning-only.
+- **TeamAdmin** (new): controls all settings within their own team — that team's Zoom/Square/Discord/Email credentials (now per-`Team`, see the multi-team foundation), fee configuration (`FeeConfiguration` CRUD for VECs their team works with), email template management for their team's `EmailTemplate` rows — plus everything Session Manager can do (a superset) within their own team, plus granting SessionManager/TeamLead to users within their team.
+- **Session Manager:** full visibility/edit on their own team's sessions — candidate table (registration, payment, application, license status), manual actions:
   - resend reminder email, mark paid manually for edge cases, add walk-in candidate, add/edit a candidate's FRN if missing at registration
   - "Mark session as completed" — one action, set once the testing is done for the day. Sets `Session.TestingCompletedUtc`/`TestingCompletedByUserId`, and bulk-sets `Candidate.Tested = true` for every candidate in the session still in a non-terminal `ApplicationStatus` (`Unmatched` or `Received`) — candidates already marked `Failed`/`NotTested` before this point are left alone. For each candidate who passed this way (i.e. `Tested` just flipped to `true`, not previously marked `Failed`) and has `HasFelonyDisclosure = true`, automatically send the `FelonyDisclosureInstructions` email template (placeholders: `{{CandidateName}}`) — this only tells them special FCC steps are required, the club has no role beyond informing them
   - mark a candidate Failed (took the exam, didn't pass — retained per Phase 10's normal delayed purge window)
@@ -408,13 +410,15 @@ features (ARRL's own youth discount program), not a generic VEC concept.
   - flag a payment as "refund requested" with notes — the actual refund is processed manually in the Square dashboard, this is tracking-only
   - review and clear a session's `RescheduleFlaggedForReview` flag once they've manually communicated the change to candidates and confirmed the new date
   - VE roster editing, VEC submission toggle
-- **Team Lead:** scoped to sessions they're assigned to (via `User.ManagedByUserId` or a future session-assignment table if a Team Lead needs multi-manager visibility — confirm scope when building this), same status view as Session Manager including full PII (Name, Email, FRN) — needed for day-of check-in and identity verification against photo ID, not masked, but read-only except where explicitly decided otherwise (confirm with Mike before granting Team Leads any write access beyond viewing)
+- **Team Lead:** scoped to sessions they're assigned to — **confirmed in Phase 9a**: via the existing `User.ManagedByUserId` (single assignment, role-agnostic — the assigned manager can be a Session Manager or a Team Admin, effective team is whoever that manager's `TeamId` is), no multi-manager join table for now, revisit only if a real need for multi-manager visibility comes up. Same status view as Session Manager including full PII (Name, Email, FRN) — needed for day-of check-in and identity verification against photo ID, not masked, but read-only except where explicitly decided otherwise (confirm with Mike before granting Team Leads any write access beyond viewing)
 
 ---
 
 ### Phase 9a — Auth + Scaffolding
 
-**Goal:** Get a logged-in session working for all three roles, with no real feature content yet — just a shell to build the rest on top of.
+**Done, 2026-07-21 — see `docs/admin-auth.md` for full detail.**
+
+**Goal:** Get a logged-in session working for every role, with no real feature content yet — just a shell to build the rest on top of.
 
 - ASP.NET Core Identity, supporting multiple sign-in methods:
   - Username/password (native Identity)
@@ -422,12 +426,13 @@ features (ARRL's own youth discount program), not a generic VEC concept.
   - Microsoft (`Microsoft.AspNetCore.Authentication.MicrosoftAccount` — standard `AddMicrosoftAccount(...)`, pairs naturally with existing Entra ID familiarity)
   - Apple (community package `AspNet.Security.OAuth.Apple` — more involved setup: requires a signed JWT client secret generated from a `.p8` private key, Team ID, and Key ID from an active Apple Developer account; confirm the $99/year Developer account cost is worth it before committing to this provider, versus just Google + Microsoft + username/password)
   - Reference: https://learn.microsoft.com/en-us/aspnet/core/security/authentication/social/?view=aspnetcore-10.0 and https://github.com/aspnet-contrib/AspNet.Security.OAuth.Providers/blob/dev/docs/sign-in-with-apple.md
-- Role assignment (`User.Role`) and the authorization scoping rules described above — build the *mechanism* (policies/handlers that filter queries by role) even though there's barely any real data to filter yet
-- Basic navigation shell reflecting the three roles (empty/placeholder pages are fine — this phase proves the auth and scoping work, not the features)
+- Role assignment (`User.Role`) and the authorization scoping rules described above — build the *mechanism* (policies/handlers that filter queries by role) even though there's barely any real data to filter yet. Landed as `SessionAccessScope` (`VeSessionManager.Core/Authorization/`), plain C# so it's unit-tested without a web host.
+- Basic navigation shell reflecting every role (empty/placeholder pages are fine — this phase proves the auth and scoping work, not the features)
+- **Built username/password + Google + Microsoft; Apple deferred** (confirmed with the user — matches this section's own suggested fallback)
 
-**Unit Tests:** Authorization/scoping logic is the priority here — test that role-based queries correctly filter data (Session Manager sees only their sessions, Team Lead sees only assigned sessions, Admin sees all), and that write-permission checks correctly reject unauthorized actions. External OAuth provider flows themselves are not unit tested (verify those manually per provider in a real browser); test your own claims-processing/account-linking logic instead.
+**Unit Tests:** Authorization/scoping logic is the priority here — test that role-based queries correctly filter data (SessionManager/TeamAdmin see only their own team's sessions, TeamLead sees only their assigned manager's team's, SystemAdmin sees all), and that write-permission checks correctly reject unauthorized actions. External OAuth provider flows themselves are not unit tested (verify those manually per provider in a real browser) — landed as `SessionAccessScopeTests.cs`; account-linking logic is deliberately a single trusted `UserManager.FindByEmailAsync` call, not bespoke logic, so it didn't need its own tests beyond that judgment call being documented in `docs/admin-auth.md`.
 
-**Deliverable:** Three test users, one per role, can log in via at least username/password, and see correctly scoped (even if mostly empty) data.
+**Deliverable:** Four test users, one per role, can log in via username/password, and see correctly scoped (even if mostly empty) data. Live-verified via a real browser click-through: login → correct role landing page → denied access to another role's page → logout → login as a different role → correct landing page again.
 
 ---
 
@@ -447,18 +452,18 @@ features (ARRL's own youth discount program), not a generic VEC concept.
 
 ### Phase 9c — Admin Config Screens
 
-**Goal:** Everything listed under Admin above.
+**Goal:** Everything listed under SystemAdmin and TeamAdmin above. **Needs a real split when this phase is actually built** (not yet designed in detail) — SystemAdmin's screens are deployment-wide (team creation, TeamAdmin grants, VEC management since VECs are shared/global, PII retention window, ULS polling settings, global audit log/job run history), TeamAdmin's screens are scoped to their own team (that team's Zoom/Square/Discord/Email credentials, fee configuration for VECs their team works with, that team's email templates, granting SessionManager/TeamLead within their team). Decide during 9a's design pass whether these are genuinely separate screen sets or one screen set with SystemAdmin able to pick "which team" while TeamAdmin is locked to their own.
 
-- User management (create/deactivate, role assignment, Team Lead-to-Session Manager assignment)
-- System config: Zoom/Square/Discord credentials, SMTP settings (From/Reply-To), ULS polling settings, PII retention window
-- VEC management (`Vec` CRUD, including `SupportsYouthProgram`)
+- User management (create/deactivate, role assignment, Team Lead-to-Session Manager/Team Admin assignment)
+- System config: Zoom/Square/Discord credentials, SMTP settings (From/Reply-To) — now per-`Team` (multi-team foundation), ULS polling settings, PII retention window (deployment-wide, SystemAdmin only)
+- VEC management (`Vec` CRUD, including `SupportsYouthProgram`) — shared/global, SystemAdmin only
 - Fee configuration (`FeeConfiguration` CRUD per VEC)
-- Email template management (edit Subject/Body per `EmailTemplate.Key`, with available placeholders shown per template)
-- Global session visibility, audit log viewer, job run history/ops dashboard
+- Email template management (edit Subject/Body per `EmailTemplate.Key`, with available placeholders shown per template) — now per-`Team`
+- Global session visibility (SystemAdmin), audit log viewer, job run history/ops dashboard
 
-**Unit Tests:** Authorization (only Admin can reach these screens/actions), correctness of each config write (e.g. a new `FeeConfiguration` doesn't retroactively change past sessions, a new `EmailTemplate` edit takes effect on the next send without a deploy).
+**Unit Tests:** Authorization (SystemAdmin-only screens actually reject TeamAdmin and vice versa for out-of-team actions), correctness of each config write (e.g. a new `FeeConfiguration` doesn't retroactively change past sessions, a new `EmailTemplate` edit takes effect on the next send without a deploy).
 
-**Deliverable:** An Admin test user can manage users, VECs, fees, and email templates, and view the audit log and job run history.
+**Deliverable:** A SystemAdmin test user can create a team and grant Team Admin; a TeamAdmin test user can manage their own team's settings, fees, and email templates within that team; both can view the audit log and job run history (SystemAdmin globally, TeamAdmin scoped to their team).
 
 ---
 
@@ -467,7 +472,7 @@ features (ARRL's own youth discount program), not a generic VEC concept.
 **Goal:** The public-facing piece, plus whatever's left over from the Claude Design mockups that didn't fit naturally into 9a–9c.
 
 - Public privacy policy page (e.g. `/privacy`), unauthenticated, disclosing what candidate PII is collected (Name, Email, FRN), why (session administration, FCC application tracking, payment processing), and the retention policy — reference the actual current `RetentionWindowDays` value dynamically rather than hardcoding it, so it stays accurate if the Admin changes the setting. This is the link referenced in Phase 4's confirmation email. Content should be reviewed by Mike before publishing — this phase builds the page/mechanism, not the final legal wording.
-- Visual polish pass against the Claude Design mockups across all three role views
+- Visual polish pass against the Claude Design mockups across every role view
 - Any remaining UI gaps found while using 9a–9c in practice
 
 **Deliverable:** Public privacy page live and linked correctly from the confirmation email; overall admin backend visually matches the approved mockups.

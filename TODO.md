@@ -40,6 +40,15 @@ of Phases 2–4's actual deliverables.
 - [ ] Live test: let a real candidate's Unpaid payment age past 10 days and confirm `Payment.ExpiredUnpaid` flips and the admin notice arrives at the configured `AdminNotificationEmail`
 - [ ] Decide whether `PaymentReminder:UnmatchedReviewWindowDays` (default 5) is the right value once real sessions are running through Phase 1/5 — the spec calls this "some reasonable window," not a fixed number
 
+## Admin Backend Auth (Phase 9a) — not yet live-tested with real accounts
+
+- [ ] Create a Google OAuth app + set `Authentication:Google:ClientId`/`ClientSecret` (user-secrets locally, `Authentication__Google__ClientId`/`Authentication__Google__ClientSecret` env vars in prod) — see `docs/admin-auth.md`
+- [ ] Create a Microsoft/Entra app registration + set `Authentication:Microsoft:ClientId`/`ClientSecret` the same way
+- [ ] Live test: sign in with a real Google account and a real Microsoft account once credentials are set, confirm the account-linking flow (matches by email to an existing seeded/admin-created `User` row — no self-service registration) works end to end
+- [ ] The four dev test users (`sysadmin`/`teamadmin`/`sessionmanager`/`teamlead@example.com`) only exist in Development via `DevAuthSeeder` — Production needs real `User` rows created by hand (direct DB edit, no admin UI yet) until Phase 9c ships user management
+- [ ] Decide whether Apple Sign-In is ever worth its $99/year Developer account cost — deliberately deferred in Phase 9a, see `docs/admin-auth.md`
+- [ ] Review the password policy set in `Program.cs` (`RequiredLength = 10`, no non-alphanumeric requirement) once real accounts exist — picked as a reasonable default, not something specifically requested
+
 ## Multi-Team Foundation — consolidated per-team setup checklist
 
 All four fast-follow stages (Zoom, Discord, Square, Email) are done — every integration except

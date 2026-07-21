@@ -80,7 +80,7 @@ public class SessionIngestionServiceTests
     private static async Task SeedVecAndFeeConfigAsync(AppDbContext dbContext)
     {
         var vec = new Vec { Name = "ARRL" };
-        var user = new User { Name = "System", Email = "system@localhost", Role = UserRole.Admin };
+        var user = new User { Name = "System", Email = "system@localhost", Role = UserRole.SystemAdmin };
         dbContext.FeeConfigurations.Add(new FeeConfiguration
         {
             Vec = vec,
@@ -200,7 +200,7 @@ public class SessionIngestionServiceTests
         Assert.Equal(1, result.SessionsSkippedNoConfig);
         Assert.Empty(dbContext.Sessions);
 
-        var user = new User { Name = "System", Email = "system@localhost", Role = UserRole.Admin };
+        var user = new User { Name = "System", Email = "system@localhost", Role = UserRole.SystemAdmin };
         dbContext.FeeConfigurations.Add(new FeeConfiguration
         {
             VecId = dbContext.Vecs.Single().Id,

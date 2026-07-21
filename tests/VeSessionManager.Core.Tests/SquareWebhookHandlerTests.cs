@@ -77,7 +77,7 @@ public class SquareWebhookHandlerTests
     private static async Task<Payment> SeedPaymentAsync(AppDbContext dbContext, Team team, string squareOrderId, PaymentStatus status = PaymentStatus.Unpaid)
     {
         var vec = new Vec { Name = "ARRL" };
-        var user = new User { Name = "System", Email = "system@localhost", Role = UserRole.Admin };
+        var user = new User { Name = "System", Email = "system@localhost", Role = UserRole.SystemAdmin };
         var feeConfiguration = new FeeConfiguration
         {
             Vec = vec, EffectiveDate = Now, FeeCollectionEnabled = true, ExamFeeAmount = 15m,
