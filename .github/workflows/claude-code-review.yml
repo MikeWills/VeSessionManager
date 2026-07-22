@@ -41,4 +41,11 @@ jobs:
           prompt: '/code-review:code-review ${{ github.repository }}/pull/${{ github.event.pull_request.number }}'
           # See https://github.com/anthropics/claude-code-action/blob/main/docs/usage.md
           # or https://code.claude.com/docs/en/cli-reference for available options
+          #
+          # Without this, a meaningful review of this .NET repo needs dotnet build/test (and git
+          # history) but every such command gets denied in the sandboxed runner (46 denials, PR #6)
+          # and the whole run errors out instead of completing. See TODO.md's "claude-review GitHub
+          # Action errors out on larger PRs" entry.
+          claude_args: |
+            --allowedTools "Bash(dotnet build *)" "Bash(dotnet test *)" "Bash(dotnet restore *)" "Bash(git diff *)" "Bash(git log *)" "Bash(git show *)"
 
