@@ -132,6 +132,10 @@
                     {
                         <span class="refund-tag">Refund requested</span>
                     }
+                    @if (candidate.AmountMismatchLine is not null)
+                    {
+                        <span class="mismatch-tag" title="Matched via Square anyway — this team's real-world payments don't always equal the amount owed (e.g. the ARRL youth rate) until confirmed at test time.">@candidate.AmountMismatchLine</span>
+                    }
                 </td>
                 <td><span class="tested-check @(candidate.Tested ? "on" : "")">@(candidate.Tested ? "✓" : "·")</span></td>
                 <td class="row-actions">

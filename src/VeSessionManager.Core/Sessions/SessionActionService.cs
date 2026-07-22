@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Entities;
 using VeSessionManager.Core.Notifications;
+using VeSessionManager.Core.Payments;
 
 namespace VeSessionManager.Core.Sessions;
 
@@ -14,6 +15,7 @@ namespace VeSessionManager.Core.Sessions;
 public class SessionActionService(
     AppDbContext dbContext,
     CandidateNotificationService candidateNotificationService,
+    SquarePaymentMatchingService squarePaymentMatchingService,
     TimeProvider timeProvider,
     ILogger<SessionActionService> logger)
 {
@@ -55,6 +57,11 @@ public class SessionActionService(
         dbContext.AddAuditLog(userId, "SessionMarkedCompleted", nameof(Session), session.Id,
             $"Session {session.ExamToolsSessionId} marked completed; {candidatesJustTested.Count} candidate(s) flipped to Tested.", now);
         await dbContext.SaveChangesAsync(cancellationToken);
+
+        // Completes the Square order for any already-Paid payment on this session that arrived
+        // before the session was marked done (the other direction — payment arrives after — is
+        // handled by SquarePaymentMatchingService itself right when the match happens).
+        await squarePaymentMatchingService.CompleteEligibleOrdersForSessionAsync(session.Id, cancellationToken);
 
         // Each send is isolated — one candidate's SMTP failure must not stop the rest of the batch,
         // nor bubble up and make the whole "mark completed" action look like it failed when the

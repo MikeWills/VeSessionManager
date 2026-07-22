@@ -4,7 +4,9 @@ using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Email;
 using VeSessionManager.Core.Entities;
 using VeSessionManager.Core.Notifications;
+using VeSessionManager.Core.Payments;
 using VeSessionManager.Core.Sessions;
+using VeSessionManager.Core.Square;
 using Xunit;
 
 namespace VeSessionManager.Core.Tests;
@@ -35,6 +37,20 @@ public class SessionActionServiceTests
         }
     }
 
+    private sealed class FakeSquareClient : ISquareClient
+    {
+        public List<string> CompletedOrderIds { get; } = [];
+
+        public Task<SquarePaymentLink> CreatePaymentLinkAsync(SquareCredentials credentials, SquarePaymentLinkRequest request, CancellationToken cancellationToken) =>
+            throw new NotSupportedException("Not used by SessionActionServiceTests.");
+
+        public Task CompleteOrderAsync(SquareCredentials credentials, string orderId, CancellationToken cancellationToken)
+        {
+            CompletedOrderIds.Add(orderId);
+            return Task.CompletedTask;
+        }
+    }
+
     private static AppDbContext CreateContext()
     {
         var options = new DbContextOptionsBuilder<AppDbContext>()
@@ -43,7 +59,7 @@ public class SessionActionServiceTests
         return new AppDbContext(options);
     }
 
-    private static SessionActionService CreateService(AppDbContext dbContext, IEmailSender emailSender) => new(
+    private static SessionActionService CreateService(AppDbContext dbContext, IEmailSender emailSender, ISquareClient? squareClient = null) => new(
         dbContext,
         new CandidateNotificationService(
             dbContext,
@@ -51,6 +67,7 @@ public class SessionActionServiceTests
             emailSender,
             new FixedTimeProvider(Now),
             NullLogger<CandidateNotificationService>.Instance),
+        new SquarePaymentMatchingService(dbContext, squareClient ?? new FakeSquareClient(), new FixedTimeProvider(Now), NullLogger<SquarePaymentMatchingService>.Instance),
         new FixedTimeProvider(Now),
         NullLogger<SessionActionService>.Instance);
 
@@ -188,6 +205,34 @@ public class SessionActionServiceTests
 
         Assert.Equal(SessionActionResult.AlreadyDone, result.Result);
         Assert.False(dbContext.Candidates.Single().Tested);
+    }
+
+    [Fact]
+    public async Task MarkCompleted_CandidateAlreadyPaidBeforeSession_CompletesSquareOrder()
+    {
+        // The payment arrived before the session was marked done — the other direction
+        // (SquarePaymentMatchingService completing eligible orders right when a payment gets
+        // matched) is covered in SquarePaymentMatchingServiceTests.
+        await using var dbContext = CreateContext();
+        var (team, user, session) = await SeedSessionAsync(dbContext);
+        team.SquareAccessToken = "sq-token";
+        team.SquareLocationId = "sq-location";
+        var candidate = AddCandidate(dbContext, session, CandidateApplicationStatus.Received);
+        var payment = new Payment
+        {
+            CandidateId = candidate.Id, Reason = PaymentReason.InitialExam, Amount = 15m,
+            Status = PaymentStatus.Paid, PaidDateUtc = Now.AddDays(-1),
+            SquarePaymentReferenceId = "order-already-paid", CreatedUtc = Now.AddDays(-1)
+        };
+        dbContext.Payments.Add(payment);
+        await dbContext.SaveChangesAsync();
+
+        var square = new FakeSquareClient();
+        var result = await CreateService(dbContext, new FakeEmailSender(), square).MarkCompletedAsync(session.Id, user.Id, CancellationToken.None);
+
+        Assert.Equal(SessionActionResult.Success, result.Result);
+        Assert.Equal("order-already-paid", Assert.Single(square.CompletedOrderIds));
+        Assert.Equal(Now, dbContext.Payments.Single().SquareOrderCompletedUtc);
     }
 
     // ---- ClearRescheduleFlagAsync ----
