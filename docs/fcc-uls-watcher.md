@@ -93,6 +93,39 @@ Matches the spec's Phase 5 state machine exactly:
 license file" isn't enough on its own to detect the *new* grant. Needs real sample data (from both
 ULS and the ExamTools/HamStudy API) before that logic can be designed — not guessed at here.
 
+## Stale/dismissed application gotcha (found 2026-07-22, fixed same day)
+
+Found via a live lookup of a real FRN: the application file's HD row has **no field that
+distinguishes "genuinely still pending" from "dismissed/withdrawn/returned months ago"** — both
+look identical (blank HD License Status, same as the "not yet decided" case documented above). The
+weekly-complete `a_amat.zip` snapshot in particular appears to retain old, already-resolved
+application entries indefinitely rather than dropping them once resolved — a dismissed application
+from five months prior was still present, at its original (stale) Last Action Date, in a
+current-day download.
+
+This matters because a candidate's FRN is a permanent personal identifier — if they (or someone
+sharing that identity record) has any *prior*, unrelated application on file that was never
+granted, its HD row can sit in the application file indefinitely with the same "pending" signature
+a real new post-session application would have. Unguarded, `FccUlsWatcherService` would match on
+whichever row happens to be there, mark the candidate `Received` with a stale
+`ApplicationDateEnteredUtc` from the old application, and then — because the application-matching
+query only looks at `Unmatched` candidates — never revisit it once the real new application
+actually appears in a later file.
+
+Fixed in `FccUlsWatcherService.ProcessApplicationsAsync` two ways:
+
+1. An application match only counts if its Last Action Date is **on or after the candidate's own
+   `Session.ScheduledStartUtc`** (`.Date` comparison, same "compare dates not full DateTimes" idiom
+   used elsewhere in this app) — a real new-license application can't have a Last Action Date
+   before the exam that produced it.
+2. When a file contains more than one row for the same FRN, the **most recent** Last Action Date is
+   picked (`OrderByDescending(r => r.LastActionDateUtc).First()`), not an arbitrary first-in-file
+   pick — so a stale row and a genuine new row for the same FRN in the same file resolve correctly.
+
+The license-matching path (`ProcessLicensesAsync`) doesn't need the same fix — it already only
+counts `LicenseStatus == "A"` rows, and a genuinely stale/dismissed application never reaches Active
+license status, so there's nothing stale for it to accidentally match on.
+
 ## Multi-team note
 
 Candidate matching queries every non-terminal candidate across every `Vec`/session in one pass —

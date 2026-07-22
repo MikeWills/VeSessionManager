@@ -14,6 +14,8 @@ namespace VeSessionManager.Core.FccUls;
 ///     ApplicationDateEnteredUtc taken from HD's Last Action Date (the date ULS recorded this
 ///     transaction — confirmed against real pending-application data, where every row's Last
 ///     Action Date equals the file's own transaction day).
+///   - An application-file match only counts if its Last Action Date falls on or after the
+///     candidate's own Session.ScheduledStartUtc — see the "stale application" gotcha below.
 ///   - Unmatched OR Received candidate whose FRN appears in the license file with an Active
 ///     ("A") HD License Status -> Granted, with CallSign/LicenseGrantDateUtc set from that record.
 ///     License match always wins and short-circuits application status, so Unmatched -> Granted
@@ -31,6 +33,16 @@ namespace VeSessionManager.Core.FccUls;
 /// Item — an existing licensee's FRN could already be in a license file for reasons unrelated to
 /// this exam, and telling a real new grant apart from a pre-existing one needs real sample data
 /// this phase doesn't have yet.
+///
+/// Stale/dismissed application gotcha (found 2026-07-22 via a live FRN lookup): the "application"
+/// file's HD row has no field distinguishing "genuinely still pending" from "dismissed/withdrawn/
+/// returned months ago" — both look identical (blank HD License Status). A candidate's *new*
+/// post-session application can therefore share an FRN with an old, already-resolved application
+/// still sitting in FCC's "Applications - complete" snapshot. Guarded against by (1) only trusting
+/// an application match whose Last Action Date is on/after the candidate's own
+/// Session.ScheduledStartUtc — a real new-license application can't have been filed before the
+/// exam that produced it — and (2) picking the most recent Last Action Date per FRN when a file
+/// contains more than one row for it, rather than an arbitrary "first in file order" pick.
 /// </summary>
 public class FccUlsWatcherService(
     AppDbContext dbContext,
@@ -84,15 +96,23 @@ public class FccUlsWatcherService(
 
     private async Task ProcessApplicationsAsync(IReadOnlyList<FccUlsApplicationRecord> records, FccUlsWatchResult result, CancellationToken cancellationToken)
     {
-        var recordByFrn = records.GroupBy(r => r.Frn).ToDictionary(g => g.Key, g => g.First());
+        // OrderByDescending + First (not just First): a stale/dismissed application can share an
+        // FRN with a genuinely new one in the same file (see the stale-application gotcha in this
+        // class's doc comment) — always prefer whichever row is actually most recent.
+        var recordByFrn = records
+            .GroupBy(r => r.Frn)
+            .ToDictionary(g => g.Key, g => g.OrderByDescending(r => r.LastActionDateUtc).First());
 
         var candidates = await dbContext.Candidates
+            .Include(c => c.Session)
             .Where(c => c.ApplicationStatus == CandidateApplicationStatus.Unmatched && c.Frn != null)
             .ToListAsync(cancellationToken);
 
         foreach (var candidate in candidates)
         {
-            if (candidate.Frn is not null && recordByFrn.TryGetValue(candidate.Frn, out var record))
+            if (candidate.Frn is not null
+                && recordByFrn.TryGetValue(candidate.Frn, out var record)
+                && record.LastActionDateUtc.Date >= candidate.Session.ScheduledStartUtc.Date)
             {
                 candidate.ApplicationStatus = CandidateApplicationStatus.Received;
                 candidate.ApplicationDateEnteredUtc = record.LastActionDateUtc;
