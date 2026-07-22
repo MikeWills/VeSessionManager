@@ -63,9 +63,12 @@ public class FccUlsWatcherServiceTests
     private static FccUlsWatcherService CreateService(AppDbContext dbContext, IFccUlsClient client) =>
         new(dbContext, client, new FixedTimeProvider(Now), NullLogger<FccUlsWatcherService>.Instance);
 
-    /// <summary>Seeds Vec/User/FeeConfiguration/Session/Candidate with the given Frn/ApplicationStatus.</summary>
+    /// <summary>Seeds Vec/User/FeeConfiguration/Session/Candidate with the given Frn/ApplicationStatus. Session defaults to
+    /// four days *before* Now (i.e. testing already happened) since application-file matching requires the matched
+    /// record's Last Action Date to be on/after the session date — pass sessionStartUtc to control that explicitly.</summary>
     private static async Task<Candidate> SeedCandidateAsync(
-        AppDbContext dbContext, string? frn, CandidateApplicationStatus status = CandidateApplicationStatus.Unmatched)
+        AppDbContext dbContext, string? frn, CandidateApplicationStatus status = CandidateApplicationStatus.Unmatched,
+        DateTime? sessionStartUtc = null)
     {
         var vec = new Vec { Name = "ARRL" };
         var user = new User { Name = "System", Email = "system@localhost", Role = UserRole.SystemAdmin };
@@ -82,7 +85,7 @@ public class FccUlsWatcherServiceTests
         {
             ExamToolsSessionId = "session-1",
             Title = "July Session",
-            ScheduledStartUtc = Now.AddDays(4),
+            ScheduledStartUtc = sessionStartUtc ?? Now.AddDays(-4),
             DurationMinutes = 60,
             Vec = vec,
             FeeConfiguration = feeConfiguration,
@@ -119,6 +122,54 @@ public class FccUlsWatcherServiceTests
         var updated = await dbContext.Candidates.SingleAsync(c => c.Id == candidate.Id);
         Assert.Equal(CandidateApplicationStatus.Received, updated.ApplicationStatus);
         Assert.Equal(lastActionDate, updated.ApplicationDateEnteredUtc);
+    }
+
+    [Fact]
+    public async Task ApplicationRecord_LastActionDatePredatesSession_DoesNotMatch_StaysUnmatched()
+    {
+        // Simulates a stale/dismissed prior application for the same FRN, months before this
+        // candidate's own session — see the stale-application gotcha in FccUlsWatcherService's
+        // doc comment (found via a live FRN lookup on 2026-07-22).
+        await using var dbContext = CreateContext();
+        var sessionStart = new DateTime(2026, 7, 22, 18, 0, 0, DateTimeKind.Utc);
+        var candidate = await SeedCandidateAsync(dbContext, frn: "0001234567", sessionStartUtc: sessionStart);
+        var staleLastActionDate = new DateTime(2026, 2, 14, 0, 0, 0, DateTimeKind.Utc);
+        var client = new FakeFccUlsClient
+        {
+            DailyApplications = [new FccUlsApplicationRecord("100", "0001234567", staleLastActionDate)]
+        };
+
+        var result = await CreateService(dbContext, client).RunDailyAsync(CancellationToken.None);
+
+        Assert.Equal(0, result.CandidatesMarkedReceived);
+        var updated = await dbContext.Candidates.SingleAsync(c => c.Id == candidate.Id);
+        Assert.Equal(CandidateApplicationStatus.Unmatched, updated.ApplicationStatus);
+        Assert.Null(updated.ApplicationDateEnteredUtc);
+    }
+
+    [Fact]
+    public async Task MultipleApplicationRecordsForSameFrn_PicksMostRecentLastActionDate()
+    {
+        await using var dbContext = CreateContext();
+        var sessionStart = new DateTime(2026, 7, 22, 18, 0, 0, DateTimeKind.Utc);
+        var candidate = await SeedCandidateAsync(dbContext, frn: "0001234567", sessionStartUtc: sessionStart);
+        var staleLastActionDate = new DateTime(2026, 2, 14, 0, 0, 0, DateTimeKind.Utc);
+        var freshLastActionDate = new DateTime(2026, 7, 22, 0, 0, 0, DateTimeKind.Utc);
+        var client = new FakeFccUlsClient
+        {
+            DailyApplications =
+            [
+                new FccUlsApplicationRecord("100", "0001234567", staleLastActionDate),
+                new FccUlsApplicationRecord("101", "0001234567", freshLastActionDate)
+            ]
+        };
+
+        var result = await CreateService(dbContext, client).RunDailyAsync(CancellationToken.None);
+
+        Assert.Equal(1, result.CandidatesMarkedReceived);
+        var updated = await dbContext.Candidates.SingleAsync(c => c.Id == candidate.Id);
+        Assert.Equal(CandidateApplicationStatus.Received, updated.ApplicationStatus);
+        Assert.Equal(freshLastActionDate, updated.ApplicationDateEnteredUtc);
     }
 
     [Fact]
