@@ -86,8 +86,14 @@
             }
         </nav>
         <div class="who">
-            <span class="role">@roleLabel</span>
-            @teamName
+            <div class="user-menu">
+                <button type="button" class="kebab"><span class="role">@roleLabel</span>@teamName ▾</button>
+                <div class="menu">
+                    <form method="post" asp-page="/Account/Logout">
+                        <button type="submit" class="item">Log out</button>
+                    </form>
+                </div>
+            </div>
             <div class="help-menu">
                 <button type="button" class="kebab" aria-label="Help">Help ▾</button>
                 <div class="menu">
