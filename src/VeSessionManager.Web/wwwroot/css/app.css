@@ -176,11 +176,12 @@ tbody tr:hover { background: var(--row-hover); }
 .menu button.disabled:hover, .menu button:disabled:hover { background: transparent; }
 .menu hr { border: none; border-top: 1px solid var(--line); margin: 6px 2px; }
 
-/* Help menu (chassis nav) — reuses the row-actions kebab/menu component above, restyled to sit
-   readably on the chassis's permanently-dark background rather than the light content area. */
-.help-menu { position: relative; display: inline-flex; }
-.help-menu .kebab { background: var(--panel-2); color: #EDEFEC; border-radius: 99px; padding: 6px 12px; font-family: "IBM Plex Mono", monospace; font-size: 11.5px; }
-.help-menu .kebab:hover { background: #2A3338; border-color: transparent; }
+/* Help menu + user menu (chassis nav) — both reuse the row-actions kebab/menu component above,
+   restyled to sit readably on the chassis's permanently-dark background rather than the light
+   content area. */
+.help-menu, .user-menu { position: relative; display: inline-flex; }
+.help-menu .kebab, .user-menu .kebab { background: var(--panel-2); color: #EDEFEC; border-radius: 99px; padding: 6px 12px; font-family: "IBM Plex Mono", monospace; font-size: 11.5px; display: inline-flex; align-items: center; gap: 6px; }
+.help-menu .kebab:hover, .user-menu .kebab:hover { background: #2A3338; border-color: transparent; }
 
 footer.roster { margin-top: 36px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 20px 24px; }
 .roster-list { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
