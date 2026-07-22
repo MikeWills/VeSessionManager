@@ -504,6 +504,7 @@ features (ARRL's own youth discount program), not a generic VEC concept.
 
 - **VEC discount programs:** some VECs offer discount programs for candidates (structure varies by VEC, not standardized). Not designed yet — needs real examples from the VECs you work with before it can be scoped. Note it here so it isn't forgotten, revisit once requirements are clearer.
 - **No-FRN batch export:** when candidates test without an FRN (e.g. during a federal shutdown, per VEC policy at the time), a future feature could export the list of `FrnMissingAtRegistration` candidates once their FRNs are collected, formatted for whatever batch submission process the VEC requires. Not needed until this scenario actually recurs — revisit then.
+- **VE contact list + in-platform messaging:** a per-team roster view listing each `VolunteerExaminer`'s phone number and email address (neither field exists on `VolunteerExaminer` today — ExamTools' `export/full.json` `DEVDOC.VEs` entry that Phase 7 already consumes only has `call`/`name`/`number?`, so contact info would need a new source, likely hand-entered/admin-editable rather than pulled from ExamTools). Possible follow-on: use that contact info to send messages to VEs through the app itself (e.g. reusing the `EmailTemplateRenderer`/`IEmailSender` pipeline Phase 4 already built, SMS would need a new provider). Not designed yet — needs a decision on where phone/email data comes from and whether messaging is email-only or also SMS before this can be scoped.
 
 ## Suggested order of attack
 
