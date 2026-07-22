@@ -47,7 +47,7 @@ of Phases 2–4's actual deliverables.
 - [ ] Create a Microsoft/Entra app registration + set `Authentication:Microsoft:ClientId`/`ClientSecret` the same way
 - [ ] Live test: sign in with a real Google account and a real Microsoft account once credentials are set, confirm the account-linking flow (matches by email to an existing seeded/admin-created `User` row — no self-service registration) works end to end
 - [ ] The four dev test users (`sysadmin`/`teamadmin`/`sessionmanager`/`teamlead@example.com`) only exist in Development via `DevAuthSeeder` — Production needs real `User` rows created by hand (direct DB edit, no admin UI yet) until Phase 9c ships user management
-- [ ] Decide whether Apple Sign-In is ever worth its $99/year Developer account cost — deliberately deferred in Phase 9a, see `docs/admin-auth.md`
+- [x] ~~Decide whether Apple Sign-In is ever worth its $99/year Developer account cost~~ — deliberately deferred in Phase 9a, decided 2026-07-22: **not worth it, skip it.** Username/password + Google + Microsoft is the final sign-in set; see `docs/admin-auth.md`.
 - [ ] Review the password policy set in `Program.cs` (`RequiredLength = 10`, no non-alphanumeric requirement) once real accounts exist — picked as a reasonable default, not something specifically requested
 
 ## Multi-Team Foundation — consolidated per-team setup checklist
