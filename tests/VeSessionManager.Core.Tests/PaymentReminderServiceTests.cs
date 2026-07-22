@@ -137,6 +137,52 @@ public class PaymentReminderServiceTests
         return (candidate, payment);
     }
 
+    /// <summary>Seeds a Failed Candidate (ResultMarkedUtc set, mirroring MarkFailedAsync) with an Unpaid Reason=Retest Payment — the shape CreateRetestPaymentAsync actually produces.</summary>
+    private static async Task<(Candidate Candidate, Payment Payment)> SeedFailedCandidateWithRetestPaymentAsync(
+        AppDbContext dbContext,
+        Team team,
+        DateTime? resultMarkedUtc,
+        PaymentStatus paymentStatus = PaymentStatus.Unpaid,
+        bool expiredUnpaid = false,
+        DateTime? paymentReminderSentUtc = null)
+    {
+        var vec = new Vec { Name = "ARRL" };
+        var user = new User { Name = "System", Email = "system@localhost", Role = UserRole.SystemAdmin };
+        var feeConfiguration = new FeeConfiguration
+        {
+            Vec = vec, EffectiveDate = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+            FeeCollectionEnabled = true, ExamFeeAmount = 15m, CreatedByUser = user, CreatedUtc = Now
+        };
+        var session = new Session
+        {
+            ExamToolsSessionId = "session-1", Title = "July Session", ScheduledStartUtc = Now.AddDays(-3),
+            DurationMinutes = 60, Vec = vec, TeamId = team.Id, FeeConfiguration = feeConfiguration, Status = SessionStatus.Active,
+            ZoomJoinUrl = "https://zoom.us/j/123", CreatedUtc = Now
+        };
+        dbContext.Sessions.Add(session);
+        await dbContext.SaveChangesAsync();
+
+        var candidate = new Candidate
+        {
+            ExamToolsApplicantId = "applicant-1", SessionId = session.Id, Name = "Roana Glory",
+            Email = "roana@example.com", DateRegisteredUtc = Now,
+            ApplicationStatus = CandidateApplicationStatus.Failed, ResultMarkedUtc = resultMarkedUtc
+        };
+        dbContext.Candidates.Add(candidate);
+        await dbContext.SaveChangesAsync();
+
+        var payment = new Payment
+        {
+            CandidateId = candidate.Id, Reason = PaymentReason.Retest, Amount = 15m,
+            Status = paymentStatus, PaymentLinkUrl = "https://square.link/u/retest", CreatedUtc = Now,
+            ExpiredUnpaid = expiredUnpaid, PaymentReminderSentUtc = paymentReminderSentUtc
+        };
+        dbContext.Payments.Add(payment);
+        await dbContext.SaveChangesAsync();
+
+        return (candidate, payment);
+    }
+
     // ---- 5-day reminder ----
 
     [Fact]
@@ -221,6 +267,55 @@ public class PaymentReminderServiceTests
         var team = await SeedTeamAsync(dbContext);
         await SeedEmailSettingsAndTemplatesAsync(dbContext, team);
         await SeedCandidateWithPaymentAsync(dbContext, team, status: CandidateApplicationStatus.Granted, applicationDateEnteredUtc: Now.AddDays(-8));
+        var sender = new FakeEmailSender();
+
+        var result = await CreateService(dbContext, sender).RunAsync(team, CancellationToken.None);
+
+        Assert.Equal(0, result.RemindersSent);
+    }
+
+    [Fact]
+    public async Task Reminder_FailedCandidateInitialExamPayment_StillSkipped()
+    {
+        // A Failed candidate's *original* InitialExam payment must NOT gain the retest exception —
+        // only a Reason=Retest payment does. Regression guard for the retest gating fix.
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        await SeedEmailSettingsAndTemplatesAsync(dbContext, team);
+        await SeedCandidateWithPaymentAsync(dbContext, team, status: CandidateApplicationStatus.Failed, applicationDateEnteredUtc: Now.AddDays(-8));
+        var sender = new FakeEmailSender();
+
+        var result = await CreateService(dbContext, sender).RunAsync(team, CancellationToken.None);
+
+        Assert.Equal(0, result.RemindersSent);
+    }
+
+    [Fact]
+    public async Task Reminder_RetestPayment_FiresFiveDaysAfterResultMarked_NotApplicationDateEntered()
+    {
+        // The gap this fixes: a retest Payment's Candidate is Failed (terminal) with no FCC
+        // application of its own — ResultMarkedUtc (when the Session Manager marked Failed) is the
+        // anchor date instead of ApplicationDateEnteredUtc.
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        await SeedEmailSettingsAndTemplatesAsync(dbContext, team);
+        await SeedFailedCandidateWithRetestPaymentAsync(dbContext, team, resultMarkedUtc: Now.AddDays(-6));
+        var sender = new FakeEmailSender();
+
+        var result = await CreateService(dbContext, sender).RunAsync(team, CancellationToken.None);
+
+        Assert.Equal(1, result.RemindersSent);
+        var message = Assert.Single(sender.SentMessages);
+        Assert.Equal("roana@example.com", message.ToAddress);
+    }
+
+    [Fact]
+    public async Task Reminder_RetestPayment_BeforeFiveDaysSinceResultMarked_DoesNotFire()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        await SeedEmailSettingsAndTemplatesAsync(dbContext, team);
+        await SeedFailedCandidateWithRetestPaymentAsync(dbContext, team, resultMarkedUtc: Now.AddDays(-4));
         var sender = new FakeEmailSender();
 
         var result = await CreateService(dbContext, sender).RunAsync(team, CancellationToken.None);
@@ -353,6 +448,51 @@ public class PaymentReminderServiceTests
         var result = await CreateService(dbContext, sender).RunAsync(team, CancellationToken.None);
 
         Assert.Equal(0, result.ExpirationsProcessed);
+    }
+
+    [Fact]
+    public async Task Expiration_FailedCandidateInitialExamPayment_StillSkipped()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        await SeedEmailSettingsAndTemplatesAsync(dbContext, team);
+        await SeedCandidateWithPaymentAsync(dbContext, team, status: CandidateApplicationStatus.Failed, applicationDateEnteredUtc: Now.AddDays(-20));
+        var sender = new FakeEmailSender();
+
+        var result = await CreateService(dbContext, sender).RunAsync(team, CancellationToken.None);
+
+        Assert.Equal(0, result.ExpirationsProcessed);
+    }
+
+    [Fact]
+    public async Task Expiration_RetestPayment_FiresTenDaysAfterResultMarked_SetsExpiredUnpaid_SendsToAdmin()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        await SeedEmailSettingsAndTemplatesAsync(dbContext, team);
+        await SeedFailedCandidateWithRetestPaymentAsync(dbContext, team, resultMarkedUtc: Now.AddDays(-11));
+        var sender = new FakeEmailSender();
+
+        var result = await CreateService(dbContext, sender).RunAsync(team, CancellationToken.None);
+
+        Assert.Equal(1, result.ExpirationsProcessed);
+        Assert.Single(sender.SentMessages, m => m.ToAddress == "admin@example.org");
+        Assert.True((await dbContext.Payments.SingleAsync()).ExpiredUnpaid);
+    }
+
+    [Fact]
+    public async Task Expiration_RetestPayment_BeforeTenDaysSinceResultMarked_DoesNotFire()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        await SeedEmailSettingsAndTemplatesAsync(dbContext, team);
+        await SeedFailedCandidateWithRetestPaymentAsync(dbContext, team, resultMarkedUtc: Now.AddDays(-9));
+        var sender = new FakeEmailSender();
+
+        var result = await CreateService(dbContext, sender).RunAsync(team, CancellationToken.None);
+
+        Assert.Equal(0, result.ExpirationsProcessed);
+        Assert.False((await dbContext.Payments.SingleAsync()).ExpiredUnpaid);
     }
 
     [Fact]
