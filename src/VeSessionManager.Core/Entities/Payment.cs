@@ -43,6 +43,27 @@ public class Payment
     public bool ExpiredUnpaid { get; set; }
     public DateTime? PaymentReminderSentUtc { get; set; }
 
+    /// <summary>
+    /// The actual amount Square reported paid when this Payment was matched via
+    /// SquarePaymentMatchingService (auto-match by buyer email, or a Session Manager's manual
+    /// match from the Unmatched Payments screen) — distinct from Amount (the amount owed), because
+    /// the two aren't always the same: e.g. a candidate paying the $5 ARRL youth rate through the
+    /// separate Square-hosted checkout page when Amount was set to the $15 standard rate at
+    /// registration time, before youth status is confirmed (only verified at test time). Null for
+    /// a Payment matched the normal way (SquareWebhookHandler's own order_id lookup), where the
+    /// amount actually charged was already fixed by this app's own generated payment link.
+    /// </summary>
+    public decimal? SquareAmountPaidUsd { get; set; }
+
+    /// <summary>
+    /// Set when SquareAmountPaidUsd didn't equal Amount at match time — still marked Paid (this
+    /// team's call: an ARRL youth payment is a routine, legitimate outcome here, not something to
+    /// hold back from being recorded as paid), but flagged so a Session Manager can review whether
+    /// the difference needs following up on (e.g. collecting the balance if youth status doesn't
+    /// hold up at test-day verification). See SquarePaymentMatchingService.ApplyMatchAsync.
+    /// </summary>
+    public DateTime? AmountMismatchFlaggedUtc { get; set; }
+
     /// <summary>Actual refund is processed manually in the Square dashboard — this is just a note for tracking.</summary>
     public bool RefundRequested { get; set; }
     public int? RefundRequestedByUserId { get; set; }

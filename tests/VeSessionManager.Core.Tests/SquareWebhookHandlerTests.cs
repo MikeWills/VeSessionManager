@@ -63,7 +63,7 @@ public class SquareWebhookHandlerTests
         Convert.ToBase64String(new HMACSHA256(Encoding.UTF8.GetBytes(SignatureKey))
             .ComputeHash(Encoding.UTF8.GetBytes(notificationUrl + body)));
 
-    private static string PaymentUpdatedBody(string orderId, string status, string? buyerEmailAddress = null, string paymentId = "test-payment")
+    private static string PaymentUpdatedBody(string orderId, string status, string? buyerEmailAddress = null, string paymentId = "test-payment", long amountCents = 1500)
     {
         var buyerEmailField = buyerEmailAddress is null ? "" : $""", "buyer_email_address": "{buyerEmailAddress}" """;
         return $$"""
@@ -80,7 +80,7 @@ public class SquareWebhookHandlerTests
                     "id": "{{paymentId}}",
                     "order_id": "{{orderId}}",
                     "status": "{{status}}",
-                    "amount_money": { "amount": 1500, "currency": "USD" }{{buyerEmailField}}
+                    "amount_money": { "amount": {{amountCents}}, "currency": "USD" }{{buyerEmailField}}
                   }
                 }
               }
@@ -231,6 +231,32 @@ public class SquareWebhookHandlerTests
         Assert.Equal(PaymentStatus.Paid, updated.Status);
         Assert.Equal("order-from-online-page", updated.SquarePaymentReferenceId);
         Assert.Equal(Now, updated.PaidDateUtc);
+    }
+
+    [Fact]
+    public async Task ValidSignature_UnmatchedOrderId_BuyerEmailMatches_ButAmountPaidLessThanOwed_StillAutoMatches_FlagsMismatch()
+    {
+        // This team's separate Square-hosted checkout page only offers $5 (ARRL youth) or $15
+        // (standard) — a $5 payment against a Payment created at the $15 rate (youth status isn't
+        // confirmed until test day) is a routine, legitimate outcome, not something to withhold
+        // Paid status over. It should still auto-match, but flag the mismatch for review.
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        var unpaidPayment = await SeedPaymentAsync(dbContext, team, squareOrderId: null, status: PaymentStatus.Unpaid);
+        unpaidPayment.Candidate.Email = "roana@example.com";
+        await dbContext.SaveChangesAsync();
+        var body = PaymentUpdatedBody("order-youth-rate", "COMPLETED", buyerEmailAddress: "roana@example.com", amountCents: 500);
+        var signature = ComputeValidSignature(body);
+
+        var outcome = await CreateHandler(dbContext).ProcessAsync(team.Id, body, signature, CancellationToken.None);
+
+        Assert.Equal(SquareWebhookOutcome.Processed, outcome);
+        Assert.Empty(dbContext.UnmatchedSquarePayments);
+        var updated = dbContext.Payments.Single();
+        Assert.Equal(PaymentStatus.Paid, updated.Status);
+        Assert.Equal(5m, updated.SquareAmountPaidUsd);
+        Assert.Equal(15m, updated.Amount);
+        Assert.Equal(Now, updated.AmountMismatchFlaggedUtc);
     }
 
     [Fact]

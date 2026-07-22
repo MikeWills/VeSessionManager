@@ -19,6 +19,11 @@ namespace VeSessionManager.Core.Payments;
 /// second — right after a payment gets matched (ApplyMatchAsync) and right after a session gets
 /// marked completed (SessionActionService.MarkCompletedAsync calls
 /// CompleteEligibleOrdersForSessionAsync for any of that session's payments still open in Square).
+///
+/// A matched payment's actual amount doesn't always equal the amount owed — see
+/// ApplyMatchAsync's own doc comment for why (ARRL's $5 youth rate vs. the $15 standard rate,
+/// unknown until test day) — matched either way, but flagged (Payment.AmountMismatchFlaggedUtc)
+/// for a Session Manager to review.
 /// </summary>
 public class SquarePaymentMatchingService(
     AppDbContext dbContext,
@@ -61,7 +66,7 @@ public class SquarePaymentMatchingService(
                 var targetPayment = PrimaryUnpaidPayment(candidates[0]);
                 if (targetPayment is not null)
                 {
-                    await ApplyMatchAsync(targetPayment, squareOrderId, cancellationToken);
+                    await ApplyMatchAsync(targetPayment, squareOrderId, amountUsd, cancellationToken);
                     logger.LogInformation("Square order {SquareOrderId} (team {TeamId}) auto-matched to candidate {CandidateId} by buyer email", squareOrderId, teamId, candidates[0].Id);
                     return SquareUnmatchedPaymentOutcome.AutoMatched;
                 }
@@ -111,7 +116,7 @@ public class SquarePaymentMatchingService(
             return SquareManualMatchResult.NoOutstandingPayment;
         }
 
-        await ApplyMatchAsync(targetPayment, unmatched.SquareOrderId, cancellationToken);
+        await ApplyMatchAsync(targetPayment, unmatched.SquareOrderId, unmatched.AmountUsd, cancellationToken);
 
         var now = timeProvider.GetUtcNow().UtcDateTime;
         unmatched.ResolvedUtc = now;
@@ -146,11 +151,26 @@ public class SquarePaymentMatchingService(
         }
     }
 
-    private async Task ApplyMatchAsync(Payment payment, string squareOrderId, CancellationToken cancellationToken)
+    /// <summary>
+    /// Marks Paid regardless of whether amountPaidUsd matches payment.Amount — a below-Amount
+    /// payment through the separate Square-hosted checkout page is a routine, legitimate outcome
+    /// for this team (e.g. the $5 ARRL youth rate against a Payment created at the $15 standard
+    /// rate, since youth status isn't known until test day), not something to hold back from being
+    /// recorded as paid. A mismatch is flagged (AmountMismatchFlaggedUtc) for a Session Manager to
+    /// follow up on instead.
+    /// </summary>
+    private async Task ApplyMatchAsync(Payment payment, string squareOrderId, decimal amountPaidUsd, CancellationToken cancellationToken)
     {
         payment.Status = PaymentStatus.Paid;
         payment.PaidDateUtc = timeProvider.GetUtcNow().UtcDateTime;
         payment.SquarePaymentReferenceId = squareOrderId;
+        payment.SquareAmountPaidUsd = amountPaidUsd;
+        if (amountPaidUsd != payment.Amount)
+        {
+            payment.AmountMismatchFlaggedUtc = timeProvider.GetUtcNow().UtcDateTime;
+            logger.LogWarning("Square order {SquareOrderId} paid ${AmountPaidUsd} against Payment {PaymentId}, which owed ${AmountOwedUsd} — matched and marked Paid, but flagged for review",
+                squareOrderId, amountPaidUsd, payment.Id, payment.Amount);
+        }
         await dbContext.SaveChangesAsync(cancellationToken);
 
         await CompleteOrderIfEligibleAsync(payment, cancellationToken);

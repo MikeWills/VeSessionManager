@@ -72,6 +72,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : IdentityUser
             b.HasOne(p => p.Candidate).WithMany(c => c.Payments).HasForeignKey(p => p.CandidateId).OnDelete(DeleteBehavior.Restrict);
             b.HasOne(p => p.RefundRequestedByUser).WithMany().HasForeignKey(p => p.RefundRequestedByUserId).OnDelete(DeleteBehavior.Restrict);
             b.Property(p => p.Amount).HasPrecision(10, 2);
+            b.Property(p => p.SquareAmountPaidUsd).HasPrecision(10, 2);
         });
 
         modelBuilder.Entity<SessionVolunteerExaminer>(b =>

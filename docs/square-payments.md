@@ -117,6 +117,18 @@ SquarePaymentReferenceId`, so `SquareWebhookHandler` hands it off here instead o
   webhook event for the same `order_id` (e.g. a later `payment.updated` with more detail) matches
   normally through the primary lookup in `SquareWebhookHandler.ProcessAsync`, no special-casing
   needed.
+- **Amount isn't validated against what's owed — deliberately.** The separate Square-hosted
+  checkout page only offers two amounts, ARRL's $5 youth rate and $15 standard rate, but
+  `Payment.Amount` is always set to the $15 standard rate at registration time — youth status
+  isn't known until confirmed at test-day check-in, so a legitimate youth candidate paying $5
+  through this page is a routine, expected outcome, not an error. Both match paths still mark the
+  `Payment` `Paid` when the amount doesn't match, but record `Payment.SquareAmountPaidUsd` (the
+  actual amount Square reported) and set `Payment.AmountMismatchFlaggedUtc`, surfaced as an
+  amber "Paid $X against $Y owed" tag next to that candidate's payment chip on the session detail
+  page — a Session Manager reviews it and follows up (e.g. collects the balance) if youth status
+  doesn't hold up at test time. `SquareAmountPaidUsd` is null for a `Payment` matched the normal
+  way (`SquareWebhookHandler`'s own `order_id` lookup), since that amount was already fixed by
+  this app's own generated payment link.
 
 ## Order completion (post-launch addition)
 

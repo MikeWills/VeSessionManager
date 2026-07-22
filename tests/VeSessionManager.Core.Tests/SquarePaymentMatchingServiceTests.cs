@@ -104,6 +104,44 @@ public class SquarePaymentMatchingServiceTests
     }
 
     [Fact]
+    public async Task ManuallyMatch_AmountPaidLessThanOwed_StillMatchesPaid_ButFlagsMismatch()
+    {
+        // The team's separate Square-hosted checkout page only offers $5 (ARRL youth) or $15
+        // (standard) — a $5 payment against a Payment created at the $15 rate (youth status isn't
+        // known until test day) is a routine, legitimate outcome here, not something to withhold
+        // Paid status over. It should still be flagged so a Session Manager can follow up.
+        await using var dbContext = CreateContext();
+        var (team, candidate, payment) = await SeedCandidateWithUnpaidPaymentAsync(dbContext);
+        var unmatched = new UnmatchedSquarePayment { TeamId = team.Id, SquareOrderId = "order-youth-rate", SquarePaymentId = "sq-1", AmountUsd = 5m, ReceivedUtc = Now };
+        dbContext.UnmatchedSquarePayments.Add(unmatched);
+        await dbContext.SaveChangesAsync();
+
+        var result = await CreateService(dbContext).ManuallyMatchAsync(unmatched.Id, candidate.Id, userId: 1, CancellationToken.None);
+
+        Assert.Equal(SquareManualMatchResult.Success, result);
+        var updated = dbContext.Payments.Single(p => p.Id == payment.Id);
+        Assert.Equal(PaymentStatus.Paid, updated.Status);
+        Assert.Equal(5m, updated.SquareAmountPaidUsd);
+        Assert.Equal(Now, updated.AmountMismatchFlaggedUtc);
+    }
+
+    [Fact]
+    public async Task ManuallyMatch_AmountPaidEqualsOwed_DoesNotFlagMismatch()
+    {
+        await using var dbContext = CreateContext();
+        var (team, candidate, payment) = await SeedCandidateWithUnpaidPaymentAsync(dbContext);
+        var unmatched = new UnmatchedSquarePayment { TeamId = team.Id, SquareOrderId = "order-standard-rate", SquarePaymentId = "sq-1", AmountUsd = 15m, ReceivedUtc = Now };
+        dbContext.UnmatchedSquarePayments.Add(unmatched);
+        await dbContext.SaveChangesAsync();
+
+        await CreateService(dbContext).ManuallyMatchAsync(unmatched.Id, candidate.Id, userId: 1, CancellationToken.None);
+
+        var updated = dbContext.Payments.Single(p => p.Id == payment.Id);
+        Assert.Equal(15m, updated.SquareAmountPaidUsd);
+        Assert.Null(updated.AmountMismatchFlaggedUtc);
+    }
+
+    [Fact]
     public async Task ManuallyMatch_UnmatchedPaymentNotFound_ReturnsNotFound()
     {
         await using var dbContext = CreateContext();
