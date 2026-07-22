@@ -24,8 +24,15 @@ namespace VeSessionManager.Web.Pages.SessionManager;
 /// only wiring + the authorization check (SessionAccessScope.CanEdit) that Core services don't do
 /// on their own since they're called from elsewhere too (e.g. background jobs have no "acting
 /// user" to scope against).
+///
+/// TeamLead access (see TODO.md's "TeamLead has no real view yet"): the page-load gate uses
+/// SessionAccessScope.CanView (not CanEdit) so a TeamLead can actually see the page — CanEdit is
+/// always false for TeamLead by design. Every POST handler still gates on CanEdit via
+/// AuthorizeAsync() below, unchanged, so TeamLead is denied server-side regardless of the UI; the
+/// CanEdit property exposed here is only so the Razor view can hide write controls instead of
+/// showing a TeamLead a page full of buttons that 403 when clicked.
 /// </summary>
-[Authorize(Roles = "SystemAdmin,TeamAdmin,SessionManager")]
+[Authorize(Roles = "SystemAdmin,TeamAdmin,SessionManager,TeamLead")]
 public class DetailModel(
     AppDbContext dbContext,
     UserManager<User> userManager,
@@ -42,6 +49,7 @@ public class DetailModel(
     public SessionSummary Session { get; private set; } = null!;
     public IReadOnlyList<CandidateRow> Candidates { get; private set; } = [];
     public IReadOnlyList<VeChip> VeRoster { get; private set; } = [];
+    public bool CanEdit { get; private set; }
 
     public async Task<IActionResult> OnGetAsync()
     {
@@ -249,7 +257,7 @@ public class DetailModel(
 
     private async Task<bool> LoadForDisplayAsync()
     {
-        var user = await userManager.GetUserAsync(User);
+        var user = await userManager.GetUserWithManagerAsync(dbContext, User);
         if (user is null)
         {
             return false;
@@ -263,10 +271,12 @@ public class DetailModel(
             .Include(s => s.SessionVolunteerExaminers).ThenInclude(l => l.VolunteerExaminer)
             .FirstOrDefaultAsync(s => s.Id == Id);
 
-        if (session is null || !accessScope.CanEdit(user, session))
+        if (session is null || !accessScope.CanView(user, session))
         {
             return false;
         }
+
+        CanEdit = accessScope.CanEdit(user, session);
 
         var discordEventUrl = session.DiscordEventId is not null && session.Team.DiscordGuildId is not (null or 0)
             ? $"https://discord.com/events/{session.Team.DiscordGuildId}/{session.DiscordEventId}"

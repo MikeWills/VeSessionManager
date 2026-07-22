@@ -14,9 +14,12 @@
     <div class="flag-banner">
         <span>⚑</span>
         <span><b>Reschedule flagged for review</b> — this session's date changed while candidates were already registered.</span>
-        <form method="post" asp-page-handler="ClearFlag">
-            <button type="submit" class="btn-secondary btn-sm">Clear flag</button>
-        </form>
+        @if (Model.CanEdit)
+        {
+            <form method="post" asp-page-handler="ClearFlag">
+                <button type="submit" class="btn-secondary btn-sm">Clear flag</button>
+            </form>
+        }
     </div>
 }
 
@@ -57,7 +60,7 @@
                 <span class="k">VEC submission</span>
                 <span class="v">
                     <span class="chip @Model.Session.VecSubmissionChipClass">@Model.Session.VecSubmissionChipLabel</span>
-                    @if (!Model.Session.VecSubmitted)
+                    @if (!Model.Session.VecSubmitted && Model.CanEdit)
                     {
                         <form method="post" asp-page-handler="ToggleVecSubmission" style="display:inline">
                             <button type="submit" class="btn-secondary btn-sm">Mark submitted</button>
@@ -68,7 +71,7 @@
         </div>
     </div>
     <div class="panel-actions">
-        @if (!Model.Session.TestingCompleted && !Model.Session.Cancelled)
+        @if (!Model.Session.TestingCompleted && !Model.Session.Cancelled && Model.CanEdit)
         {
             <form method="post" asp-page-handler="MarkCompleted">
                 <button type="submit" class="btn-primary">Mark session completed</button>
@@ -139,7 +142,11 @@
                 </td>
                 <td><span class="tested-check @(candidate.Tested ? "on" : "")">@(candidate.Tested ? "✓" : "·")</span></td>
                 <td class="row-actions">
-                    @if (candidate.IsWithdrawn)
+                    @if (!Model.CanEdit)
+                    {
+                        <!-- read-only view (e.g. TeamLead) — no actions -->
+                    }
+                    else if (candidate.IsWithdrawn)
                     {
                         <button class="kebab" disabled style="opacity:.35">⋮</button>
                     }
@@ -192,7 +199,10 @@
             <p class="eyebrow">Volunteer examiners</p>
             <h2>VE roster</h2>
         </div>
-        <button type="button" class="btn-secondary btn-sm" data-open-modal="addVeModal">+ Add VE</button>
+        @if (Model.CanEdit)
+        {
+            <button type="button" class="btn-secondary btn-sm" data-open-modal="addVeModal">+ Add VE</button>
+        }
     </div>
     <div class="roster-list">
         @if (Model.VeRoster.Count == 0)
@@ -203,57 +213,63 @@
         {
             <span class="ve-chip">
                 @ve.CallSign — @ve.Name
-                <form method="post" asp-page-handler="RemoveVe">
-                    <input type="hidden" name="volunteerExaminerId" value="@ve.Id" />
-                    <button type="submit" class="x" title="Remove from roster">✕</button>
-                </form>
+                @if (Model.CanEdit)
+                {
+                    <form method="post" asp-page-handler="RemoveVe">
+                        <input type="hidden" name="volunteerExaminerId" value="@ve.Id" />
+                        <button type="submit" class="x" title="Remove from roster">✕</button>
+                    </form>
+                }
             </span>
         }
     </div>
 </footer>
 
-<!-- Add VE modal -->
-<div class="modal-backdrop" id="addVeModal">
-    <div class="modal">
-        <h3>Add VE to roster</h3>
-        <form method="post" asp-page-handler="AddVe">
-            <div class="field"><label for="veCallSign">Call sign</label><input id="veCallSign" name="callSign" required /></div>
-            <div class="field"><label for="veName">Name</label><input id="veName" name="name" /></div>
-            <div class="modal-actions">
-                <button type="button" class="btn-secondary btn-sm" data-close-modal>Cancel</button>
-                <button type="submit" class="btn-primary btn-sm">Add VE</button>
-            </div>
-        </form>
-    </div>
-</div>
-
-@foreach (var candidate in Model.Candidates.Where(c => !c.IsWithdrawn))
+@if (Model.CanEdit)
 {
-    <div class="modal-backdrop" id="frnModal-@candidate.Id">
+    <!-- Add VE modal -->
+    <div class="modal-backdrop" id="addVeModal">
         <div class="modal">
-            <h3>Add / edit FRN</h3>
-            <form method="post" asp-page-handler="SetFrn">
-                <input type="hidden" name="candidateId" value="@candidate.Id" />
-                <div class="field"><label for="frn-@candidate.Id">FRN</label><input id="frn-@candidate.Id" name="frn" required /></div>
+            <h3>Add VE to roster</h3>
+            <form method="post" asp-page-handler="AddVe">
+                <div class="field"><label for="veCallSign">Call sign</label><input id="veCallSign" name="callSign" required /></div>
+                <div class="field"><label for="veName">Name</label><input id="veName" name="name" /></div>
                 <div class="modal-actions">
                     <button type="button" class="btn-secondary btn-sm" data-close-modal>Cancel</button>
-                    <button type="submit" class="btn-primary btn-sm">Save</button>
+                    <button type="submit" class="btn-primary btn-sm">Add VE</button>
                 </div>
             </form>
         </div>
     </div>
 
-    <div class="modal-backdrop" id="refundModal-@candidate.Id">
-        <div class="modal">
-            <h3>Flag refund requested</h3>
-            <form method="post" asp-page-handler="FlagRefund">
-                <input type="hidden" name="paymentId" value="@candidate.PrimaryPaymentId" />
-                <div class="field"><label for="notes-@candidate.Id">Notes</label><textarea id="notes-@candidate.Id" name="notes" rows="3"></textarea></div>
-                <div class="modal-actions">
-                    <button type="button" class="btn-secondary btn-sm" data-close-modal>Cancel</button>
-                    <button type="submit" class="btn-primary btn-sm">Flag refund</button>
-                </div>
-            </form>
+    @foreach (var candidate in Model.Candidates.Where(c => !c.IsWithdrawn))
+    {
+        <div class="modal-backdrop" id="frnModal-@candidate.Id">
+            <div class="modal">
+                <h3>Add / edit FRN</h3>
+                <form method="post" asp-page-handler="SetFrn">
+                    <input type="hidden" name="candidateId" value="@candidate.Id" />
+                    <div class="field"><label for="frn-@candidate.Id">FRN</label><input id="frn-@candidate.Id" name="frn" required /></div>
+                    <div class="modal-actions">
+                        <button type="button" class="btn-secondary btn-sm" data-close-modal>Cancel</button>
+                        <button type="submit" class="btn-primary btn-sm">Save</button>
+                    </div>
+                </form>
+            </div>
         </div>
-    </div>
+
+        <div class="modal-backdrop" id="refundModal-@candidate.Id">
+            <div class="modal">
+                <h3>Flag refund requested</h3>
+                <form method="post" asp-page-handler="FlagRefund">
+                    <input type="hidden" name="paymentId" value="@candidate.PrimaryPaymentId" />
+                    <div class="field"><label for="notes-@candidate.Id">Notes</label><textarea id="notes-@candidate.Id" name="notes" rows="3"></textarea></div>
+                    <div class="modal-actions">
+                        <button type="button" class="btn-secondary btn-sm" data-close-modal>Cancel</button>
+                        <button type="submit" class="btn-primary btn-sm">Flag refund</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    }
 }

@@ -14,9 +14,11 @@ namespace VeSessionManager.Web.Pages.SessionManager;
 /// design_handoff_vesessionmanager_admin_ui/session-list.html. TeamAdmin is included alongside
 /// SessionManager (not just SystemAdmin/SessionManager, the original 9a placeholder's attribute)
 /// because SessionAccessScope already treats TeamAdmin as an equal-scope superset of SessionManager
-/// for session visibility — see docs/admin-auth.md's role hierarchy.
+/// for session visibility — see docs/admin-auth.md's role hierarchy. TeamLead was added in the
+/// TeamLead-read-only-view fix (see TODO.md) — SessionAccessScope.Scope already resolves a
+/// TeamLead's effective team the same way as everyone else, this page just needed the role added.
 /// </summary>
-[Authorize(Roles = "SystemAdmin,TeamAdmin,SessionManager")]
+[Authorize(Roles = "SystemAdmin,TeamAdmin,SessionManager,TeamLead")]
 public class IndexModel(AppDbContext dbContext, UserManager<User> userManager, SessionAccessScope accessScope, TimeProvider timeProvider) : PageModel
 {
     public IReadOnlyList<SessionRow> Sessions { get; private set; } = [];
@@ -26,7 +28,7 @@ public class IndexModel(AppDbContext dbContext, UserManager<User> userManager, S
     {
         ActiveFilter = filter is "NeedsReview" or "Past" or "All" ? filter : "Upcoming";
 
-        var user = await userManager.GetUserAsync(User) ?? throw new InvalidOperationException("No authenticated user for an [Authorize]d page.");
+        var user = await userManager.GetUserWithManagerAsync(dbContext, User) ?? throw new InvalidOperationException("No authenticated user for an [Authorize]d page.");
         var now = timeProvider.GetUtcNow().UtcDateTime;
 
         IQueryable<Session> query = accessScope.Scope(dbContext.Sessions, user)
