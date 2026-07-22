@@ -47,7 +47,7 @@ of Phases 2–4's actual deliverables.
 - [ ] Create a Microsoft/Entra app registration + set `Authentication:Microsoft:ClientId`/`ClientSecret` the same way
 - [ ] Live test: sign in with a real Google account and a real Microsoft account once credentials are set, confirm the account-linking flow (matches by email to an existing seeded/admin-created `User` row — no self-service registration) works end to end
 - [ ] The four dev test users (`sysadmin`/`teamadmin`/`sessionmanager`/`teamlead@example.com`) only exist in Development via `DevAuthSeeder` — Production needs real `User` rows created by hand (direct DB edit, no admin UI yet) until Phase 9c ships user management
-- [ ] Decide whether Apple Sign-In is ever worth its $99/year Developer account cost — deliberately deferred in Phase 9a, see `docs/admin-auth.md`
+- [x] ~~Decide whether Apple Sign-In is ever worth its $99/year Developer account cost~~ — deliberately deferred in Phase 9a, decided 2026-07-22: **not worth it, skip it.** Username/password + Google + Microsoft is the final sign-in set; see `docs/admin-auth.md`.
 - [ ] Review the password policy set in `Program.cs` (`RequiredLength = 10`, no non-alphanumeric requirement) once real accounts exist — picked as a reasonable default, not something specifically requested
 
 ## Multi-Team Foundation — consolidated per-team setup checklist
@@ -120,5 +120,7 @@ until its columns are set via direct DB edit (no admin UI yet):
 
 ## Deferred (no urgency, revisit when ready)
 
-- [ ] Deployment: no systemd unit file or working GitHub Actions deploy step exists yet (`.github/workflows/build-and-deploy.yml`'s `deploy` job is a stub) — needs the self-hosted-runner/Tailscale-tailnet setup and a systemd unit, matching the NcsScheduler pattern
+- [x] ~~Deployment: no systemd unit file or working GitHub Actions deploy step exists yet~~ — **stale, this was actually finished 2026-07-21** (see `CLAUDE.md`'s "Known Constraints"/"Deploy topology" bullets; this TODO entry just never got updated to match). `.github/workflows/deploy.yml` is a fully working deploy pipeline (GitHub-hosted runner + ephemeral Tailscale join, no self-hosted runner needed), and `docs/deployment.md` documents the systemd unit files and one-time server setup in full.
+  - [ ] **Genuinely still open:** the public domain, `ve.wx0mik.radio`, was decided 2026-07-22 (see `docs/deployment.md`'s "Apache Virtual Host" section) but the Apache vhost + Let's Encrypt cert haven't actually been provisioned on the real server yet. A second domain for a second team is possible later but not needed now — purely cosmetic branding, no code/deploy change required either way.
+  - [ ] **Genuinely still open:** the one-time server-side setup (`vesessionmanager` service account, sudoers file, app/data directories, 5 GitHub repo secrets — all documented step-by-step in `docs/deployment.md`) hasn't been run against the real server yet. Operational work, not code.
 - [ ] Zoom: use a meeting template if one exists, instead of (or in addition to) the manually-specified settings `ZoomMeetingRequest` currently sends — Zoom supports creating a meeting from a saved template (`template_id`) so a team's preferred settings (waiting room, recording, etc.) don't need to be hardcoded here. Needs a `Team`-level "which template" setting once this is picked up.

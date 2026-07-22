@@ -90,12 +90,14 @@ account found, contact your administrator" — accounts are provisioned by an ad
 `DevDataSeeder`/direct DB edit; Phase 9c's admin UI will do this properly), never auto-created from
 an OAuth callback.
 
-## Sign-in methods: username/password + Google + Microsoft, Apple deferred
+## Sign-in methods: username/password + Google + Microsoft — Apple decided against
 
 The spec called for username/password + Google + Microsoft + Apple, but explicitly flagged Apple as
 needing a cost tradeoff confirmed first ($99/year Apple Developer account, `.p8`-key JWT
-client-secret setup). Confirmed with the user: build the first three now, defer Apple — it can be
-added later as its own small fast-follow if ever wanted.
+client-secret setup). Phase 9a (2026-07-21) built the first three and deferred the Apple decision;
+**the user decided 2026-07-22 that Apple Sign-In isn't worth the cost — not just deferred, skipped
+outright.** No code exists for it (username/password + Google + Microsoft is the real, final sign-in
+set), so there's nothing to remove — this is purely closing out the open decision.
 
 Google/Microsoft are registered **conditionally** in `Program.cs` — the same optional-integration
 pattern as every other external credential in this app (Zoom/Discord/Square/Email): no
