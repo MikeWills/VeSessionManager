@@ -24,12 +24,22 @@ namespace VeSessionManager.Core.Payments;
 ///     UnmatchedReviewWindowDays past DateRegisteredUtc -> UnmatchedReviewFlaggedUtc set, logged as
 ///     a WARNING (no admin UI to surface this list yet, so the log is the only visibility).
 ///
-/// All three passes share the same base exclusions per the spec: NotApplicable payments, a
-/// terminal Candidate.ApplicationStatus (Granted/Failed/NotTested), and a Cancelled session.
-/// Unmatched candidates naturally never match the reminder/expiration passes — they have no
-/// ApplicationDateEnteredUtc yet (Phase 5 only sets it once Received) — which is exactly the
-/// "excluded from both triggers, flagged separately instead" behavior the spec calls for, achieved
-/// here as a side effect of the date-null filter rather than a separate status check.
+/// Both money-passes share the same base exclusions per the spec: NotApplicable payments and a
+/// Cancelled session. Terminal Candidate.ApplicationStatus (Granted/Failed/NotTested) is excluded
+/// too, *except* for a Reason=Retest payment — see the retest gotcha below. Unmatched candidates
+/// naturally never match either pass — they have no ApplicationDateEnteredUtc yet (Phase 5 only
+/// sets it once Received) — which is exactly the "excluded from both triggers, flagged separately
+/// instead" behavior the spec calls for, achieved here as a side effect of the date-null filter
+/// rather than a separate status check.
+///
+/// Retest gotcha (see TODO.md's "Retest payment reminders" entry): a retest Payment's owning
+/// Candidate is always ApplicationStatus=Failed (terminal, and permanently so — nothing in this app
+/// ever moves a Candidate off Failed once set) and has no FCC application of its own to gate on, so
+/// ApplicationDateEnteredUtc-based gating can never fire for it. Both passes therefore carry a
+/// second OR-branch, scoped to Reason=Retest + ApplicationStatus=Failed, anchored on
+/// Candidate.ResultMarkedUtc (set by CandidateActionService.MarkFailedAsync) instead of
+/// ApplicationDateEnteredUtc — "the Session Manager marked a result" is the retest's real analogue
+/// of "the FCC application was entered." The InitialExam branch is untouched by this.
 ///
 /// Multi-team: this service now operates on one Team's candidates/payments per RunAsync call —
 /// each team has its own separate SMTP account and EmailSettings/EmailTemplate rows. See
@@ -83,11 +93,15 @@ public class PaymentReminderService(
                         && p.PaymentReminderSentUtc == null
                         && p.Candidate.PiiPurgedUtc == null
                         && p.Candidate.Email != null
-                        && p.Candidate.ApplicationStatus == CandidateApplicationStatus.Received
-                        && p.Candidate.ApplicationDateEnteredUtc != null
-                        && p.Candidate.ApplicationDateEnteredUtc <= threshold
                         && p.Candidate.Session.TeamId == team.Id
-                        && p.Candidate.Session.Status == SessionStatus.Active)
+                        && p.Candidate.Session.Status == SessionStatus.Active
+                        && ((p.Candidate.ApplicationStatus == CandidateApplicationStatus.Received
+                                && p.Candidate.ApplicationDateEnteredUtc != null
+                                && p.Candidate.ApplicationDateEnteredUtc <= threshold)
+                            || (p.Reason == PaymentReason.Retest
+                                && p.Candidate.ApplicationStatus == CandidateApplicationStatus.Failed
+                                && p.Candidate.ResultMarkedUtc != null
+                                && p.Candidate.ResultMarkedUtc <= threshold)))
             .ToListAsync(cancellationToken);
 
         if (payments.Count > 0 && !team.IsEmailConfigured)
@@ -148,11 +162,15 @@ public class PaymentReminderService(
             .Include(p => p.Candidate).ThenInclude(c => c.Session)
             .Where(p => p.Status == PaymentStatus.Unpaid
                         && !p.ExpiredUnpaid
-                        && !CandidateApplicationStatusExtensions.TerminalStatuses.Contains(p.Candidate.ApplicationStatus)
-                        && p.Candidate.ApplicationDateEnteredUtc != null
-                        && p.Candidate.ApplicationDateEnteredUtc <= threshold
                         && p.Candidate.Session.TeamId == team.Id
-                        && p.Candidate.Session.Status == SessionStatus.Active)
+                        && p.Candidate.Session.Status == SessionStatus.Active
+                        && ((!CandidateApplicationStatusExtensions.TerminalStatuses.Contains(p.Candidate.ApplicationStatus)
+                                && p.Candidate.ApplicationDateEnteredUtc != null
+                                && p.Candidate.ApplicationDateEnteredUtc <= threshold)
+                            || (p.Reason == PaymentReason.Retest
+                                && p.Candidate.ApplicationStatus == CandidateApplicationStatus.Failed
+                                && p.Candidate.ResultMarkedUtc != null
+                                && p.Candidate.ResultMarkedUtc <= threshold)))
             .ToListAsync(cancellationToken);
 
         if (payments.Count > 0 && !team.IsEmailConfigured)

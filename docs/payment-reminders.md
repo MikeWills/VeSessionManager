@@ -27,13 +27,31 @@ action" filter and the guard against double-sending/double-flagging on the next 
 All three share the spec's base exclusions: `NotApplicable` payments, a terminal
 `Candidate.ApplicationStatus` (`Granted`/`Failed`/`NotTested`), and a `Cancelled` session. A
 `PiiPurgedUtc`-set candidate is also excluded from every pass (no `Email` left to notify, and
-nothing left worth flagging).
+nothing left worth flagging). **Failed is a carved-out exception for a `Reason=Retest` payment —
+see "Retest payments" below.**
 
 **Why Unmatched candidates never trigger the reminder/expiration passes without a separate status
 check:** `ApplicationDateEnteredUtc` is only ever set once Phase 5 marks a candidate `Received`
 (or later `Granted`) — an `Unmatched` candidate's value is always `null`, so the `!= null` filter
 on those two passes excludes them as a side effect, exactly matching the spec's "excluded from both
 triggers... flag separately instead."
+
+## Retest payments (fixed 2026-07-22, tracked since Phase 6's own spec note)
+
+A retest payment's owning `Candidate` is always `ApplicationStatus = Failed` — `CandidateActionService.
+CreateRetestPaymentAsync` requires `Failed` to create the payment, and nothing in this app ever
+moves a `Candidate` off `Failed` once set (a passed retest shows up as a brand-new `Candidate` row
+from ExamTools, not a mutation of the failed one). `Failed` is terminal, and a `Failed` candidate has
+no FCC application of its own, so the two money-passes' normal `ApplicationDateEnteredUtc` gate can
+never fire for it — a same-session retest fee would otherwise never get a reminder or expiration at
+all, exactly the gap the spec flagged as an open question.
+
+Both passes now carry a second, independent branch for exactly this case: `Payment.Reason ==
+Retest && Candidate.ApplicationStatus == Failed`, anchored on `Candidate.ResultMarkedUtc` (set by
+`CandidateActionService.MarkFailedAsync` the moment the Session Manager marks the result) instead of
+`ApplicationDateEnteredUtc` — "the Session Manager marked a result" is the retest's real analogue of
+"the FCC application was entered," per the spec's own suggested fix. The `InitialExam` branch is
+unchanged.
 
 **Same-run double-fire is expected, not a bug:** if the job is down for a while and a payment is
 first evaluated at, say, 12 days old, both the 5-day reminder and the 10-day expiration notice fire
