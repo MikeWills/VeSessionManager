@@ -16,7 +16,7 @@ endpoint).
 | Web service | `vesessionmanager-web.service` — `ASPNETCORE_URLS=http://localhost:5100` |
 | Reverse proxy | Apache with `ProxyPreserveHost On`, Web only |
 | SSL | Let's Encrypt |
-| Public domain(s) | **Not yet decided** — see "Apache Virtual Host" below |
+| Public domain(s) | `ve.wx0mik.radio` (decided 2026-07-22) — a second domain may be added later for a second team; see "Apache Virtual Host" below |
 
 **Why the DB lives outside the app path:** unlike NcsScheduler (whose SQLite file sits inside
 `/opt/ncsscheduler/`, the same tree its deploy `rsync --delete`s, protected only by an `--exclude`
@@ -213,15 +213,14 @@ sudo systemctl status vesessionmanager-worker vesessionmanager-web
 
 ---
 
-## Apache Virtual Host — TBD
+## Apache Virtual Host
 
-The public domain(s) for the Web admin backend haven't been decided yet (possibly two). This is
-independent of the deploy pipeline above, which only ever talks to `localhost:5100` — nothing here
-blocks on the domain decision. Once decided, add one `<VirtualHost>` block per domain, e.g.:
+The public domain for the Web admin backend is **`ve.wx0mik.radio`** (decided 2026-07-22). This is
+independent of the deploy pipeline above, which only ever talks to `localhost:5100`.
 
 ```apache
 <VirtualHost *:443>
-    ServerName ve.example.com
+    ServerName ve.wx0mik.radio
 
     ProxyPreserveHost On
     ProxyPass / http://localhost:5100/
@@ -232,8 +231,13 @@ blocks on the domain decision. Once decided, add one `<VirtualHost>` block per d
 </VirtualHost>
 ```
 
-If two domains are wanted, add a second `<VirtualHost>` block with a different `ServerName`,
-pointing at the same `localhost:5100` — no code or deploy change needed either way.
+**A second domain for a second team is still an open possibility, not yet needed.** This app is
+multi-tenant behind one deployment — a second `Team` row (see `docs/multi-team.md`) is served by
+this same Worker/Web pair, not a separate deploy — so a second domain here would be purely cosmetic
+branding for that team's own users, not a functional requirement. If/when a second team wants their
+own domain, add a second `<VirtualHost>` block with a different `ServerName`, pointing at the same
+`localhost:5100` — no code or deploy change needed either way, and nothing here blocks on that
+decision.
 
 Enable required modules if not already active:
 
