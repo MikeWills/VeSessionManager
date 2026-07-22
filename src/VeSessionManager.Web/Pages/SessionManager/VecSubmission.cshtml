@@ -43,7 +43,7 @@ else
                     <td>@session.VecName</td>
                     <td><span class="chip @session.ChipClass">@session.ChipLabel</span></td>
                     <td class="row-actions">
-                        @if (!session.Submitted)
+                        @if (!session.Submitted && Model.CanEdit)
                         {
                             <form method="post" asp-page-handler="MarkSubmitted">
                                 <input type="hidden" name="sessionId" value="@session.Id" />

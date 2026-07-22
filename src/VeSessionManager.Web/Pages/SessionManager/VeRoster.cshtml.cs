@@ -14,10 +14,12 @@ namespace VeSessionManager.Web.Pages.SessionManager;
 /// filterable by date range" (VolunteerExaminerReportService.GetSessionCountsAsync), finally given
 /// a UI. Not part of the design handoff's four mocked screens (only Sessions/session-detail were
 /// mocked) — styled with the same design-system components (table/chip/eyebrow) since it's a plain
-/// report, not something that needed its own visual design pass.
+/// report, not something that needed its own visual design pass. TeamLead was added in the
+/// TeamLead-read-only-view fix (see TODO.md) — this page is purely a read-only report already, so
+/// no write-gating was needed, just the role.
 /// </summary>
-[Authorize(Roles = "SystemAdmin,TeamAdmin,SessionManager")]
-public class VeRosterModel(UserManager<User> userManager, SessionAccessScope accessScope, VolunteerExaminerReportService reportService) : PageModel
+[Authorize(Roles = "SystemAdmin,TeamAdmin,SessionManager,TeamLead")]
+public class VeRosterModel(AppDbContext dbContext, UserManager<User> userManager, SessionAccessScope accessScope, VolunteerExaminerReportService reportService) : PageModel
 {
     [BindProperty(SupportsGet = true)]
     public DateTime? From { get; set; }
@@ -30,7 +32,7 @@ public class VeRosterModel(UserManager<User> userManager, SessionAccessScope acc
 
     public async Task OnGetAsync()
     {
-        var user = await userManager.GetUserAsync(User) ?? throw new InvalidOperationException("No authenticated user for an [Authorize]d page.");
+        var user = await userManager.GetUserWithManagerAsync(dbContext, User) ?? throw new InvalidOperationException("No authenticated user for an [Authorize]d page.");
         var teamId = accessScope.GetEffectiveTeamId(user);
         HasTeamContext = teamId is not null;
         if (teamId is int id)

@@ -50,6 +50,22 @@ public class SessionAccessScope
     }
 
     /// <summary>
+    /// Whether the given user may view the given session at all — the read-only counterpart to
+    /// CanEdit, used to gate page *display* (a 403/404 on GET) rather than write actions. Unlike
+    /// CanEdit, TeamLead is not carved out here: a TeamLead assigned to a team can view that team's
+    /// sessions, just never edit them.
+    /// </summary>
+    public bool CanView(User user, Session session)
+    {
+        if (user.Role == UserRole.SystemAdmin)
+        {
+            return true;
+        }
+
+        return GetEffectiveTeamId(user) == session.TeamId;
+    }
+
+    /// <summary>
     /// Whether the given user may edit (not just view) the given session. TeamLead is always
     /// read-only, per spec, pending explicit sign-off on any TeamLead write access.
     /// </summary>
@@ -60,11 +76,6 @@ public class SessionAccessScope
             return false;
         }
 
-        if (user.Role == UserRole.SystemAdmin)
-        {
-            return true;
-        }
-
-        return GetEffectiveTeamId(user) == session.TeamId;
+        return CanView(user, session);
     }
 }

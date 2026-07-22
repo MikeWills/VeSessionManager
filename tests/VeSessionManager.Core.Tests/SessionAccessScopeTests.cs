@@ -170,4 +170,36 @@ public class SessionAccessScopeTests
         Assert.Equal(canEditOwnTeam, Scope.CanEdit(user, ownSession));
         Assert.Equal(canEditOtherTeam, Scope.CanEdit(user, otherSession));
     }
+
+    [Theory]
+    [InlineData(UserRole.SystemAdmin, true, true)]
+    [InlineData(UserRole.TeamAdmin, true, false)]
+    [InlineData(UserRole.SessionManager, true, false)]
+    [InlineData(UserRole.TeamLead, true, false)]
+    public void CanView_UnlikeCanEdit_AllowsTeamLeadToViewTheirOwnTeamsSession(UserRole role, bool canViewOwnTeam, bool canViewOtherTeam)
+    {
+        var ownTeamId = 1;
+        var otherTeamId = 2;
+        var ownSession = new Session { ExamToolsSessionId = "own", Title = "Own", TeamId = ownTeamId, CreatedUtc = Now };
+        var otherSession = new Session { ExamToolsSessionId = "other", Title = "Other", TeamId = otherTeamId, CreatedUtc = Now };
+        var user = new User
+        {
+            Name = "User",
+            Role = role,
+            TeamId = ownTeamId,
+            ManagedByUser = role == UserRole.TeamLead ? new User { Name = "Manager", Role = UserRole.SessionManager, TeamId = ownTeamId } : null
+        };
+
+        Assert.Equal(canViewOwnTeam, Scope.CanView(user, ownSession));
+        Assert.Equal(canViewOtherTeam, Scope.CanView(user, otherSession));
+    }
+
+    [Fact]
+    public void CanView_TeamLeadWithNoManagerAssigned_CannotViewAnySession()
+    {
+        var session = new Session { ExamToolsSessionId = "s", Title = "S", TeamId = 1, CreatedUtc = Now };
+        var unassignedTeamLead = new User { Name = "Team Lead", Role = UserRole.TeamLead };
+
+        Assert.False(Scope.CanView(unassignedTeamLead, session));
+    }
 }
