@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Entities;
+using VeSessionManager.Core.Payments;
 using VeSessionManager.Core.Square;
 using Xunit;
 
@@ -20,6 +21,14 @@ public class SquareWebhookHandlerTests
         public override DateTimeOffset GetUtcNow() => new(utcNow, TimeSpan.Zero);
     }
 
+    private sealed class FakeSquareClient : ISquareClient
+    {
+        public Task<SquarePaymentLink> CreatePaymentLinkAsync(SquareCredentials credentials, SquarePaymentLinkRequest request, CancellationToken cancellationToken) =>
+            throw new NotSupportedException("Not used by SquareWebhookHandlerTests.");
+
+        public Task CompleteOrderAsync(SquareCredentials credentials, string orderId, CancellationToken cancellationToken) => Task.CompletedTask;
+    }
+
     private static AppDbContext CreateContext()
     {
         var options = new DbContextOptionsBuilder<AppDbContext>()
@@ -30,6 +39,7 @@ public class SquareWebhookHandlerTests
 
     private static SquareWebhookHandler CreateHandler(AppDbContext dbContext) => new(
         dbContext,
+        new SquarePaymentMatchingService(dbContext, new FakeSquareClient(), new FixedTimeProvider(Now), NullLogger<SquarePaymentMatchingService>.Instance),
         new FixedTimeProvider(Now),
         NullLogger<SquareWebhookHandler>.Instance);
 
@@ -53,28 +63,32 @@ public class SquareWebhookHandlerTests
         Convert.ToBase64String(new HMACSHA256(Encoding.UTF8.GetBytes(SignatureKey))
             .ComputeHash(Encoding.UTF8.GetBytes(notificationUrl + body)));
 
-    private static string PaymentUpdatedBody(string orderId, string status) => $$"""
-        {
-          "merchant_id": "TEST_MERCHANT",
-          "type": "payment.updated",
-          "event_id": "test-event",
-          "created_at": "2026-07-20T12:00:00Z",
-          "data": {
-            "type": "payment",
-            "id": "test-payment",
-            "object": {
-              "payment": {
-                "id": "test-payment",
-                "order_id": "{{orderId}}",
-                "status": "{{status}}",
-                "amount_money": { "amount": 1500, "currency": "USD" }
+    private static string PaymentUpdatedBody(string orderId, string status, string? buyerEmailAddress = null, string paymentId = "test-payment")
+    {
+        var buyerEmailField = buyerEmailAddress is null ? "" : $""", "buyer_email_address": "{buyerEmailAddress}" """;
+        return $$"""
+            {
+              "merchant_id": "TEST_MERCHANT",
+              "type": "payment.updated",
+              "event_id": "test-event",
+              "created_at": "2026-07-20T12:00:00Z",
+              "data": {
+                "type": "payment",
+                "id": "{{paymentId}}",
+                "object": {
+                  "payment": {
+                    "id": "{{paymentId}}",
+                    "order_id": "{{orderId}}",
+                    "status": "{{status}}",
+                    "amount_money": { "amount": 1500, "currency": "USD" }{{buyerEmailField}}
+                  }
+                }
               }
             }
-          }
-        }
-        """;
+            """;
+    }
 
-    private static async Task<Payment> SeedPaymentAsync(AppDbContext dbContext, Team team, string squareOrderId, PaymentStatus status = PaymentStatus.Unpaid)
+    private static async Task<Payment> SeedPaymentAsync(AppDbContext dbContext, Team team, string? squareOrderId, PaymentStatus status = PaymentStatus.Unpaid, bool sessionTestingCompleted = false)
     {
         var vec = new Vec { Name = "ARRL" };
         var user = new User { Name = "System", Email = "system@localhost", Role = UserRole.SystemAdmin };
@@ -83,14 +97,18 @@ public class SquareWebhookHandlerTests
             Vec = vec, EffectiveDate = Now, FeeCollectionEnabled = true, ExamFeeAmount = 15m,
             CreatedByUser = user, CreatedUtc = Now
         };
+        // Unique per call (SquareWebhookHandlerTests' unmatched-order tests seed more than one
+        // Payment/Session in the same test) — ExamToolsSessionId has a unique index.
+        var uniqueSuffix = Guid.NewGuid().ToString("N")[..8];
         var session = new Session
         {
-            ExamToolsSessionId = "session-1", Title = "July Session", ScheduledStartUtc = Now.AddDays(4),
-            DurationMinutes = 60, Vec = vec, TeamId = team.Id, FeeConfiguration = feeConfiguration, CreatedUtc = Now
+            ExamToolsSessionId = $"session-{uniqueSuffix}", Title = "July Session", ScheduledStartUtc = Now.AddDays(4),
+            DurationMinutes = 60, Vec = vec, TeamId = team.Id, FeeConfiguration = feeConfiguration, CreatedUtc = Now,
+            TestingCompletedUtc = sessionTestingCompleted ? Now.AddHours(-1) : null
         };
         var candidate = new Candidate
         {
-            ExamToolsApplicantId = "applicant-1", Session = session, Name = "Roana Glory",
+            ExamToolsApplicantId = $"applicant-{uniqueSuffix}", Session = session, Name = "Roana Glory",
             Email = "roana@example.com", DateRegisteredUtc = Now
         };
         var payment = new Payment
@@ -122,6 +140,28 @@ public class SquareWebhookHandlerTests
     }
 
     [Fact]
+    public async Task ValidSignature_MatchingOrderId_SessionAlreadyCompleted_AlsoCompletesSquareOrder()
+    {
+        // The session being marked completed before this payment's webhook arrives is the other
+        // half of SquarePaymentMatchingService.CompleteOrderIfEligibleAsync's "either side can
+        // happen second" pairing — SessionActionServiceTests covers the reverse ordering.
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        team.SquareAccessToken = "sandbox-token";
+        await dbContext.SaveChangesAsync();
+        var payment = await SeedPaymentAsync(dbContext, team, "order-123", sessionTestingCompleted: true);
+        var body = PaymentUpdatedBody("order-123", "COMPLETED");
+        var signature = ComputeValidSignature(body);
+
+        var outcome = await CreateHandler(dbContext).ProcessAsync(team.Id, body, signature, CancellationToken.None);
+
+        Assert.Equal(SquareWebhookOutcome.Processed, outcome);
+        var updated = dbContext.Payments.Single(p => p.Id == payment.Id);
+        Assert.Equal(PaymentStatus.Paid, updated.Status);
+        Assert.Equal(Now, updated.SquareOrderCompletedUtc);
+    }
+
+    [Fact]
     public async Task InvalidSignature_ReturnsInvalidSignature_AndDoesNotTouchPayment()
     {
         await using var dbContext = CreateContext();
@@ -149,17 +189,87 @@ public class SquareWebhookHandlerTests
     }
 
     [Fact]
-    public async Task ValidSignature_UnmatchedOrderId_ReturnsIgnored_DoesNotThrow()
+    public async Task ValidSignature_UnmatchedOrderId_NoBuyerEmail_RecordsForManualReview_ReturnsProcessed()
     {
+        // Behavior changed from the original Phase 3 cut: an order this app didn't create used to
+        // just be logged and dropped. Now it's persisted as an UnmatchedSquarePayment for a Session
+        // Manager to resolve — see SquarePaymentMatchingService.
         await using var dbContext = CreateContext();
         var team = await SeedTeamAsync(dbContext);
         await SeedPaymentAsync(dbContext, team, "order-123");
-        var body = PaymentUpdatedBody("order-does-not-exist", "COMPLETED");
+        var body = PaymentUpdatedBody("order-does-not-exist", "COMPLETED", paymentId: "square-payment-1");
         var signature = ComputeValidSignature(body);
 
         var outcome = await CreateHandler(dbContext).ProcessAsync(team.Id, body, signature, CancellationToken.None);
 
-        Assert.Equal(SquareWebhookOutcome.Ignored, outcome);
+        Assert.Equal(SquareWebhookOutcome.Processed, outcome);
+        var recorded = Assert.Single(dbContext.UnmatchedSquarePayments);
+        Assert.Equal(team.Id, recorded.TeamId);
+        Assert.Equal("order-does-not-exist", recorded.SquareOrderId);
+        Assert.Equal("square-payment-1", recorded.SquarePaymentId);
+        Assert.Equal(15m, recorded.AmountUsd);
+        Assert.Null(recorded.BuyerEmailAddress);
+        Assert.Null(recorded.ResolvedUtc);
+    }
+
+    [Fact]
+    public async Task ValidSignature_UnmatchedOrderId_BuyerEmailMatchesExactlyOneCandidateWithUnpaidPayment_AutoMatches()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        var unpaidPayment = await SeedPaymentAsync(dbContext, team, squareOrderId: null, status: PaymentStatus.Unpaid);
+        unpaidPayment.Candidate.Email = "roana@example.com";
+        await dbContext.SaveChangesAsync();
+        var body = PaymentUpdatedBody("order-from-online-page", "COMPLETED", buyerEmailAddress: "roana@example.com");
+        var signature = ComputeValidSignature(body);
+
+        var outcome = await CreateHandler(dbContext).ProcessAsync(team.Id, body, signature, CancellationToken.None);
+
+        Assert.Equal(SquareWebhookOutcome.Processed, outcome);
+        Assert.Empty(dbContext.UnmatchedSquarePayments);
+        var updated = dbContext.Payments.Single();
+        Assert.Equal(PaymentStatus.Paid, updated.Status);
+        Assert.Equal("order-from-online-page", updated.SquarePaymentReferenceId);
+        Assert.Equal(Now, updated.PaidDateUtc);
+    }
+
+    [Fact]
+    public async Task ValidSignature_UnmatchedOrderId_BuyerEmailMatchesMultipleCandidates_RecordsForManualReview()
+    {
+        // Don't guess when it's ambiguous (e.g. a shared family email) — fall through to manual review.
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        var firstPayment = await SeedPaymentAsync(dbContext, team, squareOrderId: null, status: PaymentStatus.Unpaid);
+        firstPayment.Candidate.Email = "family@example.com";
+        var secondPayment = await SeedPaymentAsync(dbContext, team, squareOrderId: null, status: PaymentStatus.Unpaid);
+        secondPayment.Candidate.Email = "family@example.com";
+        await dbContext.SaveChangesAsync();
+        var body = PaymentUpdatedBody("order-ambiguous", "COMPLETED", buyerEmailAddress: "family@example.com");
+        var signature = ComputeValidSignature(body);
+
+        var outcome = await CreateHandler(dbContext).ProcessAsync(team.Id, body, signature, CancellationToken.None);
+
+        Assert.Equal(SquareWebhookOutcome.Processed, outcome);
+        var recorded = Assert.Single(dbContext.UnmatchedSquarePayments);
+        Assert.Equal("family@example.com", recorded.BuyerEmailAddress);
+        Assert.All(dbContext.Payments, p => Assert.Equal(PaymentStatus.Unpaid, p.Status));
+    }
+
+    [Fact]
+    public async Task ValidSignature_UnmatchedOrderId_AlreadyRecorded_DoesNotDuplicate_ReturnsIgnored()
+    {
+        // A redelivery for an order still awaiting manual review must not create a second row.
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        var body = PaymentUpdatedBody("order-does-not-exist", "COMPLETED");
+        var signature = ComputeValidSignature(body);
+
+        var firstOutcome = await CreateHandler(dbContext).ProcessAsync(team.Id, body, signature, CancellationToken.None);
+        var secondOutcome = await CreateHandler(dbContext).ProcessAsync(team.Id, body, signature, CancellationToken.None);
+
+        Assert.Equal(SquareWebhookOutcome.Processed, firstOutcome);
+        Assert.Equal(SquareWebhookOutcome.Ignored, secondOutcome);
+        Assert.Single(dbContext.UnmatchedSquarePayments);
     }
 
     [Fact]

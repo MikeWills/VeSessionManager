@@ -89,3 +89,60 @@ Handler: `VeSessionManager.Core/Square/SquareWebhookHandler.cs`. Endpoint:
   request — no background queue, unlike Square's own suggestion for "heavy processing." Idempotent
   against duplicate webhook deliveries: a `COMPLETED` event for an already-`Paid` `Payment` is a
   no-op (`Ignored`), not an error.
+
+## Unmatched payments (post-launch addition)
+
+Handler: `VeSessionManager.Core/Payments/SquarePaymentMatchingService.cs`. This team also takes
+some payments through a separate Square-hosted page that isn't one of `PaymentGenerationService`'s
+own generated links — a `COMPLETED` event for one of those has no matching `Payment.
+SquarePaymentReferenceId`, so `SquareWebhookHandler` hands it off here instead of discarding it.
+
+- **Email fallback match:** if Square's payload includes `buyer_email_address`
+  ([present on the `Payment` object](https://developer.squareup.com/reference/square/objects/Payment)
+  when checkout collected one), look for exactly one candidate on the team with a
+  case-insensitive-matching `Email` and an outstanding `Unpaid` payment. Zero or multiple matches
+  (e.g. a shared family email) don't guess — fall through to manual review, same as everywhere
+  else in this app that would otherwise have to pick between ambiguous candidates.
+- **Manual review:** no match (or no email in the payload at all) persists an
+  `UnmatchedSquarePayment` row — `TeamId`, `SquareOrderId`, `SquarePaymentId`, `AmountUsd`,
+  `BuyerEmailAddress`, `ReceivedUtc`. Unique `(TeamId, SquareOrderId)` index means a webhook
+  redelivery for a still-unresolved row is a no-op, not a duplicate.
+- A Session Manager resolves it on `/SessionManager/UnmatchedPayments` — the "match to candidate"
+  dropdown is scoped to candidates with an outstanding `Unpaid` payment (the same eligibility rule
+  the auto-match query itself uses), and always applies to that candidate's most recent `Unpaid`
+  `Payment` row (same "one primary payment" simplification the Session Manager candidate-actions
+  UI already uses elsewhere).
+- Both the auto-match and manual-match paths set `Payment.SquarePaymentReferenceId` to the
+  unmatched event's `order_id` and flip `Status` to `Paid` — from that point on, a *second*
+  webhook event for the same `order_id` (e.g. a later `payment.updated` with more detail) matches
+  normally through the primary lookup in `SquareWebhookHandler.ProcessAsync`, no special-casing
+  needed.
+
+## Order completion (post-launch addition)
+
+`ISquareClient.CompleteOrderAsync` (Square [Orders API](https://developer.squareup.com/reference/square/orders-api),
+`Get` then `Update` to `State = Completed`) automates this team's existing manual practice: once a
+Square order is both paid and the session it's for has actually happened, mark it Completed so it
+doesn't stay open in the Square dashboard indefinitely. Idempotent by design — a request against an
+order already `Completed` is a no-op, so a caller doesn't need to guard against calling it twice.
+
+`Payment.SquareOrderCompletedUtc` tracks whether this has happened. `SquarePaymentMatchingService`'s
+private `CompleteOrderIfEligibleAsync` (requires `Status == Paid`, `SquarePaymentReferenceId` set,
+`Session.TestingCompletedUtc` set, and `Team.IsSquareConfigured`) is the one eligibility check,
+called from both directions since either can happen second:
+
+- Right after a payment is matched (`ApplyMatchAsync`, from either the auto-match or manual-match
+  path above) — covers "payment arrives after the session is already marked completed."
+- Right after `SessionActionService.MarkCompletedAsync` flips a session to completed
+  (`CompleteEligibleOrdersForSessionAsync`, scans that session's already-`Paid` payments) — covers
+  "payment arrived and was matched before the session was marked completed."
+- Right after the **normal** webhook match (`SquareWebhookHandler.ProcessAsync`'s primary
+  `order_id` lookup, not the unmatched-order fallback above) marks a `Payment` `Paid` — via
+  `SquarePaymentMatchingService.TryCompleteOrderAsync`, a thin public wrapper around the same
+  private eligibility check. Covers "the session was already marked completed before this payment's
+  own webhook arrived," the mirror image of the previous bullet.
+
+A completion failure is logged (`SquareOrderCompletedUtc` stays null) but never blocks or unwinds
+the `Payment`/session state, which is already correctly saved either way — no scan-based job
+retries a failed completion today, so it needs a human to notice and complete the order manually in
+the Square dashboard if it matters.

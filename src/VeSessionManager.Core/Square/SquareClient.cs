@@ -85,6 +85,45 @@ public sealed class SquareClient : ISquareClient
         };
     }
 
+    public async Task CompleteOrderAsync(SquareCredentials credentials, string orderId, CancellationToken cancellationToken)
+    {
+        var client = GetOrCreateClient(credentials);
+
+        var getResponse = await client.Orders.GetAsync(new GetOrdersRequest { OrderId = orderId }, cancellationToken: cancellationToken);
+        if (getResponse.Errors is not null && getResponse.Errors.Any())
+        {
+            var detail = string.Join("; ", getResponse.Errors.Select(e => $"{e.Category} {e.Code}: {e.Detail}"));
+            throw new InvalidOperationException($"Square rejected the get-order request for order {orderId}: {detail}");
+        }
+
+        var order = getResponse.Order
+            ?? throw new InvalidOperationException($"Square get-order response for order {orderId} had no order and no errors.");
+
+        if (order.State == OrderState.Completed)
+        {
+            // Already completed — a retried call (e.g. a crash between Square's update succeeding
+            // and Payment.SquareOrderCompletedUtc being saved) or completed manually in the Square
+            // dashboard already. Either way, nothing to do.
+            return;
+        }
+
+        var updateResponse = await client.Orders.UpdateAsync(
+            new UpdateOrderRequest
+            {
+                OrderId = orderId,
+                Order = new Order { LocationId = order.LocationId, Version = order.Version, State = OrderState.Completed }
+            },
+            cancellationToken: cancellationToken);
+
+        if (updateResponse.Errors is not null && updateResponse.Errors.Any())
+        {
+            var detail = string.Join("; ", updateResponse.Errors.Select(e => $"{e.Category} {e.Code}: {e.Detail}"));
+            throw new InvalidOperationException($"Square rejected the complete-order request for order {orderId}: {detail}");
+        }
+
+        _logger.LogInformation("Marked Square order {SquareOrderId} Completed for team {TeamId}", orderId, credentials.TeamId);
+    }
+
     private global::Square.SquareClient GetOrCreateClient(SquareCredentials credentials) =>
         _clientsByTeamId.GetOrAdd(credentials.TeamId, _ =>
         {

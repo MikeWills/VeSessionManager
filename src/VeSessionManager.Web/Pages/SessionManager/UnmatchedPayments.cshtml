@@ -1,0 +1,70 @@
+@page
+@model VeSessionManager.Web.Pages.SessionManager.UnmatchedPaymentsModel
+@{
+    ViewData["Title"] = "Unmatched Payments";
+    ViewData["ActiveNav"] = "UnmatchedPayments";
+    Layout = "_AppLayout";
+}
+
+<div class="page-head">
+    <div>
+        <p class="eyebrow">@Model.UnmatchedPayments.Count awaiting match</p>
+        <h1>Unmatched Payments</h1>
+    </div>
+</div>
+
+@if (!Model.HasTeamContext)
+{
+    <p>No team context for this account — unmatched payments are tracked per-team.</p>
+}
+else
+{
+    <p class="session-sub">Square payments that arrived but couldn't be matched to a candidate automatically — usually a payment taken through a separate online payment page rather than one of this app's own generated links. Pick the right candidate below to mark their outstanding payment paid.</p>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Received</th>
+                <th>Amount</th>
+                <th>Buyer email</th>
+                <th>Square order</th>
+                <th>Match to candidate</th>
+            </tr>
+        </thead>
+        <tbody>
+            @if (Model.UnmatchedPayments.Count == 0)
+            {
+                <tr><td colspan="5">Nothing waiting on a match.</td></tr>
+            }
+            @foreach (var payment in Model.UnmatchedPayments)
+            {
+                <tr>
+                    <td>@payment.ReceivedLine</td>
+                    <td>$@payment.AmountUsd.ToString("F2")</td>
+                    <td>@(payment.BuyerEmailAddress ?? "—")</td>
+                    <td><span class="session-sub">@payment.SquareOrderId</span></td>
+                    <td class="row-actions" style="text-align:left;">
+                        @if (Model.MatchableCandidates.Count == 0)
+                        {
+                            <span class="session-sub">No candidates with an outstanding unpaid payment.</span>
+                        }
+                        else
+                        {
+                            <form method="post" asp-page-handler="Match" style="display:flex; gap:8px; align-items:center;">
+                                <input type="hidden" name="unmatchedPaymentId" value="@payment.Id" />
+                                <select name="candidateId" required style="font-family:'IBM Plex Mono',monospace; font-size:13px; padding:6px 8px; border:1px solid var(--line-strong); border-radius:5px; background:var(--surface); color:var(--ink);">
+                                    <option value="">Select candidate…</option>
+                                    @foreach (var candidate in Model.MatchableCandidates)
+                                    {
+                                        <option value="@candidate.Id">@candidate.Name — @candidate.SessionDateLine ($@candidate.AmountOwed.ToString("F2"))</option>
+                                    }
+                                </select>
+                                <button type="submit" class="btn-secondary btn-sm">Match</button>
+                            </form>
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}

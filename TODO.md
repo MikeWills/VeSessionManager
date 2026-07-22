@@ -16,6 +16,7 @@ of Phases 2–4's actual deliverables.
 - [ ] `SquareWebhookNotificationUrl` must be the *team-specific* URL now: `https://<host>/webhooks/square/1` for the seeded team (route changed from `/webhooks/square` to `/webhooks/square/{teamId}` — see `docs/multi-team.md`).
 - [ ] For local testing, tunnel the Web project's webhook endpoint to a public HTTPS URL (e.g. `ngrok http https://localhost:5158`) and register `https://<tunnel-host>/webhooks/square/1` as the Square webhook subscription's notification URL
 - [ ] Live test: let the Worker generate a real payment link for a test candidate, pay it with a Square sandbox test card, confirm the webhook flips `Payment.Status` to `Paid`
+- [ ] Live test the post-launch unmatched-payment-matching feature (`docs/square-payments.md`'s "Unmatched payments"/"Order completion" sections): pay via a separate Square-hosted page (not one of this app's own generated links) with a buyer email matching exactly one candidate's outstanding Unpaid payment, confirm auto-match; repeat with no matching candidate and confirm it shows up on `/SessionManager/UnmatchedPayments` for manual matching; confirm a Paid order's Square Order actually flips to `COMPLETED` in the dashboard once its session is marked completed.
 
 ## Email/SMTP (Phase 4) — not yet live-verified
 
