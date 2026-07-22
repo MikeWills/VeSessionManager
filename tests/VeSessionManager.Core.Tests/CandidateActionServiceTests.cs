@@ -27,6 +27,8 @@ public class CandidateActionServiceTests
             var orderId = $"order-{_nextOrderId++}";
             return Task.FromResult(new SquarePaymentLink { OrderId = orderId, Url = $"https://square.link/u/{orderId}" });
         }
+
+        public Task CompleteOrderAsync(SquareCredentials credentials, string orderId, CancellationToken cancellationToken) => Task.CompletedTask;
     }
 
     private static AppDbContext CreateContext()

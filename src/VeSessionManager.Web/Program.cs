@@ -36,6 +36,9 @@ builder.Services.AddScoped<PaymentGenerationService>();
 // its own key via the /webhooks/square/{teamId} route) — nothing else in this project needs
 // SquareOptions:Environment beyond what SquareClient itself reads above.
 builder.Services.AddScoped<SquareWebhookHandler>();
+// Unmatched-order auto/manual matching + "complete the Square order once paid and the session's
+// done" — used by SquareWebhookHandler above and by SessionActionService below.
+builder.Services.AddScoped<SquarePaymentMatchingService>();
 
 builder.Services.AddScoped<IEmailSender, SmtpEmailSender>();
 builder.Services.AddScoped<EmailTemplateRenderer>();

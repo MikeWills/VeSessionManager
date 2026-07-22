@@ -25,6 +25,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : IdentityUser
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<JobRunHistory> JobRunHistories => Set<JobRunHistory>();
     public DbSet<SystemSettings> SystemSettings => Set<SystemSettings>();
+    public DbSet<UnmatchedSquarePayment> UnmatchedSquarePayments => Set<UnmatchedSquarePayment>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -71,6 +72,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : IdentityUser
             b.HasOne(p => p.Candidate).WithMany(c => c.Payments).HasForeignKey(p => p.CandidateId).OnDelete(DeleteBehavior.Restrict);
             b.HasOne(p => p.RefundRequestedByUser).WithMany().HasForeignKey(p => p.RefundRequestedByUserId).OnDelete(DeleteBehavior.Restrict);
             b.Property(p => p.Amount).HasPrecision(10, 2);
+            b.Property(p => p.SquareAmountPaidUsd).HasPrecision(10, 2);
         });
 
         modelBuilder.Entity<SessionVolunteerExaminer>(b =>
@@ -124,5 +126,17 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : IdentityUser
         // uniqueness so the new team-picker/VEC-picker dropdowns can't end up with duplicates.
         modelBuilder.Entity<Team>(b => b.HasIndex(t => t.Name).IsUnique());
         modelBuilder.Entity<Vec>(b => b.HasIndex(v => v.Name).IsUnique());
+
+        modelBuilder.Entity<UnmatchedSquarePayment>(b =>
+        {
+            // Guards against a duplicate row for the same order id (e.g. a Square webhook
+            // redelivery arriving before a human resolves the first one) — see
+            // SquarePaymentMatchingService.HandleUnmatchedOrderAsync.
+            b.HasIndex(u => new { u.TeamId, u.SquareOrderId }).IsUnique();
+            b.HasOne(u => u.Team).WithMany().HasForeignKey(u => u.TeamId).OnDelete(DeleteBehavior.Restrict);
+            b.HasOne(u => u.ResolvedByUser).WithMany().HasForeignKey(u => u.ResolvedByUserId).OnDelete(DeleteBehavior.Restrict);
+            b.HasOne(u => u.MatchedPayment).WithMany().HasForeignKey(u => u.MatchedPaymentId).OnDelete(DeleteBehavior.Restrict);
+            b.Property(u => u.AmountUsd).HasPrecision(10, 2);
+        });
     }
 }

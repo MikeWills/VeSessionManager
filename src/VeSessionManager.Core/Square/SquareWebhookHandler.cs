@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using Square;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Entities;
+using VeSessionManager.Core.Payments;
 
 namespace VeSessionManager.Core.Square;
 
@@ -32,9 +33,14 @@ public enum SquareWebhookOutcome
 /// (/webhooks/square/{teamId}, see SquareWebhookEndpoint) identifies which team's key to verify
 /// against *before* the payload can even be parsed — the route param, not anything in the body,
 /// is what determines this. See docs/multi-team.md.
+///
+/// A COMPLETED event whose order_id doesn't match any Payment row (e.g. a payment taken through a
+/// separate online payment page, not one this app generated a link for) is handed off to
+/// SquarePaymentMatchingService rather than just logged and discarded — see its own doc comment.
 /// </summary>
 public class SquareWebhookHandler(
     AppDbContext dbContext,
+    SquarePaymentMatchingService paymentMatchingService,
     TimeProvider timeProvider,
     ILogger<SquareWebhookHandler> logger)
 {
@@ -75,7 +81,7 @@ public class SquareWebhookHandler(
         }
 
         var payment = envelope?.Data?.Object?.Payment;
-        if (envelope?.Type != PaymentUpdatedType || payment?.OrderId is null)
+        if (envelope?.Type != PaymentUpdatedType || payment?.OrderId is null || payment.Id is null)
         {
             return SquareWebhookOutcome.Ignored;
         }
@@ -86,12 +92,16 @@ public class SquareWebhookHandler(
         }
 
         var matched = await dbContext.Payments
-            .Include(p => p.Candidate).ThenInclude(c => c.Session)
+            .Include(p => p.Candidate).ThenInclude(c => c.Session).ThenInclude(s => s.Team)
             .FirstOrDefaultAsync(p => p.SquarePaymentReferenceId == payment.OrderId, cancellationToken);
         if (matched is null)
         {
-            logger.LogWarning("Square payment.updated for order {SquareOrderId} did not match any Payment row", payment.OrderId);
-            return SquareWebhookOutcome.Ignored;
+            // Not one of this app's own generated orders — try email-matching against a candidate,
+            // or record it for manual review, rather than silently dropping it.
+            var amountUsd = (payment.AmountMoney?.Amount ?? 0) / 100m;
+            var outcome = await paymentMatchingService.HandleUnmatchedOrderAsync(
+                teamId, payment.OrderId, payment.Id, amountUsd, payment.BuyerEmailAddress, cancellationToken);
+            return outcome == SquareUnmatchedPaymentOutcome.AlreadyRecorded ? SquareWebhookOutcome.Ignored : SquareWebhookOutcome.Processed;
         }
 
         if (matched.Candidate.Session.TeamId != teamId)
@@ -115,6 +125,12 @@ public class SquareWebhookHandler(
         matched.Status = PaymentStatus.Paid;
         matched.PaidDateUtc = timeProvider.GetUtcNow().UtcDateTime;
         await dbContext.SaveChangesAsync(cancellationToken);
+
+        // Covers "the session was already marked completed before this payment's webhook arrived"
+        // — the other direction of SquarePaymentMatchingService.CompleteOrderIfEligibleAsync's
+        // "either side can happen second" pairing (SessionActionService.MarkCompletedAsync covers
+        // the reverse: payment already Paid, session marked completed after).
+        await paymentMatchingService.TryCompleteOrderAsync(matched, cancellationToken);
 
         logger.LogInformation("Payment {PaymentId} marked Paid via Square order {SquareOrderId} (team {TeamId})", matched.Id, payment.OrderId, teamId);
         return SquareWebhookOutcome.Processed;
@@ -141,9 +157,23 @@ public class SquareWebhookHandler(
 
     private class SquareWebhookPayment
     {
+        public string? Id { get; set; }
+
         [JsonPropertyName("order_id")]
         public string? OrderId { get; set; }
 
         public string? Status { get; set; }
+
+        [JsonPropertyName("amount_money")]
+        public SquareWebhookMoney? AmountMoney { get; set; }
+
+        /// <summary>Only present when Square's checkout collected a buyer email — the fallback matching signal for a payment.updated event whose order_id isn't one of this app's own. See https://developer.squareup.com/reference/square/objects/Payment.</summary>
+        [JsonPropertyName("buyer_email_address")]
+        public string? BuyerEmailAddress { get; set; }
+    }
+
+    private class SquareWebhookMoney
+    {
+        public long Amount { get; set; }
     }
 }

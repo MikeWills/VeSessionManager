@@ -343,6 +343,10 @@ public class DetailModel(
                     ? "FRN missing at registration"
                     : "No FRN on file";
 
+        var amountMismatchLine = primaryPayment?.AmountMismatchFlaggedUtc is not null
+            ? $"Paid ${primaryPayment.SquareAmountPaidUsd:F2} against ${primaryPayment.Amount:F2} owed"
+            : null;
+
         return new CandidateRow(
             candidate.Id,
             isWithdrawn,
@@ -354,6 +358,7 @@ public class DetailModel(
             paymentClass,
             paymentLabel,
             primaryPayment?.RefundRequested ?? false,
+            amountMismatchLine,
             candidate.Tested,
             !isWithdrawn && candidate.Email is not null,
             !isWithdrawn && primaryPayment is { Status: PaymentStatus.Unpaid },
@@ -392,6 +397,7 @@ public class DetailModel(
         string PaymentChipClass,
         string PaymentChipLabel,
         bool RefundRequested,
+        string? AmountMismatchLine,
         bool Tested,
         bool CanResendConfirmation,
         bool CanMarkPaid,

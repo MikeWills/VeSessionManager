@@ -48,6 +48,7 @@
             <a asp-page="/SessionManager/Index" class="@(activeNav == "Sessions" ? "active" : "")">Sessions</a>
             <a asp-page="/SessionManager/VeRoster" class="@(activeNav == "VeRoster" ? "active" : "")">VE Roster</a>
             <a asp-page="/SessionManager/VecSubmission" class="@(activeNav == "VecSubmission" ? "active" : "")">VEC Submission</a>
+            <a asp-page="/SessionManager/UnmatchedPayments" class="@(activeNav == "UnmatchedPayments" ? "active" : "")">Unmatched Payments</a>
             @if (currentUser?.Role is UserRole.SystemAdmin or UserRole.TeamAdmin)
             {
                 <div class="nav-group">
@@ -87,7 +88,7 @@
         </nav>
         <div class="who">
             <div class="user-menu">
-                <button type="button" class="kebab"><span class="role">@roleLabel</span>@teamName ▾</button>
+                <button type="button" class="kebab"><span class="role">@roleLabel</span> @teamName ▾</button>
                 <div class="menu">
                     <form method="post" asp-page="/Account/Logout">
                         <button type="submit" class="item">Log out</button>
