@@ -85,6 +85,12 @@
         <p class="eyebrow">@Model.Candidates.Count candidates</p>
         <h2>Candidate roster</h2>
     </div>
+    @if (Model.CanEdit)
+    {
+        <form method="post" asp-page-handler="RefreshCandidates">
+            <button type="submit" class="btn-secondary btn-sm">↻ Refresh candidates</button>
+        </form>
+    }
 </div>
 
 <table>
@@ -154,6 +160,7 @@
                     {
                         <button type="button" class="kebab">⋮</button>
                         <div class="menu">
+                            <button type="button" class="item" data-open-modal="emailHistoryModal-@candidate.Id">Email history</button>
                             <form method="post" asp-page-handler="ResendConfirmation">
                                 <input type="hidden" name="candidateId" value="@candidate.Id" />
                                 <button type="submit" class="item" disabled="@(!candidate.CanResendConfirmation)">Resend confirmation email</button>
@@ -244,6 +251,30 @@
 
     @foreach (var candidate in Model.Candidates.Where(c => !c.IsWithdrawn))
     {
+        <div class="modal-backdrop" id="emailHistoryModal-@candidate.Id">
+            <div class="modal">
+                <h3>Email history — @candidate.DisplayName</h3>
+                @if (candidate.EmailHistory.Count == 0)
+                {
+                    <p class="mono">No emails sent yet.</p>
+                }
+                else
+                {
+                    <table>
+                        <tbody>
+                            @foreach (var line in candidate.EmailHistory)
+                            {
+                                <tr><td>@line.Label</td><td class="mono">@line.SentDisplay</td></tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+                <div class="modal-actions">
+                    <button type="button" class="btn-secondary btn-sm" data-close-modal>Close</button>
+                </div>
+            </div>
+        </div>
+
         <div class="modal-backdrop" id="frnModal-@candidate.Id">
             <div class="modal">
                 <h3>Add / edit FRN</h3>

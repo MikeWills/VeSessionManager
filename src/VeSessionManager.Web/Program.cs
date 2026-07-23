@@ -6,14 +6,20 @@ using VeSessionManager.Core.Admin;
 using VeSessionManager.Core.Authorization;
 using VeSessionManager.Core.CandidateActions;
 using VeSessionManager.Core.Data;
+using VeSessionManager.Core.Discord;
 using VeSessionManager.Core.Email;
 using VeSessionManager.Core.Entities;
+using VeSessionManager.Core.ExamTools;
+using VeSessionManager.Core.Ingestion;
+using VeSessionManager.Core.Jobs;
 using VeSessionManager.Core.Notifications;
 using VeSessionManager.Core.Payments;
+using VeSessionManager.Core.Scheduling;
 using VeSessionManager.Core.Sessions;
 using VeSessionManager.Core.Square;
 using VeSessionManager.Core.VecSubmissions;
 using VeSessionManager.Core.VolunteerExaminers;
+using VeSessionManager.Core.Zoom;
 using VeSessionManager.Web;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -47,6 +53,21 @@ builder.Services.AddScoped<CandidateNotificationService>();
 builder.Services.AddScoped<VecSubmissionService>();
 builder.Services.AddScoped<VecSubmissionReportService>();
 builder.Services.AddScoped<VolunteerExaminerReportService>();
+
+// "Refresh candidates" button on the session detail page (Pages/SessionManager/Detail.cshtml.cs) —
+// same per-team pipeline as the Worker's SessionIngestionJob, run on demand instead of waiting for
+// its next tick. Registrations below mirror VeSessionManager.Worker/Program.cs's own (same
+// singleton-vs-scoped reasoning in each comment there).
+builder.Services.Configure<ExamToolsOptions>(builder.Configuration.GetSection(ExamToolsOptions.SectionName));
+builder.Services.AddSingleton<IExamToolsClient, ExamToolsClient>();
+builder.Services.AddScoped<SessionIngestionService>();
+builder.Services.AddScoped<VolunteerExaminerSyncService>();
+builder.Services.AddSingleton<IZoomClient, ZoomClient>();
+builder.Services.Configure<DiscordOptions>(builder.Configuration.GetSection(DiscordOptions.SectionName));
+builder.Services.AddSingleton<IDiscordEventClient, DiscordEventClient>();
+builder.Services.AddScoped<SessionEventSchedulingService>();
+builder.Services.AddScoped<JobRunHistoryLogger>();
+builder.Services.AddScoped<ManualCandidateRefreshService>();
 
 // Phase 9b: the actual UI-triggered wiring for every Session Manager action — see
 // Pages/SessionManager/Detail.cshtml.cs.
