@@ -1,5 +1,13 @@
 # Candidate Notification Emails (Phase 4)
 
+> **See `docs/email-reference.md` for the current, complete picture** — every template (including
+> the ones added after this doc was written: `PaymentReminder5Day`, `PaymentExpirationNotice`,
+> `FelonyDisclosureInstructions`, `ArrlYouthProgramInstructions`), every placeholder tag, and the
+> full send pipeline including the "Refresh candidates" manual trigger. This doc's SMTP-config
+> section below also predates the multi-team change — `Email:*` is no longer read from
+> appsettings/user-secrets, it's per-`Team` DB fields now (see `docs/multi-team.md`). Kept here for
+> its still-accurate Phase 4 implementation notes (Mailgun setup, editing templates via SQLite).
+
 What `CandidateNotificationService`, `EmailTemplateRenderer`, and `SmtpEmailSender`
 (`VeSessionManager.Core/{Notifications,Email}/`) rely on, and — since this is the one integration
 in the app that's meant to be **hand-authored by a human**, not generic content — how to actually

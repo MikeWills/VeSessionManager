@@ -8,6 +8,7 @@ using VeSessionManager.Core.Authorization;
 using VeSessionManager.Core.CandidateActions;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Entities;
+using VeSessionManager.Core.Ingestion;
 using VeSessionManager.Core.Notifications;
 using VeSessionManager.Core.Sessions;
 using VeSessionManager.Core.VecSubmissions;
@@ -41,7 +42,8 @@ public class DetailModel(
     SessionActionService sessionActionService,
     CandidateNotificationService candidateNotificationService,
     VolunteerExaminerRosterService rosterService,
-    VecSubmissionService vecSubmissionService) : PageModel
+    VecSubmissionService vecSubmissionService,
+    ManualCandidateRefreshService manualRefreshService) : PageModel
 {
     [BindProperty(SupportsGet = true)]
     public int Id { get; set; }
@@ -88,6 +90,27 @@ public class DetailModel(
 
         var result = await vecSubmissionService.MarkSubmittedAsync(Id, auth.Value.User.Id, CancellationToken.None);
         SetStatus(result == VecSubmissionMarkResult.Marked, "Session marked submitted to VEC.", "Session is already marked submitted.");
+        return RedirectToPage(new { id = Id });
+    }
+
+    // Pulls this session's team through the exact same pipeline SessionIngestionJob runs on its own
+    // tick (ingestion, VE roster sync, Zoom/Discord scheduling, Square payment links, confirmation
+    // emails) — see ManualCandidateRefreshService. Runs for the whole team, not just this session,
+    // same as the background job; a Session Manager clicking this on one session's page still wants
+    // any other of their team's sessions caught up too.
+    //
+    // TODO: refine the confirmation-email flow this (and the background job) triggers — audit how
+    // many emails a candidate actually receives and when, across registration/reminder/reschedule
+    // paths, before this button trains Session Managers to expect "one click, one email."
+    public async Task<IActionResult> OnPostRefreshCandidatesAsync()
+    {
+        var auth = await AuthorizeAsync();
+        if (auth is null) return Forbid();
+
+        var result = await manualRefreshService.RunAsync(auth.Value.Session.Team, CancellationToken.None);
+        SetStatus(true,
+            $"Refreshed — {result.CandidatesAdded} new candidate(s), {result.CandidatesUpdated} updated, {result.ConfirmationEmailsSent} confirmation email(s) sent.",
+            "");
         return RedirectToPage(new { id = Id });
     }
 
@@ -223,7 +246,7 @@ public class DetailModel(
             return null;
         }
 
-        var session = await dbContext.Sessions.FirstOrDefaultAsync(s => s.Id == Id);
+        var session = await dbContext.Sessions.Include(s => s.Team).FirstOrDefaultAsync(s => s.Id == Id);
         if (session is null || !accessScope.CanEdit(user, session))
         {
             return null;
@@ -357,6 +380,8 @@ public class DetailModel(
             ? $"Paid ${primaryPayment.SquareAmountPaidUsd:F2} against ${primaryPayment.Amount:F2} owed"
             : null;
 
+        var emailHistory = BuildEmailHistory(candidate);
+
         return new CandidateRow(
             candidate.Id,
             isWithdrawn,
@@ -377,8 +402,51 @@ public class DetailModel(
             !isWithdrawn && primaryPayment is not null,
             !isWithdrawn,
             !isWithdrawn && !candidate.Tested,
-            primaryPayment?.Id);
+            primaryPayment?.Id,
+            emailHistory);
     }
+
+    // Every ...SentUtc field this app tracks, in send order — see docs/email-reference.md.
+    // PaymentExpirationNotice is deliberately excluded: it goes to the Session Manager's own inbox,
+    // not the candidate, so it doesn't belong in "what did this candidate receive."
+    private static IReadOnlyList<EmailHistoryLine> BuildEmailHistory(Candidate candidate)
+    {
+        var lines = new List<EmailHistoryLine>();
+
+        if (candidate.RegistrationConfirmationSentUtc is { } registrationSent)
+        {
+            lines.Add(new EmailHistoryLine("Registration email", FormatSentUtc(registrationSent)));
+        }
+
+        if (candidate.DayBeforeReminderSentUtc is { } dayBeforeSent)
+        {
+            lines.Add(new EmailHistoryLine("Reminder email", FormatSentUtc(dayBeforeSent)));
+        }
+
+        foreach (var payment in candidate.Payments.Where(p => p.PaymentReminderSentUtc is not null).OrderBy(p => p.PaymentReminderSentUtc))
+        {
+            var label = payment.Reason == PaymentReason.Retest ? "Payment reminder email (retest)" : "Payment reminder email";
+            lines.Add(new EmailHistoryLine(label, FormatSentUtc(payment.PaymentReminderSentUtc!.Value)));
+        }
+
+        if (candidate.FelonyDisclosureInstructionsSentUtc is { } felonySent)
+        {
+            lines.Add(new EmailHistoryLine("Felony disclosure instructions email", FormatSentUtc(felonySent)));
+        }
+
+        if (candidate.YouthProgramInstructionsSentUtc is { } youthSent)
+        {
+            lines.Add(new EmailHistoryLine("Youth Program instructions email", FormatSentUtc(youthSent)));
+        }
+
+        return lines;
+    }
+
+    // No stored per-session/per-user timezone anywhere in this app's data model (same reasoning
+    // docs/email-reference.md's SessionDate placeholder documents), so this is the raw UTC instant,
+    // not converted to any local time — labeled so it isn't mistaken for one.
+    private static string FormatSentUtc(DateTime sentUtc) =>
+        sentUtc.ToString("M/d/yyyy h:mm tt", CultureInfo.InvariantCulture) + " UTC";
 
     public record SessionSummary(
         int Id,
@@ -416,7 +484,10 @@ public class DetailModel(
         bool CanFlagRefund,
         bool CanSendYouthProgram,
         bool CanDelete,
-        int? PrimaryPaymentId);
+        int? PrimaryPaymentId,
+        IReadOnlyList<EmailHistoryLine> EmailHistory);
+
+    public record EmailHistoryLine(string Label, string SentDisplay);
 
     public record VeChip(int Id, string CallSign, string Name);
 }

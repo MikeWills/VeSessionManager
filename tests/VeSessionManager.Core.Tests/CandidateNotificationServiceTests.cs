@@ -490,4 +490,57 @@ public class CandidateNotificationServiceTests
         Assert.Contains(sender.SentMessages, m => m.FromAddress == "a@example.org" && m.HtmlBody == "Team A body");
         Assert.Contains(sender.SentMessages, m => m.FromAddress == "b@example.org" && m.HtmlBody == "Team B body");
     }
+
+    // ---- Youth Program instructions ----
+
+    [Fact]
+    public async Task YouthProgramInstructions_VecSupportsIt_SendsAndMarksSent()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        var session = await SeedSessionAsync(dbContext, team, Now.AddDays(4));
+        session.Vec.SupportsYouthProgram = true;
+        dbContext.EmailSettings.Add(new EmailSettings
+        {
+            TeamId = team.Id, FromAddress = "noreply@example.org", ReplyToAddress = "reply@example.org",
+            PrivacyPolicyUrl = "https://example.org/privacy", AdminNotificationEmail = "admin@example.org"
+        });
+        dbContext.EmailTemplates.Add(new EmailTemplate
+        {
+            TeamId = team.Id, Key = "ArrlYouthProgramInstructions", Subject = "Youth Program",
+            Body = "Hi {{CandidateName}} ({{CallSign}})"
+        });
+        var candidate = NewCandidate(session);
+        candidate.CallSign = "KE0ABC";
+        dbContext.Candidates.Add(candidate);
+        await dbContext.SaveChangesAsync();
+
+        var sender = new FakeEmailSender();
+        var result = await CreateService(dbContext, sender).SendYouthProgramInstructionsAsync(candidate.Id, CancellationToken.None);
+
+        Assert.Equal(CandidateEmailSendResult.Sent, result);
+        var message = Assert.Single(sender.SentMessages);
+        Assert.Contains("KE0ABC", message.HtmlBody);
+        // Display-only for the session detail page's "Email history" modal — this action has no
+        // send cap, so unlike RegistrationConfirmationSentUtc this always holds the latest send.
+        Assert.Equal(Now, dbContext.Candidates.Single().YouthProgramInstructionsSentUtc);
+    }
+
+    [Fact]
+    public async Task YouthProgramInstructions_VecDoesNotSupportIt_NotSent()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        var session = await SeedSessionAsync(dbContext, team, Now.AddDays(4));
+        var candidate = NewCandidate(session);
+        dbContext.Candidates.Add(candidate);
+        await dbContext.SaveChangesAsync();
+
+        var sender = new FakeEmailSender();
+        var result = await CreateService(dbContext, sender).SendYouthProgramInstructionsAsync(candidate.Id, CancellationToken.None);
+
+        Assert.Equal(CandidateEmailSendResult.VecDoesNotSupportYouthProgram, result);
+        Assert.Empty(sender.SentMessages);
+        Assert.Null(dbContext.Candidates.Single().YouthProgramInstructionsSentUtc);
+    }
 }

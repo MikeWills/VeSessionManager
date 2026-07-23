@@ -303,6 +303,7 @@ public class CandidateNotificationService(
             return CandidateEmailSendResult.TemplateMissing;
         }
 
+        candidate.YouthProgramInstructionsSentUtc = timeProvider.GetUtcNow().UtcDateTime;
         await dbContext.SaveChangesAsync(cancellationToken);
         logger.LogInformation("Sent ArrlYouthProgramInstructions for candidate {CandidateId}", candidate.Id);
         return CandidateEmailSendResult.Sent;
@@ -351,6 +352,7 @@ public class CandidateNotificationService(
             return CandidateEmailSendResult.TemplateMissing;
         }
 
+        candidate.FelonyDisclosureInstructionsSentUtc = timeProvider.GetUtcNow().UtcDateTime;
         await dbContext.SaveChangesAsync(cancellationToken);
         logger.LogInformation("Sent FelonyDisclosureInstructions for candidate {CandidateId}", candidate.Id);
         return CandidateEmailSendResult.Sent;

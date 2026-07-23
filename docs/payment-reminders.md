@@ -1,5 +1,9 @@
 # Payment Reminder & Expiration Job (Phase 6)
 
+> See `docs/email-reference.md` for these two templates alongside all four of the app's other
+> outbound emails in one place (full placeholder tables, send pipeline, per-team config). This doc
+> remains the right place for the reminder/expiration *logic* detail below (thresholds, exclusions).
+
 What `PaymentReminderService` (`VeSessionManager.Core/Payments/`) does and depends on. No new
 external API — this phase is pure date/status logic over data every earlier phase already
 produces, plus two more `EmailTemplate` rows and one more `EmailSettings` field.

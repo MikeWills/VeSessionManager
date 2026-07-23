@@ -153,7 +153,7 @@ public class SessionActionServiceTests
     {
         await using var dbContext = CreateContext();
         var (_, user, session) = await SeedSessionAsync(dbContext);
-        AddCandidate(dbContext, session, CandidateApplicationStatus.Received, hasFelonyDisclosure: true);
+        var withDisclosure = AddCandidate(dbContext, session, CandidateApplicationStatus.Received, hasFelonyDisclosure: true);
         AddCandidate(dbContext, session, CandidateApplicationStatus.Received, hasFelonyDisclosure: false);
 
         var sender = new FakeEmailSender();
@@ -162,6 +162,10 @@ public class SessionActionServiceTests
         Assert.Equal(1, result.FelonyDisclosureEmailsSent);
         var message = Assert.Single(sender.SentMessages);
         Assert.Contains("additional FCC steps are required", message.HtmlBody);
+        // FelonyDisclosureInstructionsSentUtc is a display-only timestamp (session detail page's
+        // "Email history" modal) — the send itself is guarded by MarkCompletedAsync's own
+        // one-shot "candidates just tested" set, not by this field.
+        Assert.NotNull((await dbContext.Candidates.FindAsync(withDisclosure.Id))!.FelonyDisclosureInstructionsSentUtc);
     }
 
     [Fact]

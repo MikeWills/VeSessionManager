@@ -26,17 +26,17 @@ namespace VeSessionManager.Worker;
 /// failure in another on the ops dashboard, and each later step should still run against whatever
 /// the earlier ones already committed even if it itself later fails.
 ///
-/// **Self-throttling (added after launch):** the whole per-team block above only actually runs when
-/// IngestionScheduleService.IsDueAsync says so — most teams run a session once a day or less, so
-/// hitting ExamTools every tick around the clock has no real upside almost all the time.
-/// SystemSettings.SessionIngestionIntervalMinutes (SystemAdmin-configurable, default 60) is the
-/// "normal" cadence; a team automatically "surges" back to this job's own tick cadence (still
-/// Jobs:SessionIngestionIntervalSeconds, unchanged, default 300s) whenever it has an Active session
-/// starting within the next hour or still in progress, so a last-minute registrant is still caught
-/// quickly without every team being polled aggressively all day, every day. The whole block is
-/// gated together (not just the ExamTools-touching steps) — a deliberate simplicity tradeoff, see
-/// CLAUDE.md. Team.LastIngestionRunUtc is the bookkeeping field this reads/writes; skipped teams get
-/// no JobRunHistory entries that tick.
+/// **Self-throttling (added after launch, surge behavior removed post-launch — see CLAUDE.md):** the
+/// whole per-team block above only actually runs when IngestionScheduleService.IsDue says so — most
+/// teams run a session once a day or less, so hitting ExamTools every tick around the clock has no
+/// real upside almost all the time. SystemSettings.SessionIngestionIntervalMinutes
+/// (SystemAdmin-configurable, default 60) is the flat cadence for every team — this job no longer
+/// "surges" back to its own tick cadence near a session's start time; that's now a user-triggered
+/// "Refresh candidates" button on the session detail page instead (ManualCandidateRefreshService),
+/// so a Session Manager who needs a last-minute registrant pulled in right now doesn't have to wait
+/// on the poll. The whole block is gated together (not just the ExamTools-touching steps) — a
+/// deliberate simplicity tradeoff, see CLAUDE.md. Team.LastIngestionRunUtc is the bookkeeping field
+/// this reads/writes; skipped teams get no JobRunHistory entries that tick.
 /// </summary>
 public class SessionIngestionJob(
     IServiceScopeFactory scopeFactory,
@@ -69,7 +69,7 @@ public class SessionIngestionJob(
             var teams = await dbContext.Teams.ToListAsync(stoppingToken);
             foreach (var team in teams)
             {
-                if (!await scheduleService.IsDueAsync(team, normalIntervalMinutes, stoppingToken))
+                if (!scheduleService.IsDue(team, normalIntervalMinutes, timeProvider.GetUtcNow().UtcDateTime))
                 {
                     continue;
                 }

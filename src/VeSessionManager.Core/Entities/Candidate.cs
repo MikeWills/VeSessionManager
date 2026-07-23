@@ -55,5 +55,11 @@ public class Candidate
     /// <summary>Not in the original shared data model — added in Phase 6. Set once when ApplicationStatus has stayed Unmatched for longer than PaymentReminderOptions.UnmatchedReviewWindowDays past DateRegisteredUtc, per the spec's "flag separately for manual review" note (no FCC application date exists yet to gate a payment reminder on). Surfaced today only via a WARNING log line — Phase 9's admin UI doesn't exist yet to show it anywhere else.</summary>
     public DateTime? UnmatchedReviewFlaggedUtc { get; set; }
 
+    /// <summary>Not in the original shared data model — added post-launch so the session detail page's "Email history" modal can show this send. Unlike RegistrationConfirmationSentUtc/DayBeforeReminderSentUtc this isn't an idempotency guard (the send itself is already one-shot, gated by SessionActionService.MarkCompletedAsync's own "candidates just tested" set) — purely a display timestamp.</summary>
+    public DateTime? FelonyDisclosureInstructionsSentUtc { get; set; }
+
+    /// <summary>See FelonyDisclosureInstructionsSentUtc — same "display timestamp, not a send guard" reasoning. Unlike that one, this action has no cap and can be clicked more than once; this always holds the *most recent* send, not the first.</summary>
+    public DateTime? YouthProgramInstructionsSentUtc { get; set; }
+
     public List<Payment> Payments { get; } = [];
 }
