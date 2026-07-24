@@ -25,7 +25,11 @@
         <div class="section-head" style="margin-top:24px;"><h2>ULS Polling</h2></div>
         <div class="meta-grid">
             <div class="field" style="max-width:200px;">
-                <label for="fccDailyWatcherIntervalHours">Daily watcher interval (hours)</label>
+                <label for="fccDailyWatcherStartHourEt">Daily watcher start hour (ET, 0-23)</label>
+                <input id="fccDailyWatcherStartHourEt" name="fccDailyWatcherStartHourEt" type="number" min="0" max="23" value="@Model.FccDailyWatcherStartHourEt" required />
+            </div>
+            <div class="field" style="max-width:200px;">
+                <label for="fccDailyWatcherIntervalHours">Daily watcher retry interval (hours)</label>
                 <input id="fccDailyWatcherIntervalHours" name="fccDailyWatcherIntervalHours" type="number" min="1" value="@Model.FccDailyWatcherIntervalHours" required />
             </div>
             <div class="field" style="max-width:200px;">
@@ -42,6 +46,7 @@
                 </select>
             </div>
         </div>
+        <p class="session-sub">The daily watcher checks at the start hour (US Eastern) and again every retry interval after that — e.g. 8 + 12 checks at 8am and 8pm ET. FCC publishes each day's file ~5am ET; same-day retries catch a late publish without waiting a full week for that day-name file to come back around.</p>
 
         <div class="section-head" style="margin-top:24px;"><h2>Session Ingestion</h2></div>
         <div class="field" style="max-width:280px;">

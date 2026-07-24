@@ -25,7 +25,8 @@ public class SystemSettingsService(AppDbContext dbContext, TimeProvider timeProv
         settings = new SystemSettings
         {
             Id = SingletonId,
-            FccDailyWatcherIntervalHours = 24,
+            FccDailyWatcherIntervalHours = 12,
+            FccDailyWatcherStartHourEt = 8,
             FccWeeklyCatchupIntervalHours = 24,
             FccWeeklyCatchupDayOfWeek = DayOfWeek.Monday,
             SessionIngestionIntervalMinutes = 60
@@ -38,6 +39,7 @@ public class SystemSettingsService(AppDbContext dbContext, TimeProvider timeProv
     public async Task<SystemSettingsActionResult> UpdateAsync(
         int? piiRetentionWindowDays,
         int fccDailyWatcherIntervalHours,
+        int fccDailyWatcherStartHourEt,
         int fccWeeklyCatchupIntervalHours,
         DayOfWeek fccWeeklyCatchupDayOfWeek,
         int sessionIngestionIntervalMinutes,
@@ -46,7 +48,8 @@ public class SystemSettingsService(AppDbContext dbContext, TimeProvider timeProv
         int userId,
         CancellationToken cancellationToken)
     {
-        if (fccDailyWatcherIntervalHours < 1 || fccWeeklyCatchupIntervalHours < 1 || piiRetentionWindowDays is < 1 || sessionIngestionIntervalMinutes < 1)
+        if (fccDailyWatcherIntervalHours < 1 || fccWeeklyCatchupIntervalHours < 1 || piiRetentionWindowDays is < 1 || sessionIngestionIntervalMinutes < 1
+            || fccDailyWatcherStartHourEt is < 0 or > 23)
         {
             return SystemSettingsActionResult.InvalidValue;
         }
@@ -63,6 +66,7 @@ public class SystemSettingsService(AppDbContext dbContext, TimeProvider timeProv
 
         settings.PiiRetentionWindowDays = piiRetentionWindowDays;
         settings.FccDailyWatcherIntervalHours = fccDailyWatcherIntervalHours;
+        settings.FccDailyWatcherStartHourEt = fccDailyWatcherStartHourEt;
         settings.FccWeeklyCatchupIntervalHours = fccWeeklyCatchupIntervalHours;
         settings.FccWeeklyCatchupDayOfWeek = fccWeeklyCatchupDayOfWeek;
         settings.SessionIngestionIntervalMinutes = sessionIngestionIntervalMinutes;
@@ -80,7 +84,7 @@ public class SystemSettingsService(AppDbContext dbContext, TimeProvider timeProv
             TimestampUtc = now,
             // TestModeOverrideEmail is deliberately omitted from the audit trail — it's an admin's
             // own inbox address, not secret, but no other field here logs a raw email address either.
-            Details = $"PiiRetentionWindowDays={piiRetentionWindowDays?.ToString() ?? "null"}, FccDailyWatcherIntervalHours={fccDailyWatcherIntervalHours}, FccWeeklyCatchupIntervalHours={fccWeeklyCatchupIntervalHours}, FccWeeklyCatchupDayOfWeek={fccWeeklyCatchupDayOfWeek}, SessionIngestionIntervalMinutes={sessionIngestionIntervalMinutes}, TestModeEnabled={testModeEnabled}."
+            Details = $"PiiRetentionWindowDays={piiRetentionWindowDays?.ToString() ?? "null"}, FccDailyWatcherIntervalHours={fccDailyWatcherIntervalHours}, FccDailyWatcherStartHourEt={fccDailyWatcherStartHourEt}, FccWeeklyCatchupIntervalHours={fccWeeklyCatchupIntervalHours}, FccWeeklyCatchupDayOfWeek={fccWeeklyCatchupDayOfWeek}, SessionIngestionIntervalMinutes={sessionIngestionIntervalMinutes}, TestModeEnabled={testModeEnabled}."
         });
 
         await dbContext.SaveChangesAsync(cancellationToken);

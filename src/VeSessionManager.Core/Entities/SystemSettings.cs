@@ -8,7 +8,18 @@ public class SystemSettings
     /// <summary>Phase 10's PII purge job input. Null means "not yet set" per spec.md: no default is assumed, an admin must set this explicitly before the purge job can run.</summary>
     public int? PiiRetentionWindowDays { get; set; }
 
+    /// <summary>
+    /// Hours between FccDailyWatcherJob retry checks, anchored to FccDailyWatcherStartHourEt rather
+    /// than Worker start time (default 8/12 -> checks at 8am and 8pm ET). FCC publishes each day's
+    /// file ~5am ET; a fixed Worker-start-relative timer could tick before that window and then not
+    /// retry until the same day-name file rolls around again next week. See docs/fcc-uls-watcher.md.
+    /// </summary>
     public int FccDailyWatcherIntervalHours { get; set; }
+
+    /// <summary>First daily-watcher check of the day, in US Eastern hour-of-day (0-23). Default 8 —
+    /// comfortably after FCC's ~5am ET publish window with margin for a late publish.</summary>
+    public int FccDailyWatcherStartHourEt { get; set; }
+
     public int FccWeeklyCatchupIntervalHours { get; set; }
     public DayOfWeek FccWeeklyCatchupDayOfWeek { get; set; }
 

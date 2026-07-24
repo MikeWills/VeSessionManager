@@ -54,7 +54,10 @@ public class FccUlsWatcherService(
 
     public Task<FccUlsWatchResult> RunDailyAsync(CancellationToken cancellationToken)
     {
-        var day = timeProvider.GetUtcNow().UtcDateTime.DayOfWeek;
+        // Eastern time, not raw UTC: FccDailyWatcherJob's evening retry (default 8pm ET) lands
+        // at/after UTC midnight for most of the year, which would otherwise resolve to tomorrow's
+        // DayOfWeek and fetch the wrong (not-yet-published) file. See docs/fcc-uls-watcher.md.
+        var day = TimeZoneInfo.ConvertTimeFromUtc(timeProvider.GetUtcNow().UtcDateTime, FccUlsSchedule.EasternTimeZone).DayOfWeek;
         return RunAsync(
             () => fccUlsClient.DownloadDailyApplicationsAsync(day, cancellationToken),
             () => fccUlsClient.DownloadDailyLicensesAsync(day, cancellationToken),

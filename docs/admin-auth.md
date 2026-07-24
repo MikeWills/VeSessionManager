@@ -154,3 +154,34 @@ then a real browser click-through: logged in as `sessionmanager@example.com`, la
 (correctly blocked); logged out, logged in as `teamlead@example.com`, landed on `/TeamLead`. Not
 yet live-tested: Google/Microsoft sign-in (no real OAuth app credentials configured yet — see
 `TODO.md`).
+
+## TeamLead read-only view (added 2026-07-22)
+
+`Pages/TeamLead/Index.cshtml` above was only ever a placeholder — TeamLead had no real view of
+session/candidate data until this addition, tracked as a known gap since Phase 9d's self-audit.
+
+`SessionAccessScope` gained a `CanView` method distinct from the pre-existing `CanEdit` — `CanEdit`
+still returns `false` for TeamLead unconditionally (write actions stay off-limits), but `CanView`
+doesn't carve TeamLead out, so it can gate page *display* separately from write actions.
+`Pages/SessionManager/Index.cshtml.cs`/`Detail.cshtml.cs`/`VeRoster.cshtml.cs`/
+`VecSubmission.cshtml.cs` all added `TeamLead` to `[Authorize]`; `Detail.cshtml.cs`'s page-load gate
+switched from `CanEdit` to `CanView` (it had been reusing the write-gate to decide visibility, which
+is why TeamLead access needed more than just the role attribute), and a new `CanEdit` property on
+the page model lets `Detail.cshtml`/`VecSubmission.cshtml` hide every write control (buttons, forms,
+kebab menu, modals) instead of showing a TeamLead dead controls that would 403. `RoleLandingPages`
+now sends TeamLead to `/SessionManager/Index` like every other role; the old
+`Pages/TeamLead/Index.cshtml` placeholder was deleted.
+
+**A second, previously-latent bug was found and fixed in the same pass:**
+`SessionAccessScope.GetEffectiveTeamId`'s TeamLead branch reads `user.ManagedByUser?.TeamId`, which
+requires that navigation eager-loaded — but `UserManager.GetUserAsync(ClaimsPrincipal)` (the pattern
+every page used) never loads it, and since no page had ever actually exercised the TeamLead path
+before this fix, nothing had caught it: a TeamLead would sign in successfully and silently see zero
+sessions regardless of their real team assignment. Fixed with `CurrentUserLoader.GetUserWithManagerAsync`
+(`VeSessionManager.Web/CurrentUserLoader.cs`), a `UserManager<User>` extension that loads the user
+via `dbContext.Users.Include(u => u.ManagedByUser)` instead — this gotcha is also in CLAUDE.md's
+Known Constraints, since it's easy to reintroduce in a brand-new page.
+
+Live-verified in a real browser: `teamlead@example.com` lands on Sessions, sees only their assigned
+team's data with no write controls anywhere on Sessions/Detail/VE Roster/VEC Submission;
+`sessionmanager@example.com` re-checked as a regression test and still has full edit access.

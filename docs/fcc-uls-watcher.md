@@ -137,8 +137,50 @@ appsettings/user-secrets-bound singletons) would need rework to store credential
 
 ## Jobs
 
-- `FccDailyWatcherJob` — 24-hour `PeriodicTimer` (`Jobs:FccDailyWatcherIntervalHours`), calls
-  `FccUlsWatcherService.RunDailyAsync` every tick.
-- `FccWeeklyCatchupJob` — same `PeriodicTimer` idiom (`Jobs:FccWeeklyCatchupIntervalHours`), but only
-  actually invokes `RunWeeklyCatchupAsync` when the current day matches
-  `Jobs:FccWeeklyCatchupDayOfWeek` (default `Monday`); every other day's tick is a no-op.
+- `FccDailyWatcherJob` — ticks hourly and calls `FccUlsWatcherService.RunDailyAsync` only when the
+  current US Eastern hour matches `SystemSettings.FccDailyWatcherStartHourEt` (default 8) plus every
+  `FccDailyWatcherIntervalHours` (default 12) after that — 8am and 8pm ET by default. See "Same-day
+  retry" below for why this isn't the Worker-start-relative 24h `PeriodicTimer` every other job uses.
+- `FccWeeklyCatchupJob` — same Worker-start-relative 24-hour `PeriodicTimer` idiom as every other job
+  (`Jobs:FccWeeklyCatchupIntervalHours`), but only actually invokes `RunWeeklyCatchupAsync` when the
+  current day matches `Jobs:FccWeeklyCatchupDayOfWeek` (default `Monday`); every other day's tick is
+  a no-op. See "Weekly complete snapshot lags real filings" below — this job's own name overstates
+  how current its data actually is.
+
+## Same-day retry (found 2026-07-23, fixed same day)
+
+Live-verified via a real FRN: every other job in this app uses a 24-hour `PeriodicTimer` starting
+from whenever the Worker process happens to start, on the reasoning that an extra tick is free
+(idempotent) so wall-clock precision doesn't matter. That reasoning breaks down for
+`FccDailyWatcherJob` specifically, because unlike those other jobs, **a missed tick here isn't just
+wasted — it can go unrecovered for a full week**: each day-name file (`a_am_wed.zip`, etc.) is a
+fixed URL that only ever holds that one calendar day's transactions, and isn't revisited by this job
+until the same day-of-week comes back around 7 days later. If the Worker-start-relative tick for a
+given day happened to land before FCC's ~5am ET publish window (or during a maintenance-window gap),
+that day's real filings were invisible to the daily job until the following week.
+
+Fixed by pinning this one job to wall-clock time in US Eastern (`FccUlsSchedule.EasternTimeZone`,
+resolved via the cross-platform IANA id `"America/New_York"`) instead of Worker-start-relative
+ticking: it now ticks hourly and only actually runs at `FccDailyWatcherStartHourEt` (default 8am ET)
+and every `FccDailyWatcherIntervalHours` after that (default 12h → also 8pm ET), giving a same-day
+retry instead of a week's wait if the morning check is too early for that day's publish. Both values
+are admin-editable on `/Admin/SystemSettings`, same as this job's other settings.
+
+This same fix required changing `FccUlsWatcherService.RunDailyAsync`'s day-of-week computation from
+raw UTC to Eastern time too: the new 8pm ET retry lands at/after UTC midnight for most of the year
+(EDT is UTC-4, EST is UTC-5), so a UTC-based `DayOfWeek` would silently compute *tomorrow's* day name
+right when the retry was supposed to be checking *today's* file. Covered by
+`RunDailyAsync_NearUtcMidnight_UsesEasternDayOfWeek_NotUtcDayOfWeek` in
+`FccUlsWatcherServiceTests.cs`.
+
+## Weekly complete snapshot lags real filings (found 2026-07-23)
+
+`FccWeeklyCatchupJob` exists to cover any day the daily job missed, by re-scanning FCC's full
+`complete/a_amat.zip`/`complete/l_amat.zip` snapshot. Live-verified this snapshot is **not** a fast
+backstop: a real application filed and confirmed present in that day's daily file
+(`a_am_wed.zip`) was **still absent from `complete/a_amat.zip` a full day later**, re-downloaded
+fresh (not cached) to confirm. How long the complete snapshot actually takes to absorb a new filing
+is unknown — at least 24+ hours, possibly longer — so a daily-job miss isn't reliably caught by the
+following Monday's weekly catch-up either; the same-day retry above is the real fix for that,
+not this job. Don't treat `FccWeeklyCatchupJob`'s existence as proof missed days are always
+eventually recovered on a predictable schedule.
