@@ -332,6 +332,26 @@ public class FccUlsWatcherServiceTests
     }
 
     [Fact]
+    public async Task RunDailyAsync_NearUtcMidnight_UsesEasternDayOfWeek_NotUtcDayOfWeek()
+    {
+        // 2026-07-23 00:30 UTC is 2026-07-22 20:30 EDT (UTC-4 in July) — still Wednesday evening in
+        // US Eastern, even though the UTC calendar date has already rolled over to Thursday. Found
+        // live 2026-07-23: FccDailyWatcherJob's evening retry (default 8pm ET) lands right around
+        // this boundary for most of the year, so using raw UTC here would silently fetch the wrong
+        // (not-yet-published, or already-superseded-a-week-later) day-name file. See
+        // docs/fcc-uls-watcher.md.
+        await using var dbContext = CreateContext();
+        var lateEveningUtc = new DateTime(2026, 7, 23, 0, 30, 0, DateTimeKind.Utc);
+        var client = new FakeFccUlsClient();
+        var service = new FccUlsWatcherService(dbContext, client, new FixedTimeProvider(lateEveningUtc), NullLogger<FccUlsWatcherService>.Instance);
+
+        await service.RunDailyAsync(CancellationToken.None);
+
+        Assert.Equal([DayOfWeek.Wednesday], client.DailyApplicationCallDays);
+        Assert.Equal([DayOfWeek.Wednesday], client.DailyLicenseCallDays);
+    }
+
+    [Fact]
     public async Task RunWeeklyCatchupAsync_CallsWeeklyEndpoints_NotDaily()
     {
         await using var dbContext = CreateContext();

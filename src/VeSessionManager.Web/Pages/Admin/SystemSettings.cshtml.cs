@@ -13,6 +13,7 @@ public class SystemSettingsModel(UserManager<User> userManager, SystemSettingsSe
 {
     public int? PiiRetentionWindowDays { get; private set; }
     public int FccDailyWatcherIntervalHours { get; private set; }
+    public int FccDailyWatcherStartHourEt { get; private set; }
     public int FccWeeklyCatchupIntervalHours { get; private set; }
     public DayOfWeek FccWeeklyCatchupDayOfWeek { get; private set; }
     public int SessionIngestionIntervalMinutes { get; private set; }
@@ -25,6 +26,7 @@ public class SystemSettingsModel(UserManager<User> userManager, SystemSettingsSe
         var settings = await systemSettingsService.GetAsync(CancellationToken.None);
         PiiRetentionWindowDays = settings.PiiRetentionWindowDays;
         FccDailyWatcherIntervalHours = settings.FccDailyWatcherIntervalHours;
+        FccDailyWatcherStartHourEt = settings.FccDailyWatcherStartHourEt;
         FccWeeklyCatchupIntervalHours = settings.FccWeeklyCatchupIntervalHours;
         FccWeeklyCatchupDayOfWeek = settings.FccWeeklyCatchupDayOfWeek;
         SessionIngestionIntervalMinutes = settings.SessionIngestionIntervalMinutes;
@@ -34,8 +36,8 @@ public class SystemSettingsModel(UserManager<User> userManager, SystemSettingsSe
     }
 
     public async Task<IActionResult> OnPostAsync(
-        int? piiRetentionWindowDays, int fccDailyWatcherIntervalHours, int fccWeeklyCatchupIntervalHours, DayOfWeek fccWeeklyCatchupDayOfWeek,
-        int sessionIngestionIntervalMinutes, bool testModeEnabled, string? testModeOverrideEmail)
+        int? piiRetentionWindowDays, int fccDailyWatcherIntervalHours, int fccDailyWatcherStartHourEt, int fccWeeklyCatchupIntervalHours,
+        DayOfWeek fccWeeklyCatchupDayOfWeek, int sessionIngestionIntervalMinutes, bool testModeEnabled, string? testModeOverrideEmail)
     {
         var user = await userManager.GetUserAsync(User);
         if (user is null)
@@ -44,13 +46,13 @@ public class SystemSettingsModel(UserManager<User> userManager, SystemSettingsSe
         }
 
         var result = await systemSettingsService.UpdateAsync(
-            piiRetentionWindowDays, fccDailyWatcherIntervalHours, fccWeeklyCatchupIntervalHours, fccWeeklyCatchupDayOfWeek,
+            piiRetentionWindowDays, fccDailyWatcherIntervalHours, fccDailyWatcherStartHourEt, fccWeeklyCatchupIntervalHours, fccWeeklyCatchupDayOfWeek,
             sessionIngestionIntervalMinutes, testModeEnabled, testModeOverrideEmail, user.Id, CancellationToken.None);
         TempData[result == SystemSettingsActionResult.Success ? "StatusMessage" : "ErrorMessage"] = result switch
         {
             SystemSettingsActionResult.Success => testModeEnabled ? "System settings updated. Test mode is ON — no real emails will be sent." : "System settings updated.",
             SystemSettingsActionResult.TestModeMissingOverrideEmail => "Could not save — an override email address is required to turn test mode on.",
-            _ => "Could not save — intervals must be at least 1 minute (session ingestion) or 1 hour (ULS polling), and retention window (if set) at least 1 day."
+            _ => "Could not save — intervals must be at least 1 minute (session ingestion) or 1 hour (ULS polling), the daily watcher start hour must be 0-23, and retention window (if set) at least 1 day."
         };
 
         return RedirectToPage();
