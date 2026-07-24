@@ -11,8 +11,8 @@ This is a Visual Studio project that is designed to automate many of the mundane
 
 Cross-cutting conventions that apply to **all future work** in this codebase, not tied to one
 phase — follow these by default instead of re-deriving them. (Contrast with Known Constraints
-below, which is "this will silently break if you don't know X," and the Change Log, which is
-"here's what was built and why, mostly historical.")
+below, which is "this will silently break if you don't know X," and the Change Log/`CHANGELOG.md`,
+which is "here's what was built and why, mostly historical.")
 
 - **Optional-integration pattern** (established across Phases 2-4, follow for every future external
   API client): ExamTools is the one hard requirement (fails loudly — ingestion is what everything
@@ -66,9 +66,16 @@ below, which is "this will silently break if you don't know X," and the Change L
 
 ## Change Log
 
-One-line-or-two pointer per feature/phase, newest first within reason — full design rationale lives
-in the linked `/docs/*.md` file, not here. See "Documentation Structure" below for the policy this
-follows.
+One-line-or-two pointer per feature, newest first — full design rationale lives in the linked
+`/docs/*.md` file, not here. See "Documentation Structure" below for the policy this follows.
+
+**Kept here vs. `CHANGELOG.md`:** this section is a bounded, recent-only window (rule of thumb: cap
+around 10 entries), since CLAUDE.md is read in full on every conversation turn and this is the one
+section that would otherwise grow forever. Phase-numbered work (Phase 0-10) is never listed here at
+all — it's already one-line-summarized in "Current State" above, so a separate Change Log pointer
+would be pure duplication — and goes straight to `CHANGELOG.md` instead. Non-phase entries (fixes,
+redesigns, hardening passes) start here and move to `CHANGELOG.md` once the section is at/over the
+cap and a newer entry needs to be added; oldest goes first.
 
 - **FCC daily watcher same-day retry (2026-07-23).** `docs/fcc-uls-watcher.md`'s "Same-day retry" and
   "Weekly complete snapshot lags real filings" sections — found via a live FRN re-lookup that a
@@ -93,39 +100,11 @@ follows.
   smaller fixes. `docs/security-hardening-2026-07-21.md` — the shared helpers it introduced are in
   Established Patterns above.
 - **Deployment-wide email test mode (2026-07-21).** `docs/test-mode.md`.
-- **Public privacy page + Phase 9 polish (2026-07-21).** Built `/Privacy` (dynamic PII retention
-  window) and restyled the scaffold-default auth pages to match the design system — no dedicated
-  doc; see git history for `Pages/Privacy.cshtml`/`Pages/Account/*` if detail is ever needed.
-- **PII purge job (Phase 10, final phase, 2026-07-21).** `docs/pii-purge.md` — global, not per-team;
-  two independent triggers (passed/failed) share one purge action.
-- **Admin config screens (Phase 9c, 2026-07-21).** `docs/admin-config-screens.md` — one shared
-  `Pages/Admin/` set for SystemAdmin+TeamAdmin, new `SystemSettings` singleton row and
-  `AdminAccessScope`.
-- **Session Manager candidate actions (Phase 9b, 2026-07-21).** `docs/session-manager-ui.md` —
-  business logic in three Core services, pages are thin wiring.
-- **Admin backend auth (Phase 9a, 2026-07-21).** `docs/admin-auth.md` — four-role model
-  (SystemAdmin/TeamAdmin/SessionManager/TeamLead), `SessionAccessScope`, Identity migration.
-- **VEC submission tracker (Phase 8, 2026-07-21, renamed from "ARRL submission tracker").**
-  `docs/vec-submission-tracker.md` — no background job, pure logic + `AuditLog`.
-- **VE tracking (Phase 7, 2026-07-20).** `docs/ve-tracking.md` — fully automatic via ExamTools'
-  `full.json` export; the one scan-based service that actively reconciles removals, not just
-  additions.
-- **Multi-team foundation + fast-follow (2026-07-20).** `docs/multi-team.md` — the per-team client
-  pattern every future external API client should follow (see Established Patterns). Every new
-  `Team` credential column is left `NULL` by its own migration; see `TODO.md`'s per-team setup
-  checklist.
-- **Payment reminders/expiration (Phase 6).** `docs/payment-reminders.md`.
-- **FCC ULS watcher (Phase 5).** `docs/fcc-uls-watcher.md`, including the live-verified field-position
-  gotcha (see Known Constraints).
-- **Candidate notification emails (Phase 4).** `docs/email-reference.md` is the current full
-  reference (recipient/trigger/placeholders for all six templates that exist today);
-  `docs/email-notifications.md` has the original Phase 4 setup notes.
-- **Square payment links + webhook (Phase 3).** `docs/square-payments.md`.
-- **Zoom + Discord event scheduling (Phase 2).** `docs/zoom-discord-scheduling.md` — Discord's bot
-  token is uniquely shared across all teams (only the target Guild varies per team), an explicit
-  exception to the per-team pattern, since one bot identity can legitimately serve multiple guilds.
-- **ExamTools session/candidate ingestion (Phase 1).** `docs/examtools-api.md`; runnable requests in
-  `api-examples/` (Bruno).
+
+Everything through Phase 0-10's initial build (ExamTools ingestion, Zoom/Discord, Square, email
+notifications, FCC ULS watcher, payment reminders, VE tracking, VEC submission tracker, admin
+auth/config/candidate-actions, PII purge) plus the public privacy page has aged out to
+**`CHANGELOG.md`** — same one-line-pointer format, just the overflow.
 
 ## Environment
 
@@ -267,11 +246,12 @@ Keep `README.md` high-level; route deeper technical content to the right file so
 | `CONTRIBUTING.md` | The "workshop manual" | Local dev setup, running tests, code style, branching strategy |
 | `ARCHITECTURE.md` | System overview | How components interact, high-level technical design |
 | `SECURITY.md` | Security policy | How to report a vulnerability, security handling policy |
+| `CHANGELOG.md` | The "attic" | Full history of one-line Change Log pointer entries, newest first — overflow for CLAUDE.md's own Change Log once it ages past the recent-only cap (see that section) |
 | `/docs` folder | The "blueprint room" | Deep technical detail: architecture decisions, API specs, DB schemas, troubleshooting playbooks — as individual `.md` files (e.g. `docs/deployment.md`) |
 
 - Use a GitHub Wiki or GitHub Pages only if documentation needs to be browsable outside the repo (e.g. for external stakeholders) — not needed for internal City projects by default
 - Ownership, contacts, and escalation info belong in the README, not in this file
-- **CLAUDE.md is read in full on every conversation turn, so its size is a permanent, compounding cost — write new content directly into `/docs` and leave only a pointer in CLAUDE.md's Change Log.** Three kinds of content earn a permanent home in CLAUDE.md itself, dense prose and all: (1) standing rules/conventions that shape every future decision (the sections below this one), (2) Established Patterns — cross-cutting conventions, not tied to one phase, (3) Known Constraints — short, sharp "this will silently break if you don't know X" gotchas. Everything else — the narrative of what was built, why, and what was learned building it — belongs in `/docs`, written there at the time, not accumulated here and split out later once the file gets unwieldy.
+- **CLAUDE.md is read in full on every conversation turn, so its size is a permanent, compounding cost — write new content directly into `/docs` and leave only a pointer in CLAUDE.md's Change Log, and only for as long as that entry stays within the Change Log's own recent-only cap before moving to `CHANGELOG.md`.** Three kinds of content earn a permanent home in CLAUDE.md itself, dense prose and all: (1) standing rules/conventions that shape every future decision (the sections below this one), (2) Established Patterns — cross-cutting conventions, not tied to one phase, (3) Known Constraints — short, sharp "this will silently break if you don't know X" gotchas. Everything else — the narrative of what was built, why, and what was learned building it — belongs in `/docs`, written there at the time, not accumulated here and split out later once the file gets unwieldy. A completed phase's Change Log pointer never even starts in CLAUDE.md at all if it's already summarized in "Current State" — straight to `CHANGELOG.md`.
 
 ## Instructions for Claude
 
@@ -281,7 +261,7 @@ Keep `README.md` high-level; route deeper technical content to the right file so
 - Flag any assumptions explicitly rather than silently filling gaps
 - For deployment/CI tasks, default to GitHub Actions targeting Linux (systemd deploy, matching the NcsScheduler pattern), GitHub Flow branching; deploy trigger is on tag push only, not every commit (see Phase 0 in docs/spec.md)
 - Maintain repo documentation per the Documentation Structure section above — route content to the right file rather than piling everything into README
-- **When a feature/phase is done, write its full design rationale into a new or existing `/docs/<topic>.md` file, and add only a 1-2 sentence pointer to CLAUDE.md's Change Log** — see Documentation Structure above. Reserve CLAUDE.md's own prose for Established Patterns (truly cross-cutting) and Known Constraints (gotchas) — don't let a Change Log entry grow into a full narrative the way earlier entries did before this policy existed.
+- **When a feature/phase is done, write its full design rationale into a new or existing `/docs/<topic>.md` file, and add only a 1-2 sentence pointer to CLAUDE.md's Change Log** — see Documentation Structure above. Reserve CLAUDE.md's own prose for Established Patterns (truly cross-cutting) and Known Constraints (gotchas) — don't let a Change Log entry grow into a full narrative the way earlier entries did before this policy existed. If it's a numbered spec phase already covered by "Current State," skip CLAUDE.md's Change Log entirely and add the pointer straight to `CHANGELOG.md`. If the Change Log is at/over its recent-only cap (~10 entries) when adding a new one, move the oldest entry there first.
 
 ## Notes
 
