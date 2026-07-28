@@ -113,9 +113,12 @@ public class PiiPurgeServiceTests
     [Fact]
     public async Task TriggerA_ExactlyAtThreshold_Purges()
     {
+        // Session date set before the grant date so this models a genuine new grant (the common
+        // case), not the "already licensed before this session" upgrade shape covered separately below.
         await using var dbContext = CreateContext();
         await SeedSystemSettingsAsync(dbContext, piiRetentionWindowDays: 30);
-        var (candidate, payment) = await SeedCandidateAsync(dbContext, CandidateApplicationStatus.Granted, licenseGrantDateUtc: Now.Date.AddDays(-30));
+        var (candidate, payment) = await SeedCandidateAsync(dbContext, CandidateApplicationStatus.Granted,
+            licenseGrantDateUtc: Now.Date.AddDays(-30), sessionScheduledStartUtc: Now.Date.AddDays(-35));
 
         var result = await CreateService(dbContext).RunAsync(CancellationToken.None);
 
@@ -136,7 +139,8 @@ public class PiiPurgeServiceTests
     {
         await using var dbContext = CreateContext();
         await SeedSystemSettingsAsync(dbContext, piiRetentionWindowDays: 30);
-        var (candidate, _) = await SeedCandidateAsync(dbContext, CandidateApplicationStatus.Granted, licenseGrantDateUtc: Now.Date.AddDays(-29));
+        var (candidate, _) = await SeedCandidateAsync(dbContext, CandidateApplicationStatus.Granted,
+            licenseGrantDateUtc: Now.Date.AddDays(-29), sessionScheduledStartUtc: Now.Date.AddDays(-35));
 
         var result = await CreateService(dbContext).RunAsync(CancellationToken.None);
 
@@ -149,7 +153,8 @@ public class PiiPurgeServiceTests
     {
         await using var dbContext = CreateContext();
         await SeedSystemSettingsAsync(dbContext, piiRetentionWindowDays: 30);
-        var (candidate, _) = await SeedCandidateAsync(dbContext, CandidateApplicationStatus.Granted, licenseGrantDateUtc: Now.Date.AddDays(-31));
+        var (candidate, _) = await SeedCandidateAsync(dbContext, CandidateApplicationStatus.Granted,
+            licenseGrantDateUtc: Now.Date.AddDays(-31), sessionScheduledStartUtc: Now.Date.AddDays(-35));
 
         var result = await CreateService(dbContext).RunAsync(CancellationToken.None);
 
@@ -162,11 +167,44 @@ public class PiiPurgeServiceTests
     {
         await using var dbContext = CreateContext();
         await SeedSystemSettingsAsync(dbContext, piiRetentionWindowDays: 30);
-        await SeedCandidateAsync(dbContext, CandidateApplicationStatus.Granted, licenseGrantDateUtc: Now.Date.AddDays(-90), piiPurgedUtc: Now.AddDays(-1));
+        await SeedCandidateAsync(dbContext, CandidateApplicationStatus.Granted,
+            licenseGrantDateUtc: Now.Date.AddDays(-90), sessionScheduledStartUtc: Now.Date.AddDays(-95), piiPurgedUtc: Now.AddDays(-1));
 
         var result = await CreateService(dbContext).RunAsync(CancellationToken.None);
 
         Assert.Equal(0, result.GrantedCandidatesPurged);
+    }
+
+    [Fact]
+    public async Task TriggerA_LicenseGrantPredatesSession_AnchorsOnSessionDate_NotPurgedEarly()
+    {
+        // Found live 2026-07-28 (real HRCC data): an existing licensee re-testing (upgrade or repeat)
+        // gets matched against their own already-old license — FCC's Grant Date doesn't change on a
+        // class upgrade. Without the session-date floor, this candidate's PII would purge almost
+        // immediately after a real, current session just because their original grant is old.
+        await using var dbContext = CreateContext();
+        await SeedSystemSettingsAsync(dbContext, piiRetentionWindowDays: 30);
+        var (candidate, _) = await SeedCandidateAsync(dbContext, CandidateApplicationStatus.Granted,
+            licenseGrantDateUtc: Now.Date.AddDays(-90), sessionScheduledStartUtc: Now.Date.AddDays(-3));
+
+        var result = await CreateService(dbContext).RunAsync(CancellationToken.None);
+
+        Assert.Equal(0, result.GrantedCandidatesPurged);
+        Assert.NotNull((await dbContext.Candidates.SingleAsync(c => c.Id == candidate.Id)).Name);
+    }
+
+    [Fact]
+    public async Task TriggerA_LicenseGrantPredatesSession_PurgesOnceSessionDateThresholdPassed()
+    {
+        await using var dbContext = CreateContext();
+        await SeedSystemSettingsAsync(dbContext, piiRetentionWindowDays: 30);
+        var (candidate, _) = await SeedCandidateAsync(dbContext, CandidateApplicationStatus.Granted,
+            licenseGrantDateUtc: Now.Date.AddDays(-90), sessionScheduledStartUtc: Now.Date.AddDays(-30));
+
+        var result = await CreateService(dbContext).RunAsync(CancellationToken.None);
+
+        Assert.Equal(1, result.GrantedCandidatesPurged);
+        Assert.Null((await dbContext.Candidates.SingleAsync(c => c.Id == candidate.Id)).Name);
     }
 
     // ---- Trigger B: failed candidates ----
@@ -275,7 +313,8 @@ public class PiiPurgeServiceTests
     {
         await using var dbContext = CreateContext();
         await SeedSystemSettingsAsync(dbContext, piiRetentionWindowDays: 30);
-        var (candidate, _) = await SeedCandidateAsync(dbContext, CandidateApplicationStatus.Granted, licenseGrantDateUtc: Now.Date.AddDays(-31));
+        var (candidate, _) = await SeedCandidateAsync(dbContext, CandidateApplicationStatus.Granted,
+            licenseGrantDateUtc: Now.Date.AddDays(-31), sessionScheduledStartUtc: Now.Date.AddDays(-35));
 
         await CreateService(dbContext).RunAsync(CancellationToken.None);
 
@@ -283,5 +322,21 @@ public class PiiPurgeServiceTests
         Assert.Null(audit.UserId);
         Assert.Equal("CandidatePiiPurged", audit.Action);
         Assert.Contains("Trigger A", audit.Details);
+    }
+
+    [Fact]
+    public async Task Purge_LicenseGrantPredatesSession_AuditLogNamesSessionDateAnchor()
+    {
+        await using var dbContext = CreateContext();
+        await SeedSystemSettingsAsync(dbContext, piiRetentionWindowDays: 30);
+        var (candidate, _) = await SeedCandidateAsync(dbContext, CandidateApplicationStatus.Granted,
+            licenseGrantDateUtc: Now.Date.AddDays(-90), sessionScheduledStartUtc: Now.Date.AddDays(-30));
+
+        await CreateService(dbContext).RunAsync(CancellationToken.None);
+
+        var audit = await dbContext.AuditLogs.SingleAsync(a => a.EntityId == candidate.Id && a.EntityType == nameof(Candidate));
+        Assert.Contains("Trigger A", audit.Details);
+        Assert.Contains("pre-existing license", audit.Details);
+        Assert.Contains("anchored on session date", audit.Details);
     }
 }

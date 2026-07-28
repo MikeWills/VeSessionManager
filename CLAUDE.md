@@ -77,8 +77,6 @@ would be pure duplication — and goes straight to `CHANGELOG.md` instead. Non-p
 redesigns, hardening passes) start here and move to `CHANGELOG.md` once the section is at/over the
 cap and a newer entry needs to be added; oldest goes first.
 
-- **FCC ULS stale/dismissed-application matching fix (2026-07-22).** `docs/fcc-uls-watcher.md`, found
-  via a live real-FRN lookup.
 - **Payment reminders retest-gating fix (2026-07-22).** `docs/payment-reminders.md`'s "Retest
   payments" section — a same-session retest fee previously never got a reminder or expiration.
 - **Post-launch security/quality hardening pass (2026-07-21).** A real cross-tenant IDOR plus five
@@ -105,6 +103,14 @@ cap and a newer entry needs to be added; oldest goes first.
   to ~30 days past its start (previously never ingested at all), gated by the new
   `Session.HasEnded` helper so `SessionEventSchedulingService`/`CandidateNotificationService` don't
   try to live-schedule or email a session that already happened.
+- **FCC upgrade-exam PII purge anchor fix (2026-07-28).** `docs/fcc-uls-watcher.md`'s "Upgrade exam
+  handling" section — found live running the FCC daily watcher against real HRCC data (William
+  Denney/Jason Pelowitz, both re-detected against an already-old license). FCC's Grant Date doesn't
+  change on a class upgrade, so `PiiPurgeService`'s retention Trigger A now anchors on the later of
+  `LicenseGrantDateUtc`/`Session.ScheduledStartUtc` (new `Candidate.LicenseGrantPredatesSession()`
+  helper) instead of the bare grant date, which would otherwise purge an upgrade/repeat candidate's
+  PII almost immediately after their real, current session. No schema change — computed from data
+  already stored. Also surfaced on the applicant detail page.
 - **Applicant detail page (2026-07-28).** `docs/applicant-detail.md` — a new per-Candidate.Id page
   (never keyed by FRN, since one person can test with the team more than once) with full action
   parity to the session Detail page's candidate row, every payment's link surfaced (closing a

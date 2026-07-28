@@ -12,7 +12,12 @@ namespace VeSessionManager.Core.PiiPurge;
 /// SystemSettings.PiiRetentionWindowDays is a single deployment-wide value (see docs/pii-purge.md),
 /// unlike every Team-scoped credential/setting from Phases 2-4/6.
 ///
-///   - Trigger A (passed): LicenseGrantDateUtc is set and at least RetentionWindowDays days old.
+///   - Trigger A (passed): LicenseGrantDateUtc is set and at least RetentionWindowDays days old,
+///     anchored on the LATER of LicenseGrantDateUtc/Session.ScheduledStartUtc (not the bare grant
+///     date) — an existing licensee re-testing (upgrade or repeat) re-matches their own already-old
+///     license, and FCC's Grant Date doesn't change on a class upgrade, so the bare date would purge
+///     them almost immediately after a real, current session. See
+///     Candidate.LicenseGrantPredatesSession/docs/fcc-uls-watcher.md, found live 2026-07-28.
 ///   - Trigger B (failed): ApplicationStatus = Failed and the session's ScheduledStartUtc is at
 ///     least RetentionWindowDays days old — there's no FCC process to track once a Session Manager
 ///     has recorded a failing result, so the exam date itself is the anchor instead of a license date.
@@ -65,17 +70,29 @@ public class PiiPurgeService(
 
     private async Task<int> PurgeGrantedCandidatesAsync(DateTime cutoffExclusive, int retentionWindowDays, DateTime now, CancellationToken cancellationToken)
     {
+        // Anchored on the LATER of LicenseGrantDateUtc/Session.ScheduledStartUtc, not the bare grant
+        // date — found live 2026-07-28: an existing licensee re-testing (a class upgrade, or simply
+        // testing again) gets re-matched against their own already-old license, and FCC's Grant Date
+        // does not change on a class upgrade (confirmed against real ULS data), so the bare date
+        // would make this candidate purge-eligible almost immediately after a real, current session.
+        // See Candidate.LicenseGrantPredatesSession/docs/fcc-uls-watcher.md. For a genuine new grant
+        // (the common case, always after the session), this anchor equals LicenseGrantDateUtc exactly
+        // as before — no behavior change there.
         var candidates = await dbContext.Candidates
+            .Include(c => c.Session)
             .Include(c => c.Payments)
             .Where(c => c.PiiPurgedUtc == null
                         && c.LicenseGrantDateUtc != null
-                        && c.LicenseGrantDateUtc < cutoffExclusive)
+                        && (c.LicenseGrantDateUtc < c.Session.ScheduledStartUtc ? c.Session.ScheduledStartUtc : c.LicenseGrantDateUtc.Value) < cutoffExclusive)
             .ToListAsync(cancellationToken);
 
         foreach (var candidate in candidates)
         {
             PurgeCandidate(candidate, now);
-            AddAudit(candidate.Id, $"PII purged (Trigger A: license granted {candidate.LicenseGrantDateUtc:d}, {retentionWindowDays}-day retention window elapsed).", now);
+            var reason = candidate.LicenseGrantPredatesSession()
+                ? $"pre-existing license held since {candidate.LicenseGrantDateUtc:d}, anchored on session date {candidate.Session.ScheduledStartUtc:d} instead"
+                : $"license granted {candidate.LicenseGrantDateUtc:d}";
+            AddAudit(candidate.Id, $"PII purged (Trigger A: {reason}, {retentionWindowDays}-day retention window elapsed).", now);
             await dbContext.SaveChangesAsync(cancellationToken);
         }
 

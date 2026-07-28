@@ -222,6 +222,9 @@ public class CandidateDetailModel(
             RegisteredLine: candidate.DateRegisteredUtc.ToString("M/d/yyyy h:mm tt", CultureInfo.InvariantCulture) + " UTC",
             ApplicationDateLine: candidate.ApplicationDateEnteredUtc?.ToString("M/d/yyyy", CultureInfo.InvariantCulture),
             LicenseGrantDateLine: candidate.LicenseGrantDateUtc?.ToString("M/d/yyyy", CultureInfo.InvariantCulture),
+            LicenseNote: candidate.LicenseGrantPredatesSession()
+                ? $"Already licensed before this session (held since {candidate.LicenseGrantDateUtc:M/d/yyyy}) — likely a repeat test or class upgrade, not a new grant."
+                : null,
             ResultMarkedLine: FormatUtcOrNull(candidate.ResultMarkedUtc),
             ResultMarkedByName: candidate.ResultMarkedByUser?.Name,
             Tested: candidate.Tested,
@@ -291,6 +294,7 @@ public class CandidateDetailModel(
         string RegisteredLine,
         string? ApplicationDateLine,
         string? LicenseGrantDateLine,
+        string? LicenseNote,
         string? ResultMarkedLine,
         string? ResultMarkedByName,
         bool Tested,

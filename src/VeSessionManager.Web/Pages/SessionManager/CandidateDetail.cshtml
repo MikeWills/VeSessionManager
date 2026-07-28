@@ -29,6 +29,10 @@
             <div class="meta-item"><span class="k">Registered</span><span class="v mono">@c.RegisteredLine</span></div>
             <div class="meta-item"><span class="k">FCC application entered</span><span class="v mono">@(c.ApplicationDateLine ?? "—")</span></div>
             <div class="meta-item"><span class="k">License granted</span><span class="v mono">@(c.LicenseGrantDateLine ?? "—")</span></div>
+            @if (c.LicenseNote is not null)
+            {
+                <div class="meta-item" style="flex-basis:100%"><span class="v" style="color:var(--ink-soft)">@c.LicenseNote</span></div>
+            }
             <div class="meta-item">
                 <span class="k">Tested</span>
                 <span class="v"><span class="tested-check @(c.Tested ? "on" : "")">@(c.Tested ? "✓" : "·")</span></span>
@@ -116,7 +120,7 @@
                     }
                     @if (payment.SquareOrderCompleted)
                     {
-                        <span class="mono" style="font-size:.85em;color:var(--muted)">Square order completed</span>
+                        <span class="mono" style="font-size:.85em;color:var(--ink-soft)">Square order completed</span>
                     }
                 </td>
                 <td class="mono">@(payment.PaidDateLine ?? "—")</td>

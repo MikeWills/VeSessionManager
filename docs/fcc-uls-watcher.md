@@ -88,10 +88,35 @@ Matches the spec's Phase 5 state machine exactly:
   between, so a candidate matched to `Received` earlier in the *same* run is already persisted and
   eligible for the `Granted` check that follows in that same run.
 
-**Deliberately out of scope (per the spec's own Open Item):** an existing licensee upgrading class
-(e.g. Technician → General) already has an active license before the session, so "FRN appears in the
-license file" isn't enough on its own to detect the *new* grant. Needs real sample data (from both
-ULS and the ExamTools/HamStudy API) before that logic can be designed — not guessed at here.
+## Upgrade exam (existing licensee) handling — resolved 2026-07-28 with real data
+
+The spec's own Open Item flagged this as deliberately out of scope until real sample data existed:
+an existing licensee upgrading class (e.g. Technician → General) already has an active license
+before the session, so "FRN appears in the license file" isn't enough on its own to tell a real new
+grant apart from a pre-existing one. Real data finally surfaced this live, running the FCC daily
+watcher against real HRCC candidates:
+
+- **William Denney** registered for two separate sessions (2026-06-30, 2026-07-11), but both were
+  matched against the same license record — `GrantDateUtc = 2026-06-23`, predating *both*
+  registrations. He was already licensed before either session.
+- **Jason Pelowitz**: his first session's match (grant date 2026-07-14, two days after his
+  2026-07-12 test) looks like a genuine new grant. His second session (2026-07-25) matched the
+  *same* 2026-07-14 grant date — again, already licensed before that session even started.
+
+This also confirmed empirically (not guessed) that **FCC's Grant Date does not change when an
+existing licensee upgrades their class** — Denney's stayed `2026-06-23` across two later sessions.
+`ProcessLicensesAsync` still can't avoid re-detecting a pre-existing license this way (and doesn't
+try to — the AM.dat record type, which carries operator class, still isn't fetched), but that
+Grant Date is still accurate historical fact worth storing as-is.
+
+What actually needed fixing was downstream: `PiiPurgeService.PurgeGrantedCandidatesAsync`'s
+retention Trigger A anchored purely on `LicenseGrantDateUtc` — for an upgrade/repeat candidate, that
+historical date is already old the moment ingestion runs, so their PII would purge almost
+immediately after a real, current session. Fixed by anchoring Trigger A on the *later* of
+`LicenseGrantDateUtc`/`Session.ScheduledStartUtc` instead (see `Candidate.LicenseGrantPredatesSession()`
+and `docs/pii-purge.md`) — zero behavior change for a genuine new grant (always after the session),
+and no more premature purge for the upgrade case. The distinction is also now surfaced on the
+applicant detail page (`docs/applicant-detail.md`) so a VE can see it at a glance.
 
 ## Stale/dismissed application gotcha (found 2026-07-22, fixed same day)
 
