@@ -9,6 +9,9 @@ design rationale for any entry still lives in its linked `/docs/*.md` file, not 
 CLAUDE.md — this file, like CLAUDE.md's Change Log, is pointers only.
 
 - **Deployment-wide email test mode (2026-07-21).** `docs/test-mode.md`.
+- **"Email history" candidate modal (2026-07-23).** First place any email-sent timestamp was ever
+  surfaced outside the DB. `docs/email-reference.md`'s "Checking what a candidate actually received"
+  section.
 - **FCC daily watcher same-day retry (2026-07-23).** `docs/fcc-uls-watcher.md`'s "Same-day retry" and
   "Weekly complete snapshot lags real filings" sections — found via a live FRN re-lookup that a
   missed daily tick wasn't recovered for a full week, and that the weekly catch-up's "complete"

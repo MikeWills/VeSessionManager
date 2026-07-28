@@ -77,9 +77,6 @@ would be pure duplication — and goes straight to `CHANGELOG.md` instead. Non-p
 redesigns, hardening passes) start here and move to `CHANGELOG.md` once the section is at/over the
 cap and a newer entry needs to be added; oldest goes first.
 
-- **"Email history" candidate modal (2026-07-23).** First place any email-sent timestamp was ever
-  surfaced outside the DB. `docs/email-reference.md`'s "Checking what a candidate actually received"
-  section.
 - **Candidate ingestion scheduling, redesigned (2026-07-21, redesigned 2026-07-23).**
   `docs/candidate-refresh.md` — flat per-team polling interval + an on-demand "Refresh candidates"
   button, replacing an earlier "surge polling near session start" design.
@@ -104,6 +101,11 @@ cap and a newer entry needs to be added; oldest goes first.
   per-team scan (`SquareLinkPurgeJob`) deletes an Unpaid Payment's Square link after
   `Team.PurgeUnpaidLinkDays` (default 30), reusing `ISquareClient.DeletePaymentLinkAsync` from the
   youth-payment feature above.
+- **Completed-session backfill (issue #22, 2026-07-28).** `docs/examtools-api.md`'s "Stale `"pend"`
+  sessions exist" section — `SessionIngestionService` now also first-ingests a `"done"` session up
+  to ~30 days past its start (previously never ingested at all), gated by the new
+  `Session.HasEnded` helper so `SessionEventSchedulingService`/`CandidateNotificationService` don't
+  try to live-schedule or email a session that already happened.
 
 Everything through Phase 0-10's initial build (ExamTools ingestion, Zoom/Discord, Square, email
 notifications, FCC ULS watcher, payment reminders, VE tracking, VEC submission tracker, admin
