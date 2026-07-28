@@ -68,6 +68,7 @@ nav.chassis-nav a:hover { color: #fff; }
 .nav-group > .kebab:hover { color: #fff; }
 .nav-group > .kebab.active { background: var(--panel-2); color: #fff; }
 .nav-group .menu { top: 38px; left: 0; right: auto; }
+.panel-actions .menu { left: 0; right: auto; }
 .menu a.item.active { font-weight: 600; background: var(--paper); }
 .who { font-family: "IBM Plex Mono", monospace; font-size: 11.5px; color: #9AA39D; display: flex; align-items: center; gap: 8px; }
 .who .role { background: var(--panel-2); color: #EDEFEC; padding: 3px 8px; border-radius: 99px; letter-spacing: .05em; }

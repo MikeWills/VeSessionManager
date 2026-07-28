@@ -8,6 +8,8 @@ that window, or immediately if it's phase-numbered work already summarized in "C
 design rationale for any entry still lives in its linked `/docs/*.md` file, not here or in
 CLAUDE.md — this file, like CLAUDE.md's Change Log, is pointers only.
 
+- **TeamLead read-only view (2026-07-22).** Closed the Phase 9d self-audit gap. `docs/admin-auth.md`'s
+  "TeamLead read-only view" section — new `SessionAccessScope.CanView` distinct from `CanEdit`.
 - **Square unmatched-payment matching + order completion (2026-07-22).** `docs/square-payments.md`'s
   "Unmatched payments"/"Order completion" sections — includes why payment amount is deliberately not
   validated against what's owed.
