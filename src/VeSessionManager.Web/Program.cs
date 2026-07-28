@@ -97,7 +97,12 @@ builder.Services.AddScoped<SystemSettingsService>();
 builder.Services.AddIdentityCore<User>(options =>
     {
         options.SignIn.RequireConfirmedAccount = false; // no email-confirmation infra exists yet
-        options.Password.RequiredLength = 10;
+        // Reviewed 2026-07-28 now that real accounts exist (was a placeholder default, not something
+        // specifically requested). RequiredLength bumped 10 -> 12 per NIST 800-63B (length matters
+        // more than composition rules) — RequireDigit/RequireLowercase/RequireUppercase are left at
+        // Identity's own true defaults (not overridden here) as extra friction on top, since these
+        // are admin/VE accounts, not public self-service ones.
+        options.Password.RequiredLength = 12;
         options.Password.RequireNonAlphanumeric = false;
     })
     .AddEntityFrameworkStores<AppDbContext>()
