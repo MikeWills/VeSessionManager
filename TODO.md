@@ -96,6 +96,11 @@ until its columns are set via direct DB edit (no admin UI yet):
   credentials and template wording — all covered by unit tests, but worth confirming against the
   real APIs too.
 
+## GitHub Issues — feature requests / questions (not yet triaged, added 2026-07-28)
+
+- [x] ~~**Pull past sessions, up to a month old**~~ (issue [#22](https://github.com/MikeWills/VeSessionManager/issues/22), closed 2026-07-28, see `docs/examtools-api.md`'s "Completed-session backfill" section). `SessionIngestionService` now also first-ingests a `"done"` session up to ~30 days past its start (previously never ingested at all) — the existing 1-day `"pend"` grace window is untouched. New `Session.HasEnded` helper keeps `SessionEventSchedulingService` from live-scheduling Zoom/Discord for a backfilled session and keeps `CandidateNotificationService`'s automatic scan from sending a "you're registered!" email for one — payment-link generation and VE roster sync are deliberately left running as normal.
+  - Note: this repo also has other open GitHub issues (#17-#21) tracked on a separate in-flight branch/PR not yet merged as of this entry — if you're reading this after that PR lands, merge/reconcile this section with that one rather than duplicating it.
+
 ## Bugs / known issues
 
 - [x] ~~**Duplicate Discord scheduled events**~~ — found ~6 duplicate events in the Discord server (reported 2026-07-21). Root cause and code fix landed 2026-07-21: `IDiscordEventClient` gained `ListEventsAsync`; `SessionEventSchedulingService.SyncZoomAndDiscordAsync` now checks for an existing guild event matching the session by name + start time (within a minute) before calling `CreateEventAsync`, adopting its id instead of creating a duplicate if found — covered by `NewSession_MatchingEventAlreadyExistsInGuild_AdoptsIt_DoesNotCreateDuplicate` in `SessionEventSchedulingServiceTests`. **Still outstanding — needs a human with Discord access:** the ~6 already-existing duplicate events in the real Discord server still need manually deleting; this fix only prevents new duplicates going forward, it doesn't clean up past ones.

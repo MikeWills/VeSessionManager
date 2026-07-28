@@ -37,8 +37,23 @@ library used `https://alpha.exam.tools` for production — if prod logins fail, 
   on exactly this (see `SessionIngestionService`).
 - **Stale `"pend"` sessions exist.** The team feed can contain sessions years past their date
   still in state `"pend"` (observed live on the dev feed: sessions from 2023/2024). Ingestion
-  refuses to first-ingest a session more than a day past its start so downstream phases never
-  create Zoom/Discord events for dead sessions.
+  refuses to first-ingest a `"pend"` session more than a day past its start so downstream phases
+  never create Zoom/Discord events for dead sessions.
+- **Completed-session backfill (issue #22, 2026-07-28).** A `"done"` session was never first-ingested
+  at all before this — teams wanted to start tracking past candidates/VE stats for sessions that
+  already happened. `SessionIngestionService` now also first-ingests a `"done"` session, but only
+  within a trailing ~30-day window (`CompletedSessionBackfillWindow`) — same reasoning as the
+  1-day `"pend"` grace above: the feed returns unfiltered full history, so a `"done"` session from
+  years ago is exactly as undesirable to backfill as a zombie `"pend"` one. The `"pend"` window
+  itself is untouched. Because a newly-backfilled session's scheduled time is already in the past,
+  `Session.HasEnded(now)` gates two downstream passes so they don't act on it as if it were live:
+  `SessionEventSchedulingService` skips Zoom meeting/Discord event creation
+  (`SchedulingResult.SessionsSkippedPastDue`), and `CandidateNotificationService`'s automatic
+  `RegistrationConfirmation` scan skips sending a "you're registered!" email for something already
+  over (the manual "resend confirmation" admin action is intentionally unaffected — a human
+  explicitly clicking resend means it regardless of date). Payment-link generation and VE roster
+  sync are deliberately left untouched — a late/retroactive payment and VE-stat tracking are exactly
+  what this backfill is for.
 - **FRN placeholder:** applicants who register without an FRN come through with an all-zeros
   `frn` (`"0000000000"`). Ingestion maps that to `Frn = null` + `FrnMissingAtRegistration = true`.
 - `GET .../applicant` (collection, no id) is a 404 — there is no plain applicant-list endpoint;

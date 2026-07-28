@@ -11,6 +11,11 @@ public class SchedulingResult
     public int SessionsCleanedUp { get; set; }
     public int SessionsFailed { get; set; }
 
+    /// <summary>A session whose scheduled window has already ended (typically one ingested via the
+    /// completed-session backfill window, see SessionIngestionService) — never worth a live
+    /// Zoom meeting/Discord event, so never attempted rather than failed.</summary>
+    public int SessionsSkippedPastDue { get; set; }
+
     public override string ToString() =>
-        $"synced {SessionsSynced}, awaiting integration config {SessionsAwaitingIntegrationConfig}, cleaned up {SessionsCleanedUp}, failed {SessionsFailed}";
+        $"synced {SessionsSynced}, awaiting integration config {SessionsAwaitingIntegrationConfig}, cleaned up {SessionsCleanedUp}, failed {SessionsFailed}, skipped past-due {SessionsSkippedPastDue}";
 }

@@ -18,17 +18,29 @@ public class SessionIngestionService(
     ILogger<SessionIngestionService> logger)
 {
     private const string PendingState = "pend";
+    private const string DoneState = "done";
 
     /// <summary>Fallback when ExamTools reports no duration (or 0) for a session's sessionDef.</summary>
     private const int DefaultDurationMinutes = 60;
 
     /// <summary>
-    /// The real feed contains stale sessions that were never closed out upstream — still "pend"
-    /// but years old (observed on examtools.dev). Never ingesting a first-seen session already
-    /// this far past its start keeps Phase 2 from creating Zoom/Discord events for dead sessions,
-    /// while the grace window tolerates polling right as a session starts/runs.
+    /// The real feed contains stale "pend" sessions that were never closed out upstream — still
+    /// "pend" but years old (observed on examtools.dev). Never first-ingesting a "pend" session
+    /// already this far past its start keeps Phase 2 from creating Zoom/Discord events for dead
+    /// sessions, while the grace window tolerates polling right as a session starts/runs.
     /// </summary>
     private static readonly TimeSpan NewSessionPastGrace = TimeSpan.FromDays(1);
+
+    /// <summary>
+    /// A "done" session was never first-ingested at all before this (issue #22) — teams want to
+    /// start tracking past candidates/VE stats for sessions that already happened. Bounded to ~30
+    /// days back for the same reason NewSessionPastGrace is bounded: the feed returns unfiltered
+    /// full history, and a "done" session from years ago is exactly as undesirable to backfill as a
+    /// zombie "pend" one. SessionEventSchedulingService/CandidateNotificationService separately
+    /// guard against live-scheduling or emailing a session ingested this way once it's already over
+    /// (Session.HasEnded) — this window only controls whether the row gets created at all.
+    /// </summary>
+    private static readonly TimeSpan CompletedSessionBackfillWindow = TimeSpan.FromDays(30);
 
     public async Task<IngestionResult> RunAsync(Team team, CancellationToken cancellationToken)
     {
@@ -62,7 +74,7 @@ public class SessionIngestionService(
             {
                 ApplyRescheduleRules(local, remote, now, result);
             }
-            else if (remote.State == PendingState && remote.Date >= now - NewSessionPastGrace)
+            else if (ShouldIngestNewSession(remote, now))
             {
                 var created = await TryCreateSessionAsync(remote, team, now, result, cancellationToken);
                 if (created is not null)
@@ -71,7 +83,8 @@ public class SessionIngestionService(
                     localByExternalId[remote.Id] = created;
                 }
             }
-            // Unknown non-pending sessions are history from before this tool existed — not ingested.
+            // Anything else (unknown state, or too far past its respective window) is history from
+            // before this tool existed, or too stale to be worth backfilling — not ingested.
         }
 
         // Cancellation: ExamTools has no cancelled flag; a known, still-open session vanishing
@@ -112,6 +125,10 @@ public class SessionIngestionService(
         logger.LogInformation("Session ingestion finished for team {TeamId} ({TeamName}): {Result}", team.Id, team.Name, result);
         return result;
     }
+
+    private static bool ShouldIngestNewSession(ExamToolsSession remote, DateTime now) =>
+        (remote.State == PendingState && remote.Date >= now - NewSessionPastGrace)
+        || (remote.State == DoneState && remote.Date >= now - CompletedSessionBackfillWindow);
 
     private async Task<Session?> TryCreateSessionAsync(
         ExamToolsSession remote, Team team, DateTime now, IngestionResult result, CancellationToken cancellationToken)

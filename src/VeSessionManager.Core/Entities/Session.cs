@@ -56,4 +56,11 @@ public class Session
 
     public List<Candidate> Candidates { get; } = [];
     public List<SessionVolunteerExaminer> SessionVolunteerExaminers { get; } = [];
+
+    /// <summary>True once the session's scheduled window has fully elapsed — used to keep
+    /// backfilled/late-ingested past sessions (see SessionIngestionService's completed-session
+    /// backfill) from triggering live Zoom/Discord scheduling or a "you're registered" email for
+    /// something that already happened. Not EF-mapped, computed on demand — always call with the
+    /// same TimeProvider-sourced `now` a service is already using, not DateTime.UtcNow directly.</summary>
+    public bool HasEnded(DateTime now) => ScheduledStartUtc.AddMinutes(DurationMinutes) <= now;
 }

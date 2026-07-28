@@ -202,6 +202,31 @@ public class SessionEventSchedulingServiceTests
     }
 
     [Fact]
+    public async Task AlreadyEndedSession_IsSkipped_NoZoomOrDiscordCalls()
+    {
+        // Issue #22: a session ingested via the completed-session backfill window has already
+        // happened by the time this ever runs — never worth a real Zoom meeting/Discord event.
+        await using var dbContext = CreateContext();
+        var (vec, feeConfig) = await SeedRefsAsync(dbContext);
+        var team = await SeedTeamAsync(dbContext);
+        var session = NewSession(vec, feeConfig, team);
+        session.ScheduledStartUtc = Now.AddDays(-15);
+        dbContext.Sessions.Add(session);
+        await dbContext.SaveChangesAsync();
+
+        var zoom = new FakeZoomClient();
+        var discord = new FakeDiscordEventClient();
+        var result = await CreateService(dbContext, zoom, discord).RunAsync(team, CancellationToken.None);
+
+        Assert.Equal(0, result.SessionsSynced);
+        Assert.Equal(1, result.SessionsSkippedPastDue);
+        Assert.Empty(zoom.CreateCalls);
+        Assert.Empty(discord.CreateCalls);
+        var saved = dbContext.Sessions.Single();
+        Assert.Null(saved.ZoomDiscordSyncedStartUtc);
+    }
+
+    [Fact]
     public async Task NewSession_MatchingMeetingAlreadyExistsInZoom_AdoptsIt_DoesNotCreateDuplicate()
     {
         // Same reasoning as the Discord dedup test below, but for Zoom's half of SyncZoomAndDiscordAsync.
