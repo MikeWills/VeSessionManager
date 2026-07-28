@@ -28,14 +28,26 @@ public class UnmatchedPaymentsModel(
     SessionAccessScope accessScope,
     SquarePaymentMatchingService matchingService) : PageModel
 {
+    [BindProperty(SupportsGet = true)]
+    public int? TeamId { get; set; }
+
     public bool HasTeamContext { get; private set; }
+    public IReadOnlyList<(int Id, string Name)> AvailableTeams { get; private set; } = [];
     public IReadOnlyList<UnmatchedPaymentRow> UnmatchedPayments { get; private set; } = [];
     public IReadOnlyList<MatchableCandidate> MatchableCandidates { get; private set; } = [];
 
     public async Task OnGetAsync()
     {
-        var user = await userManager.GetUserAsync(User) ?? throw new InvalidOperationException("No authenticated user for an [Authorize]d page.");
-        var teamId = accessScope.GetEffectiveTeamId(user);
+        var user = await userManager.GetUserWithManagerAsync(dbContext, User) ?? throw new InvalidOperationException("No authenticated user for an [Authorize]d page.");
+
+        AvailableTeams = user.Role == UserRole.SystemAdmin
+            ? await dbContext.Teams.OrderBy(t => t.Name).Select(t => new ValueTuple<int, string>(t.Id, t.Name)).ToListAsync()
+            : (accessScope.GetEffectiveTeamIds(user) ?? [])
+                .Join(await dbContext.Teams.ToListAsync(), id => id, t => t.Id, (_, t) => new ValueTuple<int, string>(t.Id, t.Name))
+                .OrderBy(t => t.Item2).ToList();
+
+        var teamId = accessScope.TryResolveViewableTeamId(user, TeamId);
+        TeamId = teamId;
         HasTeamContext = teamId is not null;
         if (teamId is not int id)
         {
@@ -75,17 +87,19 @@ public class UnmatchedPaymentsModel(
 
     public async Task<IActionResult> OnPostMatchAsync(int unmatchedPaymentId, int candidateId)
     {
-        var user = await userManager.GetUserAsync(User);
+        var user = await userManager.GetUserWithManagerAsync(dbContext, User);
         if (user is null)
         {
             return Forbid();
         }
 
-        // Defense in depth: re-check the unmatched payment actually belongs to this user's team
-        // before acting on a route/form value, same reasoning as every other session-scoped action
-        // in this app.
+        // Defense in depth: re-check the unmatched payment actually belongs to one of this user's
+        // teams before acting on a route/form value, same reasoning as every other session-scoped
+        // action in this app. Preserves this page's pre-existing behavior exactly (including for
+        // SystemAdmin, whose null effective-team-set never matches here) — not the place to revisit
+        // that, out of scope for this change.
         var unmatched = await dbContext.UnmatchedSquarePayments.FirstOrDefaultAsync(u => u.Id == unmatchedPaymentId);
-        if (unmatched is null || accessScope.GetEffectiveTeamId(user) != unmatched.TeamId)
+        if (unmatched is null || !(accessScope.GetEffectiveTeamIds(user)?.Contains(unmatched.TeamId) ?? false))
         {
             return Forbid();
         }

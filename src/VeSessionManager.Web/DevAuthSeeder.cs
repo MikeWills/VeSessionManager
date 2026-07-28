@@ -39,18 +39,25 @@ public static class DevAuthSeeder
             return;
         }
 
-        var sessionManager = await CreateUserAsync(userManager, "sessionmanager@example.com", "Session Manager", UserRole.SessionManager, team.Id);
-        await CreateUserAsync(userManager, "sysadmin@example.com", "System Admin", UserRole.SystemAdmin, teamId: null);
-        await CreateUserAsync(userManager, "teamadmin@example.com", "Team Admin", UserRole.TeamAdmin, team.Id);
-        var teamLead = await CreateUserAsync(userManager, "teamlead@example.com", "Team Lead", UserRole.TeamLead, team.Id);
+        var sessionManager = await CreateUserAsync(userManager, "sessionmanager@example.com", "Session Manager", UserRole.SessionManager);
+        await CreateUserAsync(userManager, "sysadmin@example.com", "System Admin", UserRole.SystemAdmin);
+        var teamAdmin = await CreateUserAsync(userManager, "teamadmin@example.com", "Team Admin", UserRole.TeamAdmin);
+        var teamLead = await CreateUserAsync(userManager, "teamlead@example.com", "Team Lead", UserRole.TeamLead);
+
+        // TeamLead's own team membership is unused (resolved transitively through ManagedByUser —
+        // see SessionAccessScope.GetEffectiveTeamIds), so only SessionManager/TeamAdmin get one here.
+        var now = DateTime.UtcNow;
+        dbContext.UserTeams.Add(new UserTeam { UserId = sessionManager.Id, TeamId = team.Id, CreatedUtc = now });
+        dbContext.UserTeams.Add(new UserTeam { UserId = teamAdmin.Id, TeamId = team.Id, CreatedUtc = now });
 
         teamLead.ManagedByUserId = sessionManager.Id;
         await userManager.UpdateAsync(teamLead);
+        await dbContext.SaveChangesAsync();
 
         logger.LogInformation("Seeded four Phase 9a dev test users (sysadmin/teamadmin/sessionmanager/teamlead@example.com) — see docs/admin-auth.md for the shared dev password");
     }
 
-    private static async Task<User> CreateUserAsync(UserManager<User> userManager, string email, string name, UserRole role, int? teamId)
+    private static async Task<User> CreateUserAsync(UserManager<User> userManager, string email, string name, UserRole role)
     {
         var user = new User
         {
@@ -58,8 +65,7 @@ public static class DevAuthSeeder
             Email = email,
             EmailConfirmed = true,
             Name = name,
-            Role = role,
-            TeamId = teamId
+            Role = role
         };
 
         var result = await userManager.CreateAsync(user, DevPassword);

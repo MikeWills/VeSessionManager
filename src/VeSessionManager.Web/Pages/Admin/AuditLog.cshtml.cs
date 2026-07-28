@@ -17,7 +17,7 @@ public class AuditLogModel(AppDbContext dbContext, UserManager<User> userManager
 
     public async Task<IActionResult> OnGetAsync()
     {
-        var user = await userManager.GetUserAsync(User);
+        var user = await userManager.GetUserWithManagerAsync(dbContext, User);
         if (user is null)
         {
             return Forbid();

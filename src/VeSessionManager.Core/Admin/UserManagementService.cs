@@ -16,7 +16,10 @@ namespace VeSessionManager.Core.Admin;
 /// </summary>
 public class UserManagementService(UserManager<User> userManager, AppDbContext dbContext, TimeProvider timeProvider)
 {
-    public async Task<(UserActionResult Result, User? User)> CreateAsync(string email, string name, UserRole role, int? teamId, string initialPassword, int actingUserId, CancellationToken cancellationToken)
+    /// <summary>A brand-new user starts with zero team memberships — team assignment is now a
+    /// separate action (SetTeamsAsync), same as role assignment already was, since a user can belong
+    /// to more than one team (issue #19).</summary>
+    public async Task<(UserActionResult Result, User? User)> CreateAsync(string email, string name, UserRole role, string initialPassword, int actingUserId, CancellationToken cancellationToken)
     {
         if (await userManager.FindByEmailAsync(email) is not null)
         {
@@ -29,8 +32,7 @@ public class UserManagementService(UserManager<User> userManager, AppDbContext d
             Email = email,
             EmailConfirmed = true,
             Name = name,
-            Role = role,
-            TeamId = teamId
+            Role = role
         };
 
         var result = await userManager.CreateAsync(user, initialPassword);
@@ -46,7 +48,7 @@ public class UserManagementService(UserManager<User> userManager, AppDbContext d
         return (UserActionResult.Success, user);
     }
 
-    public async Task<UserActionResult> SetRoleAsync(int targetUserId, UserRole newRole, int? teamId, int actingUserId, CancellationToken cancellationToken)
+    public async Task<UserActionResult> SetRoleAsync(int targetUserId, UserRole newRole, int actingUserId, CancellationToken cancellationToken)
     {
         var user = await userManager.FindByIdAsync(targetUserId.ToString());
         if (user is null)
@@ -55,7 +57,6 @@ public class UserManagementService(UserManager<User> userManager, AppDbContext d
         }
 
         user.Role = newRole;
-        user.TeamId = teamId;
         await userManager.UpdateAsync(user);
 
         var now = timeProvider.GetUtcNow().UtcDateTime;
@@ -65,22 +66,55 @@ public class UserManagementService(UserManager<User> userManager, AppDbContext d
         return UserActionResult.Success;
     }
 
-    public async Task<UserActionResult> SetManagerAsync(int teamLeadUserId, int? managerUserId, int actingUserId, CancellationToken cancellationToken)
+    /// <summary>Replaces a TeamAdmin/SessionManager's team memberships wholesale — the actual
+    /// mechanism behind issue #19 (a Session Manager can belong to multiple teams). Diffs the
+    /// requested set against what's currently stored so unaffected rows are left untouched.</summary>
+    public async Task<UserActionResult> SetTeamsAsync(int targetUserId, IReadOnlyList<int> teamIds, int actingUserId, CancellationToken cancellationToken)
     {
-        var user = await userManager.FindByIdAsync(teamLeadUserId.ToString());
+        var user = await dbContext.Users.Include(u => u.UserTeams).FirstOrDefaultAsync(u => u.Id == targetUserId, cancellationToken);
         if (user is null)
         {
             return UserActionResult.NotFound;
         }
 
-        // A manager must actually belong to the same team as the TeamLead being assigned, and hold
-        // a role that's allowed to manage anyone at all — otherwise SessionAccessScope.GetEffectiveTeamId
-        // (which resolves a TeamLead's team via ManagedByUser.TeamId) would grant them cross-team
-        // session/candidate visibility just by a TeamAdmin picking a manager from another team.
+        var requestedIds = teamIds.Distinct().ToHashSet();
+        var currentIds = user.UserTeams.Select(ut => ut.TeamId).ToHashSet();
+
+        foreach (var toRemove in user.UserTeams.Where(ut => !requestedIds.Contains(ut.TeamId)).ToList())
+        {
+            user.UserTeams.Remove(toRemove);
+        }
+
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+        foreach (var toAdd in requestedIds.Where(id => !currentIds.Contains(id)))
+        {
+            user.UserTeams.Add(new UserTeam { UserId = user.Id, TeamId = toAdd, CreatedUtc = now });
+        }
+
+        AddAudit(actingUserId, "UserTeamsChanged", user.Id, $"User {user.Id}'s teams set to [{string.Join(", ", requestedIds.OrderBy(id => id))}].", now);
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        return UserActionResult.Success;
+    }
+
+    public async Task<UserActionResult> SetManagerAsync(int teamLeadUserId, int? managerUserId, int actingUserId, CancellationToken cancellationToken)
+    {
+        var user = await dbContext.Users.Include(u => u.UserTeams).FirstOrDefaultAsync(u => u.Id == teamLeadUserId, cancellationToken);
+        if (user is null)
+        {
+            return UserActionResult.NotFound;
+        }
+
+        // A manager must actually share at least one team with the TeamLead being assigned, and
+        // hold a role that's allowed to manage anyone at all — otherwise
+        // SessionAccessScope.GetEffectiveTeamIds (which resolves a TeamLead's teams via
+        // ManagedByUser.UserTeams) would grant them cross-team session/candidate visibility just by
+        // a TeamAdmin picking a manager with no shared team.
         if (managerUserId is not null)
         {
-            var manager = await userManager.FindByIdAsync(managerUserId.Value.ToString());
-            if (manager is null || manager.TeamId != user.TeamId || manager.Role is not (UserRole.SessionManager or UserRole.TeamAdmin))
+            var manager = await dbContext.Users.Include(u => u.UserTeams).FirstOrDefaultAsync(u => u.Id == managerUserId.Value, cancellationToken);
+            var sharesATeam = manager is not null && manager.UserTeams.Select(ut => ut.TeamId).Intersect(user.UserTeams.Select(ut => ut.TeamId)).Any();
+            if (manager is null || !sharesATeam || manager.Role is not (UserRole.SessionManager or UserRole.TeamAdmin))
             {
                 return UserActionResult.InvalidManager;
             }

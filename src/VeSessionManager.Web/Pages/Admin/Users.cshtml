@@ -58,7 +58,7 @@ else
                     <td class="session-title">@u.Name</td>
                     <td class="mono">@u.Email</td>
                     <td>@u.Role</td>
-                    <td>@(u.TeamName ?? "—")</td>
+                    <td>@(string.IsNullOrEmpty(u.TeamNames) ? "—" : u.TeamNames)</td>
                     <td>@(u.ManagerName ?? "—")</td>
                     <td>
                         @if (u.IsActive)
@@ -74,6 +74,10 @@ else
                         <button type="button" class="kebab" aria-label="Actions">⋮</button>
                         <div class="menu">
                             <button type="button" class="item" data-open-modal="roleModal-@u.Id">Change role</button>
+                            @if (u.Role is UserRole.TeamAdmin or UserRole.SessionManager)
+                            {
+                                <button type="button" class="item" data-open-modal="teamsModal-@u.Id">Manage teams</button>
+                            }
                             @if (u.Role == UserRole.TeamLead)
                             {
                                 <button type="button" class="item" data-open-modal="managerModal-@u.Id">Assign manager</button>
@@ -115,20 +119,8 @@ else
                         }
                     </select>
                 </div>
-                @if (Model.IsSystemAdmin)
-                {
-                    <div class="field">
-                        <label for="createUserTeam">Team</label>
-                        <select id="createUserTeam" name="teamId">
-                            <option value="">(none — SystemAdmin)</option>
-                            @foreach (var team in Model.AvailableTeams)
-                            {
-                                <option value="@team.Id" selected="@(team.Id == Model.TeamId)">@team.Name</option>
-                            }
-                        </select>
-                    </div>
-                }
                 <div class="field"><label for="createUserPassword">Initial password</label><input id="createUserPassword" name="password" type="password" required /></div>
+                <p class="session-sub">New TeamAdmin/SessionManager accounts start with no team assigned — use "Manage teams" after creating to grant access.</p>
                 <div class="modal-actions">
                     <button type="button" class="btn-secondary btn-sm" data-close-modal>Cancel</button>
                     <button type="submit" class="btn-primary btn-sm">Create</button>
@@ -153,19 +145,6 @@ else
                             }
                         </select>
                     </div>
-                    @if (Model.IsSystemAdmin)
-                    {
-                        <div class="field">
-                            <label for="roleTeam-@u.Id">Team</label>
-                            <select id="roleTeam-@u.Id" name="teamId">
-                                <option value="">(none — SystemAdmin)</option>
-                                @foreach (var team in Model.AvailableTeams)
-                                {
-                                    <option value="@team.Id" selected="@(team.Name == u.TeamName)">@team.Name</option>
-                                }
-                            </select>
-                        </div>
-                    }
                     <div class="modal-actions">
                         <button type="button" class="btn-secondary btn-sm" data-close-modal>Cancel</button>
                         <button type="submit" class="btn-primary btn-sm">Save</button>
@@ -173,6 +152,31 @@ else
                 </form>
             </div>
         </div>
+
+        @if (u.Role is UserRole.TeamAdmin or UserRole.SessionManager)
+        {
+            <div class="modal-backdrop" id="teamsModal-@u.Id">
+                <div class="modal">
+                    <h3>Manage teams — @u.Name</h3>
+                    <form method="post" asp-page-handler="SetTeams">
+                        <input type="hidden" name="targetUserId" value="@u.Id" />
+                        @foreach (var team in Model.AvailableTeams)
+                        {
+                            <div class="field">
+                                <label>
+                                    <input type="checkbox" name="teamIds" value="@team.Id" checked="@(u.TeamIds.Contains(team.Id))" style="width:auto; display:inline-block;" />
+                                    @team.Name
+                                </label>
+                            </div>
+                        }
+                        <div class="modal-actions">
+                            <button type="button" class="btn-secondary btn-sm" data-close-modal>Cancel</button>
+                            <button type="submit" class="btn-primary btn-sm">Save</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        }
 
         @if (u.Role == UserRole.TeamLead)
         {

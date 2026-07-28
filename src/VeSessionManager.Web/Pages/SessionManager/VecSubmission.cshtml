@@ -13,6 +13,16 @@
     </div>
 </div>
 
+@if (Model.AvailableTeams.Count > 1)
+{
+    <div class="filters" style="margin-bottom:16px;">
+        @foreach (var team in Model.AvailableTeams)
+        {
+            <a class="filter-pill @(team.Id == Model.TeamId ? "active" : "")" asp-page="./VecSubmission" asp-route-teamId="@team.Id">@team.Name</a>
+        }
+    </div>
+}
+
 @if (!Model.HasTeamContext)
 {
     <p>No team context for this account — VEC submission tracking is per-team.</p>

@@ -19,10 +19,22 @@
     </div>
 </div>
 
+@if (Model.AvailableTeams.Count > 1)
+{
+    <div class="filters" style="margin-bottom:16px;">
+        <a class="filter-pill @(Model.TeamId is null ? "active" : "")" asp-page="./Index" asp-route-filter="@Model.ActiveFilter">All teams</a>
+        @foreach (var team in Model.AvailableTeams)
+        {
+            <a class="filter-pill @(team.Id == Model.TeamId ? "active" : "")" asp-page="./Index" asp-route-filter="@Model.ActiveFilter" asp-route-teamId="@team.Id">@team.Name</a>
+        }
+    </div>
+}
+
 <table>
     <thead>
         <tr>
             <th>Session</th>
+            <th>Team</th>
             <th>VEC</th>
             <th>Candidates</th>
             <th>Status</th>
@@ -33,7 +45,7 @@
     <tbody>
         @if (Model.Sessions.Count == 0)
         {
-            <tr><td colspan="6">No sessions match this filter.</td></tr>
+            <tr><td colspan="7">No sessions match this filter.</td></tr>
         }
         @foreach (var session in Model.Sessions)
         {
@@ -48,6 +60,7 @@
                     </div>
                     <div class="session-sub">@session.SubLine</div>
                 </td>
+                <td>@session.TeamName</td>
                 <td>@session.VecName</td>
                 <td class="count">@session.CandidateCount</td>
                 <td><span class="chip @session.StatusChipClass">@session.StatusChipLabel</span></td>

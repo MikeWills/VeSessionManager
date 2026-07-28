@@ -15,13 +15,12 @@ public class User : IdentityUser<int>
     public UserRole Role { get; set; }
 
     /// <summary>
-    /// Not in the original shared data model — added in Phase 9a alongside the multi-team
-    /// foundation reconciliation. Null for SystemAdmin (deployment-wide); required in practice for
-    /// TeamAdmin/SessionManager (their "own team"); unused for TeamLead, whose effective team is
-    /// resolved transitively through ManagedByUser instead (see SessionAccessScope).
+    /// Replaces the old single, nullable TeamId (Phase 9a) — a TeamAdmin/SessionManager can now
+    /// belong to more than one Team (issue #19). Empty for SystemAdmin (deployment-wide) and for
+    /// TeamLead, whose effective teams are resolved transitively through ManagedByUser instead (see
+    /// SessionAccessScope.GetEffectiveTeamIds).
     /// </summary>
-    public int? TeamId { get; set; }
-    public Team? Team { get; set; }
+    public List<UserTeam> UserTeams { get; } = [];
 
     /// <summary>TeamLead's assigned manager (a SessionManager or TeamAdmin) — role-agnostic, see SessionAccessScope.</summary>
     public int? ManagedByUserId { get; set; }

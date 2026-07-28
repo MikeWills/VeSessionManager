@@ -96,6 +96,11 @@ until its columns are set via direct DB edit (no admin UI yet):
   credentials and template wording — all covered by unit tests, but worth confirming against the
   real APIs too.
 
+## GitHub Issues — feature requests / questions (not yet triaged, added 2026-07-28)
+
+- [x] ~~**Add filter for sessions so you can view only one team at a time**~~ (issue [#17](https://github.com/MikeWills/VeSessionManager/issues/17), `enhancement`, closed 2026-07-28) and ~~**You can be a Session Manager for multiple teams**~~ (issue [#19](https://github.com/MikeWills/VeSessionManager/issues/19), closed 2026-07-28) — done together, see `docs/admin-auth.md`'s "Team scoping" section. Replaced the single, nullable `User.TeamId` with a real many-to-many `UserTeam` join table; the session list now shows a Team column and a `?teamId=` filter-pill (reusing the existing SystemAdmin team-picker convention, extended to work for a multi-team TeamAdmin/SessionManager too); `SessionAccessScope`/`AdminAccessScope` moved from scalar equality to set-membership throughout, with explicit cross-team-leak regression tests per role.
+  - Note: this repo also has other open GitHub issues (#18, #20-#22) tracked on separate in-flight branches/PRs not yet merged as of this entry — if you're reading this after those land, merge/reconcile this section with theirs rather than duplicating it.
+
 ## Bugs / known issues
 
 - [x] ~~**Duplicate Discord scheduled events**~~ — found ~6 duplicate events in the Discord server (reported 2026-07-21). Root cause and code fix landed 2026-07-21: `IDiscordEventClient` gained `ListEventsAsync`; `SessionEventSchedulingService.SyncZoomAndDiscordAsync` now checks for an existing guild event matching the session by name + start time (within a minute) before calling `CreateEventAsync`, adopting its id instead of creating a duplicate if found — covered by `NewSession_MatchingEventAlreadyExistsInGuild_AdoptsIt_DoesNotCreateDuplicate` in `SessionEventSchedulingServiceTests`. **Still outstanding — needs a human with Discord access:** the ~6 already-existing duplicate events in the real Discord server still need manually deleting; this fix only prevents new duplicates going forward, it doesn't clean up past ones.

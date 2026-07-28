@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
+using Microsoft.EntityFrameworkCore;
 using VeSessionManager.Core.Authorization;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Entities;
@@ -17,10 +18,16 @@ namespace VeSessionManager.Web.Pages.SessionManager;
 /// report, not something that needed its own visual design pass. TeamLead was added in the
 /// TeamLead-read-only-view fix (see TODO.md) — this page is purely a read-only report already, so
 /// no write-gating was needed, just the role.
+///
+/// Multi-team (issue #19): the report is per-team, so a user belonging to more than one team picks
+/// which one via TeamId/AvailableTeams — same filter-pill convention as the session list.
 /// </summary>
 [Authorize(Roles = "SystemAdmin,TeamAdmin,SessionManager,TeamLead")]
 public class VeRosterModel(AppDbContext dbContext, UserManager<User> userManager, SessionAccessScope accessScope, VolunteerExaminerReportService reportService) : PageModel
 {
+    [BindProperty(SupportsGet = true)]
+    public int? TeamId { get; set; }
+
     [BindProperty(SupportsGet = true)]
     public DateTime? From { get; set; }
 
@@ -28,12 +35,21 @@ public class VeRosterModel(AppDbContext dbContext, UserManager<User> userManager
     public DateTime? To { get; set; }
 
     public bool HasTeamContext { get; private set; }
+    public IReadOnlyList<(int Id, string Name)> AvailableTeams { get; private set; } = [];
     public IReadOnlyList<VeSessionCount> Counts { get; private set; } = [];
 
     public async Task OnGetAsync()
     {
         var user = await userManager.GetUserWithManagerAsync(dbContext, User) ?? throw new InvalidOperationException("No authenticated user for an [Authorize]d page.");
-        var teamId = accessScope.GetEffectiveTeamId(user);
+
+        AvailableTeams = user.Role == UserRole.SystemAdmin
+            ? await dbContext.Teams.OrderBy(t => t.Name).Select(t => new ValueTuple<int, string>(t.Id, t.Name)).ToListAsync()
+            : (accessScope.GetEffectiveTeamIds(user) ?? [])
+                .Join(await dbContext.Teams.ToListAsync(), id => id, t => t.Id, (_, t) => new ValueTuple<int, string>(t.Id, t.Name))
+                .OrderBy(t => t.Item2).ToList();
+
+        var teamId = accessScope.TryResolveViewableTeamId(user, TeamId);
+        TeamId = teamId;
         HasTeamContext = teamId is not null;
         if (teamId is int id)
         {

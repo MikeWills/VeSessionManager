@@ -1,15 +1,30 @@
 @using Microsoft.AspNetCore.Identity
+@using Microsoft.EntityFrameworkCore
+@using VeSessionManager.Core.Authorization
 @using VeSessionManager.Core.Data
 @using VeSessionManager.Core.Entities
 @inject UserManager<User> UserManager
 @inject AppDbContext DbContext
+@inject SessionAccessScope AccessScope
 @{
     var currentUser = await UserManager.GetUserAsync(User);
     var teamName = "All Teams";
-    if (currentUser?.TeamId is int teamId)
+    if (currentUser is not null && currentUser.Role != UserRole.SystemAdmin)
     {
-        var team = await DbContext.Teams.FindAsync(teamId);
-        teamName = team?.Name ?? "Unassigned Team";
+        // UserTeams (and, for a TeamLead, ManagedByUser.UserTeams) must be loaded before calling
+        // GetEffectiveTeamIds — UserManager.GetUserAsync doesn't include either.
+        currentUser = await DbContext.Users
+            .Include(u => u.UserTeams)
+            .Include(u => u.ManagedByUser).ThenInclude(m => m!.UserTeams)
+            .FirstAsync(u => u.Id == currentUser.Id);
+
+        var teamIds = AccessScope.GetEffectiveTeamIds(currentUser) ?? [];
+        teamName = teamIds.Count switch
+        {
+            0 => "Unassigned Team",
+            1 => (await DbContext.Teams.FindAsync(teamIds[0]))?.Name ?? "Unassigned Team",
+            _ => $"{teamIds.Count} teams"
+        };
     }
 
     var roleLabel = currentUser?.Role switch

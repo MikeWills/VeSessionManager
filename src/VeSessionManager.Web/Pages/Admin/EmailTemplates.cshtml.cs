@@ -24,16 +24,15 @@ public class EmailTemplatesModel(AppDbContext dbContext, UserManager<User> userM
 
     public async Task<IActionResult> OnGetAsync()
     {
-        var user = await userManager.GetUserAsync(User);
+        var user = await userManager.GetUserWithManagerAsync(dbContext, User);
         if (user is null)
         {
             return Forbid();
         }
 
         IsSystemAdmin = user.Role == UserRole.SystemAdmin;
-        AvailableTeams = IsSystemAdmin
-            ? await dbContext.Teams.OrderBy(t => t.Name).Select(t => new ValueTuple<int, string>(t.Id, t.Name)).ToListAsync()
-            : [];
+        AvailableTeams = await adminAccessScope.ScopeTeams(dbContext.Teams, user)
+            .OrderBy(t => t.Name).Select(t => new ValueTuple<int, string>(t.Id, t.Name)).ToListAsync();
 
         var effectiveTeamId = adminAccessScope.TryResolveManageableTeamId(user, TeamId);
         if (effectiveTeamId is null)
@@ -53,7 +52,7 @@ public class EmailTemplatesModel(AppDbContext dbContext, UserManager<User> userM
 
     public async Task<IActionResult> OnPostUpdateAsync(int templateId, int teamId, string subject, string body)
     {
-        var user = await userManager.GetUserAsync(User);
+        var user = await userManager.GetUserWithManagerAsync(dbContext, User);
         if (user is null)
         {
             return Forbid();

@@ -12,8 +12,10 @@ namespace VeSessionManager.Web.Pages.Admin;
 
 /// <summary>
 /// Phase 9c: FeeConfiguration CRUD, scoped by Vec. SystemAdmin sees every Vec in the picker;
-/// TeamAdmin only sees VECs their own team actually has sessions under (a TeamAdmin has no
-/// business editing fee schedules for a VEC their team has never worked with).
+/// TeamAdmin only sees VECs any of their own team(s) actually have sessions under (a TeamAdmin has
+/// no business editing fee schedules for a VEC none of their teams have ever worked with) — a
+/// multi-team TeamAdmin (issue #19) sees the union across every team they belong to, since this
+/// page's unit of selection is the VEC, not a single team.
 /// </summary>
 [Authorize(Roles = "SystemAdmin,TeamAdmin")]
 public class FeeConfigurationsModel(AppDbContext dbContext, UserManager<User> userManager, SessionAccessScope accessScope, FeeConfigurationService feeConfigurationService) : PageModel
@@ -26,7 +28,7 @@ public class FeeConfigurationsModel(AppDbContext dbContext, UserManager<User> us
 
     public async Task OnGetAsync()
     {
-        var user = await userManager.GetUserAsync(User);
+        var user = await userManager.GetUserWithManagerAsync(dbContext, User);
         if (user is null)
         {
             return;
@@ -38,9 +40,9 @@ public class FeeConfigurationsModel(AppDbContext dbContext, UserManager<User> us
         }
         else
         {
-            var teamId = accessScope.GetEffectiveTeamId(user);
+            var teamIds = accessScope.GetEffectiveTeamIds(user) ?? [];
             AvailableVecs = await dbContext.Sessions
-                .Where(s => s.TeamId == teamId)
+                .Where(s => teamIds.Contains(s.TeamId))
                 .Select(s => s.Vec)
                 .Distinct()
                 .OrderBy(v => v.Name)
@@ -68,7 +70,7 @@ public class FeeConfigurationsModel(AppDbContext dbContext, UserManager<User> us
 
     public async Task<IActionResult> OnPostCreateAsync(int vecId, DateTime effectiveDate, bool feeCollectionEnabled, decimal? examFeeAmount, decimal? retainedAmount, decimal? youthExamFeeAmount, string? notes)
     {
-        var user = await userManager.GetUserAsync(User);
+        var user = await userManager.GetUserWithManagerAsync(dbContext, User);
         if (user is null || !await IsVecAllowedAsync(user, vecId))
         {
             return Forbid();
@@ -82,7 +84,7 @@ public class FeeConfigurationsModel(AppDbContext dbContext, UserManager<User> us
 
     public async Task<IActionResult> OnPostUpdateAsync(int feeConfigurationId, DateTime effectiveDate, bool feeCollectionEnabled, decimal? examFeeAmount, decimal? retainedAmount, decimal? youthExamFeeAmount, string? notes)
     {
-        var user = await userManager.GetUserAsync(User);
+        var user = await userManager.GetUserWithManagerAsync(dbContext, User);
         if (user is null)
         {
             return Forbid();
@@ -108,7 +110,7 @@ public class FeeConfigurationsModel(AppDbContext dbContext, UserManager<User> us
         return RedirectToPage(new { vecId = existingFeeConfig.VecId });
     }
 
-    /// <summary>Mirrors OnGetAsync's AvailableVecs scoping: SystemAdmin may act on any Vec; TeamAdmin only on VECs their own team actually has sessions under.</summary>
+    /// <summary>Mirrors OnGetAsync's AvailableVecs scoping: SystemAdmin may act on any Vec; TeamAdmin only on VECs any of their own team(s) actually have sessions under.</summary>
     private async Task<bool> IsVecAllowedAsync(User user, int vecId)
     {
         if (user.Role == UserRole.SystemAdmin)
@@ -116,8 +118,8 @@ public class FeeConfigurationsModel(AppDbContext dbContext, UserManager<User> us
             return await dbContext.Vecs.AnyAsync(v => v.Id == vecId);
         }
 
-        var teamId = accessScope.GetEffectiveTeamId(user);
-        return await dbContext.Sessions.AnyAsync(s => s.TeamId == teamId && s.VecId == vecId);
+        var teamIds = accessScope.GetEffectiveTeamIds(user) ?? [];
+        return await dbContext.Sessions.AnyAsync(s => teamIds.Contains(s.TeamId) && s.VecId == vecId);
     }
 
     public record FeeConfigRow(int Id, DateTime EffectiveDate, bool FeeCollectionEnabled, decimal? ExamFeeAmount, decimal? RetainedAmount, decimal? YouthExamFeeAmount, string? Notes, bool InUse);

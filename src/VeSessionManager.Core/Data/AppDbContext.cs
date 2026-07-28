@@ -26,6 +26,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : IdentityUser
     public DbSet<JobRunHistory> JobRunHistories => Set<JobRunHistory>();
     public DbSet<SystemSettings> SystemSettings => Set<SystemSettings>();
     public DbSet<UnmatchedSquarePayment> UnmatchedSquarePayments => Set<UnmatchedSquarePayment>();
+    public DbSet<UserTeam> UserTeams => Set<UserTeam>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -97,7 +98,13 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : IdentityUser
         modelBuilder.Entity<User>(b =>
         {
             b.HasOne(u => u.ManagedByUser).WithMany().HasForeignKey(u => u.ManagedByUserId).OnDelete(DeleteBehavior.Restrict);
-            b.HasOne(u => u.Team).WithMany().HasForeignKey(u => u.TeamId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<UserTeam>(b =>
+        {
+            b.HasKey(ut => new { ut.UserId, ut.TeamId });
+            b.HasOne(ut => ut.User).WithMany(u => u.UserTeams).HasForeignKey(ut => ut.UserId).OnDelete(DeleteBehavior.Restrict);
+            b.HasOne(ut => ut.Team).WithMany(t => t.UserTeams).HasForeignKey(ut => ut.TeamId).OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<EmailTemplate>(b =>

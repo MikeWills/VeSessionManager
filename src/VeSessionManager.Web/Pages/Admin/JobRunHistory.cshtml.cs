@@ -17,7 +17,7 @@ public class JobRunHistoryModel(AppDbContext dbContext, UserManager<User> userMa
 
     public async Task<IActionResult> OnGetAsync()
     {
-        var user = await userManager.GetUserAsync(User);
+        var user = await userManager.GetUserWithManagerAsync(dbContext, User);
         if (user is null)
         {
             return Forbid();

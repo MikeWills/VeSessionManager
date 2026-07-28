@@ -7,12 +7,14 @@ using VeSessionManager.Core.Entities;
 namespace VeSessionManager.Web;
 
 /// <summary>
-/// UserManager.GetUserAsync(ClaimsPrincipal) does a plain lookup with no eager-loading, so
-/// User.ManagedByUser — the navigation SessionAccessScope.GetEffectiveTeamId requires be loaded for
-/// a TeamLead (see that class's own doc comment) — comes back null even when ManagedByUserId is
-/// set. Every page that resolves a TeamLead's effective team must load through here instead of
-/// userManager.GetUserAsync directly, or a TeamLead silently sees zero sessions instead of their
-/// assigned team's.
+/// UserManager.GetUserAsync(ClaimsPrincipal) does a plain lookup with no eager-loading, so neither
+/// User.UserTeams (needed by SessionAccessScope/AdminAccessScope's Contains-based checks for a
+/// TeamAdmin/SessionManager, since issue #19 made team membership a set instead of a single
+/// User.TeamId) nor User.ManagedByUser (needed for a TeamLead, whose effective teams resolve
+/// transitively through their manager's own UserTeams) come back loaded. Every page that calls into
+/// SessionAccessScope/AdminAccessScope must load through here instead of userManager.GetUserAsync
+/// directly, or a TeamAdmin/SessionManager/TeamLead silently sees zero teams/sessions instead of
+/// their real assignment.
 /// </summary>
 public static class CurrentUserLoader
 {
@@ -24,6 +26,9 @@ public static class CurrentUserLoader
             return null;
         }
 
-        return await dbContext.Users.Include(u => u.ManagedByUser).FirstOrDefaultAsync(u => u.Id == userId);
+        return await dbContext.Users
+            .Include(u => u.UserTeams)
+            .Include(u => u.ManagedByUser).ThenInclude(m => m!.UserTeams)
+            .FirstOrDefaultAsync(u => u.Id == userId);
     }
 }
