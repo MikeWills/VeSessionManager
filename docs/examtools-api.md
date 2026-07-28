@@ -5,8 +5,10 @@ verified against real responses on the dev site (`examtools.dev`) on 2026-07-19;
 requests live in `api-examples/` (Bruno collection). ExamTools has no published API docs — this
 is all discovered behavior, so re-verify if something starts failing after an upstream deploy.
 
-Hosts: `https://examtools.dev` (test) / `https://exam.tools` (production). An older client
-library used `https://alpha.exam.tools` for production — if prod logins fail, try that host.
+Hosts: `https://examtools.dev` (test) / `https://exam.tools` (legacy production). **Confirmed live
+2026-07-28: `https://alpha.exam.tools` is the current real production host** (HRCC's real
+credentials/session data live there, verified directly against the API) — this is what
+`ExamTools:BaseUrl` should point at for a real team, not `exam.tools`.
 
 ## Authentication
 
@@ -24,7 +26,8 @@ library used `https://alpha.exam.tools` for production — if prod logins fail, 
 
 | Endpoint | Returns |
 |---|---|
-| `GET /api/veUser/sessions?team={teamId}` | All sessions for the team. Fields used: `_id`, `date` (UTC ISO), `vec` (e.g. `"arrl"`), `state` (`"pend"`/`"done"`), `applicantCount`, `sessionDef.summary`. `sessionVes` is always `[]` in this list view. |
+| `GET /api/veUser/sessions?team={teamId}` | **Only ever returns `state: "pend"` sessions** — confirmed live 2026-07-28 against 40 real HRCC sessions spanning 2024-04-27 to 2026-12-16, every single one `"pend"`, none `"done"`, even years-old ones. See "Closed sessions are a separate feed" below. Fields used: `_id`, `date` (UTC ISO), `vec` (e.g. `"arrl"`), `state`, `applicantCount`, `sessionDef.summary`. `sessionVes` is always `[]` in this list view. |
+| `GET /api/veUser/sessions/{startDate}/{endDate}?group=all&team={teamId}` | **The actual source of closed (`state: "done"`) sessions** — `startDate`/`endDate` are `yyyy-MM-dd`. `group=all` means "include every status" (confirmed via the browser UI's own status dropdown: Open/All/Current/Pending/In-progress/Closed — not "every team"), not a synonym for omitting `team`; omitting `team` instead returns every team the login belongs to mixed together (confirmed live: one HRCC-account query without `team=` returned a session with `teamId: "KM6Z-F"` mixed in). `ExamToolsClient.GetTeamClosedSessionsAsync` calls this with a trailing ~30-day window to match `CompletedSessionBackfillWindow`. |
 | `GET /api/veUser/sessions/{id}` | Single-session detail; same shape but `sessionVes` populated (`perm: 10` = lead/co-lead) and `sessionDef` gains `city`/`state`/`zip`. **Not** used for VE roster — `sessionVes` entries have `ve` (an internal Mongo ObjectId) and `callsign` but no display name; see `export/full.json` below for the endpoint Phase 7 actually uses. Not currently called by ingestion for any other purpose either. |
 | `GET /api/veUser/sessions/{id}/export/basic.json` | `{ session: {date, state}, applicants: [...] }` — the candidate registration feed. Applicant fields used: `id`, `firstname`/`middle`/`lastname`/`suffix`, `email`, `frn`, `has_felony`, `created`. Also available: `pin`, `phone`, `callsign`, `licenseClass`, address fields, `finalized`. |
 | `GET /api/veUser/sessions/{id}/applicant/{applicantId}` | Per-applicant detail: everything above plus `status` (`"reg"`), `exams[]`, `hasSigned`, `sentEmails{}`. Not used yet — likely useful for later phases (ExamTools tracks which emails it already sent). |
@@ -39,13 +42,22 @@ library used `https://alpha.exam.tools` for production — if prod logins fail, 
   still in state `"pend"` (observed live on the dev feed: sessions from 2023/2024). Ingestion
   refuses to first-ingest a `"pend"` session more than a day past its start so downstream phases
   never create Zoom/Discord events for dead sessions.
+- **Closed sessions are a separate feed, not a `state` value in the pend list (found live 2026-07-28,
+  fixed same day).** Issue #22's original implementation checked `remote.State == "done"` on the
+  result of `GetTeamSessionsAsync` — logically correct, but that endpoint **never** returns a
+  `"done"` session in real data, so the check could never fire; a real HRCC session from the night
+  before was still missing from the local DB after ingestion ran clean with zero errors. Found by
+  querying the live API directly and diffing against the browser UI's own session list, which
+  showed sessions the ingested feed didn't. Fixed by adding `GetTeamClosedSessionsAsync` (the
+  date-range endpoint above) and merging its results into `SessionIngestionService`'s candidate set
+  for new-session ingestion, deduped by `_id` against the pend feed.
 - **Completed-session backfill (issue #22, 2026-07-28).** A `"done"` session was never first-ingested
   at all before this — teams wanted to start tracking past candidates/VE stats for sessions that
-  already happened. `SessionIngestionService` now also first-ingests a `"done"` session, but only
-  within a trailing ~30-day window (`CompletedSessionBackfillWindow`) — same reasoning as the
-  1-day `"pend"` grace above: the feed returns unfiltered full history, so a `"done"` session from
-  years ago is exactly as undesirable to backfill as a zombie `"pend"` one. The `"pend"` window
-  itself is untouched. Because a newly-backfilled session's scheduled time is already in the past,
+  already happened. `SessionIngestionService` now also first-ingests a `"done"` session (sourced from
+  the closed-sessions feed above), but only within a trailing ~30-day window
+  (`CompletedSessionBackfillWindow`) — same reasoning as the 1-day `"pend"` grace above: a `"done"`
+  session from years ago is exactly as undesirable to backfill as a zombie `"pend"` one. The `"pend"`
+  window itself is untouched. Because a newly-backfilled session's scheduled time is already in the past,
   `Session.HasEnded(now)` gates two downstream passes so they don't act on it as if it were live:
   `SessionEventSchedulingService` skips Zoom meeting/Discord event creation
   (`SchedulingResult.SessionsSkippedPastDue`), and `CandidateNotificationService`'s automatic

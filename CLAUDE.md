@@ -77,9 +77,6 @@ would be pure duplication — and goes straight to `CHANGELOG.md` instead. Non-p
 redesigns, hardening passes) start here and move to `CHANGELOG.md` once the section is at/over the
 cap and a newer entry needs to be added; oldest goes first.
 
-- **Square unmatched-payment matching + order completion (2026-07-22).** `docs/square-payments.md`'s
-  "Unmatched payments"/"Order completion" sections — includes why payment amount is deliberately not
-  validated against what's owed.
 - **TeamLead read-only view (2026-07-22).** Closed the Phase 9d self-audit gap. `docs/admin-auth.md`'s
   "TeamLead read-only view" section — new `SessionAccessScope.CanView` distinct from `CanEdit`.
 - **FCC ULS stale/dismissed-application matching fix (2026-07-22).** `docs/fcc-uls-watcher.md`, found
@@ -110,6 +107,11 @@ cap and a newer entry needs to be added; oldest goes first.
   to ~30 days past its start (previously never ingested at all), gated by the new
   `Session.HasEnded` helper so `SessionEventSchedulingService`/`CandidateNotificationService` don't
   try to live-schedule or email a session that already happened.
+- **Closed-session ingestion endpoint fix (2026-07-28).** `docs/examtools-api.md`'s "Closed sessions
+  are a separate feed" section — issue #22's backfill above could never actually fire against real
+  data, because `GetTeamSessionsAsync` never returns a closed (`"done"`) session at all; found live
+  running the Worker against real HRCC data. New `IExamToolsClient.GetTeamClosedSessionsAsync` calls
+  the real date-range endpoint and is merged into `SessionIngestionService`'s feed.
 
 Everything through Phase 0-10's initial build (ExamTools ingestion, Zoom/Discord, Square, email
 notifications, FCC ULS watcher, payment reminders, VE tracking, VEC submission tracker, admin

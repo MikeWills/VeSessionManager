@@ -6,8 +6,21 @@ namespace VeSessionManager.Core.ExamTools;
 /// </summary>
 public interface IExamToolsClient
 {
-    /// <summary>All sessions visible to the given team, upcoming and past.</summary>
+    /// <summary>
+    /// Every "pend" (not-yet-closed) session for the team — despite the name, this endpoint never
+    /// returns a closed ("done") session, no matter how far in the past; see
+    /// <see cref="GetTeamClosedSessionsAsync"/> for those. Confirmed live 2026-07-28 against real
+    /// HRCC data — see docs/examtools-api.md.
+    /// </summary>
     Task<IReadOnlyList<ExamToolsSession>> GetTeamSessionsAsync(ExamToolsCredentials credentials, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Closed ("done") sessions for the team whose date falls within [startDateUtc, endDateUtc) —
+    /// a completely separate feed from <see cref="GetTeamSessionsAsync"/>, which never surfaces
+    /// closed sessions at all. See docs/examtools-api.md's "Closed sessions are a separate feed"
+    /// section for how this was discovered.
+    /// </summary>
+    Task<IReadOnlyList<ExamToolsSession>> GetTeamClosedSessionsAsync(ExamToolsCredentials credentials, DateOnly startDateUtc, DateOnly endDateUtc, CancellationToken cancellationToken);
 
     /// <summary>Registered applicants for one session, including PII — handle results per the PII logging rules.</summary>
     Task<IReadOnlyList<ExamToolsApplicant>> GetSessionApplicantsAsync(ExamToolsCredentials credentials, string examToolsSessionId, CancellationToken cancellationToken);

@@ -8,6 +8,9 @@ that window, or immediately if it's phase-numbered work already summarized in "C
 design rationale for any entry still lives in its linked `/docs/*.md` file, not here or in
 CLAUDE.md — this file, like CLAUDE.md's Change Log, is pointers only.
 
+- **Square unmatched-payment matching + order completion (2026-07-22).** `docs/square-payments.md`'s
+  "Unmatched payments"/"Order completion" sections — includes why payment amount is deliberately not
+  validated against what's owed.
 - **Candidate ingestion scheduling, redesigned (2026-07-21, redesigned 2026-07-23).**
   `docs/candidate-refresh.md` — flat per-team polling interval + an on-demand "Refresh candidates"
   button, replacing an earlier "surge polling near session start" design.

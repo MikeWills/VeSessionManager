@@ -59,7 +59,16 @@ public class SessionIngestionService(
 
         var credentials = new ExamToolsCredentials(team.Id, team.ExamToolsTeamCode!, team.ExamToolsUsername!, team.ExamToolsPassword!);
 
-        var remoteSessions = await examToolsClient.GetTeamSessionsAsync(credentials, cancellationToken);
+        var remoteSessions = (await examToolsClient.GetTeamSessionsAsync(credentials, cancellationToken)).ToList();
+
+        // GetTeamSessionsAsync never returns a closed ("done") session, confirmed live 2026-07-28 —
+        // closed sessions only exist behind this separate date-range feed. Merge the two, preferring
+        // the pend feed's own copy of a session id if (implausibly) both returned it.
+        var closedSessions = await examToolsClient.GetTeamClosedSessionsAsync(
+            credentials, DateOnly.FromDateTime(now - CompletedSessionBackfillWindow), DateOnly.FromDateTime(now.AddDays(1)), cancellationToken);
+        var pendIds = remoteSessions.Select(r => r.Id).ToHashSet();
+        remoteSessions.AddRange(closedSessions.Where(c => !pendIds.Contains(c.Id)));
+
         var remoteIds = remoteSessions.Select(r => r.Id).ToHashSet();
 
         // Scoped to this team — otherwise another team's still-active sessions (never in this

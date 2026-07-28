@@ -22,12 +22,19 @@ public class SessionIngestionServiceTests
     private sealed class FakeExamToolsClient : IExamToolsClient
     {
         public Dictionary<int, List<ExamToolsSession>> SessionsByTeam { get; } = [];
+        public Dictionary<int, List<ExamToolsSession>> ClosedSessionsByTeam { get; } = [];
         public Dictionary<int, Dictionary<string, List<ExamToolsApplicant>>> ApplicantsByTeam { get; } = [];
         public List<string> ApplicantFetches { get; } = [];
         public List<ExamToolsCredentials> CredentialsUsed { get; } = [];
 
         public List<ExamToolsSession> SessionsFor(int teamId) =>
             SessionsByTeam.TryGetValue(teamId, out var list) ? list : SessionsByTeam[teamId] = [];
+
+        // Mirrors the real, separate GET .../sessions/{start}/{end}?group=all&team=... feed — a
+        // "done" session put here (not in SessionsFor) is only visible via GetTeamClosedSessionsAsync,
+        // exactly like the real API. See docs/examtools-api.md's "Closed sessions are a separate feed".
+        public List<ExamToolsSession> ClosedSessionsFor(int teamId) =>
+            ClosedSessionsByTeam.TryGetValue(teamId, out var list) ? list : ClosedSessionsByTeam[teamId] = [];
 
         public Dictionary<string, List<ExamToolsApplicant>> ApplicantsFor(int teamId) =>
             ApplicantsByTeam.TryGetValue(teamId, out var dict) ? dict : ApplicantsByTeam[teamId] = [];
@@ -37,6 +44,9 @@ public class SessionIngestionServiceTests
             CredentialsUsed.Add(credentials);
             return Task.FromResult<IReadOnlyList<ExamToolsSession>>(SessionsFor(credentials.TeamId));
         }
+
+        public Task<IReadOnlyList<ExamToolsSession>> GetTeamClosedSessionsAsync(ExamToolsCredentials credentials, DateOnly startDateUtc, DateOnly endDateUtc, CancellationToken cancellationToken) =>
+            Task.FromResult<IReadOnlyList<ExamToolsSession>>(ClosedSessionsFor(credentials.TeamId));
 
         public Task<IReadOnlyList<ExamToolsApplicant>> GetSessionApplicantsAsync(ExamToolsCredentials credentials, string examToolsSessionId, CancellationToken cancellationToken)
         {
@@ -207,6 +217,47 @@ public class SessionIngestionServiceTests
 
         Assert.Equal(0, result.SessionsAdded);
         Assert.Empty(dbContext.Sessions);
+    }
+
+    [Fact]
+    public async Task DoneSessionOnlyInClosedSessionsFeed_IsIngested()
+    {
+        // Confirmed live 2026-07-28 against real HRCC ExamTools data: GetTeamSessionsAsync's own
+        // feed never returns a "done" session, no matter its age — closed sessions only ever show
+        // up via the separate GetTeamClosedSessionsAsync feed. This is the merge SessionIngestionService
+        // must perform for issue #22's backfill to actually work against real data.
+        await using var dbContext = CreateContext();
+        await SeedVecAndFeeConfigAsync(dbContext);
+        var team = await SeedTeamAsync(dbContext);
+        var client = new FakeExamToolsClient();
+        var done = PendingSession(id: "closed-feed-session", date: Now.AddDays(-1));
+        done.State = "done";
+        client.ClosedSessionsFor(team.Id).Add(done);
+
+        var result = await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+
+        Assert.Equal(1, result.SessionsAdded);
+        var session = Assert.Single(dbContext.Sessions);
+        Assert.Equal("closed-feed-session", session.ExamToolsSessionId);
+        Assert.Equal(SessionStatus.Active, session.Status);
+    }
+
+    [Fact]
+    public async Task SessionInBothPendAndClosedFeeds_IsNotIngestedTwice()
+    {
+        await using var dbContext = CreateContext();
+        await SeedVecAndFeeConfigAsync(dbContext);
+        var team = await SeedTeamAsync(dbContext);
+        var client = new FakeExamToolsClient();
+        client.SessionsFor(team.Id).Add(PendingSession(id: "dual-feed-session", date: Now.AddDays(1)));
+        var done = PendingSession(id: "dual-feed-session", date: Now.AddDays(1));
+        done.State = "done";
+        client.ClosedSessionsFor(team.Id).Add(done);
+
+        var result = await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+
+        Assert.Equal(1, result.SessionsAdded);
+        Assert.Single(dbContext.Sessions);
     }
 
     [Fact]
