@@ -119,7 +119,7 @@
                         }
                         else
                         {
-                            @candidate.DisplayName
+                            <a asp-page="./CandidateDetail" asp-route-id="@candidate.Id">@candidate.DisplayName</a>
                         }
                     </div>
                     <div class="id-cell mono">@candidate.CallSignOrDash <span class="frn">@candidate.FrnLine</span></div>

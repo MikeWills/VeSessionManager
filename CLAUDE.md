@@ -77,8 +77,6 @@ would be pure duplication — and goes straight to `CHANGELOG.md` instead. Non-p
 redesigns, hardening passes) start here and move to `CHANGELOG.md` once the section is at/over the
 cap and a newer entry needs to be added; oldest goes first.
 
-- **TeamLead read-only view (2026-07-22).** Closed the Phase 9d self-audit gap. `docs/admin-auth.md`'s
-  "TeamLead read-only view" section — new `SessionAccessScope.CanView` distinct from `CanEdit`.
 - **FCC ULS stale/dismissed-application matching fix (2026-07-22).** `docs/fcc-uls-watcher.md`, found
   via a live real-FRN lookup.
 - **Payment reminders retest-gating fix (2026-07-22).** `docs/payment-reminders.md`'s "Retest
@@ -107,6 +105,12 @@ cap and a newer entry needs to be added; oldest goes first.
   to ~30 days past its start (previously never ingested at all), gated by the new
   `Session.HasEnded` helper so `SessionEventSchedulingService`/`CandidateNotificationService` don't
   try to live-schedule or email a session that already happened.
+- **Applicant detail page (2026-07-28).** `docs/applicant-detail.md` — a new per-Candidate.Id page
+  (never keyed by FRN, since one person can test with the team more than once) with full action
+  parity to the session Detail page's candidate row, every payment's link surfaced (closing a
+  previously-open TODO item), and an "other sessions with this FRN" cross-reference list. Introduced
+  the shared `CandidateEmailHistoryFormatter` helper and fixed two bugs found live-testing in a real
+  browser: a nullable-UTC-suffix formatting bug and an off-screen kebab-menu CSS positioning bug.
 - **Closed-session ingestion endpoint fix (2026-07-28).** `docs/examtools-api.md`'s "Closed sessions
   are a separate feed" section — issue #22's backfill above could never actually fire against real
   data, because `GetTeamSessionsAsync` never returns a closed (`"done"`) session at all; found live
