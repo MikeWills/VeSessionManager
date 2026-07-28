@@ -62,4 +62,15 @@ public class Candidate
     public DateTime? YouthProgramInstructionsSentUtc { get; set; }
 
     public List<Payment> Payments { get; } = [];
+
+    /// <summary>
+    /// True when this candidate already held an active license before this exact session started —
+    /// the FCC's Grant Date predates Session.ScheduledStartUtc, so the Granted match reflects a
+    /// pre-existing license (a repeat test or class upgrade), not a new grant from this session.
+    /// Confirmed live 2026-07-28 against real ULS data that FCC's Grant Date does not change on a
+    /// class upgrade, so this is a reliable signal even without parsing AM.dat's operator-class
+    /// field (never fetched by this app — see docs/fcc-uls-watcher.md). Requires Session loaded.
+    /// </summary>
+    public bool LicenseGrantPredatesSession() =>
+        LicenseGrantDateUtc is { } grantedUtc && grantedUtc.Date < Session.ScheduledStartUtc.Date;
 }

@@ -39,6 +39,14 @@ inside `Detail.cshtml.cs`. Since this page needed the identical list, it was ext
 record) — both pages now call the one shared implementation instead of drifting apart, per this
 repo's established shared-helper convention.
 
+## License note (added 2026-07-28)
+
+When `Candidate.LicenseGrantPredatesSession()` is true — the FCC's Grant Date predates this
+candidate's own session, meaning they were already licensed before showing up (a repeat test or
+class upgrade, not a new grant) — the page shows a note next to "License granted" saying so. See
+`docs/fcc-uls-watcher.md`'s "Upgrade exam handling" section for the real data (William Denney,
+Jason Pelowitz) that surfaced this and the related `PiiPurgeService` fix.
+
 ## Bugs found and fixed while building this
 
 - **Nullable UTC-suffix formatting bug.** `value?.ToString(...) + " UTC"` only short-circuits the

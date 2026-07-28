@@ -31,7 +31,7 @@ of Phases 2–4's actual deliverables.
 - [ ] Live test: find (or wait for) a real candidate whose FRN appears in an actual FCC daily application file and confirm `FccDailyWatcherJob` flips them to `Received` with a sane `ApplicationDateEnteredUtc`
 - [ ] Live test: confirm the same candidate's eventual license grant flips them to `Granted` with the correct `CallSign`/`LicenseGrantDateUtc`
 - [ ] Let `FccWeeklyCatchupJob` actually run on a real Monday at least once and confirm it hits `complete/a_amat.zip`/`complete/l_amat.zip` successfully (these are ~190MB+ files — first real run will validate both the download time and memory footprint of loading them fully into memory, not just the small daily files exercised so far)
-- [ ] Revisit the deferred "upgrade exam" (existing licensee) matching logic once real ULS + ExamTools/HamStudy sample data for an upgrade candidate is available — see `docs/fcc-uls-watcher.md`'s Open Item
+- [x] ~~Revisit the deferred "upgrade exam" (existing licensee) matching logic~~ (resolved 2026-07-28 with real HRCC data — William Denney/Jason Pelowitz — see `docs/fcc-uls-watcher.md`'s "Upgrade exam handling" section). Matching still can't avoid re-detecting a pre-existing license (FCC's own Grant Date doesn't change on a class upgrade), but the real consequence — premature PII purge — is fixed by anchoring `PiiPurgeService`'s retention Trigger A on the later of `LicenseGrantDateUtc`/`Session.ScheduledStartUtc`, and the distinction is surfaced on the new applicant detail page.
 
 ## Payment Reminders (Phase 6) — not yet live-verified
 
