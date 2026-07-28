@@ -8,6 +8,11 @@ that window, or immediately if it's phase-numbered work already summarized in "C
 design rationale for any entry still lives in its linked `/docs/*.md` file, not here or in
 CLAUDE.md — this file, like CLAUDE.md's Change Log, is pointers only.
 
+- **Closed-session ingestion endpoint fix (2026-07-28).** `docs/examtools-api.md`'s "Closed sessions
+  are a separate feed" section — issue #22's backfill could never actually fire against real
+  data, because `GetTeamSessionsAsync` never returns a closed (`"done"`) session at all; found live
+  running the Worker against real HRCC data. New `IExamToolsClient.GetTeamClosedSessionsAsync` calls
+  the real date-range endpoint and is merged into `SessionIngestionService`'s feed.
 - **FCC ULS stale/dismissed-application matching fix (2026-07-22).** `docs/fcc-uls-watcher.md`, found
   via a live real-FRN lookup.
 - **TeamLead read-only view (2026-07-22).** Closed the Phase 9d self-audit gap. `docs/admin-auth.md`'s

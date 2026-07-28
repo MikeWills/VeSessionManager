@@ -162,10 +162,11 @@ appsettings/user-secrets-bound singletons) would need rework to store credential
 
 ## Jobs
 
-- `FccDailyWatcherJob` — ticks hourly and calls `FccUlsWatcherService.RunDailyAsync` only when the
-  current US Eastern hour matches `SystemSettings.FccDailyWatcherStartHourEt` (default 8) plus every
+- `FccDailyWatcherJob` — ticks hourly and calls `FccUlsWatcherService.RunDailyAsync` once per
+  scheduled slot: `SystemSettings.FccDailyWatcherStartHourEt` (default 8) plus every
   `FccDailyWatcherIntervalHours` (default 12) after that — 8am and 8pm ET by default. See "Same-day
-  retry" below for why this isn't the Worker-start-relative 24h `PeriodicTimer` every other job uses.
+  retry" below for why this isn't the Worker-start-relative 24h `PeriodicTimer` every other job uses,
+  and "Catch-up, not exact-instant" below for why a slot doesn't have to fire at that exact hour.
 - `FccWeeklyCatchupJob` — same Worker-start-relative 24-hour `PeriodicTimer` idiom as every other job
   (`Jobs:FccWeeklyCatchupIntervalHours`), but only actually invokes `RunWeeklyCatchupAsync` when the
   current day matches `Jobs:FccWeeklyCatchupDayOfWeek` (default `Monday`); every other day's tick is
@@ -197,6 +198,24 @@ raw UTC to Eastern time too: the new 8pm ET retry lands at/after UTC midnight fo
 right when the retry was supposed to be checking *today's* file. Covered by
 `RunDailyAsync_NearUtcMidnight_UsesEasternDayOfWeek_NotUtcDayOfWeek` in
 `FccUlsWatcherServiceTests.cs`.
+
+## Catch-up, not exact-instant (found/fixed 2026-07-28)
+
+The 8am/8pm ET slots above only exist to make sure FCC has actually published that day's file before
+checking — the exact instant was never the point. But the first version of the same-day-retry fix
+still required an *exact* hour match (`nowEt.Hour == slot`) to actually run, so a Worker that was
+down or mid-restart right at 8am ET would silently sit idle for the full 12 hours until the 8pm slot,
+instead of catching up as soon as it came back — the opposite of what you'd want when a slot's exact
+timing was never load-bearing in the first place.
+
+Fixed by replacing the exact-hour check with `FccDailyWatcherJob.LatestDueSlotUtc` — on every hourly
+tick, it computes the most recent scheduled slot that is not in the future (rolling back across a
+calendar-day boundary if needed, e.g. 3am ET with the default schedule resolves to yesterday's 8pm
+slot) and checks `JobRunHistory` for a successful `"FccDailyWatcher"` run at or after that slot. If
+none exists yet, it runs immediately — a Worker that comes back up at 8:47am still catches the missed
+8am slot on its very first tick rather than waiting for 8pm. A slot that already ran successfully is
+skipped on every later tick within the same window, same "extra ticks are free" idempotency as
+before.
 
 ## Weekly complete snapshot lags real filings (found 2026-07-23)
 
