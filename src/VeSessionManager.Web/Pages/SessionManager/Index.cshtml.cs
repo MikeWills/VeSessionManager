@@ -1,5 +1,6 @@
 using System.Globalization;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
@@ -21,21 +22,85 @@ namespace VeSessionManager.Web.Pages.SessionManager;
 ///
 /// Multi-team (issue #19) + team filter/column (issue #17): a user belonging to more than one team
 /// sees every team's sessions mixed together by default, with a Team column to tell them apart and
-/// a filter-pill row (TeamId/AvailableTeams) to narrow down to just one.
+/// a team dropdown (TeamId/AvailableTeams) to narrow down to just one.
+///
+/// Dropdown filters + remembered selection (2026-07-28): the original filter-pill row only supported
+/// one status at a time and reset to the "Upcoming" default on every bare navigation back to this
+/// page (the "← Sessions" breadcrumb, the nav bar's own Sessions link, and RoleLandingPages'
+/// post-login redirect are all plain links with no query string) — annoying when a Session Manager
+/// picks "Past" or a specific team, clicks into a session, and comes back to find their filter gone.
+/// Status is now a multi-select checkbox dropdown (Status/AvailableStatuses) instead of four mutually
+/// exclusive pills, and the last-applied Status/TeamId/PageSize combination is remembered in a cookie
+/// (FilterCookieName) and restored on any bare navigation. A submitted filter form always carries the
+/// hidden "applied" field so OnGetAsync can tell "the user just changed filters" (even to an empty
+/// status selection, meaning "show all") apart from "a bare link landed here with no query string at
+/// all" — only the latter falls back to the cookie. Page (which page you're on) is deliberately NOT
+/// remembered the same way — only PageSize is; changing a filter or coming back fresh always starts
+/// back at page 1, since a remembered mid-list page number would routinely land on stale/empty
+/// results once the underlying data changes.
+///
+/// Paging (2026-07-28): added once the list started getting long enough to matter. PageSize is one
+/// of AllowedPageSizes (10/25/50/100, default 10) rather than a free-typed number, both so an
+/// unvalidated huge page size can't be used to force one big unpaginated query and to keep the
+/// dropdown's options fixed. Prev/Next links are built server-side (BuildPageUrl) rather than via
+/// asp-route-* tag helpers because Status is a multi-value list — asp-route-* only supports one value
+/// per key, so preserving multiple checked statuses across a page link needs manual query-string
+/// construction.
 /// </summary>
 [Authorize(Roles = "SystemAdmin,TeamAdmin,SessionManager,TeamLead")]
 public class IndexModel(AppDbContext dbContext, UserManager<User> userManager, SessionAccessScope accessScope, TimeProvider timeProvider) : PageModel
 {
+    private const string FilterCookieName = "vsm_session_filters";
+    private static readonly string[] KnownStatuses = ["Upcoming", "NeedsReview", "Past"];
+    internal static readonly int[] AllowedPageSizes = [10, 25, 50, 100];
+    private const int DefaultPageSize = 10;
+
+    [BindProperty(SupportsGet = true, Name = "status")]
+    public List<string> Status { get; set; } = [];
+
     [BindProperty(SupportsGet = true)]
     public int? TeamId { get; set; }
 
+    [BindProperty(SupportsGet = true)]
+    public int PageSize { get; set; } = DefaultPageSize;
+
+    [BindProperty(SupportsGet = true, Name = "page")]
+    public int PageNumber { get; set; } = 1;
+
+    /// <summary>Hidden marker on the filter form — present only when the form was actually submitted, so an empty Status list can be told apart from "no query string was sent at all."</summary>
+    [BindProperty(SupportsGet = true)]
+    public bool Applied { get; set; }
+
     public IReadOnlyList<(int Id, string Name)> AvailableTeams { get; private set; } = [];
     public IReadOnlyList<SessionRow> Sessions { get; private set; } = [];
-    public string ActiveFilter { get; private set; } = "Upcoming";
+    public string StatusSummaryLabel { get; private set; } = "";
+    public int TotalCount { get; private set; }
+    public int TotalPages { get; private set; }
 
-    public async Task OnGetAsync(string? filter)
+    public async Task OnGetAsync()
     {
-        ActiveFilter = filter is "NeedsReview" or "Past" or "All" ? filter : "Upcoming";
+        if (Applied)
+        {
+            PageSize = AllowedPageSizes.Contains(PageSize) ? PageSize : DefaultPageSize;
+            SaveFilterCookie(Status, TeamId, PageSize);
+        }
+        else
+        {
+            var (cookieStatus, cookieTeamId, cookiePageSize) = ReadFilterCookie();
+            Status = cookieStatus ?? ["Upcoming"];
+            TeamId = cookieTeamId;
+            PageSize = cookiePageSize ?? DefaultPageSize;
+            PageNumber = 1;
+        }
+
+        Status = Status.Where(s => KnownStatuses.Contains(s)).Distinct().ToList();
+        StatusSummaryLabel = Status.Count switch
+        {
+            0 => "All",
+            1 => StatusLabel(Status[0]),
+            _ => $"{Status.Count} selected"
+        };
+        PageNumber = Math.Max(1, PageNumber);
 
         var user = await userManager.GetUserWithManagerAsync(dbContext, User) ?? throw new InvalidOperationException("No authenticated user for an [Authorize]d page.");
         var now = timeProvider.GetUtcNow().UtcDateTime;
@@ -51,16 +116,73 @@ public class IndexModel(AppDbContext dbContext, UserManager<User> userManager, S
             .Include(s => s.Team)
             .Include(s => s.Candidates);
 
-        query = ActiveFilter switch
+        var wantUpcoming = Status.Contains("Upcoming");
+        var wantNeedsReview = Status.Contains("NeedsReview");
+        var wantPast = Status.Contains("Past");
+        if (wantUpcoming || wantNeedsReview || wantPast)
         {
-            "NeedsReview" => query.Where(s => s.RescheduleFlaggedForReview),
-            "Past" => query.Where(s => s.ScheduledStartUtc < now),
-            "All" => query,
-            _ => query.Where(s => s.Status == SessionStatus.Active && s.ScheduledStartUtc >= now)
-        };
+            query = query.Where(s =>
+                (wantUpcoming && s.Status == SessionStatus.Active && s.ScheduledStartUtc >= now)
+                || (wantNeedsReview && s.RescheduleFlaggedForReview)
+                || (wantPast && s.ScheduledStartUtc < now));
+        }
 
-        var sessions = await query.OrderBy(s => s.ScheduledStartUtc).ToListAsync();
+        query = query.OrderBy(s => s.ScheduledStartUtc);
+
+        TotalCount = await query.CountAsync();
+        TotalPages = Math.Max(1, (int)Math.Ceiling(TotalCount / (double)PageSize));
+        PageNumber = Math.Min(PageNumber, TotalPages);
+
+        var sessions = await query.Skip((PageNumber - 1) * PageSize).Take(PageSize).ToListAsync();
         Sessions = sessions.Select(ToRow).ToList();
+    }
+
+    /// <summary>Builds a Prev/Next/page-size link preserving every current filter — asp-route-* tag helpers can't represent Status's multiple values, so this constructs the query string directly.</summary>
+    public string BuildPageUrl(int page, int? pageSizeOverride = null)
+    {
+        var qs = new List<string> { "applied=true" };
+        qs.AddRange(Status.Select(s => $"status={Uri.EscapeDataString(s)}"));
+        if (TeamId is not null)
+        {
+            qs.Add($"teamId={TeamId}");
+        }
+        qs.Add($"pageSize={pageSizeOverride ?? PageSize}");
+        qs.Add($"page={page}");
+        return "/SessionManager/Index?" + string.Join("&", qs);
+    }
+
+    private static string StatusLabel(string status) => status switch
+    {
+        "Upcoming" => "Upcoming",
+        "NeedsReview" => "Needs review",
+        "Past" => "Past",
+        _ => status
+    };
+
+    private (List<string>? Status, int? TeamId, int? PageSize) ReadFilterCookie()
+    {
+        if (!Request.Cookies.TryGetValue(FilterCookieName, out var raw) || string.IsNullOrWhiteSpace(raw))
+        {
+            return (null, null, null);
+        }
+
+        var parts = raw.Split('|', 3);
+        var status = parts[0].Length == 0 ? [] : parts[0].Split(',').Where(s => KnownStatuses.Contains(s)).ToList();
+        int? teamId = parts.Length > 1 && int.TryParse(parts[1], out var id) ? id : null;
+        int? pageSize = parts.Length > 2 && int.TryParse(parts[2], out var size) && AllowedPageSizes.Contains(size) ? size : null;
+        return (status, teamId, pageSize);
+    }
+
+    private void SaveFilterCookie(List<string> status, int? teamId, int pageSize)
+    {
+        var value = $"{string.Join(",", status)}|{teamId}|{pageSize}";
+        Response.Cookies.Append(FilterCookieName, value, new CookieOptions
+        {
+            Expires = DateTimeOffset.UtcNow.AddYears(1),
+            Path = "/SessionManager/Index",
+            SameSite = SameSiteMode.Lax,
+            IsEssential = true
+        });
     }
 
     private static SessionRow ToRow(Session s)
