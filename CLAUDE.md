@@ -77,6 +77,11 @@ would be pure duplication — and goes straight to `CHANGELOG.md` instead. Non-p
 redesigns, hardening passes) start here and move to `CHANGELOG.md` once the section is at/over the
 cap and a newer entry needs to be added; oldest goes first.
 
+- **FCC daily watcher catch-up, not exact-instant (2026-07-28).** `docs/fcc-uls-watcher.md`'s
+  "Catch-up, not exact-instant" section — the 8am/8pm ET slots exist to make sure FCC has published
+  that day's file, but a Worker down right at a slot used to silently wait the full 12h for the next
+  one instead of catching up. `FccDailyWatcherJob.LatestDueSlotUtc` now finds the most recent slot
+  not yet run (checked against `JobRunHistory`) and runs on the very next hourly tick.
 - **Per-team ExamTools host override (issue #18, 2026-07-28).** `docs/examtools-api.md`'s "Per-team
   host override" section — nullable `Team.ExamToolsBaseUrl` override column (not an
   `Team.ExamToolsEnvironment` enum) so a team can point at a different ExamTools host than the
@@ -122,12 +127,6 @@ cap and a newer entry needs to be added; oldest goes first.
   previously-open TODO item), and an "other sessions with this FRN" cross-reference list. Introduced
   the shared `CandidateEmailHistoryFormatter` helper and fixed two bugs found live-testing in a real
   browser: a nullable-UTC-suffix formatting bug and an off-screen kebab-menu CSS positioning bug.
-- **Closed-session ingestion endpoint fix (2026-07-28).** `docs/examtools-api.md`'s "Closed sessions
-  are a separate feed" section — issue #22's backfill above could never actually fire against real
-  data, because `GetTeamSessionsAsync` never returns a closed (`"done"`) session at all; found live
-  running the Worker against real HRCC data. New `IExamToolsClient.GetTeamClosedSessionsAsync` calls
-  the real date-range endpoint and is merged into `SessionIngestionService`'s feed.
-
 Everything through Phase 0-10's initial build (ExamTools ingestion, Zoom/Discord, Square, email
 notifications, FCC ULS watcher, payment reminders, VE tracking, VEC submission tracker, admin
 auth/config/candidate-actions, PII purge) plus the public privacy page has aged out to
