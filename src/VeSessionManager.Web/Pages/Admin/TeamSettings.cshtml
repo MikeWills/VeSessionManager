@@ -29,6 +29,7 @@
 }
 else
 {
+    <p class="eyebrow" style="margin-bottom:16px;">Team ID: @Model.Team.Id — needed to build this team's webhook/callback URLs by hand (e.g. <code>/webhooks/square/@Model.Team.Id</code>).</p>
     <div class="session-panel" style="display:block;">
         <div class="section-head"><h2>ExamTools</h2></div>
         <form method="post" asp-page-handler="UpdateExamTools">

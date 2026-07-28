@@ -17,6 +17,7 @@
 <table>
     <thead>
         <tr>
+            <th>ID</th>
             <th>Name</th>
             <th>Created</th>
             <th></th>
@@ -25,11 +26,12 @@
     <tbody>
         @if (Model.Teams.Count == 0)
         {
-            <tr><td colspan="3">No teams yet.</td></tr>
+            <tr><td colspan="4">No teams yet.</td></tr>
         }
         @foreach (var team in Model.Teams)
         {
             <tr>
+                <td class="count">@team.Id</td>
                 <td class="session-title">@team.Name</td>
                 <td>@team.CreatedUtc.ToString("MMM d, yyyy")</td>
                 <td class="row-actions">
