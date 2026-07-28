@@ -25,6 +25,9 @@ public class VolunteerExaminerSyncServiceTests
         public Task<IReadOnlyList<ExamToolsSession>> GetTeamSessionsAsync(ExamToolsCredentials credentials, CancellationToken cancellationToken) =>
             throw new NotSupportedException("Not used by VolunteerExaminerSyncService — it reads sessions from the local DB, not the feed.");
 
+        public Task<IReadOnlyList<ExamToolsSession>> GetTeamClosedSessionsAsync(ExamToolsCredentials credentials, DateOnly startDateUtc, DateOnly endDateUtc, CancellationToken cancellationToken) =>
+            throw new NotSupportedException("Not used by VolunteerExaminerSyncService — it reads sessions from the local DB, not the feed.");
+
         public Task<IReadOnlyList<ExamToolsApplicant>> GetSessionApplicantsAsync(ExamToolsCredentials credentials, string examToolsSessionId, CancellationToken cancellationToken) =>
             throw new NotSupportedException("Not used by VolunteerExaminerSyncService.");
 

@@ -106,6 +106,20 @@ until its columns are set via direct DB edit (no admin UI yet):
 
 ## Bugs / known issues
 
+- [x] ~~**Completed-session backfill (issue #22) never actually ingested anything against real data**~~
+  (found 2026-07-28 running the Worker against real HRCC ExamTools data as a live end-to-end test;
+  fixed same day, see `docs/examtools-api.md`'s "Closed sessions are a separate feed" section).
+  Ingestion ran clean with zero errors but a real session from the night before never showed up —
+  `GetTeamSessionsAsync` (the only feed `SessionIngestionService` read from) turns out to **never**
+  return a closed (`"done"`) session in real data, no matter its age; confirmed live against 40 real
+  HRCC sessions back to 2024, all `"pend"`. Closed sessions only exist behind a separate date-range
+  endpoint (`GET /api/veUser/sessions/{start}/{end}?group=all&team={teamId}`), discovered by
+  comparing the browser UI's own session list (which correctly showed recent closed sessions) against
+  the raw API response (which had a multi-month gap exactly where those sessions should have been).
+  Fixed by adding `IExamToolsClient.GetTeamClosedSessionsAsync` and merging its results into
+  `SessionIngestionService`'s new-session feed, deduped by `_id` against the pend list. Also confirmed
+  live: `alpha.exam.tools` (not `exam.tools`) is the real production ExamTools host.
+
 - [x] ~~**Duplicate Discord scheduled events**~~ — found ~6 duplicate events in the Discord server (reported 2026-07-21). Root cause and code fix landed 2026-07-21: `IDiscordEventClient` gained `ListEventsAsync`; `SessionEventSchedulingService.SyncZoomAndDiscordAsync` now checks for an existing guild event matching the session by name + start time (within a minute) before calling `CreateEventAsync`, adopting its id instead of creating a duplicate if found — covered by `NewSession_MatchingEventAlreadyExistsInGuild_AdoptsIt_DoesNotCreateDuplicate` in `SessionEventSchedulingServiceTests`. **Still outstanding — needs a human with Discord access:** the ~6 already-existing duplicate events in the real Discord server still need manually deleting; this fix only prevents new duplicates going forward, it doesn't clean up past ones.
   - **Same-day follow-up self-audit (2026-07-21) found the identical unfixed bug class in two more places, both now fixed:** Zoom meeting creation (same `SyncZoomAndDiscordAsync` method — added `IZoomClient.ListMeetingsAsync`, same name/time dedup pattern, see `NewSession_MatchingMeetingAlreadyExistsInZoom_AdoptsIt_DoesNotCreateDuplicate`) and Square payment link generation (`PaymentGenerationService.GenerateLinkAsync` — added `Payment.SquareIdempotencyKey`, persisted before calling Square and reused on retry so Square's own idempotency guarantee prevents the duplicate, migration `Phase9dPaymentSquareIdempotencyKey`). No live duplicates found for either yet (unlike Discord's confirmed ~6) — these were caught proactively, not from a reported incident.
 
@@ -126,7 +140,7 @@ until its columns are set via direct DB edit (no admin UI yet):
 
 ## Carried over from earlier phases
 
-- [ ] Confirm the production ExamTools host — `exam.tools` vs `alpha.exam.tools` (only the dev site, `examtools.dev`, has been exercised so far)
+- [x] ~~Confirm the production ExamTools host~~ (confirmed 2026-07-28) — `alpha.exam.tools` is the real production host (already correctly set in `appsettings.json`), not `exam.tools`. See `docs/examtools-api.md`.
 - [ ] Review `DevDataSeeder`'s $15/$7 ARRL fee amounts against the real current fee schedule before this touches real candidates
 - [x] ~~Retest payment reminders~~ (flagged in spec.md's Phase 6 section; fixed 2026-07-22, see `docs/payment-reminders.md`'s own "Retest payments" section). The 5-/10-day reminder logic was gated purely on `ApplicationDateEnteredUtc` (`Received`), which a retest `Candidate` never gets — it's permanently `Failed` (terminal) with no FCC application of its own. Both `PaymentReminderService` passes now carry a second branch for `Reason=Retest && ApplicationStatus=Failed`, anchored on `Candidate.ResultMarkedUtc` instead — exactly the spec's own suggested fix ("gate retest reminders on the Session Manager having marked *some* result, not FCC status"). 6 new unit tests (`PaymentReminderServiceTests`), including a regression guard confirming a *Failed candidate's original InitialExam payment* is still correctly excluded — only the `Retest` reason gets the exception.
 

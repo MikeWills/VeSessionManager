@@ -39,6 +39,16 @@ public sealed class ExamToolsClient : IExamToolsClient, IDisposable
         return sessions ?? [];
     }
 
+    public async Task<IReadOnlyList<ExamToolsSession>> GetTeamClosedSessionsAsync(
+        ExamToolsCredentials credentials, DateOnly startDateUtc, DateOnly endDateUtc, CancellationToken cancellationToken)
+    {
+        var sessions = await GetJsonAsync<List<ExamToolsSession>>(
+            credentials,
+            $"/api/veUser/sessions/{startDateUtc:yyyy-MM-dd}/{endDateUtc:yyyy-MM-dd}?group=all&team={Uri.EscapeDataString(credentials.TeamCode)}",
+            cancellationToken);
+        return sessions ?? [];
+    }
+
     public async Task<IReadOnlyList<ExamToolsApplicant>> GetSessionApplicantsAsync(ExamToolsCredentials credentials, string examToolsSessionId, CancellationToken cancellationToken)
     {
         var export = await GetJsonAsync<ExamToolsApplicantExport>(
