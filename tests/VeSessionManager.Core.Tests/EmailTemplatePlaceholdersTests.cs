@@ -44,4 +44,12 @@ public class EmailTemplatePlaceholdersTests
 
         Assert.Equal(["CandidateName", "CallSign"], result);
     }
+
+    [Fact]
+    public void For_RegistrationConfirmation_IncludesYouthPaymentLinkUrl()
+    {
+        var result = EmailTemplatePlaceholders.For("RegistrationConfirmation");
+
+        Assert.Contains("YouthPaymentLinkUrl", result);
+    }
 }

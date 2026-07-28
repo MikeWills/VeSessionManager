@@ -1,0 +1,56 @@
+@page "/youth-confirm/{token:guid}"
+@model VeSessionManager.Web.Pages.Public.YouthConfirmModel
+@using VeSessionManager.Core.Payments
+@{
+    ViewData["Title"] = "Youth Rate Confirmation";
+    Layout = "_PublicLayout";
+}
+
+<div class="auth-wrap">
+    <div class="auth-card">
+        <h1>Youth Rate Confirmation</h1>
+
+        @if (Model.Outcome == YouthConfirmationOutcome.Success)
+        {
+            <p class="policy-note">
+                TODO: final copy about the ARRL scholarship program (reimburses the FCC license fee)
+                goes here, including a link to
+                <a href="#">the reimbursement claim form</a> to fill out and email to us along with
+                your test session.
+            </p>
+            <p class="policy-note">
+                <strong>Under 13?</strong> ExamTools requires a separate COPPA consent form for
+                candidates under 13 — TODO: final instructions and a link to where that form should
+                be sent go here. This is a reminder only; nothing below confirms or records it.
+            </p>
+
+            <form method="post">
+                <div asp-validation-summary="ModelOnly" class="field-error"></div>
+                <div class="field">
+                    <label>
+                        <input asp-for="Input.ConfirmYouth" style="width:auto; display:inline-block;" />
+                        I confirm I am a youth (under 18).
+                    </label>
+                    <span asp-validation-for="Input.ConfirmYouth" class="field-error"></span>
+                </div>
+                <button type="submit" class="btn-primary">Continue to $5 payment</button>
+            </form>
+        }
+        else if (Model.Outcome == YouthConfirmationOutcome.AlreadyResolved)
+        {
+            <p class="policy-note">This payment has already been resolved — there's nothing left to confirm here. If that doesn't seem right, contact your Volunteer Examiner team.</p>
+        }
+        else if (Model.Outcome == YouthConfirmationOutcome.FeeNotConfigured || Model.Outcome == YouthConfirmationOutcome.SquareNotConfigured)
+        {
+            <p class="policy-note">The youth rate isn't fully set up yet for this session. Please contact your Volunteer Examiner team directly instead of using this link.</p>
+        }
+        else
+        {
+            <p class="policy-note">This link isn't valid. Please contact your Volunteer Examiner team if you believe this is an error.</p>
+        }
+    </div>
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

@@ -80,9 +80,36 @@ public sealed class SquareClient : ISquareClient
         _logger.LogInformation("Created Square payment link for team {TeamId}, order {SquareOrderId}", credentials.TeamId, paymentLink.OrderId);
         return new SquarePaymentLink
         {
+            Id = paymentLink.Id ?? throw new InvalidOperationException("Square payment link response had no id."),
             OrderId = paymentLink.OrderId ?? throw new InvalidOperationException("Square payment link response had no order_id."),
             Url = paymentLink.Url ?? throw new InvalidOperationException("Square payment link response had no url.")
         };
+    }
+
+    public async Task DeletePaymentLinkAsync(SquareCredentials credentials, string paymentLinkId, CancellationToken cancellationToken)
+    {
+        var client = GetOrCreateClient(credentials);
+
+        var response = await client.Checkout.PaymentLinks.DeleteAsync(
+            new DeletePaymentLinksRequest { Id = paymentLinkId },
+            cancellationToken: cancellationToken);
+
+        if (response.Errors is not null && response.Errors.Any())
+        {
+            if (response.Errors.All(e => e.Code == ErrorCode.NotFound))
+            {
+                // Already deleted — a retried call (e.g. a crash between Square's delete succeeding
+                // and the caller persisting that fact) or the link was removed some other way.
+                // Either way, nothing left to do; same idempotent-no-op treatment as
+                // CompleteOrderAsync's already-Completed check above.
+                return;
+            }
+
+            var detail = string.Join("; ", response.Errors.Select(e => $"{e.Category} {e.Code}: {e.Detail}"));
+            throw new InvalidOperationException($"Square rejected the delete-payment-link request for link {paymentLinkId}: {detail}");
+        }
+
+        _logger.LogInformation("Deleted Square payment link {SquarePaymentLinkId} for team {TeamId}", paymentLinkId, credentials.TeamId);
     }
 
     public async Task CompleteOrderAsync(SquareCredentials credentials, string orderId, CancellationToken cancellationToken)

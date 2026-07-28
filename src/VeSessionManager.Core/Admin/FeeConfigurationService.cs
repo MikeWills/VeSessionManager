@@ -14,7 +14,7 @@ namespace VeSessionManager.Core.Admin;
 public class FeeConfigurationService(AppDbContext dbContext, TimeProvider timeProvider)
 {
     public async Task<(FeeConfigActionResult Result, FeeConfiguration? FeeConfiguration)> CreateAsync(
-        int vecId, DateTime effectiveDate, bool feeCollectionEnabled, decimal? examFeeAmount, decimal? retainedAmount, string? notes, int userId, CancellationToken cancellationToken)
+        int vecId, DateTime effectiveDate, bool feeCollectionEnabled, decimal? examFeeAmount, decimal? retainedAmount, decimal? youthExamFeeAmount, string? notes, int userId, CancellationToken cancellationToken)
     {
         var vecExists = await dbContext.Vecs.AnyAsync(v => v.Id == vecId, cancellationToken);
         if (!vecExists)
@@ -30,6 +30,7 @@ public class FeeConfigurationService(AppDbContext dbContext, TimeProvider timePr
             FeeCollectionEnabled = feeCollectionEnabled,
             ExamFeeAmount = feeCollectionEnabled ? examFeeAmount : null,
             RetainedAmount = feeCollectionEnabled ? retainedAmount : null,
+            YouthExamFeeAmount = feeCollectionEnabled ? youthExamFeeAmount : null,
             Notes = notes,
             CreatedByUserId = userId,
             CreatedUtc = now
@@ -44,7 +45,7 @@ public class FeeConfigurationService(AppDbContext dbContext, TimeProvider timePr
     }
 
     public async Task<FeeConfigActionResult> UpdateAsync(
-        int feeConfigurationId, DateTime effectiveDate, bool feeCollectionEnabled, decimal? examFeeAmount, decimal? retainedAmount, string? notes, int userId, CancellationToken cancellationToken)
+        int feeConfigurationId, DateTime effectiveDate, bool feeCollectionEnabled, decimal? examFeeAmount, decimal? retainedAmount, decimal? youthExamFeeAmount, string? notes, int userId, CancellationToken cancellationToken)
     {
         var feeConfiguration = await dbContext.FeeConfigurations.FirstOrDefaultAsync(f => f.Id == feeConfigurationId, cancellationToken);
         if (feeConfiguration is null)
@@ -62,6 +63,7 @@ public class FeeConfigurationService(AppDbContext dbContext, TimeProvider timePr
         feeConfiguration.FeeCollectionEnabled = feeCollectionEnabled;
         feeConfiguration.ExamFeeAmount = feeCollectionEnabled ? examFeeAmount : null;
         feeConfiguration.RetainedAmount = feeCollectionEnabled ? retainedAmount : null;
+        feeConfiguration.YouthExamFeeAmount = feeCollectionEnabled ? youthExamFeeAmount : null;
         feeConfiguration.Notes = notes;
 
         var now = timeProvider.GetUtcNow().UtcDateTime;

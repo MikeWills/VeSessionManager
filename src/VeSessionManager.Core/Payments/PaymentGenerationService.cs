@@ -39,6 +39,7 @@ public class PaymentGenerationService(
 
         var candidatesNeedingPayment = await dbContext.Candidates
             .Include(c => c.Session).ThenInclude(s => s.FeeConfiguration)
+            .Include(c => c.Session).ThenInclude(s => s.Vec)
             .Where(c => c.PiiPurgedUtc == null
                         && c.Session.TeamId == team.Id
                         && c.Session.Status == SessionStatus.Active
@@ -54,6 +55,9 @@ public class PaymentGenerationService(
                 Reason = PaymentReason.InitialExam,
                 Amount = feeConfiguration.FeeCollectionEnabled ? feeConfiguration.ExamFeeAmount!.Value : 0m,
                 Status = feeConfiguration.FeeCollectionEnabled ? PaymentStatus.Unpaid : PaymentStatus.NotApplicable,
+                YouthConfirmationToken = feeConfiguration.FeeCollectionEnabled && candidate.Session.Vec.SupportsYouthProgram
+                    ? Guid.NewGuid()
+                    : null,
                 CreatedUtc = now
             };
             dbContext.Payments.Add(payment);
@@ -115,6 +119,7 @@ public class PaymentGenerationService(
         var candidate = await dbContext.Candidates
             .Include(c => c.Session).ThenInclude(s => s.FeeConfiguration)
             .Include(c => c.Session).ThenInclude(s => s.Team)
+            .Include(c => c.Session).ThenInclude(s => s.Vec)
             .FirstOrDefaultAsync(c => c.Id == candidateId, cancellationToken)
             ?? throw new InvalidOperationException($"Candidate {candidateId} not found.");
 
@@ -125,6 +130,9 @@ public class PaymentGenerationService(
             Reason = PaymentReason.Retest,
             Amount = feeConfiguration.FeeCollectionEnabled ? feeConfiguration.ExamFeeAmount!.Value : 0m,
             Status = feeConfiguration.FeeCollectionEnabled ? PaymentStatus.Unpaid : PaymentStatus.NotApplicable,
+            YouthConfirmationToken = feeConfiguration.FeeCollectionEnabled && candidate.Session.Vec.SupportsYouthProgram
+                ? Guid.NewGuid()
+                : null,
             CreatedUtc = timeProvider.GetUtcNow().UtcDateTime
         };
         dbContext.Payments.Add(payment);
@@ -177,6 +185,7 @@ public class PaymentGenerationService(
 
         payment.PaymentLinkUrl = link.Url;
         payment.SquarePaymentReferenceId = link.OrderId;
+        payment.SquarePaymentLinkId = link.Id;
         logger.LogInformation("Generated Square payment link for Payment {PaymentId}", payment.Id);
     }
 }

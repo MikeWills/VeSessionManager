@@ -35,7 +35,8 @@ else
             <tr>
                 <th>Effective</th>
                 <th>Fee collection</th>
-                <th>Exam fee</th>
+                <th>Regular fee</th>
+                <th>Youth fee</th>
                 <th>Retained</th>
                 <th>Notes</th>
                 <th></th>
@@ -44,7 +45,7 @@ else
         <tbody>
             @if (Model.FeeConfigurations.Count == 0)
             {
-                <tr><td colspan="6">No fee configurations for this VEC yet.</td></tr>
+                <tr><td colspan="7">No fee configurations for this VEC yet.</td></tr>
             }
             @foreach (var fc in Model.FeeConfigurations)
             {
@@ -61,6 +62,7 @@ else
                         }
                     </td>
                     <td>@(fc.ExamFeeAmount is null ? "—" : $"${fc.ExamFeeAmount:F2}")</td>
+                    <td>@(fc.YouthExamFeeAmount is null ? "—" : $"${fc.YouthExamFeeAmount:F2}")</td>
                     <td>@(fc.RetainedAmount is null ? "—" : $"${fc.RetainedAmount:F2}")</td>
                     <td>@fc.Notes</td>
                     <td class="row-actions">
@@ -87,7 +89,8 @@ else
                 <div class="field">
                     <label><input type="checkbox" name="feeCollectionEnabled" value="true" checked style="width:auto; display:inline-block;" /> Fee collection enabled</label>
                 </div>
-                <div class="field"><label for="createFeeExamAmount">Exam fee amount</label><input id="createFeeExamAmount" name="examFeeAmount" type="number" step="0.01" min="0" /></div>
+                <div class="field"><label for="createFeeExamAmount">Regular fee</label><input id="createFeeExamAmount" name="examFeeAmount" type="number" step="0.01" min="0" /></div>
+                <div class="field"><label for="createFeeYouthAmount">Youth fee</label><input id="createFeeYouthAmount" name="youthExamFeeAmount" type="number" step="0.01" min="0" /></div>
                 <div class="field"><label for="createFeeRetainedAmount">Retained amount</label><input id="createFeeRetainedAmount" name="retainedAmount" type="number" step="0.01" min="0" /></div>
                 <div class="field"><label for="createFeeNotes">Notes</label><textarea id="createFeeNotes" name="notes" rows="2"></textarea></div>
                 <div class="modal-actions">
@@ -109,7 +112,8 @@ else
                     <div class="field">
                         <label><input type="checkbox" name="feeCollectionEnabled" value="true" checked="@fc.FeeCollectionEnabled" style="width:auto; display:inline-block;" /> Fee collection enabled</label>
                     </div>
-                    <div class="field"><label for="editFeeExamAmount-@fc.Id">Exam fee amount</label><input id="editFeeExamAmount-@fc.Id" name="examFeeAmount" type="number" step="0.01" min="0" value="@fc.ExamFeeAmount" /></div>
+                    <div class="field"><label for="editFeeExamAmount-@fc.Id">Regular fee</label><input id="editFeeExamAmount-@fc.Id" name="examFeeAmount" type="number" step="0.01" min="0" value="@fc.ExamFeeAmount" /></div>
+                    <div class="field"><label for="editFeeYouthAmount-@fc.Id">Youth fee</label><input id="editFeeYouthAmount-@fc.Id" name="youthExamFeeAmount" type="number" step="0.01" min="0" value="@fc.YouthExamFeeAmount" /></div>
                     <div class="field"><label for="editFeeRetainedAmount-@fc.Id">Retained amount</label><input id="editFeeRetainedAmount-@fc.Id" name="retainedAmount" type="number" step="0.01" min="0" value="@fc.RetainedAmount" /></div>
                     <div class="field"><label for="editFeeNotes-@fc.Id">Notes</label><textarea id="editFeeNotes-@fc.Id" name="notes" rows="2">@fc.Notes</textarea></div>
                     <div class="modal-actions">

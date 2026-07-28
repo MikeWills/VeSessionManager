@@ -62,11 +62,11 @@ public class FeeConfigurationsModel(AppDbContext dbContext, UserManager<User> us
         FeeConfigurations = await dbContext.FeeConfigurations
             .Where(f => f.VecId == VecId)
             .OrderByDescending(f => f.EffectiveDate)
-            .Select(f => new FeeConfigRow(f.Id, f.EffectiveDate, f.FeeCollectionEnabled, f.ExamFeeAmount, f.RetainedAmount, f.Notes, referencedIds.Contains(f.Id)))
+            .Select(f => new FeeConfigRow(f.Id, f.EffectiveDate, f.FeeCollectionEnabled, f.ExamFeeAmount, f.RetainedAmount, f.YouthExamFeeAmount, f.Notes, referencedIds.Contains(f.Id)))
             .ToListAsync();
     }
 
-    public async Task<IActionResult> OnPostCreateAsync(int vecId, DateTime effectiveDate, bool feeCollectionEnabled, decimal? examFeeAmount, decimal? retainedAmount, string? notes)
+    public async Task<IActionResult> OnPostCreateAsync(int vecId, DateTime effectiveDate, bool feeCollectionEnabled, decimal? examFeeAmount, decimal? retainedAmount, decimal? youthExamFeeAmount, string? notes)
     {
         var user = await userManager.GetUserAsync(User);
         if (user is null || !await IsVecAllowedAsync(user, vecId))
@@ -74,13 +74,13 @@ public class FeeConfigurationsModel(AppDbContext dbContext, UserManager<User> us
             return Forbid();
         }
 
-        var (result, _) = await feeConfigurationService.CreateAsync(vecId, effectiveDate, feeCollectionEnabled, examFeeAmount, retainedAmount, notes, user.Id, CancellationToken.None);
+        var (result, _) = await feeConfigurationService.CreateAsync(vecId, effectiveDate, feeCollectionEnabled, examFeeAmount, retainedAmount, youthExamFeeAmount, notes, user.Id, CancellationToken.None);
         TempData[result == FeeConfigActionResult.Success ? "StatusMessage" : "ErrorMessage"] =
             result == FeeConfigActionResult.Success ? "Fee configuration created." : "Could not create fee configuration — VEC not found.";
         return RedirectToPage(new { vecId });
     }
 
-    public async Task<IActionResult> OnPostUpdateAsync(int feeConfigurationId, DateTime effectiveDate, bool feeCollectionEnabled, decimal? examFeeAmount, decimal? retainedAmount, string? notes)
+    public async Task<IActionResult> OnPostUpdateAsync(int feeConfigurationId, DateTime effectiveDate, bool feeCollectionEnabled, decimal? examFeeAmount, decimal? retainedAmount, decimal? youthExamFeeAmount, string? notes)
     {
         var user = await userManager.GetUserAsync(User);
         if (user is null)
@@ -98,7 +98,7 @@ public class FeeConfigurationsModel(AppDbContext dbContext, UserManager<User> us
             return Forbid();
         }
 
-        var result = await feeConfigurationService.UpdateAsync(feeConfigurationId, effectiveDate, feeCollectionEnabled, examFeeAmount, retainedAmount, notes, user.Id, CancellationToken.None);
+        var result = await feeConfigurationService.UpdateAsync(feeConfigurationId, effectiveDate, feeCollectionEnabled, examFeeAmount, retainedAmount, youthExamFeeAmount, notes, user.Id, CancellationToken.None);
         TempData[result == FeeConfigActionResult.Success ? "StatusMessage" : "ErrorMessage"] = result switch
         {
             FeeConfigActionResult.Success => "Fee configuration updated.",
@@ -120,5 +120,5 @@ public class FeeConfigurationsModel(AppDbContext dbContext, UserManager<User> us
         return await dbContext.Sessions.AnyAsync(s => s.TeamId == teamId && s.VecId == vecId);
     }
 
-    public record FeeConfigRow(int Id, DateTime EffectiveDate, bool FeeCollectionEnabled, decimal? ExamFeeAmount, decimal? RetainedAmount, string? Notes, bool InUse);
+    public record FeeConfigRow(int Id, DateTime EffectiveDate, bool FeeCollectionEnabled, decimal? ExamFeeAmount, decimal? RetainedAmount, decimal? YouthExamFeeAmount, string? Notes, bool InUse);
 }

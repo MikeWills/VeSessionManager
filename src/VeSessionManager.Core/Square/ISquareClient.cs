@@ -10,4 +10,7 @@ public interface ISquareClient
 
     /// <summary>Marks a Square Order COMPLETED (Orders API) — a no-op if it's already in that state, so callers don't need their own idempotency guard against retrying this call.</summary>
     Task CompleteOrderAsync(SquareCredentials credentials, string orderId, CancellationToken cancellationToken);
+
+    /// <summary>Deletes a Square payment link (cancels its still-open order without touching an already-completed payment, per Square's own docs). A no-op if the link is already gone (e.g. a retried call), so callers don't need their own idempotency guard.</summary>
+    Task DeletePaymentLinkAsync(SquareCredentials credentials, string paymentLinkId, CancellationToken cancellationToken);
 }

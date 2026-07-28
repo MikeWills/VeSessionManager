@@ -92,7 +92,7 @@ public class FeeConfigurationServiceTests
         var vec = await SeedVecAsync(dbContext);
 
         var (result, feeConfiguration) = await CreateService(dbContext).CreateAsync(
-            vec.Id, new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc), true, 15m, 5m, "Notes", user.Id, CancellationToken.None);
+            vec.Id, new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc), true, 15m, 5m, null, "Notes", user.Id, CancellationToken.None);
 
         Assert.Equal(FeeConfigActionResult.Success, result);
         Assert.NotNull(feeConfiguration);
@@ -110,7 +110,7 @@ public class FeeConfigurationServiceTests
         var user = await SeedUserAsync(dbContext);
 
         var (result, feeConfiguration) = await CreateService(dbContext).CreateAsync(
-            999, Now, true, 15m, 5m, null, user.Id, CancellationToken.None);
+            999, Now, true, 15m, 5m, null, null, user.Id, CancellationToken.None);
 
         Assert.Equal(FeeConfigActionResult.VecNotFound, result);
         Assert.Null(feeConfiguration);
@@ -124,7 +124,7 @@ public class FeeConfigurationServiceTests
         var vec = await SeedVecAsync(dbContext);
 
         var (_, feeConfiguration) = await CreateService(dbContext).CreateAsync(
-            vec.Id, Now, false, 15m, 5m, null, user.Id, CancellationToken.None);
+            vec.Id, Now, false, 15m, 5m, null, null, user.Id, CancellationToken.None);
 
         Assert.Null(feeConfiguration!.ExamFeeAmount);
         Assert.Null(feeConfiguration.RetainedAmount);
@@ -139,7 +139,7 @@ public class FeeConfigurationServiceTests
         var feeConfiguration = await SeedFeeConfigurationAsync(dbContext, vec, user);
 
         var result = await CreateService(dbContext).UpdateAsync(
-            feeConfiguration.Id, new DateTime(2026, 2, 1, 0, 0, 0, DateTimeKind.Utc), true, 20m, 6m, "Updated", user.Id, CancellationToken.None);
+            feeConfiguration.Id, new DateTime(2026, 2, 1, 0, 0, 0, DateTimeKind.Utc), true, 20m, 6m, null, "Updated", user.Id, CancellationToken.None);
 
         Assert.Equal(FeeConfigActionResult.Success, result);
         var updated = await dbContext.FeeConfigurations.SingleAsync();
@@ -158,7 +158,7 @@ public class FeeConfigurationServiceTests
         var session = await SeedSessionAsync(dbContext, team, vec, feeConfiguration);
 
         var result = await CreateService(dbContext).UpdateAsync(
-            feeConfiguration.Id, new DateTime(2026, 3, 1, 0, 0, 0, DateTimeKind.Utc), false, null, null, "Should not apply", user.Id, CancellationToken.None);
+            feeConfiguration.Id, new DateTime(2026, 3, 1, 0, 0, 0, DateTimeKind.Utc), false, null, null, null, "Should not apply", user.Id, CancellationToken.None);
 
         Assert.Equal(FeeConfigActionResult.InUse, result);
 
@@ -179,7 +179,7 @@ public class FeeConfigurationServiceTests
         await using var dbContext = CreateContext();
         var user = await SeedUserAsync(dbContext);
 
-        var result = await CreateService(dbContext).UpdateAsync(999, Now, true, 15m, 5m, null, user.Id, CancellationToken.None);
+        var result = await CreateService(dbContext).UpdateAsync(999, Now, true, 15m, 5m, null, null, user.Id, CancellationToken.None);
 
         Assert.Equal(FeeConfigActionResult.NotFound, result);
     }

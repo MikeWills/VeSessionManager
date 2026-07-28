@@ -13,7 +13,7 @@ public static class EmailTemplatePlaceholders
 {
     public static readonly IReadOnlyDictionary<string, IReadOnlyList<string>> ByKey = new Dictionary<string, IReadOnlyList<string>>
     {
-        ["RegistrationConfirmation"] = ["CandidateName", "CandidateFirstName", "SessionDate", "ZoomJoinUrl", "PaymentLinkUrl", "PrivacyPolicyUrl"],
+        ["RegistrationConfirmation"] = ["CandidateName", "CandidateFirstName", "SessionDate", "ZoomJoinUrl", "PaymentLinkUrl", "YouthPaymentLinkUrl", "PrivacyPolicyUrl"],
         ["DayBeforeReminder"] = ["CandidateName", "CandidateFirstName", "SessionDate", "ZoomJoinUrl", "OutstandingPaymentLinkUrl"],
         ["PaymentReminder5Day"] = ["CandidateName", "ZoomJoinUrl", "PaymentLinkUrl"],
         ["PaymentExpirationNotice"] = ["CandidateName", "SessionDate", "PaymentAmount"],

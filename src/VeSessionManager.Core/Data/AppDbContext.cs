@@ -43,6 +43,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : IdentityUser
             b.HasOne(f => f.CreatedByUser).WithMany().HasForeignKey(f => f.CreatedByUserId).OnDelete(DeleteBehavior.Restrict);
             b.Property(f => f.ExamFeeAmount).HasPrecision(10, 2);
             b.Property(f => f.RetainedAmount).HasPrecision(10, 2);
+            b.Property(f => f.YouthExamFeeAmount).HasPrecision(10, 2);
         });
 
         modelBuilder.Entity<Session>(b =>
@@ -73,6 +74,10 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : IdentityUser
             b.HasOne(p => p.RefundRequestedByUser).WithMany().HasForeignKey(p => p.RefundRequestedByUserId).OnDelete(DeleteBehavior.Restrict);
             b.Property(p => p.Amount).HasPrecision(10, 2);
             b.Property(p => p.SquareAmountPaidUsd).HasPrecision(10, 2);
+            // SQLite treats NULLs as distinct in a unique index, so multiple Payments with a null
+            // token (the common case — only sessions under a youth-program Vec ever get one) are
+            // fine; only a real, generated token collision would violate this.
+            b.HasIndex(p => p.YouthConfirmationToken).IsUnique();
         });
 
         modelBuilder.Entity<SessionVolunteerExaminer>(b =>
