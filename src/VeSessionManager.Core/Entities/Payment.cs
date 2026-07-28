@@ -17,6 +17,13 @@ public class Payment
 
     public string? PaymentLinkUrl { get; set; }
     public string? SquarePaymentReferenceId { get; set; }
+
+    /// <summary>Square's own payment-link id (distinct from SquarePaymentReferenceId, which is the
+    /// Order id) — needed because deleting a payment link via Square's Checkout API is keyed by the
+    /// link id, not the order id. See YouthPaymentConfirmationService, which deletes the standard
+    /// $15 link by this id before generating a new youth-rate one.</summary>
+    public string? SquarePaymentLinkId { get; set; }
+
     public DateTime? PaidDateUtc { get; set; }
 
     /// <summary>
@@ -63,6 +70,24 @@ public class Payment
     /// hold up at test-day verification). See SquarePaymentMatchingService.ApplyMatchAsync.
     /// </summary>
     public DateTime? AmountMismatchFlaggedUtc { get; set; }
+
+    /// <summary>
+    /// Unguessable lookup key for the public, unauthenticated youth-rate confirmation page
+    /// (deliberately not Id, which is sequential and would let anyone enumerate/switch other
+    /// candidates' payments). Generated once alongside the standard link, only when the session's
+    /// Vec.SupportsYouthProgram is true — see PaymentGenerationService.GenerateLinkAsync and
+    /// docs/youth-payment-confirmation.md.
+    /// </summary>
+    public Guid? YouthConfirmationToken { get; set; }
+
+    /// <summary>
+    /// Set once SquarePaymentLinkPurgeService has deleted this Payment's stale Square link (still
+    /// Unpaid after Team.PurgeUnpaidLinkDays). Serves two roles: the idempotency guard for the purge
+    /// scan itself, and the flag PaymentGenerationService's "Unpaid + no link -> generate one" scan
+    /// also checks — without it, that scan would silently regenerate a fresh link on the very next
+    /// poll. See docs/payment-link-purge.md.
+    /// </summary>
+    public DateTime? SquareLinkPurgedUtc { get; set; }
 
     /// <summary>Actual refund is processed manually in the Square dashboard — this is just a note for tracking.</summary>
     public bool RefundRequested { get; set; }

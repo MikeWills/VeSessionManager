@@ -27,6 +27,9 @@ public class SquareWebhookHandlerTests
             throw new NotSupportedException("Not used by SquareWebhookHandlerTests.");
 
         public Task CompleteOrderAsync(SquareCredentials credentials, string orderId, CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public Task DeletePaymentLinkAsync(SquareCredentials credentials, string paymentLinkId, CancellationToken cancellationToken) =>
+            throw new NotSupportedException("Not used by SquareWebhookHandlerTests.");
     }
 
     private static AppDbContext CreateContext()

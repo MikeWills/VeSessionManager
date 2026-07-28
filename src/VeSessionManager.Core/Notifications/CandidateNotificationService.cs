@@ -1,6 +1,7 @@
 using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Email;
 using VeSessionManager.Core.Entities;
@@ -27,6 +28,7 @@ public class CandidateNotificationService(
     EmailTemplateRenderer templateRenderer,
     IEmailSender emailSender,
     TimeProvider timeProvider,
+    IOptions<AppOptions> appOptions,
     ILogger<CandidateNotificationService> logger)
 {
     private const string RegistrationConfirmationKey = "RegistrationConfirmation";
@@ -48,6 +50,7 @@ public class CandidateNotificationService(
 
         var candidates = await dbContext.Candidates
             .Include(c => c.Session).ThenInclude(s => s.FeeConfiguration)
+            .Include(c => c.Session).ThenInclude(s => s.Vec)
             .Include(c => c.Payments)
             .Where(c => c.PiiPurgedUtc == null
                         && c.Email != null
@@ -83,6 +86,7 @@ public class CandidateNotificationService(
                     ["SessionDate"] = FormatSessionDate(candidate.Session.ScheduledStartUtc),
                     ["ZoomJoinUrl"] = candidate.Session.ZoomJoinUrl ?? "",
                     ["PaymentLinkUrl"] = paymentLinkUrl,
+                    ["YouthPaymentLinkUrl"] = BuildYouthPaymentLinkUrl(candidate),
                     ["PrivacyPolicyUrl"] = emailSettings.PrivacyPolicyUrl
                 };
 
@@ -202,6 +206,7 @@ public class CandidateNotificationService(
         var candidate = await dbContext.Candidates
             .Include(c => c.Session).ThenInclude(s => s.Team)
             .Include(c => c.Session).ThenInclude(s => s.FeeConfiguration)
+            .Include(c => c.Session).ThenInclude(s => s.Vec)
             .Include(c => c.Payments)
             .FirstOrDefaultAsync(c => c.Id == candidateId, cancellationToken);
         if (candidate is null)
@@ -237,6 +242,7 @@ public class CandidateNotificationService(
             ["SessionDate"] = FormatSessionDate(candidate.Session.ScheduledStartUtc),
             ["ZoomJoinUrl"] = candidate.Session.ZoomJoinUrl ?? "",
             ["PaymentLinkUrl"] = paymentLinkUrl,
+            ["YouthPaymentLinkUrl"] = BuildYouthPaymentLinkUrl(candidate),
             ["PrivacyPolicyUrl"] = emailSettings.PrivacyPolicyUrl
         };
 
@@ -377,4 +383,19 @@ public class CandidateNotificationService(
 
     private static string FormatSessionDate(DateTime scheduledStartUtc) =>
         scheduledStartUtc.ToString("dddd, MMMM d, yyyy 'at' h:mm tt", CultureInfo.InvariantCulture) + " UTC";
+
+    /// <summary>Blank when the session's Vec doesn't support the youth program, or the InitialExam
+    /// Payment has no token (fee collection disabled) — a Team's template copy for a
+    /// non-youth-program session just renders a blank line for this token, since no
+    /// conditional-block templating exists here to hide it automatically.</summary>
+    private string BuildYouthPaymentLinkUrl(Candidate candidate)
+    {
+        if (!candidate.Session.Vec.SupportsYouthProgram)
+        {
+            return "";
+        }
+
+        var token = candidate.Payments.FirstOrDefault(p => p.Reason == PaymentReason.InitialExam)?.YouthConfirmationToken;
+        return token is { } t ? $"{appOptions.Value.PublicBaseUrl}/youth-confirm/{t}" : "";
+    }
 }

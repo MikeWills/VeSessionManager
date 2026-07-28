@@ -77,10 +77,6 @@ would be pure duplication — and goes straight to `CHANGELOG.md` instead. Non-p
 redesigns, hardening passes) start here and move to `CHANGELOG.md` once the section is at/over the
 cap and a newer entry needs to be added; oldest goes first.
 
-- **FCC daily watcher same-day retry (2026-07-23).** `docs/fcc-uls-watcher.md`'s "Same-day retry" and
-  "Weekly complete snapshot lags real filings" sections — found via a live FRN re-lookup that a
-  missed daily tick wasn't recovered for a full week, and that the weekly catch-up's "complete"
-  snapshot lags real filings by 24+ hours so it isn't the backstop it looks like.
 - **"Email history" candidate modal (2026-07-23).** First place any email-sent timestamp was ever
   surfaced outside the DB. `docs/email-reference.md`'s "Checking what a candidate actually received"
   section.
@@ -99,7 +95,15 @@ cap and a newer entry needs to be added; oldest goes first.
 - **Post-launch security/quality hardening pass (2026-07-21).** A real cross-tenant IDOR plus five
   smaller fixes. `docs/security-hardening-2026-07-21.md` — the shared helpers it introduced are in
   Established Patterns above.
-- **Deployment-wide email test mode (2026-07-21).** `docs/test-mode.md`.
+- **Youth rate payment confirmation (2026-07-27).** `docs/youth-payment-confirmation.md` — a
+  self-service, honor-system public page (`/youth-confirm/{token}`) that switches a candidate's
+  standard-rate Square payment link to the session's configured youth rate, replacing reliance on
+  the separate Square-hosted page + manual `AmountMismatchFlaggedUtc` reconciliation for the
+  in-app-generated case.
+- **Stale unpaid Square payment link purge (2026-07-28).** `docs/payment-link-purge.md` — a daily,
+  per-team scan (`SquareLinkPurgeJob`) deletes an Unpaid Payment's Square link after
+  `Team.PurgeUnpaidLinkDays` (default 30), reusing `ISquareClient.DeletePaymentLinkAsync` from the
+  youth-payment feature above.
 
 Everything through Phase 0-10's initial build (ExamTools ingestion, Zoom/Discord, Square, email
 notifications, FCC ULS watcher, payment reminders, VE tracking, VEC submission tracker, admin
@@ -224,6 +228,7 @@ To pick up updates: `/plugin marketplace update claude-tools`
 - **Razor `.cshtml` files are compiled into the assembly at build time in this app (no `AddRazorRuntimeCompilation()` configured)** — editing a `.cshtml` file while `dotnet run` is already running does **not** take effect; the process must be restarted, not just re-requested. Cost real debugging time once (a `_PublicLayout.cshtml` edit silently didn't apply until the dev server was relaunched).
 - **A job tick timed for "the evening" in US Eastern can land at/after UTC midnight** — EDT is UTC-4, EST is UTC-5, so anything from ~8pm ET onward is already tomorrow in raw UTC. `TimeProvider.GetUtcNow().UtcDateTime.DayOfWeek` (or any UTC-based "what day is it" check) is wrong for that window; convert through `TimeZoneInfo.ConvertTimeFromUtc(..., FccUlsSchedule.EasternTimeZone)` first (IANA id `"America/New_York"`, resolves cross-platform since .NET 6 — verified directly on this repo's target framework on both Windows and the Linux deploy target). Found live 2026-07-23 building `FccDailyWatcherJob`'s same-day retry; see `docs/fcc-uls-watcher.md`. Reuse `FccUlsSchedule.EasternTimeZone` for any future US-Eastern-anchored scheduling rather than re-resolving the id.
 - **Not every job here can safely reuse the "24h `PeriodicTimer` from Worker start, extra ticks are free" idiom** — that reasoning (used by `DayBeforeReminderJob`/`PaymentReminderJob`/`PiiPurgeJob`/`FccWeeklyCatchupJob`) assumes a missed tick is harmless because idempotent tracking catches it up next time. It breaks when the *data itself* — not just the job's own state — is only available in a narrow, non-retryable window, as with FCC's day-name files (see the same-day-retry entry above). Before adding a new job on this idiom, check whether the thing it polls has that same "one-shot window" property.
+- **Square webhook subscriptions are separate per Sandbox/Production, each with its own signature key** — an existing subscription registered under one mode receives zero delivery attempts for events in the other (not a 401, no attempt at all), and reusing one mode's `WebhookSignatureKey` against the other mode's subscription makes every delivery fail signature verification (401) even though the URL/event config is otherwise correct. Found live 2026-07-25 testing Team 2 (MARC)'s payment flow — the "Ve Session Manager" subscription had been created under Production while all local testing used Sandbox credentials/payment links. Fix: add (or move) the subscription under the correct mode's tab in the Square dashboard, then set `Team.SquareWebhookSignatureKey` to *that* subscription's own signature key, not the other mode's. See `docs/square-payments.md`.
 - (Environment-specific quirks and gotchas go here as they're discovered — e.g. API quirks, IIS behavior, network/DMZ restrictions, auth issues)
 
 ## Definition of Done

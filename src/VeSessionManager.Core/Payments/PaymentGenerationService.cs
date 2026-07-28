@@ -14,7 +14,10 @@ namespace VeSessionManager.Core.Payments;
 ///   1. Candidate has no InitialExam Payment row yet -> create one (Status = NotApplicable and no
 ///      link at all if the session's FeeConfiguration doesn't collect a fee; Unpaid otherwise).
 ///   2. Payment is Unpaid with no PaymentLinkUrl yet -> call Square for a link. Left null on
-///      failure so the very next poll retries just the link generation, not row creation too.
+///      failure so the very next poll retries just the link generation, not row creation too. A
+///      Payment whose link SquarePaymentLinkPurgeService already deleted (SquareLinkPurgedUtc set)
+///      is deliberately excluded here too, or this pass would immediately regenerate the link that
+///      was just purged for being stale — see docs/payment-link-purge.md.
 ///
 /// Multi-team: this service now operates on one Team's candidates/payments per RunAsync call —
 /// each team has its own separate Square merchant account (Team.IsSquareConfigured). See
@@ -39,6 +42,7 @@ public class PaymentGenerationService(
 
         var candidatesNeedingPayment = await dbContext.Candidates
             .Include(c => c.Session).ThenInclude(s => s.FeeConfiguration)
+            .Include(c => c.Session).ThenInclude(s => s.Vec)
             .Where(c => c.PiiPurgedUtc == null
                         && c.Session.TeamId == team.Id
                         && c.Session.Status == SessionStatus.Active
@@ -54,6 +58,9 @@ public class PaymentGenerationService(
                 Reason = PaymentReason.InitialExam,
                 Amount = feeConfiguration.FeeCollectionEnabled ? feeConfiguration.ExamFeeAmount!.Value : 0m,
                 Status = feeConfiguration.FeeCollectionEnabled ? PaymentStatus.Unpaid : PaymentStatus.NotApplicable,
+                YouthConfirmationToken = feeConfiguration.FeeCollectionEnabled && candidate.Session.Vec.SupportsYouthProgram
+                    ? Guid.NewGuid()
+                    : null,
                 CreatedUtc = now
             };
             dbContext.Payments.Add(payment);
@@ -69,7 +76,7 @@ public class PaymentGenerationService(
 
         var paymentsNeedingLink = await dbContext.Payments
             .Include(p => p.Candidate).ThenInclude(c => c.Session)
-            .Where(p => p.Status == PaymentStatus.Unpaid && p.PaymentLinkUrl == null && p.Candidate.Session.TeamId == team.Id)
+            .Where(p => p.Status == PaymentStatus.Unpaid && p.PaymentLinkUrl == null && p.SquareLinkPurgedUtc == null && p.Candidate.Session.TeamId == team.Id)
             .ToListAsync(cancellationToken);
 
         if (paymentsNeedingLink.Count > 0 && !team.IsSquareConfigured)
@@ -115,6 +122,7 @@ public class PaymentGenerationService(
         var candidate = await dbContext.Candidates
             .Include(c => c.Session).ThenInclude(s => s.FeeConfiguration)
             .Include(c => c.Session).ThenInclude(s => s.Team)
+            .Include(c => c.Session).ThenInclude(s => s.Vec)
             .FirstOrDefaultAsync(c => c.Id == candidateId, cancellationToken)
             ?? throw new InvalidOperationException($"Candidate {candidateId} not found.");
 
@@ -125,6 +133,9 @@ public class PaymentGenerationService(
             Reason = PaymentReason.Retest,
             Amount = feeConfiguration.FeeCollectionEnabled ? feeConfiguration.ExamFeeAmount!.Value : 0m,
             Status = feeConfiguration.FeeCollectionEnabled ? PaymentStatus.Unpaid : PaymentStatus.NotApplicable,
+            YouthConfirmationToken = feeConfiguration.FeeCollectionEnabled && candidate.Session.Vec.SupportsYouthProgram
+                ? Guid.NewGuid()
+                : null,
             CreatedUtc = timeProvider.GetUtcNow().UtcDateTime
         };
         dbContext.Payments.Add(payment);
@@ -177,6 +188,7 @@ public class PaymentGenerationService(
 
         payment.PaymentLinkUrl = link.Url;
         payment.SquarePaymentReferenceId = link.OrderId;
+        payment.SquarePaymentLinkId = link.Id;
         logger.LogInformation("Generated Square payment link for Payment {PaymentId}", payment.Id);
     }
 }

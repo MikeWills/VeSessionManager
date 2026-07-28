@@ -1,5 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+using VeSessionManager.Core;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Email;
 using VeSessionManager.Core.Entities;
@@ -49,6 +51,9 @@ public class SessionActionServiceTests
             CompletedOrderIds.Add(orderId);
             return Task.CompletedTask;
         }
+
+        public Task DeletePaymentLinkAsync(SquareCredentials credentials, string paymentLinkId, CancellationToken cancellationToken) =>
+            throw new NotSupportedException("Not used by SessionActionServiceTests.");
     }
 
     private static AppDbContext CreateContext()
@@ -66,6 +71,7 @@ public class SessionActionServiceTests
             new EmailTemplateRenderer(dbContext, NullLogger<EmailTemplateRenderer>.Instance),
             emailSender,
             new FixedTimeProvider(Now),
+            Options.Create(new AppOptions()),
             NullLogger<CandidateNotificationService>.Instance),
         new SquarePaymentMatchingService(dbContext, squareClient ?? new FakeSquareClient(), new FixedTimeProvider(Now), NullLogger<SquarePaymentMatchingService>.Instance),
         new FixedTimeProvider(Now),

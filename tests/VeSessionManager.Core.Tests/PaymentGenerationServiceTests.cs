@@ -23,6 +23,7 @@ public class PaymentGenerationServiceTests
     {
         public List<CapturedCall> Calls { get; } = [];
         public List<SquareCredentials> CredentialsUsed { get; } = [];
+        public List<string> DeletedPaymentLinkIds { get; } = [];
         public Exception? ThrowOnNextCall { get; set; }
         private int _nextOrderId = 5000;
 
@@ -37,10 +38,16 @@ public class PaymentGenerationServiceTests
                 throw ex;
             }
             var orderId = $"order-{_nextOrderId++}";
-            return Task.FromResult(new SquarePaymentLink { OrderId = orderId, Url = $"https://square.link/u/{orderId}" });
+            return Task.FromResult(new SquarePaymentLink { Id = $"link-{orderId}", OrderId = orderId, Url = $"https://square.link/u/{orderId}" });
         }
 
         public Task CompleteOrderAsync(SquareCredentials credentials, string orderId, CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public Task DeletePaymentLinkAsync(SquareCredentials credentials, string paymentLinkId, CancellationToken cancellationToken)
+        {
+            DeletedPaymentLinkIds.Add(paymentLinkId);
+            return Task.CompletedTask;
+        }
     }
 
     private static AppDbContext CreateContext()
@@ -72,9 +79,9 @@ public class PaymentGenerationServiceTests
     /// <summary>Seeds Vec/User/FeeConfiguration/Session/Candidate. FeeCollectionEnabled defaults true, $15.</summary>
     private static async Task<Candidate> SeedCandidateAsync(
         AppDbContext dbContext, Team team, bool feeCollectionEnabled = true, decimal examFeeAmount = 15m,
-        SessionStatus sessionStatus = SessionStatus.Active, bool purged = false)
+        SessionStatus sessionStatus = SessionStatus.Active, bool purged = false, bool supportsYouthProgram = false)
     {
-        var vec = new Vec { Name = "ARRL" };
+        var vec = new Vec { Name = "ARRL", SupportsYouthProgram = supportsYouthProgram };
         var user = new User { Name = "System", Email = "system@localhost", Role = UserRole.SystemAdmin };
         var feeConfiguration = new FeeConfiguration
         {
@@ -130,6 +137,8 @@ public class PaymentGenerationServiceTests
         Assert.Equal(PaymentStatus.Unpaid, payment.Status);
         Assert.NotNull(payment.PaymentLinkUrl);
         Assert.NotNull(payment.SquarePaymentReferenceId);
+        Assert.NotNull(payment.SquarePaymentLinkId);
+        Assert.Null(payment.YouthConfirmationToken);
 
         var call = Assert.Single(square.Calls);
         Assert.Equal(payment.Id.ToString(), call.ReferenceId);
@@ -141,6 +150,48 @@ public class PaymentGenerationServiceTests
         // crash reuses it instead of generating a fresh one.
         Assert.False(string.IsNullOrWhiteSpace(payment.SquareIdempotencyKey));
         Assert.Equal(payment.SquareIdempotencyKey, call.IdempotencyKey);
+    }
+
+    [Fact]
+    public async Task NewCandidate_UnderYouthProgramVec_GetsYouthConfirmationToken()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        await SeedCandidateAsync(dbContext, team, supportsYouthProgram: true);
+        var square = new FakeSquareClient();
+
+        await CreateService(dbContext, square).RunAsync(team, CancellationToken.None);
+
+        var payment = dbContext.Payments.Single();
+        Assert.NotNull(payment.YouthConfirmationToken);
+    }
+
+    [Fact]
+    public async Task NewCandidate_VecDoesNotSupportYouthProgram_NoYouthConfirmationToken()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        await SeedCandidateAsync(dbContext, team, supportsYouthProgram: false);
+        var square = new FakeSquareClient();
+
+        await CreateService(dbContext, square).RunAsync(team, CancellationToken.None);
+
+        var payment = dbContext.Payments.Single();
+        Assert.Null(payment.YouthConfirmationToken);
+    }
+
+    [Fact]
+    public async Task NewCandidate_FeeCollectionDisabled_EvenUnderYouthProgramVec_NoYouthConfirmationToken()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        await SeedCandidateAsync(dbContext, team, feeCollectionEnabled: false, supportsYouthProgram: true);
+        var square = new FakeSquareClient();
+
+        await CreateService(dbContext, square).RunAsync(team, CancellationToken.None);
+
+        var payment = dbContext.Payments.Single();
+        Assert.Null(payment.YouthConfirmationToken);
     }
 
     [Fact]
@@ -210,6 +261,35 @@ public class PaymentGenerationServiceTests
         // creating a second, orphaned one.
         Assert.Equal(square.Calls[0].IdempotencyKey, square.Calls[1].IdempotencyKey);
         Assert.Equal(dbContext.Payments.Single().SquareIdempotencyKey, square.Calls[1].IdempotencyKey);
+    }
+
+    [Fact]
+    public async Task PurgedLinkPayment_IsNeverRegenerated()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        var candidate = await SeedCandidateAsync(dbContext, team);
+        var payment = new Payment
+        {
+            CandidateId = candidate.Id,
+            Reason = PaymentReason.InitialExam,
+            Amount = 15m,
+            Status = PaymentStatus.Unpaid,
+            PaymentLinkUrl = null,
+            SquareLinkPurgedUtc = Now.AddDays(-1),
+            CreatedUtc = Now.AddDays(-40)
+        };
+        dbContext.Payments.Add(payment);
+        await dbContext.SaveChangesAsync();
+        var square = new FakeSquareClient();
+
+        var result = await CreateService(dbContext, square).RunAsync(team, CancellationToken.None);
+
+        Assert.Equal(0, result.PaymentsCreated); // InitialExam payment already exists
+        Assert.Equal(0, result.LinksGenerated);
+        Assert.Empty(square.Calls);
+        var unchanged = await dbContext.Payments.SingleAsync(p => p.Id == payment.Id);
+        Assert.Null(unchanged.PaymentLinkUrl);
     }
 
     [Fact]

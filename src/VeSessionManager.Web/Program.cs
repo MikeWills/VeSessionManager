@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
+using VeSessionManager.Core;
 using VeSessionManager.Core.Admin;
 using VeSessionManager.Core.Authorization;
 using VeSessionManager.Core.CandidateActions;
@@ -32,12 +33,15 @@ builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection")));
 
 builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.Configure<AppOptions>(builder.Configuration.GetSection(AppOptions.SectionName));
 builder.Services.Configure<SquareOptions>(builder.Configuration.GetSection(SquareOptions.SectionName));
 // Singleton: the Square SDK client owns its own HttpClient, same reasoning as the Worker's own
 // registration — CandidateActionService.CreateRetestPaymentAsync needs PaymentGenerationService,
 // which needs this, for the "create retest payment" admin action.
 builder.Services.AddSingleton<ISquareClient, SquareClient>();
 builder.Services.AddScoped<PaymentGenerationService>();
+// Backs the public, unauthenticated youth-rate confirmation page (Pages/Public/YouthConfirm).
+builder.Services.AddScoped<YouthPaymentConfirmationService>();
 // WebhookSignatureKey/WebhookNotificationUrl live on Team (multi-team, each team verifies against
 // its own key via the /webhooks/square/{teamId} route) — nothing else in this project needs
 // SquareOptions:Environment beyond what SquareClient itself reads above.

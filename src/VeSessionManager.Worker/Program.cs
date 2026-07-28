@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Serilog;
+using VeSessionManager.Core;
 using VeSessionManager.Core.Admin;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Discord;
@@ -28,6 +29,7 @@ builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection")));
 
 builder.Services.AddSingleton(TimeProvider.System);
+builder.Services.Configure<AppOptions>(builder.Configuration.GetSection(AppOptions.SectionName));
 builder.Services.Configure<ExamToolsOptions>(builder.Configuration.GetSection(ExamToolsOptions.SectionName));
 // Singleton so the login cookie jar survives between poll cycles.
 builder.Services.AddSingleton<IExamToolsClient, ExamToolsClient>();
@@ -53,6 +55,7 @@ builder.Services.Configure<SquareOptions>(builder.Configuration.GetSection(Squar
 // Singleton: the Square SDK client owns its own HttpClient, same reasoning as the other API clients.
 builder.Services.AddSingleton<ISquareClient, SquareClient>();
 builder.Services.AddScoped<PaymentGenerationService>();
+builder.Services.AddScoped<SquarePaymentLinkPurgeService>();
 
 // No EmailOptions to Configure<> anymore — SmtpHost/Port/Username/Password/UseStartTls all live on
 // Team now (multi-team, see docs/multi-team.md).
@@ -85,6 +88,7 @@ builder.Services.AddHostedService<DayBeforeReminderJob>();
 builder.Services.AddHostedService<FccDailyWatcherJob>();
 builder.Services.AddHostedService<FccWeeklyCatchupJob>();
 builder.Services.AddHostedService<PaymentReminderJob>();
+builder.Services.AddHostedService<SquareLinkPurgeJob>();
 builder.Services.AddHostedService<PiiPurgeJob>();
 
 var host = builder.Build();

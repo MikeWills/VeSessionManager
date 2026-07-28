@@ -18,6 +18,13 @@ public class FeeConfiguration
     /// <summary>Portion kept for reimbursement; the remainder goes to the VEC. Null if FeeCollectionEnabled = false.</summary>
     public decimal? RetainedAmount { get; set; }
 
+    /// <summary>Sibling to ExamFeeAmount for the Vec's youth/scholarship rate (e.g. ARRL's $5) —
+    /// null means the youth confirmation flow isn't available for this fee schedule yet, even if
+    /// Vec.SupportsYouthProgram is true (surfaced as a friendly "not set up" message rather than a
+    /// hardcoded fallback, since the amount is VEC-specific, not universal). See
+    /// docs/youth-payment-confirmation.md.</summary>
+    public decimal? YouthExamFeeAmount { get; set; }
+
     public string? Notes { get; set; }
 
     public int CreatedByUserId { get; set; }

@@ -111,6 +111,16 @@ public class TeamSettingsModel(AppDbContext dbContext, UserManager<User> userMan
         return RedirectToPage(new { teamId = auth.Value.Team.Id });
     }
 
+    public async Task<IActionResult> OnPostUpdatePurgeSettingsAsync(int purgeUnpaidLinkDays)
+    {
+        var auth = await AuthorizeAsync();
+        if (auth is null) return Forbid();
+
+        var result = await teamSettingsService.UpdatePurgeSettingsAsync(auth.Value.Team.Id, purgeUnpaidLinkDays, auth.Value.User.Id, CancellationToken.None);
+        SetStatus(result, "Payment link purge settings updated.");
+        return RedirectToPage(new { teamId = auth.Value.Team.Id });
+    }
+
     public async Task<IActionResult> OnPostUpdateEmailSettingsAsync(string fromAddress, string? fromDisplayName, string replyToAddress, string privacyPolicyUrl, string adminNotificationEmail)
     {
         var auth = await AuthorizeAsync();

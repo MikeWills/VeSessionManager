@@ -124,6 +124,19 @@ public class TeamSettingsService(AppDbContext dbContext, TimeProvider timeProvid
         return await SaveTeamUpdateAsync(team, "TeamSmtpCredentialsUpdated", userId, cancellationToken);
     }
 
+    public async Task<TeamActionResult> UpdatePurgeSettingsAsync(int teamId, int purgeUnpaidLinkDays, int userId, CancellationToken cancellationToken)
+    {
+        var team = await dbContext.Teams.FirstOrDefaultAsync(t => t.Id == teamId, cancellationToken);
+        if (team is null)
+        {
+            return TeamActionResult.NotFound;
+        }
+
+        team.PurgeUnpaidLinkDays = purgeUnpaidLinkDays;
+
+        return await SaveTeamUpdateAsync(team, "TeamPurgeSettingsUpdated", userId, cancellationToken);
+    }
+
     /// <summary>Upserts the Team's EmailSettings row (one per team, unique index on TeamId) — creates it if somehow missing (should already exist via EmailDefaultsSeeder), otherwise updates in place.</summary>
     public async Task<TeamActionResult> UpdateEmailSettingsAsync(int teamId, string fromAddress, string? fromDisplayName, string replyToAddress, string privacyPolicyUrl, string adminNotificationEmail, int userId, CancellationToken cancellationToken)
     {

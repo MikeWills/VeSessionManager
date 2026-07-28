@@ -1,5 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+using VeSessionManager.Core;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Email;
 using VeSessionManager.Core.Entities;
@@ -11,6 +13,7 @@ namespace VeSessionManager.Core.Tests;
 public class CandidateNotificationServiceTests
 {
     private static readonly DateTime Now = new(2026, 7, 20, 12, 0, 0, DateTimeKind.Utc);
+    private const string TestPublicBaseUrl = "https://test.example";
 
     private sealed class FixedTimeProvider(DateTime utcNow) : TimeProvider
     {
@@ -50,6 +53,7 @@ public class CandidateNotificationServiceTests
         new EmailTemplateRenderer(dbContext, NullLogger<EmailTemplateRenderer>.Instance),
         emailSender,
         new FixedTimeProvider(Now),
+        Options.Create(new AppOptions { PublicBaseUrl = TestPublicBaseUrl }),
         NullLogger<CandidateNotificationService>.Instance);
 
     /// <summary>Seeds a Team. emailConfigured=true (default) sets SmtpHost/Username so Team.IsEmailConfigured is true.</summary>
@@ -99,9 +103,9 @@ public class CandidateNotificationServiceTests
     /// <summary>Seeds Vec/User/FeeConfiguration/Session, returning the Session for further per-test customization.</summary>
     private static async Task<Session> SeedSessionAsync(
         AppDbContext dbContext, Team team, DateTime scheduledStartUtc, bool feeCollectionEnabled = true,
-        SessionStatus status = SessionStatus.Active, string? zoomJoinUrl = "https://zoom.us/j/123")
+        SessionStatus status = SessionStatus.Active, string? zoomJoinUrl = "https://zoom.us/j/123", bool supportsYouthProgram = false)
     {
-        var vec = new Vec { Name = "ARRL" };
+        var vec = new Vec { Name = "ARRL", SupportsYouthProgram = supportsYouthProgram };
         var user = new User { Name = "System", Email = "system@localhost", Role = UserRole.SystemAdmin };
         var feeConfiguration = new FeeConfiguration
         {
@@ -181,6 +185,69 @@ public class CandidateNotificationServiceTests
 
         var message = Assert.Single(sender.SentMessages);
         Assert.Contains("Pay: ,", message.HtmlBody); // blank, per "read sensibly either way"
+    }
+
+    [Fact]
+    public async Task RegistrationConfirmation_YouthProgramVec_IncludesYouthPaymentLinkUrl()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        dbContext.EmailSettings.Add(new EmailSettings
+        {
+            TeamId = team.Id, FromAddress = "noreply@example.org", FromDisplayName = "VE Session Manager",
+            ReplyToAddress = "reply@example.org", PrivacyPolicyUrl = "https://example.org/privacy", AdminNotificationEmail = "admin@example.org"
+        });
+        dbContext.EmailTemplates.Add(new EmailTemplate
+        {
+            TeamId = team.Id, Key = "RegistrationConfirmation", Subject = "Registered for {{SessionDate}}",
+            Body = "Pay: {{PaymentLinkUrl}}, Youth: {{YouthPaymentLinkUrl}}"
+        });
+        await dbContext.SaveChangesAsync();
+        var session = await SeedSessionAsync(dbContext, team, Now.AddDays(4), supportsYouthProgram: true);
+        var candidate = NewCandidate(session);
+        dbContext.Candidates.Add(candidate);
+        await dbContext.SaveChangesAsync();
+        var payment = new Payment
+        {
+            CandidateId = candidate.Id, Reason = PaymentReason.InitialExam, Amount = 15m,
+            Status = PaymentStatus.Unpaid, PaymentLinkUrl = "https://square.link/u/abc",
+            YouthConfirmationToken = Guid.NewGuid(), CreatedUtc = Now
+        };
+        dbContext.Payments.Add(payment);
+        await dbContext.SaveChangesAsync();
+
+        var sender = new FakeEmailSender();
+        await CreateService(dbContext, sender).SendRegistrationConfirmationsAsync(team, CancellationToken.None);
+
+        var message = Assert.Single(sender.SentMessages);
+        Assert.Contains($"Youth: {TestPublicBaseUrl}/youth-confirm/{payment.YouthConfirmationToken}", message.HtmlBody);
+    }
+
+    [Fact]
+    public async Task RegistrationConfirmation_NonYouthProgramVec_YouthPaymentLinkUrlIsBlank()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        dbContext.EmailSettings.Add(new EmailSettings
+        {
+            TeamId = team.Id, FromAddress = "noreply@example.org", FromDisplayName = "VE Session Manager",
+            ReplyToAddress = "reply@example.org", PrivacyPolicyUrl = "https://example.org/privacy", AdminNotificationEmail = "admin@example.org"
+        });
+        dbContext.EmailTemplates.Add(new EmailTemplate
+        {
+            TeamId = team.Id, Key = "RegistrationConfirmation", Subject = "Registered for {{SessionDate}}",
+            Body = "Youth: {{YouthPaymentLinkUrl}}."
+        });
+        await dbContext.SaveChangesAsync();
+        var session = await SeedSessionAsync(dbContext, team, Now.AddDays(4), supportsYouthProgram: false);
+        dbContext.Candidates.Add(NewCandidate(session));
+        await dbContext.SaveChangesAsync();
+
+        var sender = new FakeEmailSender();
+        await CreateService(dbContext, sender).SendRegistrationConfirmationsAsync(team, CancellationToken.None);
+
+        var message = Assert.Single(sender.SentMessages);
+        Assert.Contains("Youth: .", message.HtmlBody);
     }
 
     [Fact]

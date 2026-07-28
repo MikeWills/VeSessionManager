@@ -35,6 +35,9 @@ public class SquarePaymentMatchingServiceTests
             CompletedOrderIds.Add(orderId);
             return Task.CompletedTask;
         }
+
+        public Task DeletePaymentLinkAsync(SquareCredentials credentials, string paymentLinkId, CancellationToken cancellationToken) =>
+            throw new NotSupportedException("Not used by SquarePaymentMatchingServiceTests.");
     }
 
     private static AppDbContext CreateContext()

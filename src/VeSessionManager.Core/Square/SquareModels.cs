@@ -5,6 +5,9 @@ public record SquarePaymentLinkRequest(string ReferenceId, string ItemName, deci
 
 public class SquarePaymentLink
 {
+    /// <summary>Square's own payment-link id — distinct from OrderId, and what a delete call is keyed by (see ISquareClient.DeletePaymentLinkAsync).</summary>
+    public required string Id { get; set; }
+
     /// <summary>Square's Order id — this, not ReferenceId, is what payment.updated webhooks carry, so it's what Payment.SquarePaymentReferenceId is matched against.</summary>
     public required string OrderId { get; set; }
 

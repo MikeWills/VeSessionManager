@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using VeSessionManager.Core.Data;
 
@@ -10,9 +11,11 @@ using VeSessionManager.Core.Data;
 namespace VeSessionManager.Core.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260728010437_Phase12YouthPaymentConfirmation")]
+    partial class Phase12YouthPaymentConfirmation
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.10");
@@ -405,9 +408,6 @@ namespace VeSessionManager.Core.Migrations
                     b.Property<string>("SquareIdempotencyKey")
                         .HasColumnType("TEXT");
 
-                    b.Property<DateTime?>("SquareLinkPurgedUtc")
-                        .HasColumnType("TEXT");
-
                     b.Property<DateTime?>("SquareOrderCompletedUtc")
                         .HasColumnType("TEXT");
 
@@ -609,11 +609,6 @@ namespace VeSessionManager.Core.Migrations
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasColumnType("TEXT");
-
-                    b.Property<int>("PurgeUnpaidLinkDays")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("INTEGER")
-                        .HasDefaultValue(30);
 
                     b.Property<string>("SmtpHost")
                         .HasColumnType("TEXT");

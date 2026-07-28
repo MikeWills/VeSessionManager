@@ -8,6 +8,11 @@ that window, or immediately if it's phase-numbered work already summarized in "C
 design rationale for any entry still lives in its linked `/docs/*.md` file, not here or in
 CLAUDE.md — this file, like CLAUDE.md's Change Log, is pointers only.
 
+- **Deployment-wide email test mode (2026-07-21).** `docs/test-mode.md`.
+- **FCC daily watcher same-day retry (2026-07-23).** `docs/fcc-uls-watcher.md`'s "Same-day retry" and
+  "Weekly complete snapshot lags real filings" sections — found via a live FRN re-lookup that a
+  missed daily tick wasn't recovered for a full week, and that the weekly catch-up's "complete"
+  snapshot lags real filings by 24+ hours so it isn't the backstop it looks like.
 - **Public privacy page + Phase 9 polish (2026-07-21).** Built `/Privacy` (dynamic PII retention
   window) and restyled the scaffold-default auth pages to match the design system — no dedicated
   doc; see git history for `Pages/Privacy.cshtml`/`Pages/Account/*` if detail is ever needed.

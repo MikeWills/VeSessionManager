@@ -149,6 +149,42 @@ public class TeamSettingsServiceTests
     }
 
     [Fact]
+    public async Task UpdatePurgeSettingsAsync_SetsDays_WritesAudit()
+    {
+        await using var dbContext = CreateContext();
+        var user = await SeedUserAsync(dbContext);
+        var team = await SeedTeamAsync(dbContext);
+
+        var result = await CreateService(dbContext).UpdatePurgeSettingsAsync(team.Id, 45, user.Id, CancellationToken.None);
+
+        Assert.Equal(TeamActionResult.Success, result);
+        var updated = await dbContext.Teams.SingleAsync();
+        Assert.Equal(45, updated.PurgeUnpaidLinkDays);
+        var audit = await dbContext.AuditLogs.SingleAsync();
+        Assert.Equal("TeamPurgeSettingsUpdated", audit.Action);
+    }
+
+    [Fact]
+    public async Task UpdatePurgeSettingsAsync_UnknownTeam_ReturnsNotFound()
+    {
+        await using var dbContext = CreateContext();
+        var user = await SeedUserAsync(dbContext);
+
+        var result = await CreateService(dbContext).UpdatePurgeSettingsAsync(999, 45, user.Id, CancellationToken.None);
+
+        Assert.Equal(TeamActionResult.NotFound, result);
+    }
+
+    [Fact]
+    public async Task NewTeam_DefaultsPurgeUnpaidLinkDaysTo30()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+
+        Assert.Equal(30, team.PurgeUnpaidLinkDays);
+    }
+
+    [Fact]
     public async Task UpdateSquareAsync_NullSecrets_LeaveExistingSecretsUnchanged()
     {
         await using var dbContext = CreateContext();
