@@ -86,6 +86,24 @@ h1 { font-size: 24px; margin: 0 0 4px; letter-spacing: -.01em; }
 .filters a.filter-pill { font-family: "IBM Plex Mono", monospace; font-size: 12px; padding: 7px 13px; border-radius: 99px; border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink-soft); cursor: pointer; text-decoration: none; display: inline-block; }
 .filters a.filter-pill.active { background: var(--panel); color: #fff; border-color: var(--panel); }
 
+/* Filter dropdowns (Sessions list — status multi-select + team single-select) — reuse the
+   row-actions kebab/menu toggle component, styled as a bordered pill like filter-pill rather than
+   the ghost-icon look the kebab has inside a table row, and left-aligned since the trigger sits at
+   the start of the row rather than a table row's right edge. */
+.filter-dropdown { position: relative; display: inline-flex; }
+.filter-dropdown > .kebab { font-family: "IBM Plex Mono", monospace; font-size: 12px; padding: 7px 13px; border-radius: 99px; border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink-soft); }
+.filter-dropdown > .kebab.active { background: var(--panel); color: #fff; border-color: var(--panel); }
+.filter-dropdown > .menu { left: 0; right: auto; top: 40px; width: 200px; }
+.menu label.item { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 5px; cursor: pointer; font-size: 13px; color: var(--ink); }
+.menu label.item:hover { background: var(--paper); }
+.menu label.item input[type="checkbox"] { width: auto; margin: 0; }
+.filter-select { font-family: "IBM Plex Mono", monospace; font-size: 12px; padding: 7px 13px; border-radius: 99px; border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink-soft); cursor: pointer; }
+
+.pagination { display: flex; justify-content: space-between; align-items: center; margin-top: 16px; flex-wrap: wrap; gap: 12px; }
+.pagination-summary { font-family: "IBM Plex Mono", monospace; font-size: 12px; color: var(--ink-soft); }
+.pagination-controls { align-items: center; }
+.pagination-page { font-family: "IBM Plex Mono", monospace; font-size: 12px; color: var(--ink-soft); padding: 7px 4px; }
+
 table { width: 100%; border-collapse: collapse; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; overflow: visible; }
 thead th { text-align: left; font-family: "IBM Plex Mono", monospace; font-size: 10.5px; letter-spacing: .09em; text-transform: uppercase; color: var(--ink-soft); padding: 12px 16px; border-bottom: 1px solid var(--line); background: var(--thead-bg); }
 tbody td { padding: 14px 16px; border-bottom: 1px solid var(--line); font-size: 13.5px; vertical-align: middle; }

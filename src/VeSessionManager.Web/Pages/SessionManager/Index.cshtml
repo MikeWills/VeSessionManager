@@ -11,24 +11,40 @@
         <p class="eyebrow">Sessions</p>
         <h1>Sessions</h1>
     </div>
-    <div class="filters">
-        <a class="filter-pill @(Model.ActiveFilter == "Upcoming" ? "active" : "")" asp-page="./Index" asp-route-filter="Upcoming">Upcoming</a>
-        <a class="filter-pill @(Model.ActiveFilter == "NeedsReview" ? "active" : "")" asp-page="./Index" asp-route-filter="NeedsReview">Needs review</a>
-        <a class="filter-pill @(Model.ActiveFilter == "Past" ? "active" : "")" asp-page="./Index" asp-route-filter="Past">Past</a>
-        <a class="filter-pill @(Model.ActiveFilter == "All" ? "active" : "")" asp-page="./Index" asp-route-filter="All">All</a>
-    </div>
 </div>
 
-@if (Model.AvailableTeams.Count > 1)
-{
-    <div class="filters" style="margin-bottom:16px;">
-        <a class="filter-pill @(Model.TeamId is null ? "active" : "")" asp-page="./Index" asp-route-filter="@Model.ActiveFilter">All teams</a>
-        @foreach (var team in Model.AvailableTeams)
-        {
-            <a class="filter-pill @(team.Id == Model.TeamId ? "active" : "")" asp-page="./Index" asp-route-filter="@Model.ActiveFilter" asp-route-teamId="@team.Id">@team.Name</a>
-        }
+<form method="get" id="sessionFilters" class="filters" style="margin-bottom:16px; align-items:flex-start;">
+    <input type="hidden" name="applied" value="true" />
+
+    <div class="filter-dropdown">
+        <button type="button" class="kebab @(Model.Status.Count > 0 ? "active" : "")">Status: @Model.StatusSummaryLabel ▾</button>
+        <div class="menu">
+            <label class="item"><input type="checkbox" name="status" value="Upcoming" @(Model.Status.Contains("Upcoming") ? "checked" : "") /> Upcoming</label>
+            <label class="item"><input type="checkbox" name="status" value="NeedsReview" @(Model.Status.Contains("NeedsReview") ? "checked" : "") /> Needs review</label>
+            <label class="item"><input type="checkbox" name="status" value="Past" @(Model.Status.Contains("Past") ? "checked" : "") /> Past</label>
+            <hr />
+            <button type="submit" class="item">Apply</button>
+        </div>
     </div>
-}
+
+    @if (Model.AvailableTeams.Count > 1)
+    {
+        <select name="teamId" class="filter-select" onchange="document.getElementById('sessionFilters').submit()">
+            <option value="">All teams</option>
+            @foreach (var team in Model.AvailableTeams)
+            {
+                <option value="@team.Id" selected="@(team.Id == Model.TeamId)">@team.Name</option>
+            }
+        </select>
+    }
+
+    <select name="pageSize" class="filter-select" onchange="document.getElementById('sessionFilters').submit()">
+        @foreach (var size in VeSessionManager.Web.Pages.SessionManager.IndexModel.AllowedPageSizes)
+        {
+            <option value="@size" selected="@(size == Model.PageSize)">@size per page</option>
+        }
+    </select>
+</form>
 
 <table>
     <thead>
@@ -70,3 +86,23 @@
         }
     </tbody>
 </table>
+
+@if (Model.TotalCount > 0)
+{
+    <div class="pagination">
+        <span class="pagination-summary">
+            Showing @(((Model.PageNumber - 1) * Model.PageSize) + 1)–@(Math.Min(Model.PageNumber * Model.PageSize, Model.TotalCount)) of @Model.TotalCount
+        </span>
+        <div class="pagination-controls filters">
+            @if (Model.PageNumber > 1)
+            {
+                <a class="filter-pill" href="@Model.BuildPageUrl(Model.PageNumber - 1)">← Prev</a>
+            }
+            <span class="pagination-page">Page @Model.PageNumber of @Model.TotalPages</span>
+            @if (Model.PageNumber < Model.TotalPages)
+            {
+                <a class="filter-pill" href="@Model.BuildPageUrl(Model.PageNumber + 1)">Next →</a>
+            }
+        </div>
+    </div>
+}
