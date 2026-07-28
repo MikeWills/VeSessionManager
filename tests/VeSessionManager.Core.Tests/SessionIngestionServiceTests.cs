@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Entities;
 using VeSessionManager.Core.ExamTools;
@@ -105,7 +106,7 @@ public class SessionIngestionServiceTests
     }
 
     private static SessionIngestionService CreateService(AppDbContext dbContext, FakeExamToolsClient client) =>
-        new(dbContext, client, new FixedTimeProvider(Now), NullLogger<SessionIngestionService>.Instance);
+        new(dbContext, client, new FixedTimeProvider(Now), Options.Create(new ExamToolsOptions()), NullLogger<SessionIngestionService>.Instance);
 
     private static ExamToolsSession PendingSession(
         string id = "session-1", DateTime? date = null, int? applicantCount = 0, string summary = "July Session") =>

@@ -37,6 +37,7 @@ else
                 <div class="field" style="max-width:220px;"><label for="etTeamCode">Team code</label><input id="etTeamCode" name="teamCode" value="@Model.Team.ExamToolsTeamCode" /></div>
                 <div class="field" style="max-width:220px;"><label for="etUsername">Username</label><input id="etUsername" name="username" value="@Model.Team.ExamToolsUsername" /></div>
                 <div class="field" style="max-width:220px;"><label for="etPassword">Password</label><input id="etPassword" name="password" type="password" placeholder="@(Model.Team.IsExamToolsConfigured ? "•••••••• (unchanged)" : "Not set")" /></div>
+                <div class="field" style="max-width:260px;"><label for="etBaseUrl">Base URL override</label><input id="etBaseUrl" name="baseUrl" value="@Model.Team.ExamToolsBaseUrl" placeholder="Leave blank for the deployment default" /></div>
             </div>
             <button type="submit" class="btn-primary btn-sm" style="margin-top:12px;">Save ExamTools</button>
         </form>

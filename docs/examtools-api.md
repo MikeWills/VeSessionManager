@@ -78,3 +78,26 @@ credentials/session data live there, verified directly against the API) — this
 - Other discovered-but-untested paths (from the site's JS bundles): `.../applicant/{id}/email`,
   `export/basic` (non-JSON), `vecDownload/*.zip`, `form605.pdf`, `laurel_export.csv`,
   `w5yi_export.csv`.
+
+## Per-team host override (issue #18, 2026-07-28)
+
+`ExamTools:BaseUrl` (`ExamToolsOptions.BaseUrl`) is the deployment-wide default host, but a `Team`
+can now override it via a nullable `Team.ExamToolsBaseUrl` column — e.g. a "dev team" running
+against `examtools.dev` for testing while real teams poll `alpha.exam.tools`, all from the same
+deployment. Chosen over an alternative `Team.ExamToolsEnvironment` (Dev/Production) enum design
+because a free-text override matches the existing pattern every other per-team credential already
+uses (nullable `Team` column, direct DB edit, no admin UI dropdown to maintain) and needs no code
+change/redeploy if a third ExamTools host ever shows up — an enum would need both.
+
+- `ExamToolsCredentials.For(team, globalDefaultBaseUrl)` is the one place the
+  override-falls-back-to-global logic lives; both `SessionIngestionService` and
+  `VolunteerExaminerSyncService` build their credentials through it instead of reading
+  `Team.ExamToolsBaseUrl` directly.
+- `ExamToolsClient` caches one `HttpClient`/cookie-jar pair per team, keyed by `TeamId`. Because the
+  base URL can now change per-team at runtime (an admin edits `Team.ExamToolsBaseUrl` after the
+  singleton already built a session for that team), `GetOrCreateTeamSession` compares the cached
+  session's `BaseUrl` against the credentials' current one on every call and transparently rebuilds
+  (disposing the stale `HttpClient`) on a mismatch, rather than requiring a process restart to pick
+  up the change.
+- Editable on the admin Team Settings page (`Pages/Admin/TeamSettings.cshtml`) alongside the rest
+  of the ExamTools credentials — blank clears the override back to the global default.

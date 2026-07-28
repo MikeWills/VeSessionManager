@@ -22,6 +22,8 @@ public class Team
     public string? ExamToolsTeamCode { get; set; }
     public string? ExamToolsUsername { get; set; }
     public string? ExamToolsPassword { get; set; }
+    /// <summary>Per-team override of the global ExamToolsOptions.BaseUrl appsettings default (e.g. a dev team running against https://examtools.dev while others run against https://alpha.exam.tools from the same deployment) — null means "use the global default." See docs/examtools-api.md.</summary>
+    public string? ExamToolsBaseUrl { get; set; }
 
     // Zoom credentials — nullable. Unlike ExamTools/Square/Email, this team's own separate Zoom
     // subscription/S2S OAuth app (confirmed with the user — not shared across teams).

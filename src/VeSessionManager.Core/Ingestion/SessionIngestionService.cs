@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Entities;
 using VeSessionManager.Core.ExamTools;
@@ -15,6 +16,7 @@ public class SessionIngestionService(
     AppDbContext dbContext,
     IExamToolsClient examToolsClient,
     TimeProvider timeProvider,
+    IOptions<ExamToolsOptions> examToolsOptions,
     ILogger<SessionIngestionService> logger)
 {
     private const string PendingState = "pend";
@@ -57,7 +59,7 @@ public class SessionIngestionService(
             return result;
         }
 
-        var credentials = new ExamToolsCredentials(team.Id, team.ExamToolsTeamCode!, team.ExamToolsUsername!, team.ExamToolsPassword!);
+        var credentials = ExamToolsCredentials.For(team, examToolsOptions.Value.BaseUrl);
 
         var remoteSessions = (await examToolsClient.GetTeamSessionsAsync(credentials, cancellationToken)).ToList();
 
