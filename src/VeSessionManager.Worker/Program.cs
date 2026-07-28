@@ -82,7 +82,6 @@ builder.Services.AddScoped<SystemSettingsService>();
 builder.Services.AddScoped<PiiPurgeService>();
 
 builder.Services.AddScoped<JobRunHistoryLogger>();
-builder.Services.AddHostedService<HelloWorldJob>();
 builder.Services.AddHostedService<SessionIngestionJob>();
 builder.Services.AddHostedService<DayBeforeReminderJob>();
 builder.Services.AddHostedService<FccDailyWatcherJob>();
