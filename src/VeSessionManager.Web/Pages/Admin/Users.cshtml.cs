@@ -117,10 +117,26 @@ public class UsersModel(AppDbContext dbContext, UserManager<User> userManager, A
         var auth = await AuthorizeManageAsync(targetUserId);
         if (auth is null) return Forbid();
 
+        // SetTeamsAsync replaces a user's team list wholesale, so simply filtering the *requested*
+        // ids to a TeamAdmin's own teams isn't enough — a target user who also belongs to a team
+        // this TeamAdmin doesn't manage (CanManageUser only requires sharing *one* team) would
+        // silently be removed from it, since that team was never offered as a checkbox to begin
+        // with. Any existing membership outside the acting user's own manageable teams is preserved
+        // untouched; only the acting user's own teams are actually added/removed by this request.
         var allowedTeamIds = adminAccessScope.GetEffectiveTeamIds(auth.Value.ActingUser);
-        var requestedTeamIds = allowedTeamIds is null ? teamIds : teamIds.Where(id => allowedTeamIds.Contains(id)).ToList();
+        List<int> finalTeamIds;
+        if (allowedTeamIds is null)
+        {
+            finalTeamIds = teamIds;
+        }
+        else
+        {
+            var outsideActingUsersAuthority = auth.Value.TargetUser.UserTeams.Select(ut => ut.TeamId).Where(id => !allowedTeamIds.Contains(id));
+            var requestedWithinAuthority = teamIds.Where(id => allowedTeamIds.Contains(id));
+            finalTeamIds = outsideActingUsersAuthority.Concat(requestedWithinAuthority).Distinct().ToList();
+        }
 
-        var result = await userManagementService.SetTeamsAsync(targetUserId, requestedTeamIds, auth.Value.ActingUser.Id, CancellationToken.None);
+        var result = await userManagementService.SetTeamsAsync(targetUserId, finalTeamIds, auth.Value.ActingUser.Id, CancellationToken.None);
         TempData[result == UserActionResult.Success ? "StatusMessage" : "ErrorMessage"] = result == UserActionResult.Success ? "Teams updated." : "User not found.";
         return RedirectToPage(new { teamId = TeamId });
     }
