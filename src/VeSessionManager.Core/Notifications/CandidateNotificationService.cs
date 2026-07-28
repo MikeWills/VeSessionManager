@@ -48,7 +48,7 @@ public class CandidateNotificationService(
             return result;
         }
 
-        var candidates = await dbContext.Candidates
+        var candidatesIncludingPastSessions = await dbContext.Candidates
             .Include(c => c.Session).ThenInclude(s => s.FeeConfiguration)
             .Include(c => c.Session).ThenInclude(s => s.Vec)
             .Include(c => c.Payments)
@@ -58,6 +58,18 @@ public class CandidateNotificationService(
                         && c.Session.TeamId == team.Id
                         && c.Session.Status == SessionStatus.Active)
             .ToListAsync(cancellationToken);
+
+        // A candidate on a session ingested via the completed-session backfill window (see
+        // SessionIngestionService) already had their session happen — a "you're registered!" email
+        // for something already over would just confuse them. Skipped permanently, not retried:
+        // there's no future poll where this session stops being in the past.
+        var candidates = candidatesIncludingPastSessions.Where(c => !c.Session.HasEnded(now)).ToList();
+        var skippedPastSessionCount = candidatesIncludingPastSessions.Count - candidates.Count;
+        if (skippedPastSessionCount > 0)
+        {
+            logger.LogInformation("Skipped RegistrationConfirmation for {Count} candidate(s) in team {TeamId} whose session has already ended — likely backfilled via the completed-session ingestion window",
+                skippedPastSessionCount, team.Id);
+        }
 
         if (candidates.Count > 0 && !team.IsEmailConfigured)
         {

@@ -168,13 +168,38 @@ public class SessionIngestionServiceTests
     }
 
     [Fact]
-    public async Task UnknownDoneSession_IsNotIngested()
+    public async Task DoneSessionWithinBackfillWindow_IsIngested()
     {
         await using var dbContext = CreateContext();
         await SeedVecAndFeeConfigAsync(dbContext);
         var team = await SeedTeamAsync(dbContext);
         var client = new FakeExamToolsClient();
-        var done = PendingSession(id: "old-session");
+        // Issue #22: teams want to backfill sessions that already completed, up to ~a month back,
+        // to start tracking past candidates/VE stats — a "done" session is now ingestable for the
+        // first time (previously never ingested regardless of date).
+        var done = PendingSession(id: "completed-session", date: Now.AddDays(-15));
+        done.State = "done";
+        client.SessionsFor(team.Id).Add(done);
+
+        var result = await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+
+        Assert.Equal(1, result.SessionsAdded);
+        var session = Assert.Single(dbContext.Sessions);
+        Assert.Equal("completed-session", session.ExamToolsSessionId);
+        Assert.Equal(SessionStatus.Active, session.Status);
+        Assert.Null(session.TestingCompletedUtc); // deliberately not pre-marked — lets candidate sync run normally
+    }
+
+    [Fact]
+    public async Task DoneSessionOlderThanBackfillWindow_IsNotIngested()
+    {
+        await using var dbContext = CreateContext();
+        await SeedVecAndFeeConfigAsync(dbContext);
+        var team = await SeedTeamAsync(dbContext);
+        var client = new FakeExamToolsClient();
+        // The feed returns unfiltered full history — a "done" session from years ago is exactly as
+        // undesirable to backfill as a zombie "pend" one (see StalePendingSessionInThePast_IsNotIngested).
+        var done = PendingSession(id: "ancient-session", date: Now.AddYears(-2));
         done.State = "done";
         client.SessionsFor(team.Id).Add(done);
 

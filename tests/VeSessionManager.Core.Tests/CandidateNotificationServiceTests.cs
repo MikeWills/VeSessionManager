@@ -251,6 +251,47 @@ public class CandidateNotificationServiceTests
     }
 
     [Fact]
+    public async Task RegistrationConfirmation_SessionAlreadyEnded_IsSkipped()
+    {
+        // Issue #22: a candidate on a session ingested via the completed-session backfill window
+        // already had their session happen — the automatic scan must not send a "you're
+        // registered!" email for something already over.
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        await SeedEmailSettingsAndTemplatesAsync(dbContext, team);
+        var session = await SeedSessionAsync(dbContext, team, Now.AddDays(-15));
+        dbContext.Candidates.Add(NewCandidate(session));
+        await dbContext.SaveChangesAsync();
+
+        var sender = new FakeEmailSender();
+        var result = await CreateService(dbContext, sender).SendRegistrationConfirmationsAsync(team, CancellationToken.None);
+
+        Assert.Equal(0, result.Sent);
+        Assert.Empty(sender.SentMessages);
+        Assert.Null(dbContext.Candidates.Single().RegistrationConfirmationSentUtc);
+    }
+
+    [Fact]
+    public async Task ResendRegistrationConfirmationAsync_SessionAlreadyEnded_StillSends()
+    {
+        // The manual, admin-triggered "resend" action is unaffected by the past-session guard —
+        // a human explicitly clicking resend means it regardless of the session's date.
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        await SeedEmailSettingsAndTemplatesAsync(dbContext, team);
+        var session = await SeedSessionAsync(dbContext, team, Now.AddDays(-15));
+        var candidate = NewCandidate(session);
+        dbContext.Candidates.Add(candidate);
+        await dbContext.SaveChangesAsync();
+
+        var sender = new FakeEmailSender();
+        var result = await CreateService(dbContext, sender).ResendRegistrationConfirmationAsync(candidate.Id, CancellationToken.None);
+
+        Assert.Equal(CandidateEmailSendResult.Sent, result);
+        Assert.Single(sender.SentMessages);
+    }
+
+    [Fact]
     public async Task RegistrationConfirmation_AlreadySent_IsNotResent()
     {
         await using var dbContext = CreateContext();

@@ -55,9 +55,23 @@ public class SessionEventSchedulingService(
         var now = timeProvider.GetUtcNow().UtcDateTime;
         var result = new SchedulingResult();
 
-        var sessionsNeedingSync = await dbContext.Sessions
+        var candidateSessions = await dbContext.Sessions
             .Where(s => s.TeamId == team.Id && s.Status == SessionStatus.Active && s.ScheduledStartUtc != s.ZoomDiscordSyncedStartUtc)
             .ToListAsync(cancellationToken);
+
+        // A session ingested via the completed-session backfill window (see SessionIngestionService)
+        // has already ended by the time this ever runs — never worth a real Zoom meeting/Discord
+        // event. Filtered out here, not query-side, since HasEnded's arithmetic is plain C#, not
+        // something worth relying on the SQLite provider to translate.
+        var sessionsNeedingSync = candidateSessions.Where(s => !s.HasEnded(now)).ToList();
+
+        var pastDueCount = candidateSessions.Count - sessionsNeedingSync.Count;
+        if (pastDueCount > 0)
+        {
+            result.SessionsSkippedPastDue = pastDueCount;
+            logger.LogInformation("Skipped Zoom/Discord scheduling for {Count} already-past session(s) in team {TeamId} — likely backfilled via the completed-session ingestion window",
+                pastDueCount, team.Id);
+        }
 
         LogUnconfiguredIntegrations(team, sessionsNeedingSync);
 
