@@ -80,6 +80,15 @@ public class Payment
     /// </summary>
     public Guid? YouthConfirmationToken { get; set; }
 
+    /// <summary>
+    /// Set once SquarePaymentLinkPurgeService has deleted this Payment's stale Square link (still
+    /// Unpaid after Team.PurgeUnpaidLinkDays). Serves two roles: the idempotency guard for the purge
+    /// scan itself, and the flag PaymentGenerationService's "Unpaid + no link -> generate one" scan
+    /// also checks — without it, that scan would silently regenerate a fresh link on the very next
+    /// poll. See docs/payment-link-purge.md.
+    /// </summary>
+    public DateTime? SquareLinkPurgedUtc { get; set; }
+
     /// <summary>Actual refund is processed manually in the Square dashboard — this is just a note for tracking.</summary>
     public bool RefundRequested { get; set; }
     public int? RefundRequestedByUserId { get; set; }

@@ -77,10 +77,6 @@ would be pure duplication — and goes straight to `CHANGELOG.md` instead. Non-p
 redesigns, hardening passes) start here and move to `CHANGELOG.md` once the section is at/over the
 cap and a newer entry needs to be added; oldest goes first.
 
-- **FCC daily watcher same-day retry (2026-07-23).** `docs/fcc-uls-watcher.md`'s "Same-day retry" and
-  "Weekly complete snapshot lags real filings" sections — found via a live FRN re-lookup that a
-  missed daily tick wasn't recovered for a full week, and that the weekly catch-up's "complete"
-  snapshot lags real filings by 24+ hours so it isn't the backstop it looks like.
 - **"Email history" candidate modal (2026-07-23).** First place any email-sent timestamp was ever
   surfaced outside the DB. `docs/email-reference.md`'s "Checking what a candidate actually received"
   section.
@@ -104,6 +100,10 @@ cap and a newer entry needs to be added; oldest goes first.
   standard-rate Square payment link to the session's configured youth rate, replacing reliance on
   the separate Square-hosted page + manual `AmountMismatchFlaggedUtc` reconciliation for the
   in-app-generated case.
+- **Stale unpaid Square payment link purge (2026-07-28).** `docs/payment-link-purge.md` — a daily,
+  per-team scan (`SquareLinkPurgeJob`) deletes an Unpaid Payment's Square link after
+  `Team.PurgeUnpaidLinkDays` (default 30), reusing `ISquareClient.DeletePaymentLinkAsync` from the
+  youth-payment feature above.
 
 Everything through Phase 0-10's initial build (ExamTools ingestion, Zoom/Discord, Square, email
 notifications, FCC ULS watcher, payment reminders, VE tracking, VEC submission tracker, admin

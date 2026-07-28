@@ -129,7 +129,15 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : IdentityUser
 
         // Phase 9c adds real Team/Vec create screens for the first time — enforce name
         // uniqueness so the new team-picker/VEC-picker dropdowns can't end up with duplicates.
-        modelBuilder.Entity<Team>(b => b.HasIndex(t => t.Name).IsUnique());
+        modelBuilder.Entity<Team>(b =>
+        {
+            b.HasIndex(t => t.Name).IsUnique();
+            // C#'s "= 30" property initializer only applies to newly-constructed objects — without
+            // this, the SQL column default (used for any row inserted outside EF, and by the
+            // migration's own AddColumn for existing rows) would be 0, which means "purge
+            // immediately" instead of "not configured yet."
+            b.Property(t => t.PurgeUnpaidLinkDays).HasDefaultValue(30);
+        });
         modelBuilder.Entity<Vec>(b => b.HasIndex(v => v.Name).IsUnique());
 
         modelBuilder.Entity<UnmatchedSquarePayment>(b =>

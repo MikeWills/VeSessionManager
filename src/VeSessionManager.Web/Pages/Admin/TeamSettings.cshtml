@@ -73,6 +73,14 @@ else
             <button type="submit" class="btn-primary btn-sm" style="margin-top:12px;">Save Square</button>
         </form>
 
+        <div class="section-head" style="margin-top:28px;"><h2>Payment link purge</h2></div>
+        <form method="post" asp-page-handler="UpdatePurgeSettings">
+            <input type="hidden" name="TeamId" value="@Model.TeamId" />
+            <div class="field" style="max-width:160px;"><label for="purgeUnpaidLinkDays">Purge unpaid links after (days)</label><input id="purgeUnpaidLinkDays" name="purgeUnpaidLinkDays" type="number" min="1" value="@Model.Team.PurgeUnpaidLinkDays" required /></div>
+            <p class="session-sub">An Unpaid payment's Square link is deleted once it's been outstanding this many days — Square links never auto-expire otherwise.</p>
+            <button type="submit" class="btn-primary btn-sm" style="margin-top:8px;">Save</button>
+        </form>
+
         <div class="section-head" style="margin-top:28px;"><h2>SMTP</h2></div>
         <form method="post" asp-page-handler="UpdateSmtp">
             <input type="hidden" name="TeamId" value="@Model.TeamId" />

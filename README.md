@@ -140,9 +140,19 @@ dotnet user-secrets set "Authentication:Microsoft:ClientSecret" "<Entra app regi
 
 On the server: `Authentication__Google__ClientId` / `Authentication__Google__ClientSecret` /
 `Authentication__Microsoft__ClientId` / `Authentication__Microsoft__ClientSecret` environment
-variables. In Development, four test users (one per role — SystemAdmin/TeamAdmin/SessionManager/
-TeamLead) are seeded automatically on first run by `DevAuthSeeder`; see
-[`docs/admin-auth.md`](docs/admin-auth.md) for their emails and shared dev password.
+variables. In Development, four test users (one per role) are seeded automatically on first run
+by `DevAuthSeeder` — log in at `/Account/Login` with any of these and the shared password below:
+
+| Email | Role | Team |
+|---|---|---|
+| `sysadmin@example.com` | SystemAdmin | none (deployment-wide) |
+| `teamadmin@example.com` | TeamAdmin | the seeded Team (Id 1) |
+| `sessionmanager@example.com` | SessionManager | the seeded Team (Id 1) |
+| `teamlead@example.com` | TeamLead | the seeded Team (Id 1), managed by the SessionManager above |
+
+All four share the password `Dev-Password1!` — Development-only, not a real secret, safe to commit
+in source. See [`docs/admin-auth.md`](docs/admin-auth.md) for the full role model and a seeding
+gotcha worth knowing if you ever touch `DevAuthSeeder`.
 
 ## Environments
 

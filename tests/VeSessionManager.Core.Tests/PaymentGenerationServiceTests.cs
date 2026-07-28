@@ -264,6 +264,35 @@ public class PaymentGenerationServiceTests
     }
 
     [Fact]
+    public async Task PurgedLinkPayment_IsNeverRegenerated()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        var candidate = await SeedCandidateAsync(dbContext, team);
+        var payment = new Payment
+        {
+            CandidateId = candidate.Id,
+            Reason = PaymentReason.InitialExam,
+            Amount = 15m,
+            Status = PaymentStatus.Unpaid,
+            PaymentLinkUrl = null,
+            SquareLinkPurgedUtc = Now.AddDays(-1),
+            CreatedUtc = Now.AddDays(-40)
+        };
+        dbContext.Payments.Add(payment);
+        await dbContext.SaveChangesAsync();
+        var square = new FakeSquareClient();
+
+        var result = await CreateService(dbContext, square).RunAsync(team, CancellationToken.None);
+
+        Assert.Equal(0, result.PaymentsCreated); // InitialExam payment already exists
+        Assert.Equal(0, result.LinksGenerated);
+        Assert.Empty(square.Calls);
+        var unchanged = await dbContext.Payments.SingleAsync(p => p.Id == payment.Id);
+        Assert.Null(unchanged.PaymentLinkUrl);
+    }
+
+    [Fact]
     public async Task CandidateInCancelledSession_IsNotGivenAPayment()
     {
         await using var dbContext = CreateContext();

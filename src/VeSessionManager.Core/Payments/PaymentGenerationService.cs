@@ -14,7 +14,10 @@ namespace VeSessionManager.Core.Payments;
 ///   1. Candidate has no InitialExam Payment row yet -> create one (Status = NotApplicable and no
 ///      link at all if the session's FeeConfiguration doesn't collect a fee; Unpaid otherwise).
 ///   2. Payment is Unpaid with no PaymentLinkUrl yet -> call Square for a link. Left null on
-///      failure so the very next poll retries just the link generation, not row creation too.
+///      failure so the very next poll retries just the link generation, not row creation too. A
+///      Payment whose link SquarePaymentLinkPurgeService already deleted (SquareLinkPurgedUtc set)
+///      is deliberately excluded here too, or this pass would immediately regenerate the link that
+///      was just purged for being stale — see docs/payment-link-purge.md.
 ///
 /// Multi-team: this service now operates on one Team's candidates/payments per RunAsync call —
 /// each team has its own separate Square merchant account (Team.IsSquareConfigured). See
@@ -73,7 +76,7 @@ public class PaymentGenerationService(
 
         var paymentsNeedingLink = await dbContext.Payments
             .Include(p => p.Candidate).ThenInclude(c => c.Session)
-            .Where(p => p.Status == PaymentStatus.Unpaid && p.PaymentLinkUrl == null && p.Candidate.Session.TeamId == team.Id)
+            .Where(p => p.Status == PaymentStatus.Unpaid && p.PaymentLinkUrl == null && p.SquareLinkPurgedUtc == null && p.Candidate.Session.TeamId == team.Id)
             .ToListAsync(cancellationToken);
 
         if (paymentsNeedingLink.Count > 0 && !team.IsSquareConfigured)

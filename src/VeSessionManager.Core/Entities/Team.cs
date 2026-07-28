@@ -54,6 +54,11 @@ public class Team
     public string? SmtpPassword { get; set; }
     public bool? SmtpUseStartTls { get; set; }
 
+    /// <summary>How many days an Unpaid Payment's Square link stays live before SquarePaymentLinkPurgeService
+    /// deletes it — a genuine per-team business setting, not a credential, so unlike every field
+    /// above it stores a real default instead of null-means-unset. See docs/payment-link-purge.md.</summary>
+    public int PurgeUnpaidLinkDays { get; set; } = 30;
+
     public DateTime CreatedUtc { get; set; }
 
     /// <summary>

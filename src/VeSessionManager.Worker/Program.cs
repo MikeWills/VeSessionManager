@@ -55,6 +55,7 @@ builder.Services.Configure<SquareOptions>(builder.Configuration.GetSection(Squar
 // Singleton: the Square SDK client owns its own HttpClient, same reasoning as the other API clients.
 builder.Services.AddSingleton<ISquareClient, SquareClient>();
 builder.Services.AddScoped<PaymentGenerationService>();
+builder.Services.AddScoped<SquarePaymentLinkPurgeService>();
 
 // No EmailOptions to Configure<> anymore — SmtpHost/Port/Username/Password/UseStartTls all live on
 // Team now (multi-team, see docs/multi-team.md).
@@ -87,6 +88,7 @@ builder.Services.AddHostedService<DayBeforeReminderJob>();
 builder.Services.AddHostedService<FccDailyWatcherJob>();
 builder.Services.AddHostedService<FccWeeklyCatchupJob>();
 builder.Services.AddHostedService<PaymentReminderJob>();
+builder.Services.AddHostedService<SquareLinkPurgeJob>();
 builder.Services.AddHostedService<PiiPurgeJob>();
 
 var host = builder.Build();
