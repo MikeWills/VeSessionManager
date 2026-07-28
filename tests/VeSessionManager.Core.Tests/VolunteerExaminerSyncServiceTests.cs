@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Entities;
 using VeSessionManager.Core.ExamTools;
@@ -98,7 +99,7 @@ public class VolunteerExaminerSyncServiceTests
     }
 
     private static VolunteerExaminerSyncService CreateService(AppDbContext dbContext, FakeExamToolsClient client) =>
-        new(dbContext, client, NullLogger<VolunteerExaminerSyncService>.Instance);
+        new(dbContext, client, Options.Create(new ExamToolsOptions()), NullLogger<VolunteerExaminerSyncService>.Instance);
 
     [Fact]
     public async Task NewVe_IsCreated_AndLinkedToSession()

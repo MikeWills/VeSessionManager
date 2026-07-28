@@ -77,6 +77,11 @@ would be pure duplication — and goes straight to `CHANGELOG.md` instead. Non-p
 redesigns, hardening passes) start here and move to `CHANGELOG.md` once the section is at/over the
 cap and a newer entry needs to be added; oldest goes first.
 
+- **Per-team ExamTools host override (issue #18, 2026-07-28).** `docs/examtools-api.md`'s "Per-team
+  host override" section — nullable `Team.ExamToolsBaseUrl` override column (not an
+  `Team.ExamToolsEnvironment` enum) so a team can point at a different ExamTools host than the
+  deployment's global `ExamTools:BaseUrl` default; `ExamToolsCredentials.For(team, ...)` is the one
+  place the override-falls-back-to-global logic lives.
 - **Payment reminders retest-gating fix (2026-07-22).** `docs/payment-reminders.md`'s "Retest
   payments" section — a same-session retest fee previously never got a reminder or expiration.
 - **Post-launch security/quality hardening pass (2026-07-21).** A real cross-tenant IDOR plus five

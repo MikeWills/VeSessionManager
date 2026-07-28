@@ -32,7 +32,7 @@ public class TeamSettingsService(AppDbContext dbContext, TimeProvider timeProvid
         return (TeamActionResult.Success, team);
     }
 
-    public async Task<TeamActionResult> UpdateExamToolsAsync(int teamId, string? teamCode, string? username, string? password, int userId, CancellationToken cancellationToken)
+    public async Task<TeamActionResult> UpdateExamToolsAsync(int teamId, string? teamCode, string? username, string? password, string? baseUrl, int userId, CancellationToken cancellationToken)
     {
         var team = await dbContext.Teams.FirstOrDefaultAsync(t => t.Id == teamId, cancellationToken);
         if (team is null)
@@ -42,6 +42,7 @@ public class TeamSettingsService(AppDbContext dbContext, TimeProvider timeProvid
 
         team.ExamToolsTeamCode = teamCode;
         team.ExamToolsUsername = username;
+        team.ExamToolsBaseUrl = string.IsNullOrWhiteSpace(baseUrl) ? null : baseUrl;
         if (password is not null)
         {
             team.ExamToolsPassword = password;

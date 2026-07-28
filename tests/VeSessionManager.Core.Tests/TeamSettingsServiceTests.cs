@@ -79,13 +79,30 @@ public class TeamSettingsServiceTests
         var user = await SeedUserAsync(dbContext);
         var team = await SeedTeamAsync(dbContext);
 
-        var result = await CreateService(dbContext).UpdateExamToolsAsync(team.Id, "WX0MIK", "admin", "secret-password", user.Id, CancellationToken.None);
+        var result = await CreateService(dbContext).UpdateExamToolsAsync(team.Id, "WX0MIK", "admin", "secret-password", "https://examtools.dev", user.Id, CancellationToken.None);
 
         Assert.Equal(TeamActionResult.Success, result);
         var updated = await dbContext.Teams.SingleAsync();
         Assert.Equal("WX0MIK", updated.ExamToolsTeamCode);
         Assert.Equal("admin", updated.ExamToolsUsername);
         Assert.Equal("secret-password", updated.ExamToolsPassword);
+        Assert.Equal("https://examtools.dev", updated.ExamToolsBaseUrl);
+    }
+
+    [Fact]
+    public async Task UpdateExamToolsAsync_BlankBaseUrl_ClearsOverrideBackToNull()
+    {
+        await using var dbContext = CreateContext();
+        var user = await SeedUserAsync(dbContext);
+        var team = await SeedTeamAsync(dbContext);
+        team.ExamToolsBaseUrl = "https://examtools.dev";
+        await dbContext.SaveChangesAsync();
+
+        var result = await CreateService(dbContext).UpdateExamToolsAsync(team.Id, "WX0MIK", "admin", null, "  ", user.Id, CancellationToken.None);
+
+        Assert.Equal(TeamActionResult.Success, result);
+        var updated = await dbContext.Teams.SingleAsync();
+        Assert.Null(updated.ExamToolsBaseUrl);
     }
 
     [Fact]
@@ -97,7 +114,7 @@ public class TeamSettingsServiceTests
         team.ExamToolsPassword = "original-secret";
         await dbContext.SaveChangesAsync();
 
-        var result = await CreateService(dbContext).UpdateExamToolsAsync(team.Id, "WX0MIK", "admin", null, user.Id, CancellationToken.None);
+        var result = await CreateService(dbContext).UpdateExamToolsAsync(team.Id, "WX0MIK", "admin", null, null, user.Id, CancellationToken.None);
 
         Assert.Equal(TeamActionResult.Success, result);
         var updated = await dbContext.Teams.SingleAsync();
@@ -111,7 +128,7 @@ public class TeamSettingsServiceTests
         await using var dbContext = CreateContext();
         var user = await SeedUserAsync(dbContext);
 
-        var result = await CreateService(dbContext).UpdateExamToolsAsync(999, "WX0MIK", "admin", "secret", user.Id, CancellationToken.None);
+        var result = await CreateService(dbContext).UpdateExamToolsAsync(999, "WX0MIK", "admin", "secret", null, user.Id, CancellationToken.None);
 
         Assert.Equal(TeamActionResult.NotFound, result);
     }

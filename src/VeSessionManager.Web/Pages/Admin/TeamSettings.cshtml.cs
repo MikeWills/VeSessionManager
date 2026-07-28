@@ -60,12 +60,12 @@ public class TeamSettingsModel(AppDbContext dbContext, UserManager<User> userMan
         return Page();
     }
 
-    public async Task<IActionResult> OnPostUpdateExamToolsAsync(string? teamCode, string? username, string? password)
+    public async Task<IActionResult> OnPostUpdateExamToolsAsync(string? teamCode, string? username, string? password, string? baseUrl)
     {
         var auth = await AuthorizeAsync();
         if (auth is null) return Forbid();
 
-        var result = await teamSettingsService.UpdateExamToolsAsync(auth.Value.Team.Id, teamCode, username, password, auth.Value.User.Id, CancellationToken.None);
+        var result = await teamSettingsService.UpdateExamToolsAsync(auth.Value.Team.Id, teamCode, username, password, baseUrl, auth.Value.User.Id, CancellationToken.None);
         SetStatus(result, "ExamTools credentials updated.");
         return RedirectToPage(new { teamId = auth.Value.Team.Id });
     }

@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Entities;
 using VeSessionManager.Core.ExamTools;
@@ -18,6 +19,7 @@ namespace VeSessionManager.Core.VolunteerExaminers;
 public class VolunteerExaminerSyncService(
     AppDbContext dbContext,
     IExamToolsClient examToolsClient,
+    IOptions<ExamToolsOptions> examToolsOptions,
     ILogger<VolunteerExaminerSyncService> logger)
 {
     public async Task<VeRosterSyncResult> RunAsync(Team team, CancellationToken cancellationToken)
@@ -31,7 +33,7 @@ public class VolunteerExaminerSyncService(
             return result;
         }
 
-        var credentials = new ExamToolsCredentials(team.Id, team.ExamToolsTeamCode!, team.ExamToolsUsername!, team.ExamToolsPassword!);
+        var credentials = ExamToolsCredentials.For(team, examToolsOptions.Value.BaseUrl);
 
         // Preloaded and kept up to date in-memory for the rest of this run — a plain
         // FirstOrDefaultAsync-per-VE would miss a VE created earlier in the same run (not yet

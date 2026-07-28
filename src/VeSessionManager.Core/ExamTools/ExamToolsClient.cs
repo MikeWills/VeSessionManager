@@ -2,7 +2,6 @@ using System.Collections.Concurrent;
 using System.Net;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 
 namespace VeSessionManager.Core.ExamTools;
 
@@ -22,13 +21,11 @@ public sealed class ExamToolsClient : IExamToolsClient, IDisposable
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
-    private readonly ExamToolsOptions _options;
     private readonly ILogger<ExamToolsClient> _logger;
     private readonly ConcurrentDictionary<int, TeamSession> _sessionsByTeamId = new();
 
-    public ExamToolsClient(IOptions<ExamToolsOptions> options, ILogger<ExamToolsClient> logger)
+    public ExamToolsClient(ILogger<ExamToolsClient> logger)
     {
-        _options = options.Value;
         _logger = logger;
     }
 
@@ -65,7 +62,7 @@ public sealed class ExamToolsClient : IExamToolsClient, IDisposable
 
     private async Task<T?> GetJsonAsync<T>(ExamToolsCredentials credentials, string relativeUrl, CancellationToken cancellationToken)
     {
-        var teamSession = GetOrCreateTeamSession(credentials.TeamId);
+        var teamSession = GetOrCreateTeamSession(credentials.TeamId, credentials.BaseUrl);
         await EnsureLoggedInAsync(teamSession, credentials, forceRelogin: false, cancellationToken);
 
         var response = await teamSession.HttpClient.GetAsync(relativeUrl, cancellationToken);
@@ -118,7 +115,7 @@ public sealed class ExamToolsClient : IExamToolsClient, IDisposable
             }
 
             teamSession.LoggedIn = true;
-            _logger.LogInformation("Logged into ExamTools at {BaseUrl} for team {TeamId} as {Username}", _options.BaseUrl, credentials.TeamId, credentials.Username);
+            _logger.LogInformation("Logged into ExamTools at {BaseUrl} for team {TeamId} as {Username}", credentials.BaseUrl, credentials.TeamId, credentials.Username);
         }
         finally
         {
@@ -126,16 +123,37 @@ public sealed class ExamToolsClient : IExamToolsClient, IDisposable
         }
     }
 
-    private TeamSession GetOrCreateTeamSession(int teamId) =>
-        _sessionsByTeamId.GetOrAdd(teamId, _ => new TeamSession(new HttpClient(new SocketsHttpHandler
+    /// <summary>
+    /// Keyed by teamId, but a cached TeamSession whose BaseUrl no longer matches (an admin changed
+    /// Team.ExamToolsBaseUrl after this singleton already built one) is torn down and rebuilt rather
+    /// than kept — otherwise a base-URL change would silently keep hitting the old host until the
+    /// process restarts.
+    /// </summary>
+    private TeamSession GetOrCreateTeamSession(int teamId, string baseUrl)
+    {
+        var existing = _sessionsByTeamId.GetOrAdd(teamId, _ => CreateTeamSession(baseUrl));
+        if (existing.BaseUrl == baseUrl)
+        {
+            return existing;
+        }
+
+        var replacement = CreateTeamSession(baseUrl);
+        _sessionsByTeamId[teamId] = replacement;
+        existing.HttpClient.Dispose();
+        existing.LoginLock.Dispose();
+        return replacement;
+    }
+
+    private static TeamSession CreateTeamSession(string baseUrl) =>
+        new(new HttpClient(new SocketsHttpHandler
         {
             CookieContainer = new CookieContainer(),
             // Long-lived cached client: recycle pooled connections so DNS changes are picked up.
             PooledConnectionLifetime = TimeSpan.FromMinutes(15)
         })
         {
-            BaseAddress = new Uri(_options.BaseUrl)
-        }));
+            BaseAddress = new Uri(baseUrl)
+        }, baseUrl);
 
     public void Dispose()
     {
@@ -147,9 +165,10 @@ public sealed class ExamToolsClient : IExamToolsClient, IDisposable
     }
 
     /// <summary>One team's independent cookie jar + login state — see class remarks.</summary>
-    private sealed class TeamSession(HttpClient httpClient)
+    private sealed class TeamSession(HttpClient httpClient, string baseUrl)
     {
         public HttpClient HttpClient { get; } = httpClient;
+        public string BaseUrl { get; } = baseUrl;
         public SemaphoreSlim LoginLock { get; } = new(1, 1);
         public bool LoggedIn { get; set; }
     }
