@@ -12,12 +12,14 @@ namespace VeSessionManager.Web.Pages.Admin;
 
 /// <summary>
 /// Phase 9c: user create/role/manager/deactivate management. SystemAdmin sees every user with a
-/// team filter; TeamAdmin sees only their own team's SessionManager/TeamLead rows (never another
-/// TeamAdmin/SystemAdmin, per AdminAccessScope.CanManageUser) and can only ever grant
-/// SessionManager/TeamLead (AdminAccessScope.CanAssignRole).
+/// team filter; TeamAdmin sees only SessionManager/TeamLead rows sharing at least one of their own
+/// teams (never another TeamAdmin/SystemAdmin, per AdminAccessScope.CanManageUser) and can only
+/// ever grant SessionManager/TeamLead (AdminAccessScope.CanAssignRole). Team membership is a
+/// separate action from role assignment (SetTeamsAsync) since issue #19 — a user can belong to more
+/// than one team.
 /// </summary>
 [Authorize(Roles = "SystemAdmin,TeamAdmin")]
-public class UsersModel(AppDbContext dbContext, UserManager<User> userManager, SessionAccessScope accessScope, AdminAccessScope adminAccessScope, UserManagementService userManagementService) : PageModel
+public class UsersModel(AppDbContext dbContext, UserManager<User> userManager, AdminAccessScope adminAccessScope, UserManagementService userManagementService) : PageModel
 {
     [BindProperty(SupportsGet = true)]
     public int? TeamId { get; set; }
@@ -31,7 +33,7 @@ public class UsersModel(AppDbContext dbContext, UserManager<User> userManager, S
 
     public async Task<IActionResult> OnGetAsync()
     {
-        var user = await userManager.GetUserAsync(User);
+        var user = await LoadCurrentUserAsync();
         if (user is null)
         {
             return Forbid();
@@ -43,67 +45,99 @@ public class UsersModel(AppDbContext dbContext, UserManager<User> userManager, S
             ? [UserRole.SystemAdmin, UserRole.TeamAdmin, UserRole.SessionManager, UserRole.TeamLead]
             : [UserRole.SessionManager, UserRole.TeamLead];
 
-        AvailableTeams = IsSystemAdmin
-            ? await dbContext.Teams.OrderBy(t => t.Name).Select(t => new ValueTuple<int, string>(t.Id, t.Name)).ToListAsync()
-            : [];
+        AvailableTeams = await adminAccessScope.ScopeTeams(dbContext.Teams, user)
+            .OrderBy(t => t.Name).Select(t => new ValueTuple<int, string>(t.Id, t.Name)).ToListAsync();
 
-        var effectiveTeamId = IsSystemAdmin ? TeamId : accessScope.GetEffectiveTeamId(user);
+        var effectiveTeamId = adminAccessScope.TryResolveManageableTeamId(user, TeamId);
         TeamId = effectiveTeamId;
 
-        var query = dbContext.Users.Include(u => u.Team).Include(u => u.ManagedByUser).AsQueryable();
+        var query = dbContext.Users.Include(u => u.UserTeams).ThenInclude(ut => ut.Team).Include(u => u.ManagedByUser).AsQueryable();
         if (!IsSystemAdmin)
         {
             if (effectiveTeamId is null)
             {
                 return Page();
             }
-            query = query.Where(u => u.TeamId == effectiveTeamId && (u.Role == UserRole.SessionManager || u.Role == UserRole.TeamLead));
+            query = query.Where(u => u.UserTeams.Any(ut => ut.TeamId == effectiveTeamId) && (u.Role == UserRole.SessionManager || u.Role == UserRole.TeamLead));
         }
         else if (effectiveTeamId is not null)
         {
-            query = query.Where(u => u.TeamId == effectiveTeamId);
+            query = query.Where(u => u.UserTeams.Any(ut => ut.TeamId == effectiveTeamId));
         }
 
         var users = await query.OrderBy(u => u.Name).ToListAsync();
         Users = users.Select(u => new UserRow(
-            u.Id, u.Email ?? "", u.Name, u.Role, u.Team?.Name, IsActive(u), u.ManagedByUser?.Name)).ToList();
+            u.Id, u.Email ?? "", u.Name, u.Role,
+            string.Join(", ", u.UserTeams.Select(ut => ut.Team.Name).OrderBy(n => n)),
+            u.UserTeams.Select(ut => ut.TeamId).ToList(),
+            IsActive(u), u.ManagedByUser?.Name)).ToList();
 
         AvailableManagers = await dbContext.Users
-            .Where(u => u.TeamId == effectiveTeamId && (u.Role == UserRole.SessionManager || u.Role == UserRole.TeamAdmin))
+            .Where(u => u.UserTeams.Any(ut => ut.TeamId == effectiveTeamId) && (u.Role == UserRole.SessionManager || u.Role == UserRole.TeamAdmin))
             .Select(u => new ValueTuple<int, string>(u.Id, u.Name))
             .ToListAsync();
 
         return Page();
     }
 
-    public async Task<IActionResult> OnPostCreateAsync(string email, string name, UserRole role, int? teamId, string password)
+    public async Task<IActionResult> OnPostCreateAsync(string email, string name, UserRole role, string password)
     {
-        var user = await userManager.GetUserAsync(User);
+        var user = await LoadCurrentUserAsync();
         if (user is null || !adminAccessScope.CanAssignRole(user, role))
         {
             return Forbid();
         }
 
-        var effectiveTeamId = user.Role == UserRole.SystemAdmin ? teamId : accessScope.GetEffectiveTeamId(user);
-        var (result, _) = await userManagementService.CreateAsync(email, name, role, effectiveTeamId, password, user.Id, CancellationToken.None);
+        var (result, _) = await userManagementService.CreateAsync(email, name, role, password, user.Id, CancellationToken.None);
         TempData[result == UserActionResult.Success ? "StatusMessage" : "ErrorMessage"] = result switch
         {
-            UserActionResult.Success => $"User '{email}' created.",
+            UserActionResult.Success => $"User '{email}' created — assign a team below to give them access.",
             UserActionResult.DuplicateEmail => $"A user with email '{email}' already exists.",
             _ => "Could not create user — check the password meets the minimum requirements."
         };
         return RedirectToPage(new { teamId = TeamId });
     }
 
-    public async Task<IActionResult> OnPostSetRoleAsync(int targetUserId, UserRole newRole, int? teamId)
+    public async Task<IActionResult> OnPostSetRoleAsync(int targetUserId, UserRole newRole)
     {
         var auth = await AuthorizeManageAsync(targetUserId);
         if (auth is null) return Forbid();
         if (!adminAccessScope.CanAssignRole(auth.Value.ActingUser, newRole)) return Forbid();
 
-        var effectiveTeamId = auth.Value.ActingUser.Role == UserRole.SystemAdmin ? teamId : accessScope.GetEffectiveTeamId(auth.Value.ActingUser);
-        var result = await userManagementService.SetRoleAsync(targetUserId, newRole, effectiveTeamId, auth.Value.ActingUser.Id, CancellationToken.None);
+        var result = await userManagementService.SetRoleAsync(targetUserId, newRole, auth.Value.ActingUser.Id, CancellationToken.None);
         TempData[result == UserActionResult.Success ? "StatusMessage" : "ErrorMessage"] = result == UserActionResult.Success ? "Role updated." : "User not found.";
+        return RedirectToPage(new { teamId = TeamId });
+    }
+
+    /// <summary>Issue #19: replaces a user's team memberships wholesale — the actual multi-team
+    /// assignment mechanism. A TeamAdmin may only grant teams from their own AvailableTeams (a
+    /// tampered request for a team they don't manage is silently dropped, not erred on).</summary>
+    public async Task<IActionResult> OnPostSetTeamsAsync(int targetUserId, List<int> teamIds)
+    {
+        var auth = await AuthorizeManageAsync(targetUserId);
+        if (auth is null) return Forbid();
+
+        // SetTeamsAsync replaces a user's team list wholesale, so simply filtering the *requested*
+        // ids to a TeamAdmin's own teams isn't enough — a target user who also belongs to a team
+        // this TeamAdmin doesn't manage (CanManageUser only requires sharing *one* team) would
+        // silently be removed from it, since that team was never offered as a checkbox to begin
+        // with. Any existing membership outside the acting user's own manageable teams is preserved
+        // untouched; only the acting user's own teams are actually added/removed by this request.
+        var allowedTeamIds = adminAccessScope.GetEffectiveTeamIds(auth.Value.ActingUser);
+        List<int> finalTeamIds;
+        if (allowedTeamIds is null)
+        {
+            finalTeamIds = teamIds;
+        }
+        else
+        {
+            var outsideActingUsersAuthority = auth.Value.TargetUser.UserTeams.Select(ut => ut.TeamId).Where(id => !allowedTeamIds.Contains(id));
+            var requestedWithinAuthority = teamIds.Where(id => allowedTeamIds.Contains(id));
+            finalTeamIds = outsideActingUsersAuthority.Concat(requestedWithinAuthority).Distinct().ToList();
+        }
+
+        var result = await userManagementService.SetTeamsAsync(targetUserId, finalTeamIds, auth.Value.ActingUser.Id, CancellationToken.None);
+        TempData[result == UserActionResult.Success ? "StatusMessage" : "ErrorMessage"] = result == UserActionResult.Success ? "Teams updated." : "User not found.";
         return RedirectToPage(new { teamId = TeamId });
     }
 
@@ -116,7 +150,7 @@ public class UsersModel(AppDbContext dbContext, UserManager<User> userManager, S
         TempData[result == UserActionResult.Success ? "StatusMessage" : "ErrorMessage"] = result switch
         {
             UserActionResult.Success => "Manager updated.",
-            UserActionResult.InvalidManager => "That manager is not on the same team, or doesn't hold a role that can manage a TeamLead.",
+            UserActionResult.InvalidManager => "That manager doesn't share a team with this TeamLead, or doesn't hold a role that can manage one.",
             _ => "User not found."
         };
         return RedirectToPage(new { teamId = TeamId });
@@ -149,15 +183,26 @@ public class UsersModel(AppDbContext dbContext, UserManager<User> userManager, S
 
     private static bool IsActive(User user) => user.LockoutEnd is null || user.LockoutEnd <= DateTimeOffset.UtcNow;
 
+    /// <summary>UserManager.GetUserAsync doesn't include UserTeams (or ManagedByUser.UserTeams) —
+    /// every method below needs at least the acting user's own UserTeams loaded for
+    /// AdminAccessScope's Contains-based checks.</summary>
+    private async Task<User?> LoadCurrentUserAsync()
+    {
+        var principalUser = await userManager.GetUserAsync(User);
+        return principalUser is null
+            ? null
+            : await dbContext.Users.Include(u => u.UserTeams).FirstOrDefaultAsync(u => u.Id == principalUser.Id);
+    }
+
     private async Task<(User ActingUser, User TargetUser)?> AuthorizeManageAsync(int targetUserId)
     {
-        var actingUser = await userManager.GetUserAsync(User);
+        var actingUser = await LoadCurrentUserAsync();
         if (actingUser is null)
         {
             return null;
         }
 
-        var targetUser = await userManager.FindByIdAsync(targetUserId.ToString());
+        var targetUser = await dbContext.Users.Include(u => u.UserTeams).FirstOrDefaultAsync(u => u.Id == targetUserId);
         if (targetUser is null || !adminAccessScope.CanManageUser(actingUser, targetUser))
         {
             return null;
@@ -166,5 +211,5 @@ public class UsersModel(AppDbContext dbContext, UserManager<User> userManager, S
         return (actingUser, targetUser);
     }
 
-    public record UserRow(int Id, string Email, string Name, UserRole Role, string? TeamName, bool IsActive, string? ManagerName);
+    public record UserRow(int Id, string Email, string Name, UserRole Role, string TeamNames, IReadOnlyList<int> TeamIds, bool IsActive, string? ManagerName);
 }

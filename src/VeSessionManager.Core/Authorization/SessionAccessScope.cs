@@ -10,43 +10,54 @@ namespace VeSessionManager.Core.Authorization;
 ///
 /// See docs/admin-auth.md for the full 4-role hierarchy this implements: SystemAdmin sees
 /// everything; TeamAdmin and SessionManager are equivalent here (both resolve to their own
-/// User.TeamId) — the only difference between those two roles is settings/user-management access,
-/// a separate authorization surface Phase 9c will build, not this class's concern; TeamLead is
-/// scoped transitively through whichever manager (SessionManager or TeamAdmin) they're assigned
-/// to via ManagedByUserId, read-only.
+/// User.UserTeams) — the only difference between those two roles is settings/user-management
+/// access, a separate authorization surface Phase 9c will build, not this class's concern;
+/// TeamLead is scoped transitively through whichever manager (SessionManager or TeamAdmin) they're
+/// assigned to via ManagedByUserId, read-only.
+///
+/// Multi-team (issue #19): a TeamAdmin/SessionManager can belong to more than one Team (User.UserTeams,
+/// replacing the old single nullable User.TeamId) — every method here now returns/checks a *set* of
+/// team ids rather than one scalar. Callers must have UserTeams loaded (and, for a TeamLead,
+/// ManagedByUser.UserTeams too) — same caller responsibility the old code already had for
+/// ManagedByUser itself.
 /// </summary>
 public class SessionAccessScope
 {
     /// <summary>
-    /// The team a user's session visibility is scoped to, or null for "no filter" (SystemAdmin
-    /// only). For a TeamLead, the caller must have ManagedByUser loaded/included — this reads
-    /// user.ManagedByUser.TeamId directly rather than querying, so it works uniformly whether the
-    /// manager is a SessionManager or a TeamAdmin.
+    /// The teams a user's session visibility is scoped to: null means "no filter" (SystemAdmin
+    /// only); an empty list means "not assigned to any team yet" (correctly sees nothing, not
+    /// everything). For a TeamLead, resolved transitively through ManagedByUser.UserTeams.
     /// </summary>
-    public int? GetEffectiveTeamId(User user) => user.Role switch
+    public IReadOnlyList<int>? GetEffectiveTeamIds(User user) => user.Role switch
     {
         UserRole.SystemAdmin => null,
-        UserRole.TeamAdmin => user.TeamId,
-        UserRole.SessionManager => user.TeamId,
-        UserRole.TeamLead => user.ManagedByUser?.TeamId,
-        _ => null
+        UserRole.TeamAdmin => user.UserTeams.Select(ut => ut.TeamId).ToList(),
+        UserRole.SessionManager => user.UserTeams.Select(ut => ut.TeamId).ToList(),
+        UserRole.TeamLead => user.ManagedByUser?.UserTeams.Select(ut => ut.TeamId).ToList() ?? [],
+        _ => []
     };
 
     /// <summary>
-    /// Filters a Session query to what the given user is allowed to see. SystemAdmin gets the
-    /// query back unfiltered; everyone else is scoped to their effective team — a non-SystemAdmin
-    /// with no effective team (e.g. a TeamAdmin/SessionManager not yet assigned to a Team, or a
-    /// TeamLead not yet assigned a manager) correctly sees nothing, not everything.
+    /// Filters a Session query to what the given user is allowed to see. SystemAdmin gets the query
+    /// back unfiltered unless a specific team was requested (the session list's own team filter —
+    /// issue #17); everyone else is scoped to every team they belong to, or narrowed to just
+    /// `selectedTeamId` when that's one of their own teams (a tampered/foreign teamId is silently
+    /// ignored, falling back to "all my teams" rather than erroring).
     /// </summary>
-    public IQueryable<Session> Scope(IQueryable<Session> sessions, User user)
+    public IQueryable<Session> Scope(IQueryable<Session> sessions, User user, int? selectedTeamId = null)
     {
         if (user.Role == UserRole.SystemAdmin)
         {
-            return sessions;
+            return selectedTeamId is null ? sessions : sessions.Where(s => s.TeamId == selectedTeamId);
         }
 
-        var effectiveTeamId = GetEffectiveTeamId(user);
-        return sessions.Where(s => s.TeamId == effectiveTeamId);
+        var effectiveTeamIds = GetEffectiveTeamIds(user)!;
+        if (selectedTeamId is not null && effectiveTeamIds.Contains(selectedTeamId.Value))
+        {
+            return sessions.Where(s => s.TeamId == selectedTeamId);
+        }
+
+        return sessions.Where(s => effectiveTeamIds.Contains(s.TeamId));
     }
 
     /// <summary>
@@ -62,7 +73,7 @@ public class SessionAccessScope
             return true;
         }
 
-        return GetEffectiveTeamId(user) == session.TeamId;
+        return GetEffectiveTeamIds(user)?.Contains(session.TeamId) ?? false;
     }
 
     /// <summary>
@@ -77,5 +88,30 @@ public class SessionAccessScope
         }
 
         return CanView(user, session);
+    }
+
+    /// <summary>
+    /// The single "which team is this user actually looking at right now" resolution for the
+    /// per-team list pages (VE Roster, VEC Submission, Unmatched Payments, Fee Configurations) that
+    /// show one team's data at a time rather than a mixed multi-team list like the session list.
+    /// SystemAdmin uses whatever was requested (their own team-picker choice, or null if they
+    /// haven't picked one yet); everyone else picks from their own teams — the requested team if
+    /// it's one of theirs, otherwise the first team they belong to (or null if they have none).
+    /// Mirrors AdminAccessScope.TryResolveManageableTeamId's shape for the admin-config side.
+    /// </summary>
+    public int? TryResolveViewableTeamId(User user, int? requestedTeamId)
+    {
+        if (user.Role == UserRole.SystemAdmin)
+        {
+            return requestedTeamId;
+        }
+
+        var effectiveTeamIds = GetEffectiveTeamIds(user) ?? [];
+        if (requestedTeamId is not null && effectiveTeamIds.Contains(requestedTeamId.Value))
+        {
+            return requestedTeamId;
+        }
+
+        return effectiveTeamIds.Count > 0 ? effectiveTeamIds[0] : null;
     }
 }

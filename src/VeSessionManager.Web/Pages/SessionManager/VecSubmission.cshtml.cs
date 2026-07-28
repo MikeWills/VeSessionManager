@@ -18,8 +18,11 @@ namespace VeSessionManager.Web.Pages.SessionManager;
 /// the session-detail page's toggle uses. Not one of the design handoff's four mocked screens —
 /// styled with the same design-system table/chip components as everything else. TeamLead was added
 /// in the TeamLead-read-only-view fix (see TODO.md) — the listing is already scoped correctly for
-/// TeamLead via GetEffectiveTeamId, but the inline "Mark submitted" action is gated behind CanEdit
+/// TeamLead via GetEffectiveTeamIds, but the inline "Mark submitted" action is gated behind CanEdit
 /// so a TeamLead sees the status without a button that would 403.
+///
+/// Multi-team (issue #19): the listing is per-team, so a user belonging to more than one team picks
+/// which one via TeamId/AvailableTeams — same filter-pill convention as the session list.
 /// </summary>
 [Authorize(Roles = "SystemAdmin,TeamAdmin,SessionManager,TeamLead")]
 public class VecSubmissionModel(
@@ -29,16 +32,28 @@ public class VecSubmissionModel(
     VecSubmissionReportService reportService,
     VecSubmissionService submissionService) : PageModel
 {
+    [BindProperty(SupportsGet = true)]
+    public int? TeamId { get; set; }
+
     public bool HasTeamContext { get; private set; }
     public bool CanEdit { get; private set; }
     public int PendingCount { get; private set; }
+    public IReadOnlyList<(int Id, string Name)> AvailableTeams { get; private set; } = [];
     public IReadOnlyList<SessionRow> Sessions { get; private set; } = [];
 
     public async Task OnGetAsync()
     {
         var user = await userManager.GetUserWithManagerAsync(dbContext, User) ?? throw new InvalidOperationException("No authenticated user for an [Authorize]d page.");
         CanEdit = user.Role != UserRole.TeamLead;
-        var teamId = accessScope.GetEffectiveTeamId(user);
+
+        AvailableTeams = user.Role == UserRole.SystemAdmin
+            ? await dbContext.Teams.OrderBy(t => t.Name).Select(t => new ValueTuple<int, string>(t.Id, t.Name)).ToListAsync()
+            : (accessScope.GetEffectiveTeamIds(user) ?? [])
+                .Join(await dbContext.Teams.ToListAsync(), id => id, t => t.Id, (_, t) => new ValueTuple<int, string>(t.Id, t.Name))
+                .OrderBy(t => t.Item2).ToList();
+
+        var teamId = accessScope.TryResolveViewableTeamId(user, TeamId);
+        TeamId = teamId;
         HasTeamContext = teamId is not null;
         if (teamId is not int id)
         {
@@ -65,7 +80,7 @@ public class VecSubmissionModel(
 
     public async Task<IActionResult> OnPostMarkSubmittedAsync(int sessionId)
     {
-        var user = await userManager.GetUserAsync(User);
+        var user = await userManager.GetUserWithManagerAsync(dbContext, User);
         var session = user is null ? null : await dbContext.Sessions.FirstOrDefaultAsync(s => s.Id == sessionId);
         if (user is null || session is null || !accessScope.CanEdit(user, session))
         {

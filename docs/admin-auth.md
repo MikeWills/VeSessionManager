@@ -29,31 +29,55 @@ other "pick one of N" field in this codebase. `AppDbContext` uses `IdentityUserC
 
 The spec's "Session Manager sees their own sessions" / "Team Lead scoped to sessions they're
 assigned to" predates the multi-team foundation and was never reconciled with it — the spec itself
-flagged Team Lead's scope as needing confirmation before building. Resolved:
+flagged Team Lead's scope as needing confirmation before building. Originally resolved with a
+single, nullable `User.TeamId`; **replaced (issues #17/#19, 2026-07-28) with a real many-to-many
+`User`↔`Team` relationship** once a Session Manager needed to belong to more than one team and
+filter the session list down to just one at a time:
 
-- `User.TeamId` (nullable int) — null for SystemAdmin (deployment-wide); set for
-  TeamAdmin/SessionManager (their own team).
-- `User.ManagedByUserId` (already existed) — a TeamLead's assigned manager. **Role-agnostic**: the
-  manager can be a SessionManager *or* a TeamAdmin, so a TeamLead's effective team is always
-  `user.ManagedByUser?.TeamId`, whoever that manager is. No new multi-manager join table yet (a
-  TeamLead has exactly one assigned manager) — deferred until there's a real need.
+- **`UserTeam`** (`Id`/`UserId`/`TeamId`/`CreatedUtc`, composite key on `(UserId, TeamId)`) — the one
+  source of truth for which team(s) a TeamAdmin/SessionManager belongs to, replacing the old
+  `User.TeamId`/`User.Team` (both removed). Migration `Phase14UserTeamMultiTeam` backfills one
+  `UserTeam` row per existing single-team user before dropping the column.
+- `User.ManagedByUserId` (unchanged) — a TeamLead's assigned manager, still role-agnostic (the
+  manager can be a SessionManager *or* a TeamAdmin). A TeamLead's effective teams are now resolved
+  transitively through **all** of that manager's `UserTeam` rows, not a single `TeamId` — a TeamLead
+  managed by a multi-team SessionManager sees every one of that manager's teams.
 
 `SessionAccessScope` (`VeSessionManager.Core/Authorization/SessionAccessScope.cs`) is the actual
 mechanism, plain C# with no ASP.NET dependency so it's directly unit-tested
 (`SessionAccessScopeTests.cs`) rather than requiring a web host:
 
-- `GetEffectiveTeamId(User)` — SystemAdmin → `null` (no filter); TeamAdmin/SessionManager →
-  `user.TeamId`; TeamLead → `user.ManagedByUser?.TeamId`.
-- `Scope(IQueryable<Session>, User)` — SystemAdmin gets the query back unfiltered; everyone else is
-  `.Where(s => s.TeamId == effectiveTeamId)`. An unassigned TeamAdmin/SessionManager
-  (`TeamId = null`) or an unassigned TeamLead correctly sees **nothing**, not everything.
-- `CanEdit(User, Session)` — SystemAdmin/TeamAdmin/SessionManager (own team) → true; TeamLead →
-  false (read-only, pending explicit sign-off on any TeamLead write access).
+- `GetEffectiveTeamIds(User)` (plural, renamed from the old singular `GetEffectiveTeamId`) —
+  SystemAdmin → `null` (no filter); TeamAdmin/SessionManager → their own `UserTeams` team ids;
+  TeamLead → `user.ManagedByUser?.UserTeams` team ids. Callers must have `UserTeams` (and, for a
+  TeamLead, `ManagedByUser.UserTeams`) eager-loaded — see the `CurrentUserLoader.GetUserWithManagerAsync`
+  gotcha below, now load-bearing for every role, not just TeamLead.
+- `Scope(IQueryable<Session>, User, int? selectedTeamId = null)` — SystemAdmin: unfiltered unless a
+  specific team was requested (the session list's own team filter, issue #17); everyone else: every
+  session across all their teams by default, or narrowed to `selectedTeamId` when that's one of
+  their own teams (a tampered/foreign id is silently ignored, not erred on). An unassigned
+  TeamAdmin/SessionManager or TeamLead correctly sees **nothing**, not everything.
+- `CanView`/`CanEdit(User, Session)` — set-membership (`Contains`) instead of scalar equality;
+  TeamLead is still always read-only for `CanEdit` (pending explicit sign-off on any TeamLead write
+  access).
+- `TryResolveViewableTeamId(User, int? requestedTeamId)` — new: the single "which team is this user
+  looking at right now" resolution for per-team list pages (VE Roster, VEC Submission, Unmatched
+  Payments, Fee Configurations) that show one team at a time rather than a mixed multi-team list
+  like the session list. Mirrors `AdminAccessScope.TryResolveManageableTeamId`'s shape for the
+  session-viewing side rather than the admin-config side.
 
-TeamAdmin and SessionManager are **equivalent** in `SessionAccessScope` — both resolve to
-`user.TeamId`. The only difference between those two roles is settings/user-management access
-(who can edit Team credentials, who can grant SessionManager/TeamLead), a separate authorization
-surface Phase 9c will build, not this class's concern.
+TeamAdmin and SessionManager are **equivalent** in `SessionAccessScope` — both resolve to their own
+`UserTeams`. The only difference between those two roles is settings/user-management access (who
+can edit Team credentials, who can grant SessionManager/TeamLead), a separate authorization surface
+(`AdminAccessScope`) covers, not this class's concern. `AdminAccessScope` got the same
+set-based treatment: `ScopeTeams`/`ScopeAuditLog`/`ScopeJobRunHistory` and `CanManageTeam`/
+`CanManageUser` all use `Contains` against a TeamAdmin's team set now, which is what makes the
+existing `AvailableTeams`/`filter-pill` picker on `Users`/`TeamSettings`/`EmailTemplates` (previously
+hardcoded to `[]` for anyone but SystemAdmin) work for a multi-team TeamAdmin too. Team membership
+itself is managed via `UserManagementService.SetTeamsAsync` — a separate action from role assignment
+(`SetRoleAsync`, which no longer takes a `teamId`) and from account creation (`CreateAsync`, which
+now creates a user with zero teams; an admin assigns teams afterward via the Users page's "Manage
+teams" action).
 
 This is real infrastructure for Phase 9b to consume once an actual session-list page exists — 9a
 builds and tests it now, per the spec's own framing ("build the *mechanism* ... even though
@@ -63,7 +87,8 @@ there's barely any real data to filter yet"); it isn't wired into a real data pa
 
 `User` (`VeSessionManager.Core/Entities/User.cs`) is `IdentityUser<int>` — inherits `UserName`/
 `Email` (now nullable, superseding the old `required string Email`)/`PasswordHash`/
-`SecurityStamp`/etc. Adds `Name` (required display name), `Role`, `TeamId`/`Team`,
+`SecurityStamp`/etc. Adds `Name` (required display name), `Role`, `UserTeams` (the multi-team join
+collection, replacing the old single `TeamId`/`Team` — see "Team scoping" above),
 `ManagedByUserId`/`ManagedByUser`.
 
 `VeSessionManager.Web`'s `Program.cs` uses `AddIdentityCore<User>()`, not `AddIdentity<User,
@@ -74,9 +99,12 @@ was **missing entirely** before this phase — `app.UseAuthorization()` alone ne
 `HttpContext.User`, so authorization had been a silent no-op since Phase 0's scaffold.
 
 A custom `AppClaimsPrincipalFactory` (`VeSessionManager.Web/AppClaimsPrincipalFactory.cs`) adds a
-`ClaimTypes.Role` claim from `user.Role` and a `TeamId` claim at sign-in, so `[Authorize(Roles =
-"...")]` and future authorization logic read straight from the signed-in cookie's claims — no
-extra DB hit per request.
+`ClaimTypes.Role` claim from `user.Role` at sign-in, so `[Authorize(Roles = "...")]` reads straight
+from the signed-in cookie's claims — no extra DB hit per request. It no longer adds a `TeamId`
+claim (dropped for issues #17/#19) — a user can belong to more than one team now, which a
+single-value claim can't represent, and nothing in the authorization path actually read it: every
+real team-scoping check re-fetches `User` (with `UserTeams` included) from the DB via
+`SessionAccessScope`/`AdminAccessScope` rather than trusting the cookie for that.
 
 Pages are hand-built (`Pages/Account/Login.cshtml`, `Logout.cshtml`, `AccessDenied.cshtml`,
 `ExternalLoginCallback.cshtml`), not the scaffolded Identity UI Razor Class Library — keeps this

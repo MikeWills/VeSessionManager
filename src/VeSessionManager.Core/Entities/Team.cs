@@ -70,6 +70,7 @@ public class Team
     public DateTime? LastIngestionRunUtc { get; set; }
 
     public List<Session> Sessions { get; } = [];
+    public List<UserTeam> UserTeams { get; } = [];
 
     public bool IsExamToolsConfigured =>
         !string.IsNullOrWhiteSpace(ExamToolsTeamCode)
