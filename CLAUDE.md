@@ -121,12 +121,15 @@ cap and a newer entry needs to be added; oldest goes first.
   helper) instead of the bare grant date, which would otherwise purge an upgrade/repeat candidate's
   PII almost immediately after their real, current session. No schema change — computed from data
   already stored. Also surfaced on the applicant detail page.
-- **Applicant detail page (2026-07-28).** `docs/applicant-detail.md` — a new per-Candidate.Id page
-  (never keyed by FRN, since one person can test with the team more than once) with full action
-  parity to the session Detail page's candidate row, every payment's link surfaced (closing a
-  previously-open TODO item), and an "other sessions with this FRN" cross-reference list. Introduced
-  the shared `CandidateEmailHistoryFormatter` helper and fixed two bugs found live-testing in a real
-  browser: a nullable-UTC-suffix formatting bug and an off-screen kebab-menu CSS positioning bug.
+- **Auto-detect graded exam results from ExamTools (2026-07-28).** `docs/examtools-api.md`'s
+  "Applicant exam results" section — found live during a real HRCC test session: a candidate who
+  failed his exam that night had no `Tested`/`ApplicationStatus` reflected in the app at all, even
+  though ExamTools' own per-applicant detail endpoint (`exams[]`) had the graded result the whole
+  time. New `ExamResultSyncService` (wired into `SessionIngestionJob` right after `VeRosterSync`)
+  auto-flips a candidate to `Failed` on any graded-and-failed exam element, or `Tested = true` on an
+  all-passed result — closing a second latent gap along the way, since `PaymentReminderService`'s
+  existing Reason=Retest reminder logic is gated on `ResultMarkedUtc` and had never fired for a
+  candidate nobody manually marked Failed.
 Everything through Phase 0-10's initial build (ExamTools ingestion, Zoom/Discord, Square, email
 notifications, FCC ULS watcher, payment reminders, VE tracking, VEC submission tracker, admin
 auth/config/candidate-actions, PII purge) plus the public privacy page has aged out to

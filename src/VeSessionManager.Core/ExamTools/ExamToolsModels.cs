@@ -93,3 +93,26 @@ public class ExamToolsVe
     public string Call { get; set; } = "";
     public string Name { get; set; } = "";
 }
+
+/// <summary>
+/// Response of GET /api/veUser/sessions/{sessionId}/applicant/{applicantId} — full applicant detail
+/// including graded exam results, verified against real HRCC data 2026-07-28. Only the fields
+/// ExamResultSyncService needs are mapped (this endpoint also returns full registration PII already
+/// covered by ExamToolsApplicant — address/phone/etc. deliberately left unmapped here since nothing
+/// needs them).
+/// </summary>
+public class ExamToolsApplicantDetail
+{
+    public List<ExamToolsExamResult> Exams { get; set; } = [];
+}
+
+/// <summary>One exam element attempt. A candidate can have more than one entry in the same sitting (e.g. passes Technician, then attempts and fails General) — ExamResultSyncService treats any graded-and-failed entry as an overall Failed, regardless of other elements passed the same session.</summary>
+public class ExamToolsExamResult
+{
+    public int Element { get; set; }
+
+    /// <summary>False while the exam is still in progress/ungraded — Exams entries with Graded=false are ignored, not treated as failed.</summary>
+    public bool Graded { get; set; }
+
+    public bool Passed { get; set; }
+}

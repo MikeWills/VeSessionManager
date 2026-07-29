@@ -44,6 +44,9 @@ public class VolunteerExaminerSyncServiceTests
             return Task.FromResult<IReadOnlyList<ExamToolsVe>>(
                 RostersByTeamAndSession.TryGetValue((credentials.TeamId, examToolsSessionId), out var list) ? list : []);
         }
+
+        public Task<ExamToolsApplicantDetail?> GetApplicantDetailAsync(ExamToolsCredentials credentials, string examToolsSessionId, string applicantId, CancellationToken cancellationToken) =>
+            throw new NotSupportedException("Not used by VolunteerExaminerSyncService.");
     }
 
     private static AppDbContext CreateContext()

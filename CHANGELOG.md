@@ -8,6 +8,12 @@ that window, or immediately if it's phase-numbered work already summarized in "C
 design rationale for any entry still lives in its linked `/docs/*.md` file, not here or in
 CLAUDE.md — this file, like CLAUDE.md's Change Log, is pointers only.
 
+- **Applicant detail page (2026-07-28).** `docs/applicant-detail.md` — a new per-Candidate.Id page
+  (never keyed by FRN, since one person can test with the team more than once) with full action
+  parity to the session Detail page's candidate row, every payment's link surfaced (closing a
+  previously-open TODO item), and an "other sessions with this FRN" cross-reference list. Introduced
+  the shared `CandidateEmailHistoryFormatter` helper and fixed two bugs found live-testing in a real
+  browser: a nullable-UTC-suffix formatting bug and an off-screen kebab-menu CSS positioning bug.
 - **Closed-session ingestion endpoint fix (2026-07-28).** `docs/examtools-api.md`'s "Closed sessions
   are a separate feed" section — issue #22's backfill could never actually fire against real
   data, because `GetTeamSessionsAsync` never returns a closed (`"done"`) session at all; found live

@@ -61,6 +61,11 @@ public class SessionIngestionServiceTests
         // implemented only to satisfy the interface.
         public Task<IReadOnlyList<ExamToolsVe>> GetSessionVeRosterAsync(ExamToolsCredentials credentials, string examToolsSessionId, CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyList<ExamToolsVe>>([]);
+
+        // Not exercised by these tests (ExamResultSyncService has its own test file/fake) —
+        // implemented only to satisfy the interface.
+        public Task<ExamToolsApplicantDetail?> GetApplicantDetailAsync(ExamToolsCredentials credentials, string examToolsSessionId, string applicantId, CancellationToken cancellationToken) =>
+            Task.FromResult<ExamToolsApplicantDetail?>(null);
     }
 
     private static AppDbContext CreateContext()
