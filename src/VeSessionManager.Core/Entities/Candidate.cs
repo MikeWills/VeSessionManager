@@ -40,6 +40,12 @@ public class Candidate
     public string? CallSign { get; set; }
     public DateTime? LicenseGrantDateUtc { get; set; }
 
+    /// <summary>License class held walking into this session's exam (None = not previously licensed). Set alongside NewLicenseClass — see ExamResultSyncService.</summary>
+    public LicenseClass? InitialLicenseClass { get; set; }
+
+    /// <summary>License class earned by this sitting's passed element(s) — only set once every graded element this sitting passed (a candidate marked Failed never gets one). Set by ExamResultSyncService from the exam elements ExamTools reports as graded+passed; also backfills existing already-Tested candidates that predate this field.</summary>
+    public LicenseClass? NewLicenseClass { get; set; }
+
     public int? ResultMarkedByUserId { get; set; }
     public User? ResultMarkedByUser { get; set; }
     public DateTime? ResultMarkedUtc { get; set; }

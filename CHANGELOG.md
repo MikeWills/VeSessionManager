@@ -8,6 +8,9 @@ that window, or immediately if it's phase-numbered work already summarized in "C
 design rationale for any entry still lives in its linked `/docs/*.md` file, not here or in
 CLAUDE.md — this file, like CLAUDE.md's Change Log, is pointers only.
 
+- **Post-launch security/quality hardening pass (2026-07-21).** A real cross-tenant IDOR plus five
+  smaller fixes. `docs/security-hardening-2026-07-21.md` — the shared helpers it introduced are in
+  CLAUDE.md's Established Patterns section.
 - **Auto-detect graded exam results from ExamTools (2026-07-28).** `docs/examtools-api.md`'s
   "Applicant exam results" section — found live during a real HRCC test session: a candidate who
   failed his exam that night had no `Tested`/`ApplicationStatus` reflected in the app at all, even

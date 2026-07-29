@@ -1,3 +1,4 @@
+using System.Linq;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -109,7 +110,8 @@ public class ExamResultSyncServiceTests
 
     private static async Task<Candidate> SeedCandidateAsync(
         AppDbContext dbContext, Session session, string examToolsApplicantId = "applicant-1",
-        CandidateApplicationStatus status = CandidateApplicationStatus.Unmatched, bool tested = false)
+        CandidateApplicationStatus status = CandidateApplicationStatus.Unmatched, bool tested = false,
+        LicenseClass? newLicenseClass = null)
     {
         var candidate = new Candidate
         {
@@ -119,7 +121,8 @@ public class ExamResultSyncServiceTests
             Email = "candidate@example.com",
             DateRegisteredUtc = Now,
             ApplicationStatus = status,
-            Tested = tested
+            Tested = tested,
+            NewLicenseClass = newLicenseClass
         };
         dbContext.Candidates.Add(candidate);
         await dbContext.SaveChangesAsync();
@@ -172,6 +175,32 @@ public class ExamResultSyncServiceTests
         Assert.True(updated.Tested);
         Assert.Null(updated.ResultMarkedUtc); // only set on the Failed path
         Assert.Empty(dbContext.AuditLogs);
+        // Passed only Element 2 — no prior credit implied, so walked in Unlicensed and out Technician.
+        Assert.Equal(LicenseClass.None, updated.InitialLicenseClass);
+        Assert.Equal(LicenseClass.Technician, updated.NewLicenseClass);
+    }
+
+    [Theory]
+    [InlineData(new[] { 2 }, LicenseClass.None, LicenseClass.Technician)]
+    [InlineData(new[] { 2, 3 }, LicenseClass.None, LicenseClass.General)]
+    [InlineData(new[] { 2, 3, 4 }, LicenseClass.None, LicenseClass.Extra)]
+    [InlineData(new[] { 3 }, LicenseClass.Technician, LicenseClass.General)]
+    [InlineData(new[] { 3, 4 }, LicenseClass.Technician, LicenseClass.Extra)]
+    [InlineData(new[] { 4 }, LicenseClass.General, LicenseClass.Extra)]
+    public async Task GradedPassedExam_ResolvesLicenseClassFromElementsPassedThisSitting(int[] elements, LicenseClass expectedInitial, LicenseClass expectedNew)
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        var session = await SeedSessionAsync(dbContext, team);
+        var candidate = await SeedCandidateAsync(dbContext, session);
+        var client = new FakeExamToolsClient();
+        client.SetDetail(candidate.ExamToolsApplicantId!, [.. elements.Select(e => new ExamToolsExamResult { Element = e, Graded = true, Passed = true })]);
+
+        await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+
+        var updated = await dbContext.Candidates.SingleAsync();
+        Assert.Equal(expectedInitial, updated.InitialLicenseClass);
+        Assert.Equal(expectedNew, updated.NewLicenseClass);
     }
 
     [Fact]
@@ -228,12 +257,12 @@ public class ExamResultSyncServiceTests
     }
 
     [Fact]
-    public async Task AlreadyTestedCandidate_IsNeverRechecked()
+    public async Task AlreadyTestedCandidateWithLicenseClassAlreadySet_IsNeverRechecked()
     {
         await using var dbContext = CreateContext();
         var team = await SeedTeamAsync(dbContext);
         var session = await SeedSessionAsync(dbContext, team);
-        await SeedCandidateAsync(dbContext, session, tested: true);
+        await SeedCandidateAsync(dbContext, session, tested: true, newLicenseClass: LicenseClass.Technician);
         var client = new FakeExamToolsClient();
 
         await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
@@ -242,16 +271,61 @@ public class ExamResultSyncServiceTests
     }
 
     [Fact]
-    public async Task TerminalApplicationStatus_IsNeverRechecked()
+    public async Task FailedApplicationStatus_IsNeverRechecked()
     {
         await using var dbContext = CreateContext();
         var team = await SeedTeamAsync(dbContext);
         var session = await SeedSessionAsync(dbContext, team);
-        await SeedCandidateAsync(dbContext, session, status: CandidateApplicationStatus.Granted);
+        await SeedCandidateAsync(dbContext, session, status: CandidateApplicationStatus.Failed, tested: true);
         var client = new FakeExamToolsClient();
 
         await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
 
+        Assert.Empty(client.DetailFetches);
+    }
+
+    [Fact]
+    public async Task NotTestedApplicationStatus_IsNeverRechecked()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        var session = await SeedSessionAsync(dbContext, team);
+        await SeedCandidateAsync(dbContext, session, status: CandidateApplicationStatus.NotTested);
+        var client = new FakeExamToolsClient();
+
+        await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+
+        Assert.Empty(client.DetailFetches);
+    }
+
+    /// <summary>
+    /// The core of the "update all current, past, and future candidates" backfill (issue reported
+    /// 2026-07-29): a candidate who was already Tested/Granted by an older code version — before
+    /// InitialLicenseClass/NewLicenseClass existed — gets picked back up exactly once and filled in,
+    /// via the same NewLicenseClass-is-null idempotency guard as every other job in this app.
+    /// </summary>
+    [Fact]
+    public async Task AlreadyGrantedCandidateMissingLicenseClass_IsBackfilledOnce()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        var session = await SeedSessionAsync(dbContext, team);
+        var candidate = await SeedCandidateAsync(dbContext, session, status: CandidateApplicationStatus.Granted, tested: true);
+        var client = new FakeExamToolsClient();
+        client.SetDetail(candidate.ExamToolsApplicantId!, new ExamToolsExamResult { Element = 2, Graded = true, Passed = true });
+
+        var result = await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+
+        Assert.Equal(1, result.CandidatesBackfilledLicenseClass);
+        Assert.Equal(0, result.CandidatesMarkedTested); // not a new pass — Tested was already true
+        var updated = await dbContext.Candidates.SingleAsync();
+        Assert.Equal(CandidateApplicationStatus.Granted, updated.ApplicationStatus); // unchanged
+        Assert.Equal(LicenseClass.None, updated.InitialLicenseClass);
+        Assert.Equal(LicenseClass.Technician, updated.NewLicenseClass);
+
+        // Second run: NewLicenseClass is now set, so it's never refetched again.
+        client.DetailFetches.Clear();
+        await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
         Assert.Empty(client.DetailFetches);
     }
 
