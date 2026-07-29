@@ -71,10 +71,14 @@ credentials/session data live there, verified directly against the API) — this
 - `GET .../applicant` (collection, no id) is a 404 — there is no plain applicant-list endpoint;
   `export/basic.json` is the list. `applicantCount` on the session lets the poller skip the
   PII-bearing export call when nothing is registered.
-- `export/full.json` returns a fuller session document (team, VEs, stats, applicants) wrapped
-  under a `DEVDOC` key on the dev site — the wrapper key may differ on prod. **Live-verified
-  2026-07-20** against a real examtools.dev session: `DEVDOC.VEs` is `[{call, name, number?}]`,
-  confirmed as the VE roster source for Phase 7 (see `docs/ve-tracking.md`).
+- `export/full.json` returns a fuller session document (team, VEs, stats, applicants). **Live-verified
+  2026-07-20** against a real examtools.dev session: on dev it's wrapped under a `DEVDOC` key,
+  `DEVDOC.VEs` is `[{call, name, number?}]`, confirmed as the VE roster source for Phase 7 (see
+  `docs/ve-tracking.md`). **Live-verified 2026-07-29 against real prod (`alpha.exam.tools`) data —
+  the wrapper key genuinely differs on prod, more than expected: prod doesn't wrap the payload at
+  all.** `VEs`/`applicants` sit at the top level instead of under `DEVDOC`, same field shape
+  (`[{call, name}]`). This silently meant `VolunteerExaminerSyncService` found zero VEs for every
+  real HRCC session (issue #38) — `ExamToolsFullExport.ResolveVes()` now checks both shapes.
 - Other discovered-but-untested paths (from the site's JS bundles): `.../applicant/{id}/email`,
   `export/basic` (non-JSON), `vecDownload/*.zip`, `form605.pdf`, `laurel_export.csv`,
   `w5yi_export.csv`.

@@ -77,6 +77,14 @@ would be pure duplication — and goes straight to `CHANGELOG.md` instead. Non-p
 redesigns, hardening passes) start here and move to `CHANGELOG.md` once the section is at/over the
 cap and a newer entry needs to be added; oldest goes first.
 
+- **Session ID column + VE roster fix (issues #35/#38, 2026-07-29).** `docs/examtools-api.md`'s
+  `export/full.json` section — real prod data (`alpha.exam.tools`) confirmed the wrapper key really
+  does differ from dev, more than expected: prod doesn't wrap the VE list under `DEVDOC` at all,
+  it's top-level. `VolunteerExaminerSyncService` had found zero VEs for every real HRCC session the
+  whole time because of this; `ExamToolsFullExport.ResolveVes()` now checks both shapes. Also added
+  a Session ID column to the session list (#35) and converted the VE Roster page's team-pill/plain
+  date inputs to the same dropdown pattern as the session list (#38), reusing `IndexModel.DateRangePresets`
+  directly rather than duplicating it.
 - **Per-team ExamTools host override (issue #18, 2026-07-28).** `docs/examtools-api.md`'s "Per-team
   host override" section — nullable `Team.ExamToolsBaseUrl` override column (not an
   `Team.ExamToolsEnvironment` enum) so a team can point at a different ExamTools host than the
@@ -122,15 +130,6 @@ cap and a newer entry needs to be added; oldest goes first.
   Live-tested against a real meeting: despite multiple 2022-2024 Zoom devforum reports that the
   Create Meeting API silently ignores `settings.breakout_room`, it works on this account — confirmed
   by checking the real meeting's Breakout Room Assignment dialog in the Zoom client itself.
-- **Auto-detect graded exam results from ExamTools (2026-07-28).** `docs/examtools-api.md`'s
-  "Applicant exam results" section — found live during a real HRCC test session: a candidate who
-  failed his exam that night had no `Tested`/`ApplicationStatus` reflected in the app at all, even
-  though ExamTools' own per-applicant detail endpoint (`exams[]`) had the graded result the whole
-  time. New `ExamResultSyncService` (wired into `SessionIngestionJob` right after `VeRosterSync`)
-  auto-flips a candidate to `Failed` on any graded-and-failed exam element, or `Tested = true` on an
-  all-passed result — closing a second latent gap along the way, since `PaymentReminderService`'s
-  existing Reason=Retest reminder logic is gated on `ResultMarkedUtc` and had never fired for a
-  candidate nobody manually marked Failed.
 Everything through Phase 0-10's initial build (ExamTools ingestion, Zoom/Discord, Square, email
 notifications, FCC ULS watcher, payment reminders, VE tracking, VEC submission tracker, admin
 auth/config/candidate-actions, PII purge) plus the public privacy page has aged out to
