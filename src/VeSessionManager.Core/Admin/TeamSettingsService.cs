@@ -51,7 +51,7 @@ public class TeamSettingsService(AppDbContext dbContext, TimeProvider timeProvid
         return await SaveTeamUpdateAsync(team, "TeamExamToolsCredentialsUpdated", userId, cancellationToken);
     }
 
-    public async Task<TeamActionResult> UpdateZoomAsync(int teamId, string? accountId, string? clientId, string? clientSecret, string? zoomUserId, int userId, CancellationToken cancellationToken)
+    public async Task<TeamActionResult> UpdateZoomAsync(int teamId, string? accountId, string? clientId, string? clientSecret, string? zoomUserId, int breakoutRoomCount, int userId, CancellationToken cancellationToken)
     {
         var team = await dbContext.Teams.FirstOrDefaultAsync(t => t.Id == teamId, cancellationToken);
         if (team is null)
@@ -62,6 +62,7 @@ public class TeamSettingsService(AppDbContext dbContext, TimeProvider timeProvid
         team.ZoomAccountId = accountId;
         team.ZoomClientId = clientId;
         team.ZoomUserId = zoomUserId;
+        team.ZoomBreakoutRoomCount = Math.Max(0, breakoutRoomCount);
         if (clientSecret is not null)
         {
             team.ZoomClientSecret = clientSecret;

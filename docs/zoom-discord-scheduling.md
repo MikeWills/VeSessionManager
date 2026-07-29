@@ -69,6 +69,27 @@ package — Zoom doesn't publish an official lightweight .NET SDK for this surfa
 - Delete/cancel: `DELETE https://api.zoom.us/v2/meetings/{meetingId}`. 204 No Content.
 - `userId` is configurable (`Zoom:UserId`, default `"me"` — the account tied to the S2S app).
 
+### Breakout rooms (2026-07-28)
+
+`settings.breakout_room` on the Create/Update Meeting payload — `{ enable: true, rooms: [{name, participants}] }`.
+Multiple 2022-2024 Zoom devforum threads (see the "Zoom meeting templates" TODO's neighboring
+investigation) claimed the Create Meeting API silently ignores this block regardless of a correctly
+formatted payload. **Live-tested against this account 2026-07-28, and it isn't true here** — the
+block persists exactly as sent, confirmed by opening the real meeting's "Breakout Room Assignment"
+dialog in the Zoom client and seeing the named rooms actually there. Whatever caused those old
+reports either got fixed since, was account/plan-specific, or needed some other precondition —
+either way, don't take a 2-4-year-old forum thread as gospel without testing against the real
+account first, same lesson as everywhere else "verified live" shows up in this app's docs.
+
+`Team.ZoomBreakoutRoomCount` (admin-editable on `/Admin/TeamSettings`, default 2) is a flat per-team
+count — every session's meeting gets that many empty rooms named "Exam Room 1", "Exam Room 2", etc.,
+with no participants pre-assigned (VEs move candidates in manually once the meeting starts). Chosen
+over auto-deriving a count from something like the session's credited-VE count because this app
+doesn't track "parallel testing stations" as a concept, just individual VEs — a per-team explicit
+setting is honest about that rather than guessing. 0 means don't request any breakout rooms at all
+(`ZoomMeetingRequest.BreakoutRoomCount <= 0` omits the `settings.breakout_room` block from the
+request entirely, not `enable: false`).
+
 ## Discord
 
 Client: `VeSessionManager.Core/Discord/DiscordEventClient.cs`, wrapping `Discord.Net.Rest`

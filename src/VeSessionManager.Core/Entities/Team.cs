@@ -33,6 +33,17 @@ public class Team
     /// <summary>Which Zoom user's calendar meetings get created under — defaults to "me" in code (ZoomClient) when null, not required to be set explicitly.</summary>
     public string? ZoomUserId { get; set; }
 
+    /// <summary>
+    /// How many empty "Exam Room N" Zoom breakout rooms to pre-create on every session's meeting —
+    /// a genuine per-team business setting, not a credential, so unlike the Zoom fields above it
+    /// stores a real default instead of null-means-unset (same reasoning as PurgeUnpaidLinkDays
+    /// below). 0 means no breakout rooms are requested. There's no data this app tracks today
+    /// (parallel testing "stations," not just individual VEs) that would let a count be inferred
+    /// automatically, so this stays an explicit admin setting rather than computed — see
+    /// docs/zoom-discord-scheduling.md's "Breakout rooms" section.
+    /// </summary>
+    public int ZoomBreakoutRoomCount { get; set; } = 2;
+
     /// <summary>Which Discord server this team's events post to — the bot itself is shared globally (Discord:BotToken, confirmed with the user), only the Guild varies per team. Null means this team hasn't picked one yet.</summary>
     public ulong? DiscordGuildId { get; set; }
 

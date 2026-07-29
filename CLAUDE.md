@@ -121,12 +121,12 @@ cap and a newer entry needs to be added; oldest goes first.
   helper) instead of the bare grant date, which would otherwise purge an upgrade/repeat candidate's
   PII almost immediately after their real, current session. No schema change — computed from data
   already stored. Also surfaced on the applicant detail page.
-- **Applicant detail page (2026-07-28).** `docs/applicant-detail.md` — a new per-Candidate.Id page
-  (never keyed by FRN, since one person can test with the team more than once) with full action
-  parity to the session Detail page's candidate row, every payment's link surfaced (closing a
-  previously-open TODO item), and an "other sessions with this FRN" cross-reference list. Introduced
-  the shared `CandidateEmailHistoryFormatter` helper and fixed two bugs found live-testing in a real
-  browser: a nullable-UTC-suffix formatting bug and an off-screen kebab-menu CSS positioning bug.
+- **Zoom breakout rooms per team (2026-07-28).** `docs/zoom-discord-scheduling.md`'s "Breakout rooms"
+  section — new `Team.ZoomBreakoutRoomCount` (admin-editable, default 2) pre-creates that many empty
+  "Exam Room N" breakout rooms on every session's Zoom meeting; VEs move candidates in manually.
+  Live-tested against a real meeting: despite multiple 2022-2024 Zoom devforum reports that the
+  Create Meeting API silently ignores `settings.breakout_room`, it works on this account — confirmed
+  by checking the real meeting's Breakout Room Assignment dialog in the Zoom client itself.
 Everything through Phase 0-10's initial build (ExamTools ingestion, Zoom/Discord, Square, email
 notifications, FCC ULS watcher, payment reminders, VE tracking, VEC submission tracker, admin
 auth/config/candidate-actions, PII purge) plus the public privacy page has aged out to
