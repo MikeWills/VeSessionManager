@@ -62,10 +62,15 @@ seeded `Team` row** (migrations must never contain real secrets, even ones alrea
 repo's user-secrets) — each integration is silently skipped (one quiet log line per poll, no error)
 until its columns are set via direct DB edit (no admin UI yet):
 
-- [x] ~~**Blocking:** `Team.ExamToolsUsername`/`ExamToolsPassword`~~ (confirmed done 2026-07-29) —
-  ExamTools ingestion is the one hard dependency everything else needs. All three real `Team` rows
-  (WX0MIK, MARC, HRCC) now have credentials set, not just the one team this bullet was originally
-  written about.
+- [x] ~~**Blocking:** `Team.ExamToolsUsername`/`ExamToolsPassword`~~ (confirmed done 2026-07-29,
+  fully resolved same day) — ExamTools ingestion is the one hard dependency everything else needs.
+  "Credentials set" turned out not to mean "credentials work": live-testing the actual login later
+  the same day found Team 1 (WX0MIK) and Team 2 (MARC) both failing with ExamTools' own
+  `"Username/password not found."` error every `SessionIngestion` tick (confirmed both from
+  `JobRunHistories` and by posting directly to `/api/ve/login` with exactly what was stored), while
+  Team 3 (HRCC) logged in fine. Root cause was simply stale/incorrect stored passwords, not a code
+  bug. Resolved once the user re-saved both teams' credentials through the Team Settings UI — all
+  three teams (WX0MIK, MARC, HRCC) now log in successfully, re-verified live the same way.
 - [ ] `Team.ZoomAccountId`/`ZoomClientId`/`ZoomClientSecret` (`ZoomUserId` is pre-filled `"me"`)
 - [ ] `Team.DiscordGuildId` is pre-filled with the real MARC server id (`1323140214008578111`) —
   only `Discord:BotToken` (still shared/global, user-secrets) needs setting if not already done
@@ -166,8 +171,15 @@ until its columns are set via direct DB edit (no admin UI yet):
 
 ## Feature requests (not yet triaged)
 
-- [ ] **Applicant Status page — rolling list of candidates awaiting their FCC grant** (requested 2026-07-29). A new Session Manager nav page, not scoped to one session — shows every candidate across the team who passed (`Tested=true`, `ApplicationStatus != Failed`) but hasn't yet been confirmed `Granted` by the FCC watcher, whether they're a brand-new licensee or an upgrade (per `docs/exam-result-license-class.md`'s `InitialLicenseClass`/`NewLicenseClass`). The point is an always-current worklist for tracking/monitoring pending applications, so likely columns: candidate name, session date, `InitialLicenseClass → NewLicenseClass`, `ApplicationDateEnteredUtc` (how long it's been sitting with the FCC), current `ApplicationStatus` (Unmatched/Received). **Once a candidate flips to `Granted`, they drop off the list entirely** — per the request, nobody needs to keep tracking them at that point. Team-scoped like the other Session Manager pages (`SessionAccessScope`); a query filtering `Candidate` across all sessions by `Tested=true && ApplicationStatus IN (Unmatched, Received)` should cover it, no new backing fields needed.
-  - **Refined 2026-07-29:** also want a short "recently issued" view alongside the pending list — anyone who flipped to `Granted` in roughly the last week, so a Session Manager can actually confirm a given person's license/upgrade came through before they age out of the pending list and drop off entirely. A separate section on the same page (not merged into the pending list, which should stay strictly "not yet granted") — likely filtered on `LicenseGrantDateUtc >= now.AddDays(-7)` and `ApplicationStatus == Granted`, showing the same `InitialLicenseClass → NewLicenseClass`/call sign info. Exact window (7 days vs. something else) not firm yet — "maybe" a week per the request, revisit when actually building this.
+- [x] ~~**Applicant Status page — rolling list of candidates awaiting their FCC grant**~~ (requested
+  2026-07-29, built same day — see `docs/exam-result-license-class.md`'s "Applicant Status page"
+  section, PR [#44](https://github.com/MikeWills/VeSessionManager/pull/44) open, not yet merged).
+  New `Pages/SessionManager/ApplicantStatus.cshtml(.cs)`, team-wide (not scoped to one session):
+  a "Pending FCC grant" worklist (`Tested=true`, not `Failed`/`NotTested`/`Granted`) that drops a
+  candidate the instant they're `Granted`, plus the refined "Recently issued" section (`Granted` in
+  the last 7 days, window not configurable yet) so a Session Manager can confirm a specific person's
+  license/upgrade actually came through. No new backing fields — built entirely on
+  `InitialLicenseClass`/`NewLicenseClass`.
 
 - [ ] **User-facing documentation needs to be started** (requested 2026-07-29) — everything written so
   far is either developer/design-rationale docs (the `/docs/*.md` files — API shapes, architecture
