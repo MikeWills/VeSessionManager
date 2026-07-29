@@ -1,0 +1,343 @@
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+using VeSessionManager.Core.Data;
+using VeSessionManager.Core.Entities;
+using VeSessionManager.Core.ExamResults;
+using VeSessionManager.Core.ExamTools;
+using Xunit;
+
+namespace VeSessionManager.Core.Tests;
+
+public class ExamResultSyncServiceTests
+{
+    private static readonly DateTime Now = new(2026, 7, 29, 12, 0, 0, DateTimeKind.Utc);
+
+    private sealed class FixedTimeProvider(DateTime utcNow) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => new(utcNow, TimeSpan.Zero);
+    }
+
+    private sealed class FakeExamToolsClient : IExamToolsClient
+    {
+        public Dictionary<string, ExamToolsApplicantDetail?> DetailByApplicantId { get; } = [];
+        public HashSet<string> FailingApplicantIds { get; } = [];
+        public List<string> DetailFetches { get; } = [];
+        public List<ExamToolsCredentials> CredentialsUsed { get; } = [];
+
+        public void SetDetail(string applicantId, params ExamToolsExamResult[] exams) =>
+            DetailByApplicantId[applicantId] = new ExamToolsApplicantDetail { Exams = [.. exams] };
+
+        public Task<IReadOnlyList<ExamToolsSession>> GetTeamSessionsAsync(ExamToolsCredentials credentials, CancellationToken cancellationToken) =>
+            throw new NotSupportedException("Not used by ExamResultSyncService.");
+
+        public Task<IReadOnlyList<ExamToolsSession>> GetTeamClosedSessionsAsync(ExamToolsCredentials credentials, DateOnly startDateUtc, DateOnly endDateUtc, CancellationToken cancellationToken) =>
+            throw new NotSupportedException("Not used by ExamResultSyncService.");
+
+        public Task<IReadOnlyList<ExamToolsApplicant>> GetSessionApplicantsAsync(ExamToolsCredentials credentials, string examToolsSessionId, CancellationToken cancellationToken) =>
+            throw new NotSupportedException("Not used by ExamResultSyncService.");
+
+        public Task<IReadOnlyList<ExamToolsVe>> GetSessionVeRosterAsync(ExamToolsCredentials credentials, string examToolsSessionId, CancellationToken cancellationToken) =>
+            throw new NotSupportedException("Not used by ExamResultSyncService.");
+
+        public Task<ExamToolsApplicantDetail?> GetApplicantDetailAsync(ExamToolsCredentials credentials, string examToolsSessionId, string applicantId, CancellationToken cancellationToken)
+        {
+            CredentialsUsed.Add(credentials);
+            DetailFetches.Add(applicantId);
+            if (FailingApplicantIds.Contains(applicantId))
+            {
+                throw new InvalidOperationException($"Simulated ExamTools failure for applicant {applicantId}");
+            }
+
+            return Task.FromResult(DetailByApplicantId.TryGetValue(applicantId, out var detail) ? detail : null);
+        }
+    }
+
+    private static AppDbContext CreateContext()
+    {
+        var options = new DbContextOptionsBuilder<AppDbContext>()
+            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .Options;
+        return new AppDbContext(options);
+    }
+
+    private static async Task<Team> SeedTeamAsync(AppDbContext dbContext, bool examToolsConfigured = true)
+    {
+        var team = new Team
+        {
+            Name = "TESTTEAM",
+            ExamToolsTeamCode = examToolsConfigured ? "TESTTEAM" : null,
+            ExamToolsUsername = examToolsConfigured ? "testuser" : null,
+            ExamToolsPassword = examToolsConfigured ? "testpass" : null,
+            CreatedUtc = Now
+        };
+        dbContext.Teams.Add(team);
+        await dbContext.SaveChangesAsync();
+        return team;
+    }
+
+    private static async Task<Session> SeedSessionAsync(
+        AppDbContext dbContext, Team team, string examToolsSessionId = "session-1",
+        SessionStatus status = SessionStatus.Active, DateTime? scheduledStartUtc = null)
+    {
+        var vec = new Vec { Name = "ARRL" };
+        var user = new User { Name = "System", Email = "system@localhost", Role = UserRole.SystemAdmin };
+        var feeConfiguration = new FeeConfiguration
+        {
+            Vec = vec,
+            EffectiveDate = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+            FeeCollectionEnabled = true,
+            ExamFeeAmount = 15m,
+            CreatedByUser = user,
+            CreatedUtc = Now
+        };
+        var session = new Session
+        {
+            ExamToolsSessionId = examToolsSessionId,
+            Title = "Test Session",
+            ScheduledStartUtc = scheduledStartUtc ?? Now.AddDays(-1),
+            Team = team,
+            Vec = vec,
+            FeeConfiguration = feeConfiguration,
+            Status = status,
+            CreatedUtc = Now
+        };
+        dbContext.Sessions.Add(session);
+        await dbContext.SaveChangesAsync();
+        return session;
+    }
+
+    private static async Task<Candidate> SeedCandidateAsync(
+        AppDbContext dbContext, Session session, string examToolsApplicantId = "applicant-1",
+        CandidateApplicationStatus status = CandidateApplicationStatus.Unmatched, bool tested = false)
+    {
+        var candidate = new Candidate
+        {
+            SessionId = session.Id,
+            ExamToolsApplicantId = examToolsApplicantId,
+            Name = "Test Candidate",
+            Email = "candidate@example.com",
+            DateRegisteredUtc = Now,
+            ApplicationStatus = status,
+            Tested = tested
+        };
+        dbContext.Candidates.Add(candidate);
+        await dbContext.SaveChangesAsync();
+        return candidate;
+    }
+
+    private static ExamResultSyncService CreateService(AppDbContext dbContext, FakeExamToolsClient client) =>
+        new(dbContext, client, new FixedTimeProvider(Now), Options.Create(new ExamToolsOptions()), NullLogger<ExamResultSyncService>.Instance);
+
+    [Fact]
+    public async Task GradedFailedExam_MarksCandidateFailed_SetsResultFieldsWithNullUser()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        var session = await SeedSessionAsync(dbContext, team);
+        var candidate = await SeedCandidateAsync(dbContext, session);
+        var client = new FakeExamToolsClient();
+        client.SetDetail(candidate.ExamToolsApplicantId!, new ExamToolsExamResult { Element = 3, Graded = true, Passed = false });
+
+        var result = await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+
+        Assert.Equal(1, result.CandidatesMarkedFailed);
+        Assert.Equal(0, result.CandidatesMarkedTested);
+        var updated = await dbContext.Candidates.SingleAsync();
+        Assert.Equal(CandidateApplicationStatus.Failed, updated.ApplicationStatus);
+        Assert.True(updated.Tested);
+        Assert.Equal(Now, updated.ResultMarkedUtc);
+        Assert.Null(updated.ResultMarkedByUserId); // system-detected, no VE clicked anything
+        var audit = Assert.Single(dbContext.AuditLogs);
+        Assert.Equal("CandidateAutoMarkedFailed", audit.Action);
+        Assert.Null(audit.UserId);
+    }
+
+    [Fact]
+    public async Task GradedPassedExam_MarksTested_LeavesApplicationStatusAlone()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        var session = await SeedSessionAsync(dbContext, team);
+        var candidate = await SeedCandidateAsync(dbContext, session);
+        var client = new FakeExamToolsClient();
+        client.SetDetail(candidate.ExamToolsApplicantId!, new ExamToolsExamResult { Element = 2, Graded = true, Passed = true });
+
+        var result = await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+
+        Assert.Equal(0, result.CandidatesMarkedFailed);
+        Assert.Equal(1, result.CandidatesMarkedTested);
+        var updated = await dbContext.Candidates.SingleAsync();
+        Assert.Equal(CandidateApplicationStatus.Unmatched, updated.ApplicationStatus); // unchanged — still waiting on the FCC watcher
+        Assert.True(updated.Tested);
+        Assert.Null(updated.ResultMarkedUtc); // only set on the Failed path
+        Assert.Empty(dbContext.AuditLogs);
+    }
+
+    [Fact]
+    public async Task AnyGradedFailedElement_MarksFailed_EvenIfAnotherElementInSameSittingPassed()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        var session = await SeedSessionAsync(dbContext, team);
+        var candidate = await SeedCandidateAsync(dbContext, session);
+        var client = new FakeExamToolsClient();
+        client.SetDetail(candidate.ExamToolsApplicantId!,
+            new ExamToolsExamResult { Element = 2, Graded = true, Passed = true },
+            new ExamToolsExamResult { Element = 3, Graded = true, Passed = false });
+
+        var result = await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+
+        Assert.Equal(1, result.CandidatesMarkedFailed);
+        Assert.Equal(CandidateApplicationStatus.Failed, (await dbContext.Candidates.SingleAsync()).ApplicationStatus);
+    }
+
+    [Fact]
+    public async Task UngradedExam_LeavesCandidateAlone_RetriesNextPoll()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        var session = await SeedSessionAsync(dbContext, team);
+        var candidate = await SeedCandidateAsync(dbContext, session);
+        var client = new FakeExamToolsClient();
+        client.SetDetail(candidate.ExamToolsApplicantId!, new ExamToolsExamResult { Element = 3, Graded = false, Passed = false });
+
+        var result = await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+
+        Assert.Equal(0, result.CandidatesMarkedFailed);
+        Assert.Equal(0, result.CandidatesMarkedTested);
+        var updated = await dbContext.Candidates.SingleAsync();
+        Assert.False(updated.Tested);
+        Assert.Equal(CandidateApplicationStatus.Unmatched, updated.ApplicationStatus);
+    }
+
+    [Fact]
+    public async Task NoExamsYet_LeavesCandidateAlone()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        var session = await SeedSessionAsync(dbContext, team);
+        var candidate = await SeedCandidateAsync(dbContext, session);
+        var client = new FakeExamToolsClient(); // no SetDetail call — GetApplicantDetailAsync returns null
+
+        var result = await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+
+        Assert.Equal(0, result.CandidatesMarkedFailed);
+        Assert.Equal(0, result.CandidatesMarkedTested);
+        Assert.False((await dbContext.Candidates.SingleAsync()).Tested);
+    }
+
+    [Fact]
+    public async Task AlreadyTestedCandidate_IsNeverRechecked()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        var session = await SeedSessionAsync(dbContext, team);
+        await SeedCandidateAsync(dbContext, session, tested: true);
+        var client = new FakeExamToolsClient();
+
+        await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+
+        Assert.Empty(client.DetailFetches);
+    }
+
+    [Fact]
+    public async Task TerminalApplicationStatus_IsNeverRechecked()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        var session = await SeedSessionAsync(dbContext, team);
+        await SeedCandidateAsync(dbContext, session, status: CandidateApplicationStatus.Granted);
+        var client = new FakeExamToolsClient();
+
+        await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+
+        Assert.Empty(client.DetailFetches);
+    }
+
+    [Fact]
+    public async Task FutureSession_IsSkipped_NeverCallsClient()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        var session = await SeedSessionAsync(dbContext, team, scheduledStartUtc: Now.AddDays(1));
+        await SeedCandidateAsync(dbContext, session);
+        var client = new FakeExamToolsClient();
+
+        await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+
+        Assert.Empty(client.DetailFetches);
+    }
+
+    [Fact]
+    public async Task CancelledSession_IsSkipped_NeverCallsClient()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        var session = await SeedSessionAsync(dbContext, team, status: SessionStatus.Cancelled);
+        await SeedCandidateAsync(dbContext, session);
+        var client = new FakeExamToolsClient();
+
+        await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+
+        Assert.Empty(client.DetailFetches);
+    }
+
+    [Fact]
+    public async Task UnconfiguredTeam_SkipsSync_NeverCallsClient()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext, examToolsConfigured: false);
+        var session = await SeedSessionAsync(dbContext, team);
+        await SeedCandidateAsync(dbContext, session);
+        var client = new FakeExamToolsClient();
+
+        var result = await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+
+        Assert.Equal(0, result.CandidatesMarkedFailed);
+        Assert.Empty(client.CredentialsUsed);
+    }
+
+    [Fact]
+    public async Task OneCandidateFailingApiCall_DoesNotBlockOtherCandidates_AndSavesEachIndependently()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        var session = await SeedSessionAsync(dbContext, team);
+        var candidateA = await SeedCandidateAsync(dbContext, session, "applicant-a");
+        var candidateB = await SeedCandidateAsync(dbContext, session, "applicant-b");
+        var client = new FakeExamToolsClient();
+        client.FailingApplicantIds.Add(candidateA.ExamToolsApplicantId!);
+        client.SetDetail(candidateB.ExamToolsApplicantId!, new ExamToolsExamResult { Element = 3, Graded = true, Passed = false });
+
+        var result = await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+
+        Assert.Equal(1, result.CandidatesMarkedFailed);
+        Assert.False((await dbContext.Candidates.FindAsync(candidateA.Id))!.Tested);
+        Assert.Equal(CandidateApplicationStatus.Failed, (await dbContext.Candidates.FindAsync(candidateB.Id))!.ApplicationStatus);
+    }
+
+    [Fact]
+    public async Task CandidateWithNoExamToolsApplicantId_IsSkipped()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        var session = await SeedSessionAsync(dbContext, team);
+        var candidate = new Candidate
+        {
+            SessionId = session.Id,
+            ExamToolsApplicantId = null, // manually-created row, per Candidate.cs's own doc comment
+            Name = "Manual Candidate",
+            DateRegisteredUtc = Now,
+            ApplicationStatus = CandidateApplicationStatus.Unmatched,
+            Tested = false
+        };
+        dbContext.Candidates.Add(candidate);
+        await dbContext.SaveChangesAsync();
+        var client = new FakeExamToolsClient();
+
+        await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+
+        Assert.Empty(client.DetailFetches);
+    }
+}

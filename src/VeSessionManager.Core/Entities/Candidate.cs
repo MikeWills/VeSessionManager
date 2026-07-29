@@ -31,7 +31,7 @@ public class Candidate
 
     public CandidateApplicationStatus ApplicationStatus { get; set; } = CandidateApplicationStatus.Unmatched;
 
-    /// <summary>Flips to true when the Session Manager marks the whole session as completed. Intentionally separate from ApplicationStatus.</summary>
+    /// <summary>Flips to true when the Session Manager marks the whole session as completed, or automatically once ExamResultSyncService sees a graded exam result for this candidate — whichever happens first. Intentionally separate from ApplicationStatus.</summary>
     public bool Tested { get; set; }
 
     /// <summary>From ULS HD status date — only applies to the Received/Granted path.</summary>

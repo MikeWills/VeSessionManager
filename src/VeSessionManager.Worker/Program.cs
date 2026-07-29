@@ -5,6 +5,7 @@ using VeSessionManager.Core.Admin;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Discord;
 using VeSessionManager.Core.Email;
+using VeSessionManager.Core.ExamResults;
 using VeSessionManager.Core.ExamTools;
 using VeSessionManager.Core.FccUls;
 using VeSessionManager.Core.Ingestion;
@@ -36,6 +37,9 @@ builder.Services.AddSingleton<IExamToolsClient, ExamToolsClient>();
 builder.Services.AddScoped<SessionIngestionService>();
 // Stateless (no DB/HTTP dependency of its own) since surge logic was removed — safe as a singleton.
 builder.Services.AddSingleton<IngestionScheduleService>();
+// Auto-detects a candidate's graded exam result from ExamTools — reuses IExamToolsClient, no new
+// client/credentials needed. See docs/examtools-api.md's "Applicant exam results" section.
+builder.Services.AddScoped<ExamResultSyncService>();
 
 // Phase 7: reuses IExamToolsClient, no new client/credentials needed.
 builder.Services.AddScoped<VolunteerExaminerSyncService>();
