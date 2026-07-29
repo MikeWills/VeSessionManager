@@ -142,11 +142,12 @@ public class TeamSettingsServiceTests
         team.ZoomClientSecret = "original-zoom-secret";
         await dbContext.SaveChangesAsync();
 
-        await CreateService(dbContext).UpdateZoomAsync(team.Id, "acct", "client-id", null, "me", user.Id, CancellationToken.None);
+        await CreateService(dbContext).UpdateZoomAsync(team.Id, "acct", "client-id", null, "me", 3, user.Id, CancellationToken.None);
 
         var updated = await dbContext.Teams.SingleAsync();
         Assert.Equal("original-zoom-secret", updated.ZoomClientSecret);
         Assert.Equal("client-id", updated.ZoomClientId);
+        Assert.Equal(3, updated.ZoomBreakoutRoomCount);
     }
 
     [Fact]

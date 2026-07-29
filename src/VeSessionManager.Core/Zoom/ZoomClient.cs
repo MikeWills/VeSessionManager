@@ -88,7 +88,19 @@ public sealed class ZoomClient : IZoomClient, IDisposable
         Topic = request.Topic,
         // Zoom expects an explicit UTC-suffixed ISO 8601 timestamp; Timezone is separately "UTC" for clarity.
         StartTime = request.StartTimeUtc.ToString("yyyy-MM-ddTHH:mm:ssZ"),
-        Duration = request.DurationMinutes
+        Duration = request.DurationMinutes,
+        Settings = request.BreakoutRoomCount > 0
+            ? new ZoomMeetingWireSettings
+            {
+                BreakoutRoom = new ZoomMeetingWireBreakoutRoom
+                {
+                    Enable = true,
+                    Rooms = Enumerable.Range(1, request.BreakoutRoomCount)
+                        .Select(n => new ZoomMeetingWireBreakoutRoomEntry { Name = $"Exam Room {n}" })
+                        .ToList()
+                }
+            }
+            : null
     };
 
     private async Task<HttpResponseMessage> SendAsync(ZoomCredentials credentials, HttpMethod method, string absoluteUrl, object? body, CancellationToken cancellationToken)

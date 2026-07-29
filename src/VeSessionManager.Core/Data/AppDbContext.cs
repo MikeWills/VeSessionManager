@@ -144,6 +144,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : IdentityUser
             // migration's own AddColumn for existing rows) would be 0, which means "purge
             // immediately" instead of "not configured yet."
             b.Property(t => t.PurgeUnpaidLinkDays).HasDefaultValue(30);
+            // Same reasoning — without this, existing teams would retroactively get 0 (no breakout
+            // rooms) from the migration's AddColumn instead of the intended default of 2.
+            b.Property(t => t.ZoomBreakoutRoomCount).HasDefaultValue(2);
         });
         modelBuilder.Entity<Vec>(b => b.HasIndex(v => v.Name).IsUnique());
 

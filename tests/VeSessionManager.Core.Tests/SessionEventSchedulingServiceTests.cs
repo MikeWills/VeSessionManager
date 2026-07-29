@@ -22,6 +22,7 @@ public class SessionEventSchedulingServiceTests
     private sealed class FakeZoomClient : IZoomClient
     {
         public List<string> CreateCalls { get; } = [];
+        public List<ZoomMeetingRequest> CreateRequests { get; } = [];
         public List<string> UpdateCalls { get; } = [];
         public List<string> DeleteCalls { get; } = [];
         public List<ZoomMeeting> ExistingMeetings { get; } = [];
@@ -34,6 +35,7 @@ public class SessionEventSchedulingServiceTests
         {
             CredentialsUsed.Add(credentials);
             CreateCalls.Add(request.Topic);
+            CreateRequests.Add(request);
             if (ThrowOnCreate is not null)
             {
                 throw ThrowOnCreate;
@@ -199,6 +201,26 @@ public class SessionEventSchedulingServiceTests
         Assert.StartsWith("https://zoom.us/j/", saved.ZoomJoinUrl);
         Assert.NotNull(saved.DiscordEventId);
         Assert.Equal(SessionStart, saved.ZoomDiscordSyncedStartUtc);
+    }
+
+    [Fact]
+    public async Task TeamBreakoutRoomCount_IsPassedThroughToZoomMeetingRequest()
+    {
+        await using var dbContext = CreateContext();
+        var (vec, feeConfig) = await SeedRefsAsync(dbContext);
+        var team = await SeedTeamAsync(dbContext);
+        team.ZoomBreakoutRoomCount = 4;
+        await dbContext.SaveChangesAsync();
+        var session = NewSession(vec, feeConfig, team);
+        dbContext.Sessions.Add(session);
+        await dbContext.SaveChangesAsync();
+
+        var zoom = new FakeZoomClient();
+        var discord = new FakeDiscordEventClient();
+        await CreateService(dbContext, zoom, discord).RunAsync(team, CancellationToken.None);
+
+        var request = Assert.Single(zoom.CreateRequests);
+        Assert.Equal(4, request.BreakoutRoomCount);
     }
 
     [Fact]

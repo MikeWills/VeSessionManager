@@ -2,8 +2,8 @@ using System.Text.Json.Serialization;
 
 namespace VeSessionManager.Core.Zoom;
 
-/// <summary>Domain-facing request for creating/updating a meeting — ZoomClient maps this to Zoom's wire format.</summary>
-public record ZoomMeetingRequest(string Topic, DateTime StartTimeUtc, int DurationMinutes);
+/// <summary>Domain-facing request for creating/updating a meeting — ZoomClient maps this to Zoom's wire format. BreakoutRoomCount &lt;= 0 omits the breakout_room block from the request entirely, rather than sending enable:false.</summary>
+public record ZoomMeetingRequest(string Topic, DateTime StartTimeUtc, int DurationMinutes, int BreakoutRoomCount = 0);
 
 public class ZoomMeeting
 {
@@ -41,6 +41,28 @@ internal class ZoomMeetingWireRequest
     public int Duration { get; set; }
 
     public string Timezone { get; set; } = "UTC";
+
+    /// <summary>Null (not serialized, System.Text.Json's default) when no breakout rooms are requested.</summary>
+    public ZoomMeetingWireSettings? Settings { get; set; }
+}
+
+internal class ZoomMeetingWireSettings
+{
+    [JsonPropertyName("breakout_room")]
+    public required ZoomMeetingWireBreakoutRoom BreakoutRoom { get; set; }
+}
+
+/// <summary>Verified live 2026-07-28 against a real meeting — despite years-old devforum reports that the API silently ignores this block, it works on this account: rooms actually persist and show up in the Zoom client's own Breakout Room Assignment UI.</summary>
+internal class ZoomMeetingWireBreakoutRoom
+{
+    public bool Enable { get; set; } = true;
+    public List<ZoomMeetingWireBreakoutRoomEntry> Rooms { get; set; } = [];
+}
+
+internal class ZoomMeetingWireBreakoutRoomEntry
+{
+    public string Name { get; set; } = "";
+    public List<string> Participants { get; set; } = [];
 }
 
 internal class ZoomMeetingWireResponse

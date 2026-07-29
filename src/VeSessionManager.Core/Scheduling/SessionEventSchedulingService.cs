@@ -156,7 +156,7 @@ public class SessionEventSchedulingService(
         if (team.IsZoomConfigured)
         {
             var zoomCredentials = new ZoomCredentials(team.Id, team.ZoomAccountId!, team.ZoomClientId!, team.ZoomClientSecret!, team.ZoomUserId ?? "me");
-            var zoomRequest = new ZoomMeetingRequest(session.Title, session.ScheduledStartUtc, session.DurationMinutes);
+            var zoomRequest = new ZoomMeetingRequest(session.Title, session.ScheduledStartUtc, session.DurationMinutes, team.ZoomBreakoutRoomCount);
             if (session.ZoomMeetingId is null)
             {
                 // Same reasoning as the Discord dedup check below: guard against a previous poll
