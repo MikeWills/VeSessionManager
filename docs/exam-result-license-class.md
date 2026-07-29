@@ -63,3 +63,30 @@ as expected.
 `CandidateDetail.cshtml` shows a "License class" row (e.g. "Technician → General") whenever both
 fields are set. Deliberately not added to the session Detail page's already-dense candidate table —
 that page shows many candidates at once and the per-candidate detail page is the natural home for it.
+
+## Applicant Status page
+
+Built 2026-07-29 (`Pages/SessionManager/ApplicantStatus.cshtml(.cs)`, nav link added to
+`_AppLayout.cshtml`) per the TODO.md feature request — a team-wide (not per-session) worklist for
+tracking who's still waiting on the FCC, since the per-session Detail page only shows one session at
+a time and nothing else surfaced this across the whole team.
+
+Two sections on one page, both team-scoped the same way `VeRoster.cshtml.cs` is
+(`SessionAccessScope.TryResolveViewableTeamId`, a team `<select>` for a multi-team user):
+
+- **Pending FCC grant** — every candidate with `Tested = true` and `ApplicationStatus` still
+  `Unmatched` or `Received` (i.e. passed, but not yet `Failed`/`NotTested`/`Granted`), sorted by
+  how long they've been waiting (`ApplicationDateEnteredUtc`, falling back to `DateRegisteredUtc`
+  for a candidate the FCC watcher hasn't matched to an application yet). Shows the same
+  `InitialLicenseClass → NewLicenseClass` line as the candidate detail page — already computed by
+  `ExamResultSyncService` by the time a candidate lands here, no extra lookup needed. **A candidate
+  drops off this list the instant `FccUlsWatcherService` flips them to `Granted`** — per the
+  original request, nobody needs to keep tracking them once they're done.
+- **Recently issued** — candidates `Granted` with `LicenseGrantDateUtc` in the last
+  `ApplicantStatusModel.RecentlyIssuedWindowDays` (7, not configurable yet — the request called it
+  "maybe a week," not a firm number) — lets a Session Manager actually confirm a specific person's
+  license/upgrade came through before they age out of Pending for good. Kept as a separate section
+  rather than merged into Pending, which stays strictly "not yet granted."
+
+No new backing fields — both sections are plain filters over `Candidate`/`InitialLicenseClass`/
+`NewLicenseClass`, all of which already existed for the candidate detail page above.
