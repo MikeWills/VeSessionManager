@@ -489,3 +489,9 @@ $RECYCLE.BIN/
 # Local-only server ops scripts (names internal server accounts/paths -- copy to the server by
 # hand, never commit; see docs/deployment.md)
 /ops/
+
+# Claude Code: agents/ and skills/ under .claude/ are shared project config and ARE tracked;
+# settings.local.json (per-user permission allowlist, names local machine paths) and
+# scheduled_tasks.lock (a runtime PID/session lock file) are local-only.
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
