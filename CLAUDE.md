@@ -77,6 +77,15 @@ would be pure duplication — and goes straight to `CHANGELOG.md` instead. Non-p
 redesigns, hardening passes) start here and move to `CHANGELOG.md` once the section is at/over the
 cap and a newer entry needs to be added; oldest goes first.
 
+- **License class tracking + exam-result backfill (2026-07-29).** `docs/exam-result-license-class.md`
+  — new `Candidate.InitialLicenseClass`/`NewLicenseClass`, derived purely from which exam elements
+  ExamTools reports graded+passed this sitting (no FCC `AM.dat` fetch needed — a VE session never
+  re-administers an element already credited). Shown on the CandidateDetail page. `ExamResultSyncService`'s
+  scan now also re-includes already-`Tested`, non-`Failed` candidates missing the new fields, so every
+  current/past/future candidate gets backfilled once via the usual idempotent-field pattern, not a
+  one-off script. Also confirmed (no change needed): a passed candidate already gets a distinct
+  "done testing" signal via `Tested=true` shown separately from `ApplicationStatus`, which
+  deliberately stays `Received` until the FCC watcher later confirms `Granted`.
 - **Session ID column + VE roster fix (issues #35/#38, 2026-07-29).** `docs/examtools-api.md`'s
   `export/full.json` section — real prod data (`alpha.exam.tools`) confirmed the wrapper key really
   does differ from dev, more than expected: prod doesn't wrap the VE list under `DEVDOC` at all,

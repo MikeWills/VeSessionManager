@@ -118,6 +118,13 @@ public class IndexModel(AppDbContext dbContext, UserManager<User> userManager, S
 
     public async Task OnGetAsync()
     {
+        // [BindProperty(SupportsGet = true)] can leave a string property null rather than its C#
+        // default when the request's query string omits the key entirely (confirmed live 2026-07-29,
+        // e.g. unchecking every Status checkbox and submitting) — unlike Status (List<string>) and
+        // PageSize (int) on this same page, which correctly keep their defaults. Normalize before any
+        // DateRangePresets lookup, since Dictionary.ContainsKey/TryGetValue throw on a null key.
+        DateRange ??= "";
+
         if (Applied)
         {
             PageSize = AllowedPageSizes.Contains(PageSize) ? PageSize : DefaultPageSize;
@@ -270,7 +277,13 @@ public class IndexModel(AppDbContext dbContext, UserManager<User> userManager, S
         Response.Cookies.Append(FilterCookieName, value, new CookieOptions
         {
             Expires = DateTimeOffset.UtcNow.AddYears(1),
-            Path = "/SessionManager/Index",
+            // Razor Pages' Index-page convention trims "Index" from the actual route — asp-page="/SessionManager/Index"
+            // (used by the nav bar and "← Sessions" breadcrumbs) renders href="/SessionManager", not "/SessionManager/Index".
+            // A cookie Path of "/SessionManager/Index" only matches that literal prefix, so the browser never sent it back
+            // on those links — the cookie was written but effectively never read. Confirmed live 2026-07-29: both
+            // "/SessionManager" and "/SessionManager/Index" route successfully server-side (this page answers either),
+            // but the cookie's Path attribute cares about the request path, not which route matched it.
+            Path = "/SessionManager",
             SameSite = SameSiteMode.Lax,
             IsEssential = true
         });

@@ -43,6 +43,22 @@ public static class CandidateApplicationStatusExtensions
     public static bool IsTerminal(this CandidateApplicationStatus status) => TerminalStatuses.Contains(status);
 }
 
+/// <summary>
+/// Written license class as of the FCC's element structure (Element 1/Morse code retired 2007, so
+/// there's no class below Technician). Derived purely from which exam elements a candidate passed
+/// this sitting (see ExamResultSyncService) — VE sessions never re-administer an element a candidate
+/// already holds credit for, so the elements graded this sitting alone are enough to infer both the
+/// class held walking in (Initial) and the class earned walking out (New), with no FCC ULS lookup
+/// needed. None means "no prior amateur license."
+/// </summary>
+public enum LicenseClass
+{
+    None,
+    Technician,
+    General,
+    Extra
+}
+
 public enum PaymentReason
 {
     InitialExam,

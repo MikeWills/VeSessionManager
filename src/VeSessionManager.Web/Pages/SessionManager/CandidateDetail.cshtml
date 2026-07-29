@@ -37,6 +37,10 @@
                 <span class="k">Tested</span>
                 <span class="v"><span class="tested-check @(c.Tested ? "on" : "")">@(c.Tested ? "✓" : "·")</span></span>
             </div>
+            @if (c.LicenseClassLine is not null)
+            {
+                <div class="meta-item"><span class="k">License class</span><span class="v">@c.LicenseClassLine</span></div>
+            }
             @if (c.ResultMarkedLine is not null)
             {
                 <div class="meta-item"><span class="k">Result marked</span><span class="v mono">@c.ResultMarkedLine @(c.ResultMarkedByName is not null ? $"by {c.ResultMarkedByName}" : "")</span></div>

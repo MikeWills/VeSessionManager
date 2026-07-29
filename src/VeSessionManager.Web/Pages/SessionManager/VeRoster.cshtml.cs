@@ -58,6 +58,11 @@ public class VeRosterModel(AppDbContext dbContext, UserManager<User> userManager
 
     public async Task OnGetAsync()
     {
+        // See IndexModel.OnGetAsync's identical guard — [BindProperty(SupportsGet = true)] can leave
+        // this string property null rather than its C# default when the query string omits the key,
+        // and DateRangePresets.TryGetValue throws on a null key.
+        DateRange ??= "";
+
         var user = await userManager.GetUserWithManagerAsync(dbContext, User) ?? throw new InvalidOperationException("No authenticated user for an [Authorize]d page.");
 
         AvailableTeams = user.Role == UserRole.SystemAdmin

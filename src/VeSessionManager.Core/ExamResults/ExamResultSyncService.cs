@@ -30,7 +30,21 @@ namespace VeSessionManager.Core.ExamResults;
 /// Once Tested is true (either from here or the manual bulk-flip) or ApplicationStatus is terminal, a
 /// candidate is never checked again — bounds this to a handful of API calls per tick, not the whole
 /// candidate history, and avoids repeatedly pulling this endpoint's fuller PII payload for rows that
-/// don't need it anymore.
+/// don't need it anymore. The one exception is NewLicenseClass (below): Failed/NotTested candidates
+/// are still excluded forever (they never earn a class), but an already-Tested, non-Failed candidate
+/// missing NewLicenseClass is still re-scanned — this is what backfills every pre-existing "current,
+/// past, and future" candidate (issue reported 2026-07-29) the first time this ships, using the same
+/// scan-based idempotent-field pattern as everything else, rather than a one-off migration script.
+///
+/// License class (2026-07-29): a candidate's initial license class (walking in) and new license class
+/// (walking out) are derived purely from which exam elements ExamTools reports as graded+passed this
+/// sitting — not from FCC ULS/AM.dat's operator-class field, which this app has never fetched (see
+/// Candidate.LicenseGrantPredatesSession's remarks on why AM.dat parsing was deliberately avoided
+/// there too). This works because a VE session never re-administers an element a candidate already
+/// holds credit for: the lowest element passed this sitting implies every element below it (down to
+/// Technician's Element 2) was already held coming in, and the highest element passed this sitting is
+/// the new class. E.g. passing only Element 4 this sitting implies walking in with General (Element
+/// 2+3 credit) and walking out with Extra. See ResolveLicenseClasses.
 /// </summary>
 public class ExamResultSyncService(
     AppDbContext dbContext,
@@ -60,7 +74,10 @@ public class ExamResultSyncService(
         foreach (var session in sessions)
         {
             var pendingCandidates = session.Candidates
-                .Where(c => !c.Tested && !c.ApplicationStatus.IsTerminal() && c.ExamToolsApplicantId is not null)
+                .Where(c => c.ExamToolsApplicantId is not null
+                    && c.ApplicationStatus != CandidateApplicationStatus.Failed
+                    && c.ApplicationStatus != CandidateApplicationStatus.NotTested
+                    && (!c.Tested || c.NewLicenseClass is null))
                 .ToList();
 
             foreach (var candidate in pendingCandidates)
@@ -104,10 +121,47 @@ public class ExamResultSyncService(
         }
         else
         {
+            var wasAlreadyTested = candidate.Tested;
             candidate.Tested = true;
-            result.CandidatesMarkedTested++;
+
+            if (candidate.NewLicenseClass is null)
+            {
+                var (initial, newClass) = ResolveLicenseClasses(gradedExams.Select(e => e.Element));
+                candidate.InitialLicenseClass = initial;
+                candidate.NewLicenseClass = newClass;
+            }
+
+            if (wasAlreadyTested)
+            {
+                result.CandidatesBackfilledLicenseClass++;
+            }
+            else
+            {
+                result.CandidatesMarkedTested++;
+            }
         }
     }
+
+    /// <summary>
+    /// Infers the class held walking in and the class earned walking out from the set of elements
+    /// graded+passed this sitting — see class remarks for why no FCC data is needed. Element 2 =
+    /// Technician, 3 = General, 4 = Extra (Element 1/Morse code retired 2007).
+    /// </summary>
+    internal static (LicenseClass Initial, LicenseClass New) ResolveLicenseClasses(IEnumerable<int> passedElements)
+    {
+        var elements = passedElements.ToList();
+        var lowestPassed = elements.Min();
+        var highestPassed = elements.Max();
+        return (ClassForElement(lowestPassed - 1), ClassForElement(highestPassed));
+    }
+
+    private static LicenseClass ClassForElement(int element) => element switch
+    {
+        2 => LicenseClass.Technician,
+        3 => LicenseClass.General,
+        4 => LicenseClass.Extra,
+        _ => LicenseClass.None
+    };
 }
 
 public class ExamResultSyncResult
@@ -115,6 +169,9 @@ public class ExamResultSyncResult
     public int CandidatesMarkedFailed { get; set; }
     public int CandidatesMarkedTested { get; set; }
 
+    /// <summary>Already-Tested candidates (from before this field existed, or from a prior code version) that only got InitialLicenseClass/NewLicenseClass filled in on this pass — not a new pass/fail result.</summary>
+    public int CandidatesBackfilledLicenseClass { get; set; }
+
     public override string ToString() =>
-        $"marked Failed {CandidatesMarkedFailed}, marked Tested (passed) {CandidatesMarkedTested}";
+        $"marked Failed {CandidatesMarkedFailed}, marked Tested (passed) {CandidatesMarkedTested}, backfilled license class {CandidatesBackfilledLicenseClass}";
 }
