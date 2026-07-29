@@ -57,6 +57,11 @@ namespace VeSessionManager.Web.Pages.SessionManager;
 /// is active, the sort flips to newest-first (most other views stay oldest/soonest-first) — the whole
 /// point of this filter is finding a *recent* session fast, which an oldest-first sort would still
 /// bury on a late page.
+///
+/// Session ID column (issue #35, 2026-07-29): ExamToolsSessionId — the same identifier already shown
+/// in the Detail page's breadcrumb/title — now gets its own column instead of being buried inside the
+/// title cell's sub-line text, so it's usable to tell sessions apart at a glance and cross-reference
+/// against ExamTools' own UI, per the issue's "know whose session is whose" ask.
 /// </summary>
 [Authorize(Roles = "SystemAdmin,TeamAdmin,SessionManager,TeamLead")]
 public class IndexModel(AppDbContext dbContext, UserManager<User> userManager, SessionAccessScope accessScope, TimeProvider timeProvider) : PageModel
@@ -273,7 +278,9 @@ public class IndexModel(AppDbContext dbContext, UserManager<User> userManager, S
 
     private static SessionRow ToRow(Session s)
     {
-        var subParts = new List<string> { s.ExamToolsSessionId };
+        // ExamToolsSessionId gets its own column (issue #35 — "know whose session is whose"),
+        // not repeated in the sub-line the way it used to be.
+        var subParts = new List<string>();
         if (s.ZoomMeetingId is not null)
         {
             subParts.Add("Zoom");
@@ -298,6 +305,7 @@ public class IndexModel(AppDbContext dbContext, UserManager<User> userManager, S
 
         return new SessionRow(
             s.Id,
+            s.ExamToolsSessionId,
             s.ScheduledStartUtc.ToString("ddd, MMM d · h:mm tt", CultureInfo.InvariantCulture),
             string.Join(" · ", subParts),
             s.Vec.Name,
@@ -310,6 +318,7 @@ public class IndexModel(AppDbContext dbContext, UserManager<User> userManager, S
 
     public record SessionRow(
         int Id,
+        string ExamToolsSessionId,
         string TitleLine,
         string SubLine,
         string VecName,
