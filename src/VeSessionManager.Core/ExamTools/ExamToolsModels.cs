@@ -72,14 +72,25 @@ public class ExamToolsApplicant
 }
 
 /// <summary>
-/// Response of GET /api/veUser/sessions/{id}/export/full.json, wrapped under a DEVDOC key on the
-/// dev site (docs/examtools-api.md notes the wrapper key may differ on prod — re-verify there
-/// before relying on this in production). This is the only endpoint that returns a VE's display
-/// name, not just callsign — the session-detail endpoint's sessionVes field has callsign only.
+/// Response of GET /api/veUser/sessions/{id}/export/full.json. Wrapped under a DEVDOC key on the dev
+/// site (examtools.dev) — but confirmed live 2026-07-29 against real HRCC/prod (alpha.exam.tools)
+/// data that prod does NOT wrap it at all; VEs/applicants sit at the top level instead. This is
+/// exactly the "wrapper key may differ on prod, re-verify" risk docs/examtools-api.md already
+/// flagged as unverified — it turned out to differ more than expected (no wrapper, not just a
+/// different key name), and silently meant VolunteerExaminerSyncService found zero VEs for every
+/// real HRCC session the whole time (issue #38). Both shapes are mapped here; Ves() picks whichever
+/// is actually populated, dev-wrapped taking priority only because it's checked first — a payload
+/// only ever has one or the other, never both.
 /// </summary>
 public class ExamToolsFullExport
 {
     public ExamToolsFullExportDevDoc? Devdoc { get; set; }
+
+    /// <summary>Prod's shape (alpha.exam.tools) — top-level, not wrapped under "devdoc".</summary>
+    public List<ExamToolsVe>? Ves { get; set; }
+
+    /// <summary>Picks whichever shape this payload actually used.</summary>
+    public List<ExamToolsVe> ResolveVes() => Devdoc?.Ves ?? Ves ?? [];
 }
 
 public class ExamToolsFullExportDevDoc

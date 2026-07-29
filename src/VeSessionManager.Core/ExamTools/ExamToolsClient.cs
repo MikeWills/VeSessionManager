@@ -57,7 +57,7 @@ public sealed class ExamToolsClient : IExamToolsClient, IDisposable
     {
         var export = await GetJsonAsync<ExamToolsFullExport>(
             credentials, $"/api/veUser/sessions/{Uri.EscapeDataString(examToolsSessionId)}/export/full.json", cancellationToken);
-        return export?.Devdoc?.Ves ?? [];
+        return export?.ResolveVes() ?? [];
     }
 
     public Task<ExamToolsApplicantDetail?> GetApplicantDetailAsync(ExamToolsCredentials credentials, string examToolsSessionId, string applicantId, CancellationToken cancellationToken) =>

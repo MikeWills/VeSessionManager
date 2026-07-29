@@ -8,6 +8,15 @@ that window, or immediately if it's phase-numbered work already summarized in "C
 design rationale for any entry still lives in its linked `/docs/*.md` file, not here or in
 CLAUDE.md — this file, like CLAUDE.md's Change Log, is pointers only.
 
+- **Auto-detect graded exam results from ExamTools (2026-07-28).** `docs/examtools-api.md`'s
+  "Applicant exam results" section — found live during a real HRCC test session: a candidate who
+  failed his exam that night had no `Tested`/`ApplicationStatus` reflected in the app at all, even
+  though ExamTools' own per-applicant detail endpoint (`exams[]`) had the graded result the whole
+  time. New `ExamResultSyncService` (wired into `SessionIngestionJob` right after `VeRosterSync`)
+  auto-flips a candidate to `Failed` on any graded-and-failed exam element, or `Tested = true` on an
+  all-passed result — closing a second latent gap along the way, since `PaymentReminderService`'s
+  existing Reason=Retest reminder logic is gated on `ResultMarkedUtc` and had never fired for a
+  candidate nobody manually marked Failed.
 - **FCC daily watcher catch-up, not exact-instant (2026-07-28).** `docs/fcc-uls-watcher.md`'s
   "Catch-up, not exact-instant" section — the 8am/8pm ET slots exist to make sure FCC has published
   that day's file, but a Worker down right at a slot used to silently wait the full 12h for the next
