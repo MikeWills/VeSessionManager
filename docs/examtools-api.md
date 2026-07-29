@@ -30,7 +30,7 @@ credentials/session data live there, verified directly against the API) — this
 | `GET /api/veUser/sessions/{startDate}/{endDate}?group=all&team={teamId}` | **The actual source of closed (`state: "done"`) sessions** — `startDate`/`endDate` are `yyyy-MM-dd`. `group=all` means "include every status" (confirmed via the browser UI's own status dropdown: Open/All/Current/Pending/In-progress/Closed — not "every team"), not a synonym for omitting `team`; omitting `team` instead returns every team the login belongs to mixed together (confirmed live: one HRCC-account query without `team=` returned a session with `teamId: "KM6Z-F"` mixed in). `ExamToolsClient.GetTeamClosedSessionsAsync` calls this with a trailing ~30-day window to match `CompletedSessionBackfillWindow`. |
 | `GET /api/veUser/sessions/{id}` | Single-session detail; same shape but `sessionVes` populated (`perm: 10` = lead/co-lead) and `sessionDef` gains `city`/`state`/`zip`. **Not** used for VE roster — `sessionVes` entries have `ve` (an internal Mongo ObjectId) and `callsign` but no display name; see `export/full.json` below for the endpoint Phase 7 actually uses. Not currently called by ingestion for any other purpose either. |
 | `GET /api/veUser/sessions/{id}/export/basic.json` | `{ session: {date, state}, applicants: [...] }` — the candidate registration feed. Applicant fields used: `id`, `firstname`/`middle`/`lastname`/`suffix`, `email`, `frn`, `has_felony`, `created`. Also available: `pin`, `phone`, `callsign`, `licenseClass`, address fields, `finalized`. |
-| `GET /api/veUser/sessions/{id}/applicant/{applicantId}` | Per-applicant detail: everything above plus `status` (`"reg"`), `exams[]`, `hasSigned`, `sentEmails{}`. Not used yet — likely useful for later phases (ExamTools tracks which emails it already sent). |
+| `GET /api/veUser/sessions/{id}/applicant/{applicantId}` | Per-applicant detail: everything above plus `status`, `exams[]`, `hasSigned`, `sentEmails{}`. Used by `ExamResultSyncService` for `exams[]` — see "Applicant exam results" below. |
 | `GET /api/veUser/sessions/{id}/export/full.json` | `{ DEVDOC: { ..., VEs: [{call, name, number?}], applicants: [...] } }` — used by Phase 7 (`VolunteerExaminerSyncService`) purely for `DEVDOC.VEs`, the only endpoint that pairs a VE's callsign with a real display name (`sessionVes` above has callsign only). `number` (when present) is a VEC-issued VE accreditation number, **not** an FCC FRN — deliberately not mapped onto `VolunteerExaminer.Frn`. The `applicants[]` in this payload are ignored (ingestion already gets candidates from `export/basic.json`); `DEVDOC.applicants[].signingVes` also carries per-candidate VE names, unused for now — Phase 7 only needs the session-level roster, not who-signed-whom. Wrapper key may differ on prod, per the note below. |
 
 ## Semantics worth knowing
@@ -78,6 +78,42 @@ credentials/session data live there, verified directly against the API) — this
 - Other discovered-but-untested paths (from the site's JS bundles): `.../applicant/{id}/email`,
   `export/basic` (non-JSON), `vecDownload/*.zip`, `form605.pdf`, `laurel_export.csv`,
   `w5yi_export.csv`.
+
+## Applicant exam results (2026-07-28)
+
+`ExamResultSyncService` closes a gap found live tonight: a real HRCC candidate ("Terrance A Harris")
+failed his General exam at a real session, but the app had no idea — `ApplicationStatus` was still
+`Unmatched` and `Tested` was still `false`, because nothing had ever told the Session Manager to click
+"Mark failed." ExamTools had the graded result the entire time, on an endpoint ingestion had never
+called before. Verified live via `GET /api/veUser/sessions/{sessionId}/applicant/{applicantId}`:
+
+```json
+{
+  "status": "closed",
+  "exams": [
+    {
+      "element": 3,
+      "graded": true,
+      "total": 35,
+      "passing": 26,
+      "correct": 23,
+      "answered": 35,
+      "passed": false,
+      "valid": true,
+      "startedAt": "2026-07-29T01:59:50.578Z",
+      "stoppedAt": "2026-07-29T02:13:28.271Z"
+    }
+  ]
+}
+```
+
+`ExamToolsApplicantDetail`/`ExamToolsExamResult` only map `exams[].graded`/`exams[].passed` — the
+richer per-exam stats (`total`/`correct`/etc.) and the full registration PII this endpoint also
+returns aren't needed by anything today. A candidate can have more than one entry in the same sitting
+(passes a lower element, then attempts and fails a higher one) — any graded-and-failed entry is
+treated as an overall Failed regardless of other elements passed the same session, since a retest fee
+is owed either way. See `ExamResultSyncService`'s own doc comment for the full field-setting/audit
+behavior and how it interacts with `PaymentReminderService`'s existing Reason=Retest logic.
 
 ## Per-team host override (issue #18, 2026-07-28)
 

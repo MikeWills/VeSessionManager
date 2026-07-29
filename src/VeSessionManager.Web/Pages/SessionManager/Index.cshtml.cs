@@ -46,6 +46,17 @@ namespace VeSessionManager.Web.Pages.SessionManager;
 /// asp-route-* tag helpers because Status is a multi-value list — asp-route-* only supports one value
 /// per key, so preserving multiple checked statuses across a page link needs manual query-string
 /// construction.
+///
+/// Date-range filter (2026-07-28): added after a real test session was hard to find in the list
+/// (39+ real HRCC sessions once ingestion resumed). DateRange is one of the relative presets in
+/// DateRangePresetDays (Last7/Last14/... — relative to "now", so unlike an absolute custom range it
+/// stays meaningful and is safe to remember in the cookie the same way Status/TeamId/PageSize are)
+/// or "" for no date filter; DateFrom/DateTo are an explicit custom range (absolute dates, so
+/// deliberately NOT remembered in the cookie — an old custom range would just be confusing to land
+/// back on later) that override the preset when either is set. Whenever a date filter of either kind
+/// is active, the sort flips to newest-first (most other views stay oldest/soonest-first) — the whole
+/// point of this filter is finding a *recent* session fast, which an oldest-first sort would still
+/// bury on a late page.
 /// </summary>
 [Authorize(Roles = "SystemAdmin,TeamAdmin,SessionManager,TeamLead")]
 public class IndexModel(AppDbContext dbContext, UserManager<User> userManager, SessionAccessScope accessScope, TimeProvider timeProvider) : PageModel
@@ -54,6 +65,17 @@ public class IndexModel(AppDbContext dbContext, UserManager<User> userManager, S
     private static readonly string[] KnownStatuses = ["Upcoming", "NeedsReview", "Past"];
     internal static readonly int[] AllowedPageSizes = [10, 25, 50, 100];
     private const int DefaultPageSize = 10;
+
+    internal static readonly IReadOnlyDictionary<string, (int Days, string Label)> DateRangePresets = new Dictionary<string, (int, string)>
+    {
+        ["Last7"] = (7, "Last 7 days"),
+        ["Last14"] = (14, "Last 14 days"),
+        ["Last30"] = (30, "Last 30 days"),
+        ["Last60"] = (60, "Last 60 days"),
+        ["Last90"] = (90, "Last 90 days"),
+        ["Last6Months"] = (182, "Last 6 months"),
+        ["Last12Months"] = (365, "Last 12 months")
+    };
 
     [BindProperty(SupportsGet = true, Name = "status")]
     public List<string> Status { get; set; } = [];
@@ -67,6 +89,17 @@ public class IndexModel(AppDbContext dbContext, UserManager<User> userManager, S
     [BindProperty(SupportsGet = true, Name = "page")]
     public int PageNumber { get; set; } = 1;
 
+    /// <summary>One of DateRangePresets' keys, or "" for no date filter.</summary>
+    [BindProperty(SupportsGet = true)]
+    public string DateRange { get; set; } = "";
+
+    /// <summary>Explicit custom range — set (either or both) to override DateRange.</summary>
+    [BindProperty(SupportsGet = true)]
+    public DateOnly? DateFrom { get; set; }
+
+    [BindProperty(SupportsGet = true)]
+    public DateOnly? DateTo { get; set; }
+
     /// <summary>Hidden marker on the filter form — present only when the form was actually submitted, so an empty Status list can be told apart from "no query string was sent at all."</summary>
     [BindProperty(SupportsGet = true)]
     public bool Applied { get; set; }
@@ -74,6 +107,7 @@ public class IndexModel(AppDbContext dbContext, UserManager<User> userManager, S
     public IReadOnlyList<(int Id, string Name)> AvailableTeams { get; private set; } = [];
     public IReadOnlyList<SessionRow> Sessions { get; private set; } = [];
     public string StatusSummaryLabel { get; private set; } = "";
+    public string DateRangeSummaryLabel { get; private set; } = "Any time";
     public int TotalCount { get; private set; }
     public int TotalPages { get; private set; }
 
@@ -82,14 +116,16 @@ public class IndexModel(AppDbContext dbContext, UserManager<User> userManager, S
         if (Applied)
         {
             PageSize = AllowedPageSizes.Contains(PageSize) ? PageSize : DefaultPageSize;
-            SaveFilterCookie(Status, TeamId, PageSize);
+            DateRange = DateRangePresets.ContainsKey(DateRange) ? DateRange : "";
+            SaveFilterCookie(Status, TeamId, PageSize, DateRange);
         }
         else
         {
-            var (cookieStatus, cookieTeamId, cookiePageSize) = ReadFilterCookie();
+            var (cookieStatus, cookieTeamId, cookiePageSize, cookieDateRange) = ReadFilterCookie();
             Status = cookieStatus ?? ["Upcoming"];
             TeamId = cookieTeamId;
             PageSize = cookiePageSize ?? DefaultPageSize;
+            DateRange = cookieDateRange ?? "";
             PageNumber = 1;
         }
 
@@ -101,6 +137,14 @@ public class IndexModel(AppDbContext dbContext, UserManager<User> userManager, S
             _ => $"{Status.Count} selected"
         };
         PageNumber = Math.Max(1, PageNumber);
+
+        DateRangeSummaryLabel = (DateFrom, DateTo) switch
+        {
+            (not null, not null) => $"{DateFrom:MMM d} – {DateTo:MMM d}",
+            (not null, null) => $"From {DateFrom:MMM d}",
+            (null, not null) => $"Through {DateTo:MMM d}",
+            _ => DateRangePresets.TryGetValue(DateRange, out var preset) ? preset.Label : "Any time"
+        };
 
         var user = await userManager.GetUserWithManagerAsync(dbContext, User) ?? throw new InvalidOperationException("No authenticated user for an [Authorize]d page.");
         var now = timeProvider.GetUtcNow().UtcDateTime;
@@ -127,7 +171,21 @@ public class IndexModel(AppDbContext dbContext, UserManager<User> userManager, S
                 || (wantPast && s.ScheduledStartUtc < now));
         }
 
-        query = query.OrderBy(s => s.ScheduledStartUtc);
+        var (dateFromUtc, dateToUtc) = ResolveDateRange(now);
+        if (dateFromUtc is not null)
+        {
+            query = query.Where(s => s.ScheduledStartUtc >= dateFromUtc.Value);
+        }
+        if (dateToUtc is not null)
+        {
+            query = query.Where(s => s.ScheduledStartUtc <= dateToUtc.Value);
+        }
+
+        // A date filter's whole point is finding a *recent* session fast — oldest-first would still
+        // bury it on a late page, so flip to newest-first whenever one is active.
+        query = dateFromUtc is not null || dateToUtc is not null
+            ? query.OrderByDescending(s => s.ScheduledStartUtc)
+            : query.OrderBy(s => s.ScheduledStartUtc);
 
         TotalCount = await query.CountAsync();
         TotalPages = Math.Max(1, (int)Math.Ceiling(TotalCount / (double)PageSize));
@@ -148,7 +206,34 @@ public class IndexModel(AppDbContext dbContext, UserManager<User> userManager, S
         }
         qs.Add($"pageSize={pageSizeOverride ?? PageSize}");
         qs.Add($"page={page}");
+        if (!string.IsNullOrEmpty(DateRange))
+        {
+            qs.Add($"dateRange={Uri.EscapeDataString(DateRange)}");
+        }
+        if (DateFrom is not null)
+        {
+            qs.Add($"dateFrom={DateFrom:yyyy-MM-dd}");
+        }
+        if (DateTo is not null)
+        {
+            qs.Add($"dateTo={DateTo:yyyy-MM-dd}");
+        }
         return "/SessionManager/Index?" + string.Join("&", qs);
+    }
+
+    /// <summary>Custom DateFrom/DateTo (if either is set) override the DateRange preset entirely — an explicit range is a stronger signal than a leftover preset selection.</summary>
+    private (DateTime? From, DateTime? To) ResolveDateRange(DateTime now)
+    {
+        if (DateFrom is not null || DateTo is not null)
+        {
+            return (
+                DateFrom?.ToDateTime(TimeOnly.MinValue),
+                DateTo?.ToDateTime(TimeOnly.MaxValue));
+        }
+
+        return DateRangePresets.TryGetValue(DateRange, out var preset)
+            ? (now.AddDays(-preset.Days), now)
+            : (null, null);
     }
 
     private static string StatusLabel(string status) => status switch
@@ -159,23 +244,24 @@ public class IndexModel(AppDbContext dbContext, UserManager<User> userManager, S
         _ => status
     };
 
-    private (List<string>? Status, int? TeamId, int? PageSize) ReadFilterCookie()
+    private (List<string>? Status, int? TeamId, int? PageSize, string? DateRange) ReadFilterCookie()
     {
         if (!Request.Cookies.TryGetValue(FilterCookieName, out var raw) || string.IsNullOrWhiteSpace(raw))
         {
-            return (null, null, null);
+            return (null, null, null, null);
         }
 
-        var parts = raw.Split('|', 3);
+        var parts = raw.Split('|', 4);
         var status = parts[0].Length == 0 ? [] : parts[0].Split(',').Where(s => KnownStatuses.Contains(s)).ToList();
         int? teamId = parts.Length > 1 && int.TryParse(parts[1], out var id) ? id : null;
         int? pageSize = parts.Length > 2 && int.TryParse(parts[2], out var size) && AllowedPageSizes.Contains(size) ? size : null;
-        return (status, teamId, pageSize);
+        string? dateRange = parts.Length > 3 && DateRangePresets.ContainsKey(parts[3]) ? parts[3] : null;
+        return (status, teamId, pageSize, dateRange);
     }
 
-    private void SaveFilterCookie(List<string> status, int? teamId, int pageSize)
+    private void SaveFilterCookie(List<string> status, int? teamId, int pageSize, string dateRange)
     {
-        var value = $"{string.Join(",", status)}|{teamId}|{pageSize}";
+        var value = $"{string.Join(",", status)}|{teamId}|{pageSize}|{dateRange}";
         Response.Cookies.Append(FilterCookieName, value, new CookieOptions
         {
             Expires = DateTimeOffset.UtcNow.AddYears(1),

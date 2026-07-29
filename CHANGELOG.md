@@ -8,6 +8,11 @@ that window, or immediately if it's phase-numbered work already summarized in "C
 design rationale for any entry still lives in its linked `/docs/*.md` file, not here or in
 CLAUDE.md — this file, like CLAUDE.md's Change Log, is pointers only.
 
+- **FCC daily watcher catch-up, not exact-instant (2026-07-28).** `docs/fcc-uls-watcher.md`'s
+  "Catch-up, not exact-instant" section — the 8am/8pm ET slots exist to make sure FCC has published
+  that day's file, but a Worker down right at a slot used to silently wait the full 12h for the next
+  one instead of catching up. `FccDailyWatcherJob.LatestDueSlotUtc` now finds the most recent slot
+  not yet run (checked against `JobRunHistory`) and runs on the very next hourly tick.
 - **Applicant detail page (2026-07-28).** `docs/applicant-detail.md` — a new per-Candidate.Id page
   (never keyed by FRN, since one person can test with the team more than once) with full action
   parity to the session Detail page's candidate row, every payment's link surfaced (closing a
