@@ -106,6 +106,26 @@ until its columns are set via direct DB edit (no admin UI yet):
 
 ## Bugs / known issues
 
+- [ ] **`SessionEventScheduling` repeats a real `[ERR]` every tick, forever, when a cancelled
+  session's stale Zoom meeting can't be cleaned up because the team's Zoom credentials aren't set**
+  (found 2026-07-29 live-reviewing the Worker log — `worker-20260729.log`). Team 1 (WX0MIK) has a
+  cancelled session (`6a5d8773c95bc8b311994c76`, tied to `manual-test-session-1` test data) that
+  still has a `ZoomMeetingId` set, but `Team.ZoomAccountId`/`ZoomClientId`/`ZoomClientSecret` were
+  never configured for that team (tracked separately in the Multi-Team checklist above).
+  `SessionEventSchedulingService.CleanupZoomAndDiscordAsync` (`src/VeSessionManager.Core/Scheduling/SessionEventSchedulingService.cs`)
+  deliberately does *not* gate cleanup on `IsConfigured` — the code comment explains this is
+  intentional ("an existing event needs tearing down even if the team's Zoom setup changed since it
+  was created") and throws a clear `InvalidOperationException` instead of a confusing null-credential
+  call. That reasoning is fine for a one-off, but there's no backoff/dedup on it, so it re-throws and
+  re-logs a full `[ERR]` on every single tick indefinitely (12 times in one day locally) — cuts
+  against this app's own established "one quiet log line, never a repeating ERROR" pattern for
+  every other unconfigured-integration case (see CLAUDE.md's Optional-integration pattern). Options
+  worth weighing: log once and stop retrying until credentials are set (matches the existing
+  pattern, but risks silently never cleaning up a real meeting if credentials do get added later);
+  or keep retrying but only escalate to `[ERR]` once, `[WRN]`/throttled after that. Low real-world
+  urgency right now since this is dev/test data on Team 1, not real HRCC/MARC data, but worth fixing
+  before Team 1 (or any team) is ever a real production team with this same gap.
+
 - [x] ~~**Completed-session backfill (issue #22) never actually ingested anything against real data**~~
   (found 2026-07-28 running the Worker against real HRCC ExamTools data as a live end-to-end test;
   fixed same day, see `docs/examtools-api.md`'s "Closed sessions are a separate feed" section).
@@ -137,6 +157,42 @@ until its columns are set via direct DB edit (no admin UI yet):
 - [x] ~~**No way to log out from within the app itself**~~ (found 2026-07-22 while browser-verifying the home page fix above, fixed same day). `_AppLayout` — the layout every SessionManager/Admin page actually uses — never included `_LoginPartial` (which has the real POST-form Log out button), so the only working logout control left anywhere in the app was on the near-vestigial scaffold `/Error` page. Fixed by adding a `.user-menu` kebab dropdown (same component `.help-menu` already uses) wrapping the existing role/team display in `_AppLayout`'s header, with a `Log out` POST form inside — live-verified: opens the dropdown, submits the logout POST, redirects to the now-styled `/`.
 
 - [x] ~~**`claude-review` GitHub Action errors out on larger PRs instead of completing**~~ (found 2026-07-22 on PR #6; fixed 2026-07-22). `.github/workflows/claude-code-review.yml` ran the `code-review` plugin's `/code-review:code-review` command with no explicit tool-permission configuration for the sandboxed run — on a PR of any real size, the review agent needed things like `dotnet build`/`dotnet test` to review meaningfully, got denied every time (`permission_denials_count: 46` on PR #6's run), and the whole run reported `is_error: true` and failed — not because it found real issues, just an infra/config gap. `build-and-test` (the real quality gate) was unaffected. Fixed by adding `claude_args: --allowedTools "Bash(dotnet build *)" "Bash(dotnet test *)" "Bash(dotnet restore *)" "Bash(git diff *)" "Bash(git log *)" "Bash(git show *)"` — permission rule syntax (space before the wildcard) confirmed against this repo's own real `.claude/settings.local.json`, not guessed. Not blocking merges today (no branch protection on this private/free repo), but the check should now actually complete instead of erroring out — worth watching the next PR's run to confirm.
+
+- [ ] **Session list filter row is confusing — the Status filter doesn't match the Status column, and the Team filter behaves differently than the other two** (reported 2026-07-29). `Pages/SessionManager/Index.cshtml(.cs)`. Three related fixes requested:
+  1. The Status filter checkboxes (Upcoming/NeedsReview/Past) don't correspond to the labels actually shown in the table's Status chip (`ToRow`'s `statusLabel`: Active/Reschedule flagged/Completed/Cancelled) — align the filter's options to the same set of labels the column actually shows.
+  2. Move "Upcoming" out of the Status filter and into the Date range dropdown instead (it's a time-window concept, not a lifecycle-status one).
+  3. Reorder the filter row: Status, Date range, Team, then Page size — and move Page size to the right side of the table (near pagination) instead of sitting in the filter row.
+  4. The Team `<select>` currently auto-submits on `onchange` with no Apply button, while Status and Date range are dropdown menus with an explicit Apply button — inconsistent and confusing per the report. Make Team match whichever pattern the other two end up using once (1)/(2)/(3) are settled.
+
+## Feature requests (not yet triaged)
+
+- [ ] **Applicant Status page — rolling list of candidates awaiting their FCC grant** (requested 2026-07-29). A new Session Manager nav page, not scoped to one session — shows every candidate across the team who passed (`Tested=true`, `ApplicationStatus != Failed`) but hasn't yet been confirmed `Granted` by the FCC watcher, whether they're a brand-new licensee or an upgrade (per `docs/exam-result-license-class.md`'s `InitialLicenseClass`/`NewLicenseClass`). The point is an always-current worklist for tracking/monitoring pending applications, so likely columns: candidate name, session date, `InitialLicenseClass → NewLicenseClass`, `ApplicationDateEnteredUtc` (how long it's been sitting with the FCC), current `ApplicationStatus` (Unmatched/Received). **Once a candidate flips to `Granted`, they drop off the list entirely** — per the request, nobody needs to keep tracking them at that point. Team-scoped like the other Session Manager pages (`SessionAccessScope`); a query filtering `Candidate` across all sessions by `Tested=true && ApplicationStatus IN (Unmatched, Received)` should cover it, no new backing fields needed.
+  - **Refined 2026-07-29:** also want a short "recently issued" view alongside the pending list — anyone who flipped to `Granted` in roughly the last week, so a Session Manager can actually confirm a given person's license/upgrade came through before they age out of the pending list and drop off entirely. A separate section on the same page (not merged into the pending list, which should stay strictly "not yet granted") — likely filtered on `LicenseGrantDateUtc >= now.AddDays(-7)` and `ApplicationStatus == Granted`, showing the same `InitialLicenseClass → NewLicenseClass`/call sign info. Exact window (7 days vs. something else) not firm yet — "maybe" a week per the request, revisit when actually building this.
+
+- [ ] **User-facing documentation needs to be started** (requested 2026-07-29) — everything written so
+  far is either developer/design-rationale docs (the `/docs/*.md` files — API shapes, architecture
+  decisions, troubleshooting) or `TODO.md`/`CHANGELOG.md`'s own operational tracking. There's no
+  actual guide yet for the people who use the app day-to-day (a Session Manager running a test
+  night, a TeamAdmin doing first-time team setup). Also genuinely missing, per CLAUDE.md's own
+  Documentation Structure table: `ARCHITECTURE.md` and `SECURITY.md` are named as the intended home
+  for a system overview and a vulnerability-reporting policy, but neither file exists yet (only
+  `README.md`/`CONTRIBUTING.md`/`CHANGELOG.md` do). No scope/format decided yet — revisit once
+  ready to figure out what a real Session Manager/TeamAdmin actually needs walked through.
+
+- [ ] **TeamAdmin (and SystemAdmin) need the ability to delete a session outright** (requested
+  2026-07-29, prompted by the orphaned walk-in-candidate rows found while verifying the
+  license-class backfill — see `docs/exam-result-license-class.md`). Session Manager already can't
+  delete a session; nothing in the admin backend can either. Scope it to TeamAdmin/SystemAdmin only
+  (not SessionManager) since this is a destructive, hard-to-reverse cleanup action, not a routine
+  session-management one — see CLAUDE.md's "Executing actions with care" guidance on this class of
+  action generally. Not a trivial delete: `Candidate.SessionId` and
+  `SessionVolunteerExaminer.SessionId` are both `DeleteBehavior.Restrict` in `AppDbContext`, so
+  cascading (or blocking-with-a-clear-error, e.g. "N candidates still attached") needs a deliberate
+  decision, not just removing the FK constraint. Should audit-log the deletion
+  (`AuditLogExtensions.AddAuditLog`) same as every other destructive action in this app, and likely
+  wants a confirmation step given it can't be undone. Also worth deciding whether re-ingestion would
+  silently recreate the session next poll if it's still present in ExamTools' feed (probably should
+  — this is for cleaning up genuinely orphaned/stale local rows, not fighting the source of truth).
 
 ## Carried over from earlier phases
 

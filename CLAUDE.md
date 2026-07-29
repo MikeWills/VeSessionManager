@@ -77,6 +77,12 @@ would be pure duplication — and goes straight to `CHANGELOG.md` instead. Non-p
 redesigns, hardening passes) start here and move to `CHANGELOG.md` once the section is at/over the
 cap and a newer entry needs to be added; oldest goes first.
 
+- **Applicant Status page (2026-07-29).** `docs/exam-result-license-class.md`'s "Applicant Status
+  page" section — new team-wide `Pages/SessionManager/ApplicantStatus.cshtml(.cs)`: a "Pending FCC
+  grant" worklist (passed but not yet `Granted`, drops a candidate the instant they are) plus a
+  "Recently issued" section (`Granted` in the last 7 days) so a Session Manager can confirm a
+  specific person's license/upgrade actually came through. No new backing fields — built entirely
+  on `InitialLicenseClass`/`NewLicenseClass` from the license-class tracking work below.
 - **License class tracking + exam-result backfill (2026-07-29).** `docs/exam-result-license-class.md`
   — new `Candidate.InitialLicenseClass`/`NewLicenseClass`, derived purely from which exam elements
   ExamTools reports graded+passed this sitting (no FCC `AM.dat` fetch needed — a VE session never
@@ -101,9 +107,6 @@ cap and a newer entry needs to be added; oldest goes first.
   place the override-falls-back-to-global logic lives.
 - **Payment reminders retest-gating fix (2026-07-22).** `docs/payment-reminders.md`'s "Retest
   payments" section — a same-session retest fee previously never got a reminder or expiration.
-- **Post-launch security/quality hardening pass (2026-07-21).** A real cross-tenant IDOR plus five
-  smaller fixes. `docs/security-hardening-2026-07-21.md` — the shared helpers it introduced are in
-  Established Patterns above.
 - **Youth rate payment confirmation (2026-07-27).** `docs/youth-payment-confirmation.md` — a
   self-service, honor-system public page (`/youth-confirm/{token}`) that switches a candidate's
   standard-rate Square payment link to the session's configured youth rate, replacing reliance on
@@ -133,12 +136,6 @@ cap and a newer entry needs to be added; oldest goes first.
   helper) instead of the bare grant date, which would otherwise purge an upgrade/repeat candidate's
   PII almost immediately after their real, current session. No schema change — computed from data
   already stored. Also surfaced on the applicant detail page.
-- **Zoom breakout rooms per team (2026-07-28).** `docs/zoom-discord-scheduling.md`'s "Breakout rooms"
-  section — new `Team.ZoomBreakoutRoomCount` (admin-editable, default 2) pre-creates that many empty
-  "Exam Room N" breakout rooms on every session's Zoom meeting; VEs move candidates in manually.
-  Live-tested against a real meeting: despite multiple 2022-2024 Zoom devforum reports that the
-  Create Meeting API silently ignores `settings.breakout_room`, it works on this account — confirmed
-  by checking the real meeting's Breakout Room Assignment dialog in the Zoom client itself.
 Everything through Phase 0-10's initial build (ExamTools ingestion, Zoom/Discord, Square, email
 notifications, FCC ULS watcher, payment reminders, VE tracking, VEC submission tracker, admin
 auth/config/candidate-actions, PII purge) plus the public privacy page has aged out to

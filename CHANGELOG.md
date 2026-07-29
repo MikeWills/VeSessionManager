@@ -8,6 +8,12 @@ that window, or immediately if it's phase-numbered work already summarized in "C
 design rationale for any entry still lives in its linked `/docs/*.md` file, not here or in
 CLAUDE.md — this file, like CLAUDE.md's Change Log, is pointers only.
 
+- **Zoom breakout rooms per team (2026-07-28).** `docs/zoom-discord-scheduling.md`'s "Breakout rooms"
+  section — new `Team.ZoomBreakoutRoomCount` (admin-editable, default 2) pre-creates that many empty
+  "Exam Room N" breakout rooms on every session's Zoom meeting; VEs move candidates in manually.
+  Live-tested against a real meeting: despite multiple 2022-2024 Zoom devforum reports that the
+  Create Meeting API silently ignores `settings.breakout_room`, it works on this account — confirmed
+  by checking the real meeting's Breakout Room Assignment dialog in the Zoom client itself.
 - **Post-launch security/quality hardening pass (2026-07-21).** A real cross-tenant IDOR plus five
   smaller fixes. `docs/security-hardening-2026-07-21.md` — the shared helpers it introduced are in
   CLAUDE.md's Established Patterns section.

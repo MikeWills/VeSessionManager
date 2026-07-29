@@ -62,6 +62,7 @@
         <nav class="chassis-nav">
             <a asp-page="/SessionManager/Index" class="@(activeNav == "Sessions" ? "active" : "")">Sessions</a>
             <a asp-page="/SessionManager/VeRoster" class="@(activeNav == "VeRoster" ? "active" : "")">VE Roster</a>
+            <a asp-page="/SessionManager/ApplicantStatus" class="@(activeNav == "ApplicantStatus" ? "active" : "")">Applicant Status</a>
             <a asp-page="/SessionManager/VecSubmission" class="@(activeNav == "VecSubmission" ? "active" : "")">VEC Submission</a>
             <a asp-page="/SessionManager/UnmatchedPayments" class="@(activeNav == "UnmatchedPayments" ? "active" : "")">Unmatched Payments</a>
             @if (currentUser?.Role is UserRole.SystemAdmin or UserRole.TeamAdmin)

@@ -1,0 +1,101 @@
+@page
+@model VeSessionManager.Web.Pages.SessionManager.ApplicantStatusModel
+@{
+    ViewData["Title"] = "Applicant Status";
+    ViewData["ActiveNav"] = "ApplicantStatus";
+    Layout = "_AppLayout";
+}
+
+<div class="page-head">
+    <div>
+        <p class="eyebrow">Applicants</p>
+        <h1>Applicant Status</h1>
+    </div>
+</div>
+
+@if (Model.AvailableTeams.Count > 1)
+{
+    <form method="get" id="applicantStatusFilters" class="filters" style="margin-bottom:20px; align-items:flex-start;">
+        <select name="teamId" class="filter-select" onchange="document.getElementById('applicantStatusFilters').submit()">
+            @foreach (var team in Model.AvailableTeams)
+            {
+                <option value="@team.Id" selected="@(team.Id == Model.TeamId)">@team.Name</option>
+            }
+        </select>
+    </form>
+}
+
+@if (!Model.HasTeamContext)
+{
+    <p>No team context for this account — applicant status is per-team.</p>
+}
+else
+{
+    <div class="page-head" style="margin-top:8px;">
+        <div>
+            <h2 style="font-size:16px;">Pending FCC grant</h2>
+            <p class="eyebrow" style="margin-top:0;">Passed but not yet issued — drops off once granted</p>
+        </div>
+    </div>
+    <table>
+        <thead>
+            <tr>
+                <th>Candidate</th>
+                <th>Session</th>
+                <th>License class</th>
+                <th>Status</th>
+                <th>Days pending</th>
+            </tr>
+        </thead>
+        <tbody>
+            @if (Model.Pending.Count == 0)
+            {
+                <tr><td colspan="5">Nobody is currently waiting on an FCC grant.</td></tr>
+            }
+            @foreach (var row in Model.Pending)
+            {
+                <tr>
+                    <td><a asp-page="./CandidateDetail" asp-route-id="@row.CandidateId">@row.Name</a></td>
+                    <td><a asp-page="./Detail" asp-route-id="@row.SessionId">@row.SessionDateLine</a></td>
+                    <td class="mono">@row.LicenseClassLine</td>
+                    <td>@row.StatusLabel</td>
+                    <td class="count">@row.DaysPending</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+
+    <div class="page-head" style="margin-top:28px;">
+        <div>
+            <h2 style="font-size:16px;">Recently issued</h2>
+            <p class="eyebrow" style="margin-top:0;">Granted in the last @VeSessionManager.Web.Pages.SessionManager.ApplicantStatusModel.RecentlyIssuedWindowDays days</p>
+        </div>
+    </div>
+    <table>
+        <thead>
+            <tr>
+                <th>Candidate</th>
+                <th>Session</th>
+                <th>Call sign</th>
+                <th>License class</th>
+                <th>Granted</th>
+            </tr>
+        </thead>
+        <tbody>
+            @if (Model.RecentlyIssued.Count == 0)
+            {
+                <tr><td colspan="5">No grants in the last @VeSessionManager.Web.Pages.SessionManager.ApplicantStatusModel.RecentlyIssuedWindowDays days.</td></tr>
+            }
+            @foreach (var row in Model.RecentlyIssued)
+            {
+                <tr>
+                    <td><a asp-page="./CandidateDetail" asp-route-id="@row.CandidateId">@row.Name</a></td>
+                    <td><a asp-page="./Detail" asp-route-id="@row.SessionId">@row.SessionDateLine</a></td>
+                    <td class="mono">@row.CallSign</td>
+                    <td class="mono">@row.LicenseClassLine</td>
+                    <td class="mono">@row.GrantDateLine</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
