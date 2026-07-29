@@ -22,14 +22,14 @@ of Phases 2–4's actual deliverables.
 
 - [ ] Get Mailgun's domain-specific SMTP username/password (Mailgun dashboard → Sending → Domain settings → SMTP credentials) — see `docs/email-notifications.md`
 - [ ] **Updated by multi-team (see below): these now go on the seeded `Team` row (direct DB edit), not `Email:*` user-secrets** — set `Team.SmtpHost`/`SmtpPort`/`SmtpUsername`/`SmtpPassword`/`SmtpUseStartTls`. No column has a baked-in default (deliberate — see CLAUDE.md's `IsConfigured` gotcha), so all five need setting even to match Mailgun's usual `smtp.mailgun.org:587`+STARTTLS defaults.
-- [ ] Replace the seeded `EmailSettings` row's placeholder values (`FromAddress`/`FromDisplayName`/`ReplyToAddress`/`PrivacyPolicyUrl` are currently `noreply@example.org` / `https://example.org/privacy`) with real values for **each team's own `EmailSettings` row** (one per team now, not a singleton) — edit directly in the DB, see `docs/email-notifications.md`. **Partially done (checked 2026-07-29):** Team 2 (MARC) already has a real `FromAddress`; Teams 1 (WX0MIK) and 3 (HRCC) are still the literal placeholder.
+- [ ] Replace the seeded `EmailSettings` row's placeholder values (`FromAddress`/`FromDisplayName`/`ReplyToAddress`/`PrivacyPolicyUrl` are currently `noreply@example.org` / `https://example.org/privacy`) with real values for **each team's own `EmailSettings` row** (one per team now, not a singleton) — edit directly in the DB, see `docs/email-notifications.md`. **Partially done (checked 2026-07-29, corrected same day — a code review caught this was incomplete):** Team 2 (MARC) has a real `FromAddress`, but `PrivacyPolicyUrl` is still the literal `https://example.org/privacy` placeholder for **all three teams, including MARC** — not just the two still-placeholder teams for `FromAddress`.
 - [ ] Review/rewrite the seeded `RegistrationConfirmation`/`DayBeforeReminder` template content — it's a real starting example (bullet points, `{{CandidateFirstName}}`, etc.) but the actual wording is a placeholder, not final copy. Templates are now per-team (`EmailTemplate.TeamId`) so each team can have its own wording if desired.
 - [ ] Live test: confirm a test candidate actually receives both emails with correctly substituted placeholders
 
 ## FCC ULS Watcher (Phase 5) — not yet live-verified
 
 - [x] ~~Live test: find (or wait for) a real candidate whose FRN appears in an actual FCC daily application file and confirm `FccDailyWatcherJob` flips them to `Received` with a sane `ApplicationDateEnteredUtc`~~ (confirmed 2026-07-29 — found already done while auditing this list against real DB state, not a new test) — 9 real HRCC candidates currently sit in `Received`.
-- [x] ~~Live test: confirm the same candidate's eventual license grant flips them to `Granted` with the correct `CallSign`/`LicenseGrantDateUtc`~~ (confirmed 2026-07-29, same audit) — 6 real HRCC candidates currently sit in `Granted`, including the William Denney/Jason Pelowitz matches already documented in the "Upgrade exam handling" fix above.
+- [x] ~~Live test: confirm the same candidate's eventual license grant flips them to `Granted` with the correct `CallSign`/`LicenseGrantDateUtc`~~ (confirmed 2026-07-29, same audit; corrected 2026-07-29 — a code review caught the original count was wrong) — 5 real HRCC candidates currently sit in `Granted` (William Denney and Jason Pelowitz each twice across two sessions, plus Richard J Sawyer once), including the upgrade-exam matches already documented in the "Upgrade exam handling" fix above. A 6th `Granted` candidate (Sarah Nguyen) belongs to Team 1 (WX0MIK), not HRCC — the original note wrongly attributed the whole unscoped total to HRCC.
 - [ ] Let `FccWeeklyCatchupJob` actually run on a real Monday at least once and confirm it hits `complete/a_amat.zip`/`complete/l_amat.zip` successfully (these are ~190MB+ files — first real run will validate both the download time and memory footprint of loading them fully into memory, not just the small daily files exercised so far)
 - [x] ~~Revisit the deferred "upgrade exam" (existing licensee) matching logic~~ (resolved 2026-07-28 with real HRCC data — William Denney/Jason Pelowitz — see `docs/fcc-uls-watcher.md`'s "Upgrade exam handling" section). Matching still can't avoid re-detecting a pre-existing license (FCC's own Grant Date doesn't change on a class upgrade), but the real consequence — premature PII purge — is fixed by anchoring `PiiPurgeService`'s retention Trigger A on the later of `LicenseGrantDateUtc`/`Session.ScheduledStartUtc`, and the distinction is surfaced on the new applicant detail page.
 
@@ -79,13 +79,14 @@ until its columns are set via direct DB edit (no admin UI yet):
 - [ ] Rename the seeded `Team.Name` (currently `"WX0MIK"`, copied from the old `ExamTools:Team`
   appsettings value as a placeholder) to something more human-readable if desired — purely
   cosmetic, `ExamToolsTeamCode` is the value that actually matters functionally.
-- [ ] **Found while cleaning up appsettings.Production.json**: the seeded team's
-  `ExamToolsTeamCode` was copied from the *dev* value (`WX0MIK`, from the base
-  `appsettings.json`) — the real production team code is `HRCC` (was in
-  `appsettings.Production.json`'s now-removed `ExamTools:Team`, per `ExamToolsOptions`' original
-  doc comment: "WX0MIK on dev, HRCC on prod"). If/when this team starts polling the production
-  ExamTools host, set `Team.ExamToolsTeamCode = "HRCC"` instead of `WX0MIK` — don't just re-enter
-  the dev value.
+- [x] ~~**Found while cleaning up appsettings.Production.json**: the seeded team's
+  `ExamToolsTeamCode` was copied from the *dev* value (`WX0MIK`)~~ (stale as of 2026-07-29 — a code
+  review flagged this bullet as no longer matching reality). This was originally written assuming a
+  single "the seeded team" would eventually be repointed at prod by changing its
+  `ExamToolsTeamCode` from `WX0MIK` to `HRCC`. That's not what happened: Team 3 (`HRCC`) is now its
+  own separate, fully-configured `Team` row (`ExamToolsTeamCode='HRCC'`, base URL
+  `alpha.exam.tools`), distinct from Team 1 (`WX0MIK`, `examtools.dev`) — real production polling
+  already happens via Team 3, not by renaming Team 1.
 - [x] ~~Onboard the second team~~ (done — there are now 3 real `Team` rows: WX0MIK, MARC, HRCC).
 - [x] ~~Live test: with two real `Team` rows configured, confirm every per-team job loop correctly
   isolates each team's data~~ (confirmed 2026-07-29 across many live Worker ticks this session, now
