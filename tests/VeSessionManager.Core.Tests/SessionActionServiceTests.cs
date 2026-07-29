@@ -274,4 +274,78 @@ public class SessionActionServiceTests
         Assert.Equal(SessionActionResult.AlreadyDone, result);
         Assert.Empty(dbContext.AuditLogs);
     }
+
+    // ---- DeleteAsync ----
+
+    [Fact]
+    public async Task Delete_RemovesSessionCandidatesPaymentsAndVeRoster_AndAudits()
+    {
+        await using var dbContext = CreateContext();
+        var (_, user, session) = await SeedSessionAsync(dbContext);
+        var candidate = AddCandidate(dbContext, session, CandidateApplicationStatus.Received);
+        dbContext.Payments.Add(new Payment
+        {
+            CandidateId = candidate.Id, Reason = PaymentReason.InitialExam, Amount = 15m,
+            Status = PaymentStatus.Unpaid, CreatedUtc = Now
+        });
+        var ve = new VolunteerExaminer { TeamId = session.TeamId, CallSign = "W1AW", Name = "Test VE" };
+        dbContext.VolunteerExaminers.Add(ve);
+        await dbContext.SaveChangesAsync();
+        dbContext.SessionVolunteerExaminers.Add(new SessionVolunteerExaminer { SessionId = session.Id, VolunteerExaminerId = ve.Id });
+        await dbContext.SaveChangesAsync();
+
+        var result = await CreateService(dbContext, new FakeEmailSender()).DeleteAsync(session.Id, user.Id, CancellationToken.None);
+
+        Assert.Equal(SessionActionResult.Success, result.Result);
+        Assert.Equal(1, result.CandidatesRemoved);
+        Assert.Equal(1, result.PaymentsRemoved);
+        Assert.Equal(1, result.VeAssignmentsRemoved);
+        Assert.Empty(dbContext.Sessions);
+        Assert.Empty(dbContext.Candidates);
+        Assert.Empty(dbContext.Payments);
+        Assert.Empty(dbContext.SessionVolunteerExaminers);
+        // The VE itself is a team-wide roster record, not session-owned — only the join row is removed.
+        Assert.Single(dbContext.VolunteerExaminers);
+        Assert.Single(dbContext.AuditLogs, a => a.Action == "SessionDeleted");
+    }
+
+    [Fact]
+    public async Task Delete_NonExistentSession_ReturnsNotFound()
+    {
+        await using var dbContext = CreateContext();
+        var (_, user, _) = await SeedSessionAsync(dbContext);
+
+        var result = await CreateService(dbContext, new FakeEmailSender()).DeleteAsync(999, user.Id, CancellationToken.None);
+
+        Assert.Equal(SessionActionResult.NotFound, result.Result);
+    }
+
+    [Fact]
+    public async Task Delete_PaymentStillReferencedByUnmatchedSquarePayment_IsBlocked_DeletesNothing()
+    {
+        await using var dbContext = CreateContext();
+        var (team, user, session) = await SeedSessionAsync(dbContext);
+        var candidate = AddCandidate(dbContext, session, CandidateApplicationStatus.Received);
+        var payment = new Payment
+        {
+            CandidateId = candidate.Id, Reason = PaymentReason.InitialExam, Amount = 15m,
+            Status = PaymentStatus.Paid, PaidDateUtc = Now, CreatedUtc = Now
+        };
+        dbContext.Payments.Add(payment);
+        await dbContext.SaveChangesAsync();
+        dbContext.UnmatchedSquarePayments.Add(new UnmatchedSquarePayment
+        {
+            TeamId = team.Id, SquareOrderId = "order-1", SquarePaymentId = "sq-payment-1", AmountUsd = 15m, ReceivedUtc = Now,
+            MatchedPaymentId = payment.Id
+        });
+        await dbContext.SaveChangesAsync();
+
+        var result = await CreateService(dbContext, new FakeEmailSender()).DeleteAsync(session.Id, user.Id, CancellationToken.None);
+
+        Assert.Equal(SessionActionResult.Blocked, result.Result);
+        Assert.Single(dbContext.Sessions);
+        Assert.Single(dbContext.Candidates);
+        Assert.Single(dbContext.Payments);
+        Assert.Empty(dbContext.AuditLogs);
+    }
 }

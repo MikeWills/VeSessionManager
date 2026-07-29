@@ -38,6 +38,7 @@ public class DetailModel(
     AppDbContext dbContext,
     UserManager<User> userManager,
     SessionAccessScope accessScope,
+    AdminAccessScope adminAccessScope,
     CandidateActionService candidateActionService,
     SessionActionService sessionActionService,
     CandidateNotificationService candidateNotificationService,
@@ -52,6 +53,9 @@ public class DetailModel(
     public IReadOnlyList<CandidateRow> Candidates { get; private set; } = [];
     public IReadOnlyList<VeChip> VeRoster { get; private set; } = [];
     public bool CanEdit { get; private set; }
+
+    /// <summary>TeamAdmin/SystemAdmin-only, not a Session Manager action — see AdminAccessScope.CanManageTeam. Gates the "Delete session" control separately from CanEdit.</summary>
+    public bool CanDeleteSession { get; private set; }
 
     public async Task<IActionResult> OnGetAsync()
     {
@@ -90,6 +94,36 @@ public class DetailModel(
 
         var result = await vecSubmissionService.MarkSubmittedAsync(Id, auth.Value.User.Id, CancellationToken.None);
         SetStatus(result == VecSubmissionMarkResult.Marked, "Session marked submitted to VEC.", "Session is already marked submitted.");
+        return RedirectToPage(new { id = Id });
+    }
+
+    /// <summary>
+    /// TeamAdmin/SystemAdmin-only destructive cleanup action (see TODO.md's "delete a session
+    /// outright" feature request) — gated by AdminAccessScope.CanManageTeam, deliberately not
+    /// SessionAccessScope.CanEdit, since this is out of scope for routine Session Manager work.
+    /// </summary>
+    public async Task<IActionResult> OnPostDeleteSessionAsync()
+    {
+        var user = await userManager.GetUserWithManagerAsync(dbContext, User);
+        if (user is null) return Forbid();
+
+        var session = await dbContext.Sessions.FirstOrDefaultAsync(s => s.Id == Id);
+        if (session is null) return NotFound();
+        if (!adminAccessScope.CanManageTeam(user, session.TeamId)) return Forbid();
+
+        var result = await sessionActionService.DeleteAsync(Id, user.Id, CancellationToken.None);
+        if (result.Result == SessionActionResult.Success)
+        {
+            TempData["StatusMessage"] = $"Session deleted — {result.CandidatesRemoved} candidate(s), {result.PaymentsRemoved} payment(s), and {result.VeAssignmentsRemoved} VE roster assignment(s) removed with it.";
+            return RedirectToPage("./Index");
+        }
+
+        TempData["ErrorMessage"] = result.Result switch
+        {
+            SessionActionResult.Blocked =>
+                "Could not delete session — one of its payments is still referenced by an unmatched Square payment record. Resolve that first.",
+            _ => "Could not delete session."
+        };
         return RedirectToPage(new { id = Id });
     }
 
@@ -300,6 +334,7 @@ public class DetailModel(
         }
 
         CanEdit = accessScope.CanEdit(user, session);
+        CanDeleteSession = adminAccessScope.CanManageTeam(user, session.TeamId);
 
         var discordEventUrl = session.DiscordEventId is not null && session.Team.DiscordGuildId is not (null or 0)
             ? $"https://discord.com/events/{session.Team.DiscordGuildId}/{session.DiscordEventId}"

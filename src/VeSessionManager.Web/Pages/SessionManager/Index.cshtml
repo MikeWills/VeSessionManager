@@ -19,24 +19,14 @@
     <div class="filter-dropdown">
         <button type="button" class="kebab @(Model.Status.Count > 0 ? "active" : "")">Status: @Model.StatusSummaryLabel ▾</button>
         <div class="menu">
-            <label class="item"><input type="checkbox" name="status" value="Upcoming" @(Model.Status.Contains("Upcoming") ? "checked" : "") /> Upcoming</label>
-            <label class="item"><input type="checkbox" name="status" value="NeedsReview" @(Model.Status.Contains("NeedsReview") ? "checked" : "") /> Needs review</label>
-            <label class="item"><input type="checkbox" name="status" value="Past" @(Model.Status.Contains("Past") ? "checked" : "") /> Past</label>
+            <label class="item"><input type="checkbox" name="status" value="Active" @(Model.Status.Contains("Active") ? "checked" : "") /> Active</label>
+            <label class="item"><input type="checkbox" name="status" value="RescheduleFlagged" @(Model.Status.Contains("RescheduleFlagged") ? "checked" : "") /> Reschedule flagged</label>
+            <label class="item"><input type="checkbox" name="status" value="Completed" @(Model.Status.Contains("Completed") ? "checked" : "") /> Completed</label>
+            <label class="item"><input type="checkbox" name="status" value="Cancelled" @(Model.Status.Contains("Cancelled") ? "checked" : "") /> Cancelled</label>
             <hr />
             <button type="submit" class="item">Apply</button>
         </div>
     </div>
-
-    @if (Model.AvailableTeams.Count > 1)
-    {
-        <select name="teamId" class="filter-select" onchange="document.getElementById('sessionFilters').submit()">
-            <option value="">All teams</option>
-            @foreach (var team in Model.AvailableTeams)
-            {
-                <option value="@team.Id" selected="@(team.Id == Model.TeamId)">@team.Name</option>
-            }
-        </select>
-    }
 
     <div class="filter-dropdown">
         <button type="button" class="kebab @(Model.DateRangeSummaryLabel != "Any time" ? "active" : "")">Date range: @Model.DateRangeSummaryLabel ▾</button>
@@ -45,6 +35,7 @@
                 <span style="display:block; margin-bottom:4px;">Preset</span>
                 <select name="dateRange" style="width:100%; font-family:'IBM Plex Mono',monospace; font-size:12px; padding:6px 8px; border:1px solid var(--line-strong); border-radius:5px; background:var(--surface); color:var(--ink);">
                     <option value="">Any time</option>
+                    <option value="Upcoming" selected="@(Model.DateRange == "Upcoming")">Upcoming</option>
                     @foreach (var preset in VeSessionManager.Web.Pages.SessionManager.IndexModel.DateRangePresets)
                     {
                         <option value="@preset.Key" selected="@(preset.Key == Model.DateRange)">@preset.Value.Label</option>
@@ -62,12 +53,21 @@
         </div>
     </div>
 
-    <select name="pageSize" class="filter-select" onchange="document.getElementById('sessionFilters').submit()">
-        @foreach (var size in VeSessionManager.Web.Pages.SessionManager.IndexModel.AllowedPageSizes)
-        {
-            <option value="@size" selected="@(size == Model.PageSize)">@size per page</option>
-        }
-    </select>
+    @if (Model.AvailableTeams.Count > 1)
+    {
+        <div class="filter-dropdown">
+            <button type="button" class="kebab @(Model.TeamId is not null ? "active" : "")">Team: @Model.TeamSummaryLabel ▾</button>
+            <div class="menu">
+                <label class="item"><input type="radio" name="teamId" value="" @(Model.TeamId is null ? "checked" : "") /> All teams</label>
+                @foreach (var team in Model.AvailableTeams)
+                {
+                    <label class="item"><input type="radio" name="teamId" value="@team.Id" @(team.Id == Model.TeamId ? "checked" : "") /> @team.Name</label>
+                }
+                <hr />
+                <button type="submit" class="item">Apply</button>
+            </div>
+        </div>
+    }
 </form>
 
 <table>
@@ -113,9 +113,9 @@
     </tbody>
 </table>
 
-@if (Model.TotalCount > 0)
-{
-    <div class="pagination">
+<div class="pagination">
+    @if (Model.TotalCount > 0)
+    {
         <span class="pagination-summary">
             Showing @(((Model.PageNumber - 1) * Model.PageSize) + 1)–@(Math.Min(Model.PageNumber * Model.PageSize, Model.TotalCount)) of @Model.TotalCount
         </span>
@@ -130,5 +130,15 @@
                 <a class="filter-pill" href="@Model.BuildPageUrl(Model.PageNumber + 1)">Next →</a>
             }
         </div>
-    </div>
-}
+    }
+    else
+    {
+        <span></span>
+    }
+    <select name="pageSize" form="sessionFilters" class="filter-select" onchange="document.getElementById('sessionFilters').submit()">
+        @foreach (var size in VeSessionManager.Web.Pages.SessionManager.IndexModel.AllowedPageSizes)
+        {
+            <option value="@size" selected="@(size == Model.PageSize)">@size per page</option>
+        }
+    </select>
+</div>

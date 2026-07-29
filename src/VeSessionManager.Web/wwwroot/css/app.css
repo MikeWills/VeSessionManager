@@ -96,7 +96,7 @@ h1 { font-size: 24px; margin: 0 0 4px; letter-spacing: -.01em; }
 .filter-dropdown > .menu { left: 0; right: auto; top: 40px; width: 200px; }
 .menu label.item { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 5px; cursor: pointer; font-size: 13px; color: var(--ink); }
 .menu label.item:hover { background: var(--paper); }
-.menu label.item input[type="checkbox"] { width: auto; margin: 0; }
+.menu label.item input[type="checkbox"], .menu label.item input[type="radio"] { width: auto; margin: 0; }
 .filter-select { font-family: "IBM Plex Mono", monospace; font-size: 12px; padding: 7px 13px; border-radius: 99px; border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink-soft); cursor: pointer; }
 
 .pagination { display: flex; justify-content: space-between; align-items: center; margin-top: 16px; flex-wrap: wrap; gap: 12px; }

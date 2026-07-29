@@ -106,12 +106,24 @@ public class SessionEventSchedulingService(
             .Where(s => s.TeamId == team.Id && s.Status == SessionStatus.Cancelled && (s.ZoomMeetingId != null || s.DiscordEventId != null))
             .ToListAsync(cancellationToken);
 
+        LogUnconfiguredCleanups(team, sessionsNeedingCleanup);
+
         foreach (var session in sessionsNeedingCleanup)
         {
             try
             {
-                await CleanupZoomAndDiscordAsync(team, session, now, cancellationToken);
-                result.SessionsCleanedUp++;
+                var fullyCleanedUp = await CleanupZoomAndDiscordAsync(team, session, now, cancellationToken);
+                if (fullyCleanedUp)
+                {
+                    result.SessionsCleanedUp++;
+                }
+                else
+                {
+                    // Same reasoning as sessionsNeedingSync's SessionsAwaitingIntegrationConfig
+                    // branch above: whatever could be cleaned up this pass was, the rest is just
+                    // waiting on the team's Zoom/Discord config — not a failure worth an [ERR].
+                    result.SessionsAwaitingIntegrationConfig++;
+                }
             }
             catch (Exception ex)
             {
@@ -148,6 +160,37 @@ public class SessionEventSchedulingService(
             new[] { team.IsZoomConfigured ? null : "Zoom", discordReady ? null : "Discord" }
                 .Where(name => name is not null));
         logger.LogInformation("{Unconfigured} not fully configured for team {TeamId} — {PendingCount} session(s) waiting; will create automatically once configured",
+            unconfigured, team.Id, pendingCount);
+    }
+
+    /// <summary>
+    /// Mirrors LogUnconfiguredIntegrations for the cleanup side (found live 2026-07-29 — see
+    /// TODO.md's "SessionEventScheduling repeats a real [ERR] every tick" bug entry): a cancelled
+    /// session's stale Zoom meeting/Discord event still needs tearing down eventually even if the
+    /// team's config for that integration was removed (or never finished) since it was created, but
+    /// that must not mean a repeating [ERR] every single poll in the meantime — one aggregate INFO
+    /// line per run, same as the sync-side pattern above.
+    /// </summary>
+    private void LogUnconfiguredCleanups(Team team, List<Session> sessionsNeedingCleanup)
+    {
+        var discordReady = discordEventClient.IsConfigured && team.IsDiscordConfigured;
+        if (team.IsZoomConfigured && discordReady)
+        {
+            return;
+        }
+
+        var pendingCount = sessionsNeedingCleanup.Count(s =>
+            (!team.IsZoomConfigured && s.ZoomMeetingId is not null) ||
+            (!discordReady && s.DiscordEventId is not null));
+        if (pendingCount == 0)
+        {
+            return;
+        }
+
+        var unconfigured = string.Join(" and ",
+            new[] { team.IsZoomConfigured ? null : "Zoom", discordReady ? null : "Discord" }
+                .Where(name => name is not null));
+        logger.LogInformation("{Unconfigured} not fully configured for team {TeamId} — {PendingCount} cancelled session(s) still have a stale meeting/event pending cleanup; will clean up automatically once configured",
             unconfigured, team.Id, pendingCount);
     }
 
@@ -267,48 +310,64 @@ public class SessionEventSchedulingService(
             (m.StartTimeUtc.Value - session.ScheduledStartUtc).Duration() < TimeSpan.FromMinutes(1));
     }
 
-    private async Task CleanupZoomAndDiscordAsync(Team team, Session session, DateTime now, CancellationToken cancellationToken)
+    /// <summary>Returns true once every piece this session still has an id for has actually been torn down — false means at least one piece is still pending purely because its integration isn't configured yet (see LogUnconfiguredCleanups), not a failure.</summary>
+    private async Task<bool> CleanupZoomAndDiscordAsync(Team team, Session session, DateTime now, CancellationToken cancellationToken)
     {
+        var fullyCleanedUp = true;
+
         if (session.ZoomMeetingId is not null)
         {
-            var zoomCredentials = new ZoomCredentials(team.Id, team.ZoomAccountId!, team.ZoomClientId!, team.ZoomClientSecret!, team.ZoomUserId ?? "me");
-            await zoomClient.DeleteMeetingAsync(zoomCredentials, session.ZoomMeetingId, cancellationToken);
-            dbContext.AuditLogs.Add(new AuditLog
+            if (!team.IsZoomConfigured)
             {
-                UserId = null, // system action, not a person
-                Action = "ZoomMeetingCancelled",
-                EntityType = nameof(Session),
-                EntityId = session.Id,
-                TimestampUtc = now,
-                Details = $"Zoom meeting {session.ZoomMeetingId} cancelled for ExamTools session {session.ExamToolsSessionId}."
-            });
-            session.ZoomMeetingId = null;
-            session.ZoomJoinUrl = null;
+                // An existing meeting still needs tearing down even if the team's Zoom setup
+                // changed (or was never finished) since it was created, but there's no way to call
+                // Zoom's API without credentials — leave ZoomMeetingId set so this retries
+                // automatically the moment the team's Zoom config is added, same as every other
+                // optional-integration gate in this app. See LogUnconfiguredCleanups for the
+                // one-aggregate-line-per-run log this produces instead of a repeating [ERR].
+                fullyCleanedUp = false;
+            }
+            else
+            {
+                var zoomCredentials = new ZoomCredentials(team.Id, team.ZoomAccountId!, team.ZoomClientId!, team.ZoomClientSecret!, team.ZoomUserId ?? "me");
+                await zoomClient.DeleteMeetingAsync(zoomCredentials, session.ZoomMeetingId, cancellationToken);
+                dbContext.AuditLogs.Add(new AuditLog
+                {
+                    UserId = null, // system action, not a person
+                    Action = "ZoomMeetingCancelled",
+                    EntityType = nameof(Session),
+                    EntityId = session.Id,
+                    TimestampUtc = now,
+                    Details = $"Zoom meeting {session.ZoomMeetingId} cancelled for ExamTools session {session.ExamToolsSessionId}."
+                });
+                session.ZoomMeetingId = null;
+                session.ZoomJoinUrl = null;
+            }
         }
 
         if (session.DiscordEventId is not null)
         {
-            if (team.DiscordGuildId is null)
+            if (!discordEventClient.IsConfigured || team.DiscordGuildId is null)
             {
-                // Same reasoning as Zoom's cleanup guard above: cleanup always attempts regardless
-                // of current configuration (an existing event needs tearing down even if the
-                // team's Discord setup changed since it was created), so this needs a clear
-                // exception rather than a confusing null-guildId call to Discord's API.
-                throw new InvalidOperationException(
-                    $"Team {team.Id} has no DiscordGuildId set but Session {session.Id} still has a DiscordEventId — cannot clean it up without knowing which guild it's in.");
+                // Same reasoning as Zoom's guard above.
+                fullyCleanedUp = false;
             }
-
-            await discordEventClient.DeleteEventAsync(team.DiscordGuildId.Value, session.DiscordEventId, cancellationToken);
-            dbContext.AuditLogs.Add(new AuditLog
+            else
             {
-                UserId = null,
-                Action = "DiscordEventCancelled",
-                EntityType = nameof(Session),
-                EntityId = session.Id,
-                TimestampUtc = now,
-                Details = $"Discord scheduled event {session.DiscordEventId} deleted for ExamTools session {session.ExamToolsSessionId}."
-            });
-            session.DiscordEventId = null;
+                await discordEventClient.DeleteEventAsync(team.DiscordGuildId.Value, session.DiscordEventId, cancellationToken);
+                dbContext.AuditLogs.Add(new AuditLog
+                {
+                    UserId = null,
+                    Action = "DiscordEventCancelled",
+                    EntityType = nameof(Session),
+                    EntityId = session.Id,
+                    TimestampUtc = now,
+                    Details = $"Discord scheduled event {session.DiscordEventId} deleted for ExamTools session {session.ExamToolsSessionId}."
+                });
+                session.DiscordEventId = null;
+            }
         }
+
+        return fullyCleanedUp;
     }
 }
