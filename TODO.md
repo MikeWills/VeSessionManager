@@ -22,20 +22,20 @@ of Phases 2–4's actual deliverables.
 
 - [ ] Get Mailgun's domain-specific SMTP username/password (Mailgun dashboard → Sending → Domain settings → SMTP credentials) — see `docs/email-notifications.md`
 - [ ] **Updated by multi-team (see below): these now go on the seeded `Team` row (direct DB edit), not `Email:*` user-secrets** — set `Team.SmtpHost`/`SmtpPort`/`SmtpUsername`/`SmtpPassword`/`SmtpUseStartTls`. No column has a baked-in default (deliberate — see CLAUDE.md's `IsConfigured` gotcha), so all five need setting even to match Mailgun's usual `smtp.mailgun.org:587`+STARTTLS defaults.
-- [ ] Replace the seeded `EmailSettings` row's placeholder values (`FromAddress`/`FromDisplayName`/`ReplyToAddress`/`PrivacyPolicyUrl` are currently `noreply@example.org` / `https://example.org/privacy`) with real values for **each team's own `EmailSettings` row** (one per team now, not a singleton) — edit directly in the DB, see `docs/email-notifications.md`
+- [ ] Replace the seeded `EmailSettings` row's placeholder values (`FromAddress`/`FromDisplayName`/`ReplyToAddress`/`PrivacyPolicyUrl` are currently `noreply@example.org` / `https://example.org/privacy`) with real values for **each team's own `EmailSettings` row** (one per team now, not a singleton) — edit directly in the DB, see `docs/email-notifications.md`. **Partially done (checked 2026-07-29):** Team 2 (MARC) already has a real `FromAddress`; Teams 1 (WX0MIK) and 3 (HRCC) are still the literal placeholder.
 - [ ] Review/rewrite the seeded `RegistrationConfirmation`/`DayBeforeReminder` template content — it's a real starting example (bullet points, `{{CandidateFirstName}}`, etc.) but the actual wording is a placeholder, not final copy. Templates are now per-team (`EmailTemplate.TeamId`) so each team can have its own wording if desired.
 - [ ] Live test: confirm a test candidate actually receives both emails with correctly substituted placeholders
 
 ## FCC ULS Watcher (Phase 5) — not yet live-verified
 
-- [ ] Live test: find (or wait for) a real candidate whose FRN appears in an actual FCC daily application file and confirm `FccDailyWatcherJob` flips them to `Received` with a sane `ApplicationDateEnteredUtc`
-- [ ] Live test: confirm the same candidate's eventual license grant flips them to `Granted` with the correct `CallSign`/`LicenseGrantDateUtc`
+- [x] ~~Live test: find (or wait for) a real candidate whose FRN appears in an actual FCC daily application file and confirm `FccDailyWatcherJob` flips them to `Received` with a sane `ApplicationDateEnteredUtc`~~ (confirmed 2026-07-29 — found already done while auditing this list against real DB state, not a new test) — 9 real HRCC candidates currently sit in `Received`.
+- [x] ~~Live test: confirm the same candidate's eventual license grant flips them to `Granted` with the correct `CallSign`/`LicenseGrantDateUtc`~~ (confirmed 2026-07-29, same audit) — 6 real HRCC candidates currently sit in `Granted`, including the William Denney/Jason Pelowitz matches already documented in the "Upgrade exam handling" fix above.
 - [ ] Let `FccWeeklyCatchupJob` actually run on a real Monday at least once and confirm it hits `complete/a_amat.zip`/`complete/l_amat.zip` successfully (these are ~190MB+ files — first real run will validate both the download time and memory footprint of loading them fully into memory, not just the small daily files exercised so far)
 - [x] ~~Revisit the deferred "upgrade exam" (existing licensee) matching logic~~ (resolved 2026-07-28 with real HRCC data — William Denney/Jason Pelowitz — see `docs/fcc-uls-watcher.md`'s "Upgrade exam handling" section). Matching still can't avoid re-detecting a pre-existing license (FCC's own Grant Date doesn't change on a class upgrade), but the real consequence — premature PII purge — is fixed by anchoring `PiiPurgeService`'s retention Trigger A on the later of `LicenseGrantDateUtc`/`Session.ScheduledStartUtc`, and the distinction is surfaced on the new applicant detail page.
 
 ## Payment Reminders (Phase 6) — not yet live-verified
 
-- [ ] Replace `EmailSettings.AdminNotificationEmail`'s seeded placeholder (`admin@example.org`) with a real inbox — this is where every `PaymentExpirationNotice` goes, so it silently goes nowhere useful until changed
+- [ ] Replace `EmailSettings.AdminNotificationEmail`'s seeded placeholder (`admin@example.org`) with a real inbox — this is where every `PaymentExpirationNotice` goes, so it silently goes nowhere useful until changed. **Partially done (checked 2026-07-29):** Teams 1 (WX0MIK) and 2 (MARC) already have a real inbox set; Team 3 (HRCC) is still the literal placeholder.
 - [ ] Review/rewrite the seeded `PaymentReminder5Day`/`PaymentExpirationNotice` template content — same "real starting example, not final copy" caveat as Phase 4's templates
 - [ ] Live test: let a real candidate's Unpaid payment age past 5 days (`Received` status, `ApplicationDateEnteredUtc` from Phase 5) and confirm the reminder actually sends with correct placeholders
 - [ ] Live test: let a real candidate's Unpaid payment age past 10 days and confirm `Payment.ExpiredUnpaid` flips and the admin notice arrives at the configured `AdminNotificationEmail`
@@ -62,8 +62,10 @@ seeded `Team` row** (migrations must never contain real secrets, even ones alrea
 repo's user-secrets) — each integration is silently skipped (one quiet log line per poll, no error)
 until its columns are set via direct DB edit (no admin UI yet):
 
-- [ ] **Blocking:** `Team.ExamToolsUsername`/`ExamToolsPassword` — ExamTools ingestion is the one
-  hard dependency everything else needs; nothing else runs meaningfully without real sessions.
+- [x] ~~**Blocking:** `Team.ExamToolsUsername`/`ExamToolsPassword`~~ (confirmed done 2026-07-29) —
+  ExamTools ingestion is the one hard dependency everything else needs. All three real `Team` rows
+  (WX0MIK, MARC, HRCC) now have credentials set, not just the one team this bullet was originally
+  written about.
 - [ ] `Team.ZoomAccountId`/`ZoomClientId`/`ZoomClientSecret` (`ZoomUserId` is pre-filled `"me"`)
 - [ ] `Team.DiscordGuildId` is pre-filled with the real MARC server id (`1323140214008578111`) —
   only `Discord:BotToken` (still shared/global, user-secrets) needs setting if not already done
@@ -84,17 +86,14 @@ until its columns are set via direct DB edit (no admin UI yet):
   doc comment: "WX0MIK on dev, HRCC on prod"). If/when this team starts polling the production
   ExamTools host, set `Team.ExamToolsTeamCode = "HRCC"` instead of `WX0MIK` — don't just re-enter
   the dev value.
-- [ ] Onboard the second team: add a new `Team` row (direct DB edit — no admin UI yet) with its
-  own `Name`/`ExamToolsTeamCode`/`ExamToolsUsername`/`ExamToolsPassword`/Zoom/Square/Email
-  credentials and its own `DiscordGuildId` (the shared bot needs to be invited into that team's
-  Discord server first). Every job picks it up automatically on the next tick, no restart needed.
-- [ ] Live test: with two real `Team` rows configured, confirm every per-team job loop (ingestion,
-  Zoom/Discord scheduling, Square payment generation + webhook routing, registration/reminder
-  emails) correctly isolates both teams' data — ingestion into the one shared `Vec`/
-  `FeeConfiguration` without cross-team session cancellation false-positives, Square webhooks
-  routing to the right team via `/webhooks/square/{teamId}`, emails using each team's own SMTP
-  credentials and template wording — all covered by unit tests, but worth confirming against the
-  real APIs too.
+- [x] ~~Onboard the second team~~ (done — there are now 3 real `Team` rows: WX0MIK, MARC, HRCC).
+- [x] ~~Live test: with two real `Team` rows configured, confirm every per-team job loop correctly
+  isolates each team's data~~ (confirmed 2026-07-29 across many live Worker ticks this session, now
+  with 3 teams not just 2) — ingestion, VE roster sync, and the new exam-result sync all correctly
+  ran independently per team (WX0MIK/MARC/HRCC) tick after tick with no cross-team data mixing
+  observed. Square webhook routing and per-team SMTP are still only partially exercised (only MARC
+  has Square configured; no team has SMTP configured yet — see the Email/SMTP section above), so
+  treat those two pieces specifically as still unverified live, not this whole item.
 
 ## GitHub Issues — feature requests / questions (not yet triaged, added 2026-07-28)
 
@@ -150,9 +149,18 @@ until its columns are set via direct DB edit (no admin UI yet):
   - [ ] **Genuinely still open:** the public domain, `ve.wx0mik.radio`, was decided 2026-07-22 (see `docs/deployment.md`'s "Apache Virtual Host" section) but the Apache vhost + Let's Encrypt cert haven't actually been provisioned on the real server yet. A second domain for a second team is possible later but not needed now — purely cosmetic branding, no code/deploy change required either way.
   - [ ] **Genuinely still open:** the one-time server-side setup (`vesessionmanager` service account, sudoers file, app/data directories, 5 GitHub repo secrets — all documented step-by-step in `docs/deployment.md`) hasn't been run against the real server yet. Operational work, not code.
 - [x] ~~**Purge stale unpaid Square payment links**~~ (parked 2026-07-23, built 2026-07-28, see `docs/payment-link-purge.md`). Threshold resolved as **per-Team configurable, `Team.PurgeUnpaidLinkDays`, default 30** — not tied to the existing fixed 10-day `Payment.ExpiredUnpaid` window. `SquarePaymentLinkPurgeService`/`SquareLinkPurgeJob` clear our own DB reference (`PaymentLinkUrl`/`SquarePaymentReferenceId`/`SquarePaymentLinkId`) in the same save as the Square delete call, and the new `Payment.SquareLinkPurgedUtc` field closes the auto-regen loop risk by also excluding purged rows from `PaymentGenerationService`'s link-generation scan.
-- [ ] **Zoom meeting templates — parked 2026-07-23, blocked on a Zoom app config change.** Original idea: use a saved meeting template (`template_id`) instead of the manually-specified settings `ZoomMeetingRequest` currently sends, ideally picked from a dropdown populated live from the account via `GET /users/{userId}/meeting_templates`. Investigation so far:
-  - **Real constraint found via Zoom's own devforum, not guessed:** the list endpoint returns both personal and Admin-type templates, but `POST .../meetings`'s `template_id` param only actually works with **Admin**-type templates — personal ones fail. Admin templates aren't enabled by default on every plan.
-  - **Diagnostic script written:** `scripts/check-zoom-meeting-templates.py` — reads Zoom credentials either from a `Team` row (`db` mode) or from `dotnet user-secrets` (`user-secrets` mode, for the pre-multi-team credentials still sitting in `src/VeSessionManager.Worker`'s secrets), gets a Server-to-Server OAuth token the same way `ZoomClient` does, and dumps the raw `meeting_templates` response — never prints the secret or the token itself.
-  - **Ran it 2026-07-23 against the real pre-multi-team user-secrets credentials — blocked before we could even see if templates exist:** the Server-to-Server OAuth app (Client ID `iC9IiQIpRm52CHAbmXuOw`) was never granted the `meeting:read:list_templates`/`meeting:read:list_templates:admin` scopes, so the API call 400s with `"Invalid access token, does not contain scopes"`.
-  - **Next step, needs Mike:** add both scopes to that app in the [Zoom App Marketplace](https://marketplace.zoom.us/) (Manage/Develop → the S2S app → Scopes), then re-run `scripts/check-zoom-meeting-templates.py user-secrets`. If it turns up zero Admin-type templates, this whole feature is a dead end on the current Zoom plan and should be dropped rather than built around a text field nobody can validate.
+- [x] ~~**Zoom meeting templates**~~ — **dead end, closed 2026-07-28/29.** Original idea: use a saved
+  meeting template (`template_id`) instead of the manually-specified settings `ZoomMeetingRequest`
+  sends, picked from a dropdown populated live via `GET /users/{userId}/meeting_templates`.
+  - Real constraint found via Zoom's own devforum: `POST .../meetings`'s `template_id` param only
+    works with **Admin**-type templates — personal ones fail, and Admin templates aren't enabled by
+    default on every plan.
+  - Blocked 2026-07-23 on missing `meeting:read:list_templates` scopes; scopes were added and the
+    diagnostic script (`scripts/check-zoom-meeting-templates.py`) re-run 2026-07-28 against the real
+    per-team credentials — it found exactly **one** template, and it's **personal-type, not Admin**.
+  - Per this item's own stated exit condition ("if it turns up zero Admin-type templates, this whole
+    feature is a dead end... and should be dropped"): that condition is met. Not worth building a
+    template-picker UI around a feature this Zoom plan doesn't actually support. If a future Zoom
+    plan/account change ever enables Admin templates, this can be revisited then — nothing about
+    tonight's Zoom breakout-rooms feature (see the Change Log) depends on or blocks this.
 - [x] ~~**Audit the candidate email flow**~~ (requested 2026-07-23, audited and closed out 2026-07-27). Confirmed the current cadence (registration confirmation, day-before reminder, payment reminder/expiration, each gated by its own `...SentUtc`) is sane as-is — no gaps or changes needed.
