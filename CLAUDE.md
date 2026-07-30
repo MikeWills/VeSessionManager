@@ -77,6 +77,31 @@ would be pure duplication — and goes straight to `CHANGELOG.md` instead. Non-p
 redesigns, hardening passes) start here and move to `CHANGELOG.md` once the section is at/over the
 cap and a newer entry needs to be added; oldest goes first.
 
+- **FCC ULS watcher reliability: weekly-catchup retry, upgrade-exam false-positive guard, FRN
+  column (2026-07-30).** No linked doc — see `docs/fcc-uls-watcher.md` for the underlying job
+  design this builds on. Found live investigating a real HRCC discrepancy (Applicant Status showed
+  48 pending vs. an expected ~2): (1) `FccWeeklyCatchupJob` only ever attempted its once-a-week
+  scan with **no retry on failure** — a single `403 Forbidden` from `data.fcc.gov` (confirmed
+  transient; the identical request succeeds on retry) left the entire safety net dark for a full
+  week. Fixed with the same "has this week's slot already succeeded?" catch-up idiom
+  `FccDailyWatcherJob` already uses, retried every `intervalHours` tick until success. Manually
+  triggering it live recovered HRCC's backlog from 40 Unmatched/8 Received down to 3
+  Unmatched/50 Granted. (2) Separately, and more seriously: `FccUlsWatcherService.ProcessLicensesAsync`
+  had no guard against a candidate's FRN already having an *old, unrelated* Active license record —
+  exactly the "upgrade exam" case the class's own doc comment had flagged as deferred. Three real
+  same-day upgrade candidates (testing General→Extra, Technician→General) were incorrectly marked
+  `Granted` off license grants from weeks-to-years earlier, before FCC had done anything with
+  today's actual exam. Fixed by gating the match on the license record's Grant Date being on/after
+  `Session.ScheduledStartUtc`, same rule already used for application-file matches; new
+  `FccUlsWatcherService.RunForDayAsync(DayOfWeek, ...)` lets a specific missed daily file be
+  reprocessed on demand (used to recover this incident's data without waiting on a fresh weekly
+  snapshot). No fix yet for the underlying limitation this guard trades off — an upgrade candidate
+  now simply stays Unmatched/Received indefinitely, since this app never fetches FCC's AM.dat
+  operator-class field and FCC's Grant Date is documented not to change on a class upgrade at all
+  (see `Candidate.LicenseGrantPredatesSession`'s own comment) — there is currently no positive
+  signal available to confirm an upgrade went through. (3) Also added an FRN column to Applicant
+  Status's "Pending FCC grant" table for manual copy-paste into FCC's ULS search while (1)/(2) were
+  being investigated.
 - **Team-picker `<select>` first-click bug + SystemAdmin single-team default + FCC license link
   (2026-07-30).** No linked doc. Bug: `ApplicantStatus`/`VeRoster`'s team `<select onchange>` never
   set an explicit `selected` option when no team was chosen yet (SystemAdmin's default state), so
@@ -152,13 +177,6 @@ cap and a newer entry needs to be added; oldest goes first.
   per-team scan (`SquareLinkPurgeJob`) deletes an Unpaid Payment's Square link after
   `Team.PurgeUnpaidLinkDays` (default 30), reusing `ISquareClient.DeletePaymentLinkAsync` from the
   youth-payment feature above.
-- **Multi-team users + session list team filter (issues #17/#19, 2026-07-28).** `docs/admin-auth.md`'s
-  "Team scoping" section — replaced the single, nullable `User.TeamId` with a real many-to-many
-  `UserTeam` join table so a TeamAdmin/SessionManager can belong to more than one team; the session
-  list gets a Team column and a `?teamId=` filter-pill (reusing the existing SystemAdmin team-picker
-  convention), and `SessionAccessScope`/`AdminAccessScope` moved from scalar equality to
-  set-membership (`Contains`) throughout — covered by explicit cross-team-leak regression tests per
-  role, not just the new happy paths.
 Everything through Phase 0-10's initial build (ExamTools ingestion, Zoom/Discord, Square, email
 notifications, FCC ULS watcher, payment reminders, VE tracking, VEC submission tracker, admin
 auth/config/candidate-actions, PII purge) plus the public privacy page has aged out to

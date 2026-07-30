@@ -194,6 +194,34 @@ public class FccUlsWatcherServiceTests
     }
 
     [Fact]
+    public async Task LicenseRecord_GrantDatePredatesSession_DoesNotMatch_StaysUnmatched()
+    {
+        // Simulates a real "upgrade exam" candidate (already licensed, testing to move up a class):
+        // their FRN has an Active record in the license file the whole time, from their *original*
+        // grant. Without this guard, that stale record would immediately mark them Granted the
+        // moment any watcher run touched their row, even though FCC hasn't processed today's
+        // upgrade at all. Confirmed live 2026-07-30 against three real same-day upgrade candidates
+        // whose Grant Dates predated their session by anywhere from weeks to years.
+        await using var dbContext = CreateContext();
+        var sessionStart = new DateTime(2026, 7, 22, 18, 0, 0, DateTimeKind.Utc);
+        var candidate = await SeedCandidateAsync(dbContext, frn: "0001234567", sessionStartUtc: sessionStart);
+        var priorGrantDate = new DateTime(2024, 8, 21, 0, 0, 0, DateTimeKind.Utc);
+        var client = new FakeFccUlsClient
+        {
+            DailyLicenses = [new FccUlsLicenseRecord("100", "0001234567", "K0BFR", "A", priorGrantDate)]
+        };
+
+        var result = await CreateService(dbContext, client).RunDailyAsync(CancellationToken.None);
+
+        Assert.Equal(0, result.CandidatesMarkedGranted);
+        var updated = await dbContext.Candidates.SingleAsync(c => c.Id == candidate.Id);
+        Assert.Equal(CandidateApplicationStatus.Unmatched, updated.ApplicationStatus);
+        Assert.Null(updated.CallSign);
+        Assert.Null(updated.LicenseGrantDateUtc);
+        Assert.Null(updated.FccUlsLicenseKey);
+    }
+
+    [Fact]
     public async Task UnmatchedCandidate_FrnInActiveLicenseFile_ShortCircuitsStraightToGranted()
     {
         await using var dbContext = CreateContext();

@@ -84,6 +84,7 @@ public class ApplicantStatusModel(AppDbContext dbContext, UserManager<User> user
             c.Id,
             c.Session.Id,
             c.Name ?? "—",
+            c.Frn ?? "—",
             c.Session.ScheduledStartUtc.ToString("MMM d, yyyy", CultureInfo.InvariantCulture),
             LicenseClassFormatter.FormatTransition(c.InitialLicenseClass, c.NewLicenseClass) ?? "—",
             c.ApplicationStatus == CandidateApplicationStatus.Received ? "Received" : "Awaiting FCC match",
@@ -100,7 +101,7 @@ public class ApplicantStatusModel(AppDbContext dbContext, UserManager<User> user
             LicenseClassFormatter.FormatTransition(c.InitialLicenseClass, c.NewLicenseClass) ?? "—",
             c.LicenseGrantDateUtc!.Value.ToString("MMM d, yyyy", CultureInfo.InvariantCulture));
 
-    public record PendingRow(int CandidateId, int SessionId, string Name, string SessionDateLine, string LicenseClassLine, string StatusLabel, int DaysPending);
+    public record PendingRow(int CandidateId, int SessionId, string Name, string Frn, string SessionDateLine, string LicenseClassLine, string StatusLabel, int DaysPending);
 
     public record RecentlyIssuedRow(int CandidateId, int SessionId, string Name, string SessionDateLine, string CallSign, string LicenseClassLine, string GrantDateLine);
 }

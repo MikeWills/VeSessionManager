@@ -26,13 +26,22 @@ namespace VeSessionManager.Core.FccUls;
 ///     data — a Canceled license from years prior still shows up with a same-day Last Action Date
 ///     from something unrelated). A brand-new candidate has no prior license, so this filter has
 ///     no effect on the common case; it only guards the edge case.
+///   - A license match only counts if its Grant Date falls on or after the candidate's own
+///     Session.ScheduledStartUtc — same "stale record" gotcha as the application-file rule below,
+///     extended to licenses (2026-07-30, resolved with real sample data). An "upgrade exam"
+///     candidate (already licensed, testing to move up a class) has had an Active record in the
+///     license file the whole time, from their *original* grant — with no session-date guard, that
+///     stale record would immediately mark them Granted the moment any watcher run touched their
+///     row, even though FCC hasn't processed today's upgrade at all yet. Confirmed live 2026-07-30
+///     against three real same-day upgrade candidates (Erik Nielsen, Katelynn Schneider, Zachary
+///     Coffey) all showing Grant Dates weeks-to-years before their actual session. This app never
+///     fetches FCC's AM.dat operator-class field (see docs/fcc-uls-watcher.md), so there is no way
+///     to positively confirm an upgrade went through — the honest tradeoff this guard makes is:
+///     an upgrade candidate simply stays Unmatched/Received indefinitely (since FCC's Grant Date is
+///     documented not to change on a class upgrade — see Candidate.LicenseGrantPredatesSession's own
+///     comment) rather than ever risk a false "Granted" from unrelated old data.
 ///   - Terminal statuses (Granted/Failed/NotTested) and candidates with a null Frn are excluded by
 ///     the queries below, not by an explicit check — they're just never selected again.
-///
-/// Deliberately does not attempt the "upgrade exam" (existing licensee) case per the spec's Open
-/// Item — an existing licensee's FRN could already be in a license file for reasons unrelated to
-/// this exam, and telling a real new grant apart from a pre-existing one needs real sample data
-/// this phase doesn't have yet.
 ///
 /// Stale/dismissed application gotcha (found 2026-07-22 via a live FRN lookup): the "application"
 /// file's HD row has no field distinguishing "genuinely still pending" from "dismissed/withdrawn/
@@ -58,11 +67,22 @@ public class FccUlsWatcherService(
         // at/after UTC midnight for most of the year, which would otherwise resolve to tomorrow's
         // DayOfWeek and fetch the wrong (not-yet-published) file. See docs/fcc-uls-watcher.md.
         var day = TimeZoneInfo.ConvertTimeFromUtc(timeProvider.GetUtcNow().UtcDateTime, FccUlsSchedule.EasternTimeZone).DayOfWeek;
-        return RunAsync(
+        return RunForDayAsync(day, cancellationToken);
+    }
+
+    /// <summary>
+    /// Same daily scan as RunDailyAsync, but for an explicitly-named day rather than "today" —
+    /// each day-name URL only ever holds that weekday's most recent transactions, so this is the
+    /// only way to recover a specific missed day once "today" has moved past it (short of waiting
+    /// for the next weekly catchup's full snapshot to be regenerated). Added 2026-07-30 for exactly
+    /// that case: a Worker outage meant Tuesday's file was never fetched on Tuesday, and the most
+    /// recent weekly snapshot predated it too.
+    /// </summary>
+    public Task<FccUlsWatchResult> RunForDayAsync(DayOfWeek day, CancellationToken cancellationToken) =>
+        RunAsync(
             () => fccUlsClient.DownloadDailyApplicationsAsync(day, cancellationToken),
             () => fccUlsClient.DownloadDailyLicensesAsync(day, cancellationToken),
             cancellationToken);
-    }
 
     public Task<FccUlsWatchResult> RunWeeklyCatchupAsync(CancellationToken cancellationToken) =>
         RunAsync(
@@ -138,13 +158,16 @@ public class FccUlsWatcherService(
             .ToDictionary(g => g.Key, g => g.First());
 
         var candidates = await dbContext.Candidates
+            .Include(c => c.Session)
             .Where(c => (c.ApplicationStatus == CandidateApplicationStatus.Unmatched || c.ApplicationStatus == CandidateApplicationStatus.Received)
                         && c.Frn != null)
             .ToListAsync(cancellationToken);
 
         foreach (var candidate in candidates)
         {
-            if (candidate.Frn is not null && recordByFrn.TryGetValue(candidate.Frn, out var record))
+            if (candidate.Frn is not null
+                && recordByFrn.TryGetValue(candidate.Frn, out var record)
+                && record.GrantDateUtc.Date >= candidate.Session.ScheduledStartUtc.Date)
             {
                 candidate.ApplicationStatus = CandidateApplicationStatus.Granted;
                 candidate.CallSign = record.CallSign;
