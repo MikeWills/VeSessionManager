@@ -32,6 +32,13 @@ public class ExamToolsSessionDef
 
     /// <summary>Seconds. Present on both the list and detail endpoints.</summary>
     public int Duration { get; set; }
+
+    /// <summary>ExamTools' own short lead-VE-callsign code (e.g. "KM6Z - W5CBW" or "AD2GX") — the
+    /// parenthetical text ExamTools' own calendar UI shows next to the team name, verified live
+    /// 2026-07-30 byte-for-byte against real HRCC sessions. Already present on the cheap team-list
+    /// endpoint (`GET /api/veUser/sessions?team=...`), not just the per-session detail one — no
+    /// extra API call needed to get it.</summary>
+    public string? ExtId { get; set; }
 }
 
 /// <summary>Response of GET /api/veUser/sessions/{id}/export/basic.json.</summary>

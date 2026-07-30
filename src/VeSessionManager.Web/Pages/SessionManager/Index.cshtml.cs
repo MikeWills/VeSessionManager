@@ -58,10 +58,12 @@ namespace VeSessionManager.Web.Pages.SessionManager;
 /// point of this filter is finding a *recent* session fast, which an oldest-first sort would still
 /// bury on a late page.
 ///
-/// Session ID column (issue #35, 2026-07-29): ExamToolsSessionId — the same identifier already shown
-/// in the Detail page's breadcrumb/title — now gets its own column instead of being buried inside the
-/// title cell's sub-line text, so it's usable to tell sessions apart at a glance and cross-reference
-/// against ExamTools' own UI, per the issue's "know whose session is whose" ask.
+/// Session ID column (issue #35, 2026-07-29): originally showed ExamToolsSessionId (the raw Mongo
+/// id), so it's usable to tell sessions apart at a glance and cross-reference against ExamTools'
+/// own UI, per the issue's "know whose session is whose" ask. Swapped 2026-07-30 for Session.ExtId
+/// (ExamTools' own short lead-VE-callsign code, e.g. "KM6Z - W5CBW") once it turned out the raw id
+/// wasn't actually meaningful to a user for that purpose — ExtId is the same parenthetical text
+/// ExamTools' own calendar UI shows next to the team name.
 ///
 /// Filter-row realignment (reported 2026-07-29): the Status filter's old Upcoming/NeedsReview/Past
 /// checkboxes didn't correspond to anything the Status column actually showed (Active/Reschedule
@@ -328,8 +330,8 @@ public class IndexModel(AppDbContext dbContext, UserManager<User> userManager, S
 
     private static SessionRow ToRow(Session s)
     {
-        // ExamToolsSessionId gets its own column (issue #35 — "know whose session is whose"),
-        // not repeated in the sub-line the way it used to be.
+        // ExtId gets its own column (issue #35 — "know whose session is whose"), not repeated in
+        // the sub-line the way it used to be.
         var subParts = new List<string>();
         if (s.ZoomMeetingId is not null)
         {
@@ -355,7 +357,7 @@ public class IndexModel(AppDbContext dbContext, UserManager<User> userManager, S
 
         return new SessionRow(
             s.Id,
-            s.ExamToolsSessionId,
+            s.ExtId ?? "—",
             s.ScheduledStartUtc.ToString("ddd, MMM d · h:mm tt", CultureInfo.InvariantCulture),
             string.Join(" · ", subParts),
             s.Vec.Name,
@@ -368,7 +370,7 @@ public class IndexModel(AppDbContext dbContext, UserManager<User> userManager, S
 
     public record SessionRow(
         int Id,
-        string ExamToolsSessionId,
+        string ExtId,
         string TitleLine,
         string SubLine,
         string VecName,

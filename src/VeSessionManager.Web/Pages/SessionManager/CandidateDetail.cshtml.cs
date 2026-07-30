@@ -204,7 +204,7 @@ public class CandidateDetailModel(
         Candidate = new CandidateDetailView(
             Id: candidate.Id,
             SessionId: candidate.Session.Id,
-            SessionExamToolsId: candidate.Session.ExamToolsSessionId,
+            SessionBreadcrumbLabel: SessionBreadcrumbFormatter.Format(candidate.Session.ExtId, candidate.Session.Title),
             SessionDateLine: candidate.Session.ScheduledStartUtc.ToString("ddd, MMM d, yyyy · h:mm tt", CultureInfo.InvariantCulture),
             IsWithdrawn: isWithdrawn,
             DisplayName: isWithdrawn ? "Withdrew — PII cleared" : candidate.Name ?? "—",
@@ -286,7 +286,7 @@ public class CandidateDetailModel(
     public record CandidateDetailView(
         int Id,
         int SessionId,
-        string SessionExamToolsId,
+        string SessionBreadcrumbLabel,
         string SessionDateLine,
         bool IsWithdrawn,
         string DisplayName,
