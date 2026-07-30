@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using VeSessionManager.Core.Entities;
@@ -9,9 +10,21 @@ namespace VeSessionManager.Core.Data;
 /// Users/UserClaims/UserLogins/UserTokens for ASP.NET Core Identity (external logins need
 /// UserLogins) without the unused Identity Role tables IdentityDbContext would also add (Role
 /// stays one plain enum column on User, not Identity's own Role system — see docs/admin-auth.md).
+///
+/// IDataProtectionProvider (2026-07-30, see EncryptedStringConverter): Web/Worker's real DI
+/// registration always supplies one backed by a shared, persisted key ring (both processes must
+/// register the exact same application name + key-ring path — see Program.cs in each — or one
+/// process's writes become unreadable by the other). The parameterless-provider overload below
+/// exists purely so the ~30 existing test files constructing `new AppDbContext(options)` directly
+/// don't all need updating — each gets its own fresh, non-persisted key, which is fine since no
+/// test ever reads encrypted Team data across two separate AppDbContext instances.
 /// </summary>
-public class AppDbContext(DbContextOptions<AppDbContext> options) : IdentityUserContext<User, int>(options)
+public class AppDbContext(DbContextOptions<AppDbContext> options, IDataProtectionProvider dataProtectionProvider) : IdentityUserContext<User, int>(options)
 {
+    public AppDbContext(DbContextOptions<AppDbContext> options) : this(options, new EphemeralDataProtectionProvider())
+    {
+    }
+
     public DbSet<Team> Teams => Set<Team>();
     public DbSet<Vec> Vecs => Set<Vec>();
     public DbSet<EmailTemplate> EmailTemplates => Set<EmailTemplate>();
@@ -136,6 +149,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : IdentityUser
 
         // Phase 9c adds real Team/Vec create screens for the first time — enforce name
         // uniqueness so the new team-picker/VEC-picker dropdowns can't end up with duplicates.
+        var teamCredentialsProtector = dataProtectionProvider.CreateProtector(EncryptedStringConverter.TeamCredentialsPurpose);
+        var encryptedString = new EncryptedStringConverter(teamCredentialsProtector);
         modelBuilder.Entity<Team>(b =>
         {
             b.HasIndex(t => t.Name).IsUnique();
@@ -147,6 +162,15 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : IdentityUser
             // Same reasoning — without this, existing teams would retroactively get 0 (no breakout
             // rooms) from the migration's AddColumn instead of the intended default of 2.
             b.Property(t => t.ZoomBreakoutRoomCount).HasDefaultValue(2);
+
+            // Encrypted at rest (2026-07-30 security review) — genuine bearer secrets only, not the
+            // usernames/ids/URLs alongside them (those stay plaintext, useful to read at a glance).
+            // See EncryptedStringConverter's remarks and TeamSecretsMigrationService for existing data.
+            b.Property(t => t.ExamToolsPassword).HasConversion(encryptedString);
+            b.Property(t => t.ZoomClientSecret).HasConversion(encryptedString);
+            b.Property(t => t.SquareAccessToken).HasConversion(encryptedString);
+            b.Property(t => t.SquareWebhookSignatureKey).HasConversion(encryptedString);
+            b.Property(t => t.SmtpPassword).HasConversion(encryptedString);
         });
         modelBuilder.Entity<Vec>(b => b.HasIndex(v => v.Name).IsUnique());
 

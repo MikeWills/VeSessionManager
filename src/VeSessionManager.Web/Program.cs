@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
@@ -31,6 +32,16 @@ builder.Services.AddSerilog((services, loggerConfiguration) => loggerConfigurati
 
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection")));
+
+// Encrypts Team's credential columns at rest (2026-07-30, see EncryptedStringConverter) — the
+// application name and key-ring path here MUST exactly match VeSessionManager.Worker's own
+// registration, or one process's writes become unreadable by the other. Key-ring path follows the
+// same appsettings-per-environment convention as ConnectionStrings:DefaultConnection (see
+// docs/deployment.md): outside the app's own synced path in Production, same reasoning as the DB
+// file itself.
+builder.Services.AddDataProtection()
+    .SetApplicationName("VeSessionManager")
+    .PersistKeysToFileSystem(new DirectoryInfo(builder.Configuration["DataProtection:KeyRingPath"] ?? "../../.dataprotection-keys"));
 
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.Configure<AppOptions>(builder.Configuration.GetSection(AppOptions.SectionName));
@@ -114,6 +125,13 @@ builder.Services.ConfigureApplicationCookie(options =>
 {
     options.LoginPath = "/Account/Login";
     options.AccessDeniedPath = "/Account/AccessDenied";
+    // Default (SameAsRequest) would silently send the auth cookie over plain HTTP if a proxy in
+    // front of this app ever got misconfigured — pin it to HTTPS-only outside Development. Left at
+    // the default in Development since local dev serves plain HTTP by default (see CLAUDE.md's
+    // launch-profile note) and an Always-Secure cookie would never come back to the browser there.
+    options.Cookie.SecurePolicy = builder.Environment.IsDevelopment()
+        ? CookieSecurePolicy.SameAsRequest
+        : CookieSecurePolicy.Always;
 });
 
 // AddIdentityCookies() returns an IdentityCookiesBuilder, not the AuthenticationBuilder itself —

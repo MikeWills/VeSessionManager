@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
 using VeSessionManager.Core;
@@ -28,6 +29,16 @@ builder.Services.AddSerilog((services, loggerConfiguration) => loggerConfigurati
 
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection")));
+
+// Encrypts Team's credential columns at rest (2026-07-30, see EncryptedStringConverter) — the
+// application name and key-ring path here MUST exactly match VeSessionManager.Web's own
+// registration, or one process's writes become unreadable by the other. Key-ring path follows the
+// same appsettings-per-environment convention as ConnectionStrings:DefaultConnection (see
+// docs/deployment.md): outside the app's own synced path in Production, same reasoning as the DB
+// file itself.
+builder.Services.AddDataProtection()
+    .SetApplicationName("VeSessionManager")
+    .PersistKeysToFileSystem(new DirectoryInfo(builder.Configuration["DataProtection:KeyRingPath"] ?? "../../.dataprotection-keys"));
 
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.Configure<AppOptions>(builder.Configuration.GetSection(AppOptions.SectionName));
@@ -85,6 +96,8 @@ builder.Services.AddScoped<VecSubmissionReportService>();
 builder.Services.AddScoped<SystemSettingsService>();
 builder.Services.AddScoped<PiiPurgeService>();
 
+builder.Services.AddScoped<TeamSecretsMigrationService>();
+
 builder.Services.AddScoped<JobRunHistoryLogger>();
 builder.Services.AddHostedService<SessionIngestionJob>();
 builder.Services.AddHostedService<DayBeforeReminderJob>();
@@ -100,6 +113,21 @@ using (var scope = host.Services.CreateScope())
 {
     var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     dbContext.Database.Migrate();
+
+    // One-off, human-triggered CLI flag (2026-07-30, see TeamSecretsMigrationService) — never runs
+    // automatically on a normal startup, since it touches every real team's live external-service
+    // credentials. Exits immediately after, rather than falling through to the normal
+    // BackgroundService startup below. Safe to re-run (see TeamSecretsMigrationService's own remarks
+    // on backup-restore/interrupted-run/stray-plaintext recovery scenarios).
+    if (args.Contains("--migrate-team-secrets"))
+    {
+        var migrationLogger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+        migrationLogger.LogInformation("Running one-off team secrets migration (--migrate-team-secrets)...");
+        var migrationService = scope.ServiceProvider.GetRequiredService<TeamSecretsMigrationService>();
+        await migrationService.MigrateAsync(CancellationToken.None);
+        migrationLogger.LogInformation("Team secrets migration complete — exiting without starting the normal Worker jobs.");
+        return;
+    }
 
     var startupLogger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
     await EmailDefaultsSeeder.SeedAsync(dbContext, startupLogger);

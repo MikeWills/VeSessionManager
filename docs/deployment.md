@@ -11,6 +11,7 @@ endpoint).
 | Server | Same Ubuntu box as `NcsScheduler`, reachable only over Tailscale |
 | App path | `/opt/vesessionmanager/{worker,web}/` |
 | Database path | `/var/lib/vesessionmanager/vesessionmanager.db` — **deliberately outside** the app path (see below) |
+| Data Protection key ring | `/var/lib/vesessionmanager/dataprotection-keys/` — same directory, same reasoning; see below |
 | Service account | `vesessionmanager` (dedicated, distinct from NcsScheduler's `www-data` on the same box) |
 | Worker service | `vesessionmanager-worker.service` — background jobs, no listening port |
 | Web service | `vesessionmanager-web.service` — `ASPNETCORE_URLS=http://localhost:5100` |
@@ -25,6 +26,23 @@ string at `/var/lib/vesessionmanager/vesessionmanager.db` — physically outside
 `/opt/vesessionmanager/{worker,web}/` entirely. An `rsync --delete` against the app folders can
 never touch it, exclude flags or not. `/var/lib/` is also the conventionally-correct FHS location
 for a service's variable data, vs. `/opt/` for its binaries.
+
+**Data Protection key ring (2026-07-30, see `docs/credential-encryption.md`):** `Team`'s per-team
+credential columns (ExamTools/Zoom/Square/SMTP secrets) are encrypted at rest via ASP.NET Core's
+Data Protection API. Both `vesessionmanager-worker` and `vesessionmanager-web` must point at the
+exact same key-ring path *and* register the same application name (`"VeSessionManager"`, hardcoded
+identically in both `Program.cs` files) — if these ever drift, one process's writes silently become
+unreadable by the other. **This key ring needs the same backup discipline as the DB file** — if
+it's ever lost while the DB survives, every encrypted credential becomes permanently unrecoverable
+and every team has to re-enter Zoom/Square/SMTP/ExamTools credentials from scratch.
+
+**But do not literally bundle the key ring into the same backup artifact as the DB.** The key file
+itself is stored unencrypted on disk (Linux has no DPAPI-style at-rest protection for it, unlike
+Windows), so the encryption only actually protects the credentials in a scenario where the key ring
+and the DB end up in different hands. If both ever ship together in one archive and that archive
+leaks, whoever has it can decrypt everything as trivially as if the columns were never encrypted —
+back the key ring up somewhere separate from (or with tighter access than) wherever the DB backup
+goes. See `docs/credential-encryption.md` for the full reasoning.
 
 **Why `appsettings.Production.json` needs no manual server-side editing:** every real integration
 credential (ExamTools/Zoom/Discord/Square/SMTP) lives per-`Team` in the database, hand-edited there
@@ -116,6 +134,10 @@ ssh-copy-id -i <existing deploy_key.pub> deploy@<server-tailscale-hostname>
 sudo mkdir -p /opt/vesessionmanager/worker /opt/vesessionmanager/web /var/lib/vesessionmanager
 sudo chown -R vesessionmanager:vesessionmanager /opt/vesessionmanager /var/lib/vesessionmanager
 ```
+
+`dataprotection-keys/` doesn't need creating explicitly — the Data Protection API creates it itself
+under `/var/lib/vesessionmanager/` (already owned by the service account above) the first time
+either service starts.
 
 **5. GitHub repo secrets** (Settings → Secrets and variables → Actions)
 

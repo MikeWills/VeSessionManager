@@ -8,6 +8,14 @@ that window, or immediately if it's phase-numbered work already summarized in "C
 design rationale for any entry still lives in its linked `/docs/*.md` file, not here or in
 CLAUDE.md — this file, like CLAUDE.md's Change Log, is pointers only.
 
+- **FCC upgrade-exam PII purge anchor fix (2026-07-28).** `docs/fcc-uls-watcher.md`'s "Upgrade exam
+  handling" section — found live running the FCC daily watcher against real HRCC data (William
+  Denney/Jason Pelowitz, both re-detected against an already-old license). FCC's Grant Date doesn't
+  change on a class upgrade, so `PiiPurgeService`'s retention Trigger A now anchors on the later of
+  `LicenseGrantDateUtc`/`Session.ScheduledStartUtc` (new `Candidate.LicenseGrantPredatesSession()`
+  helper) instead of the bare grant date, which would otherwise purge an upgrade/repeat candidate's
+  PII almost immediately after their real, current session. No schema change — computed from data
+  already stored. Also surfaced on the applicant detail page.
 - **Zoom breakout rooms per team (2026-07-28).** `docs/zoom-discord-scheduling.md`'s "Breakout rooms"
   section — new `Team.ZoomBreakoutRoomCount` (admin-editable, default 2) pre-creates that many empty
   "Exam Room N" breakout rooms on every session's Zoom meeting; VEs move candidates in manually.
