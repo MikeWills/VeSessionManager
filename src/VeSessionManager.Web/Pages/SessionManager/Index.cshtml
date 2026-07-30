@@ -36,6 +36,7 @@
                 <select name="dateRange" style="width:100%; font-family:'IBM Plex Mono',monospace; font-size:12px; padding:6px 8px; border:1px solid var(--line-strong); border-radius:5px; background:var(--surface); color:var(--ink);">
                     <option value="">Any time</option>
                     <option value="Upcoming" selected="@(Model.DateRange == "Upcoming")">Upcoming</option>
+                    <option value="Last7PlusUpcoming" selected="@(Model.DateRange == "Last7PlusUpcoming")">Last 7 + Upcoming</option>
                     @foreach (var preset in VeSessionManager.Web.Pages.SessionManager.IndexModel.DateRangePresets)
                     {
                         <option value="@preset.Key" selected="@(preset.Key == Model.DateRange)">@preset.Value.Label</option>
@@ -90,7 +91,7 @@
         }
         @foreach (var session in Model.Sessions)
         {
-            <tr>
+            <tr class="@(session.IsPast ? "row-past" : "")">
                 <td>
                     <div class="session-title">
                         @session.TitleLine

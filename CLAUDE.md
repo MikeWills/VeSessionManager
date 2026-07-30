@@ -77,6 +77,19 @@ would be pure duplication — and goes straight to `CHANGELOG.md` instead. Non-p
 redesigns, hardening passes) start here and move to `CHANGELOG.md` once the section is at/over the
 cap and a newer entry needs to be added; oldest goes first.
 
+- **Session list "Last 7 + Upcoming" filter + past-row shading + quieter EF logging (2026-07-30).**
+  No linked doc. `IndexModel` gets a second forward-looking date-range preset alongside the existing
+  `Upcoming` one — `ScheduledStartUtc` from 7 days ago through the unbounded future in one filter,
+  same ascending "soonest first" sort as `Upcoming` — and it replaces `Upcoming` as the fallback
+  default for a fresh visit with no filter cookie yet (a returning visitor's own remembered choice
+  is unaffected). Independent of any date filter, every row also gets a `row-past` CSS class once
+  `Session.HasEnded(now)` — a light background tint (reusing the existing `--paper` theme token, so
+  it's already correct in both light/dark mode) makes it obvious at a glance which sessions in a
+  mixed list already happened. Unrelated, bundled in the same pass: both `Worker` and `Web`
+  `appsettings.json` now override `Microsoft.EntityFrameworkCore.Database.Command` to `Warning` —
+  full per-query SQL text at `Information` was dominating both projects' logs (one file alone hit
+  2.5MB/day) and burying the actual "Starting job"/"Finished job" business-logic lines underneath;
+  `Web` already had the equivalent `Microsoft.AspNetCore` override, `Worker` never did.
 - **Session.ExtId + breadcrumb rework (2026-07-30).** No linked doc. `Session.ExamToolsSessionId`
   (a raw Mongo id) turned out to be meaningless to a user for "which session is this" purposes —
   new `Session.ExtId` maps `sessionDef.extId` instead, ExamTools' own short lead-VE-callsign code
@@ -179,11 +192,6 @@ cap and a newer entry needs to be added; oldest goes first.
   place the override-falls-back-to-global logic lives.
 - **Payment reminders retest-gating fix (2026-07-22).** `docs/payment-reminders.md`'s "Retest
   payments" section — a same-session retest fee previously never got a reminder or expiration.
-- **Youth rate payment confirmation (2026-07-27).** `docs/youth-payment-confirmation.md` — a
-  self-service, honor-system public page (`/youth-confirm/{token}`) that switches a candidate's
-  standard-rate Square payment link to the session's configured youth rate, replacing reliance on
-  the separate Square-hosted page + manual `AmountMismatchFlaggedUtc` reconciliation for the
-  in-app-generated case.
 Everything through Phase 0-10's initial build (ExamTools ingestion, Zoom/Discord, Square, email
 notifications, FCC ULS watcher, payment reminders, VE tracking, VEC submission tracker, admin
 auth/config/candidate-actions, PII purge) plus the public privacy page has aged out to

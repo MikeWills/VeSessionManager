@@ -8,6 +8,11 @@ that window, or immediately if it's phase-numbered work already summarized in "C
 design rationale for any entry still lives in its linked `/docs/*.md` file, not here or in
 CLAUDE.md — this file, like CLAUDE.md's Change Log, is pointers only.
 
+- **Youth rate payment confirmation (2026-07-27).** `docs/youth-payment-confirmation.md` — a
+  self-service, honor-system public page (`/youth-confirm/{token}`) that switches a candidate's
+  standard-rate Square payment link to the session's configured youth rate, replacing reliance on
+  the separate Square-hosted page + manual `AmountMismatchFlaggedUtc` reconciliation for the
+  in-app-generated case.
 - **Stale unpaid Square payment link purge (2026-07-28).** `docs/payment-link-purge.md` — a daily,
   per-team scan (`SquareLinkPurgeJob`) deletes an Unpaid Payment's Square link after
   `Team.PurgeUnpaidLinkDays` (default 30), reusing `ISquareClient.DeletePaymentLinkAsync` from the
