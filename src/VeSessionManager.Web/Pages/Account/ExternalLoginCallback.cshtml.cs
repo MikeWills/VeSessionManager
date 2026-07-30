@@ -41,11 +41,24 @@ public class ExternalLoginCallbackModel(SignInManager<User> signInManager, UserM
         }
 
         // Linking/signing in purely on an email-claim match is only safe if the provider actually
-        // verified that email belongs to this visitor. Only Google's handler surfaces this claim
-        // today (mapped explicitly in Program.cs); a provider that doesn't send it at all (e.g.
-        // Microsoft) falls through unblocked, same as before this check existed.
+        // verified that email belongs to this visitor. Only Google's handler surfaces an explicit
+        // "email_verified" claim (mapped in Program.cs); Microsoft's doesn't send one at all, but its
+        // own `mail`/`userPrincipalName` claim is administratively sourced (Entra ID work/school
+        // accounts: set by the tenant against a domain Microsoft has itself verified; personal
+        // Microsoft accounts: verified at account-creation time) rather than user-editable at OAuth
+        // time, so it's trusted here too.
+        //
+        // Security review 2026-07-29 found the original version trusted ANY provider that didn't
+        // send the claim at all, silently — meaning a brand-new provider added later would default
+        // to "trusted" by omission instead of by a deliberate decision. Flipped to an explicit
+        // allowlist: a provider not on it (and not carrying an affirmative email_verified=true claim)
+        // is now blocked by default, not trusted by accident.
+        var trustedWithoutExplicitClaim = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Microsoft" };
         var emailVerifiedClaim = info.Principal.FindFirstValue("email_verified");
-        if (bool.TryParse(emailVerifiedClaim, out var emailVerified) && !emailVerified)
+        var emailVerified = bool.TryParse(emailVerifiedClaim, out var claimedVerified)
+            ? claimedVerified
+            : trustedWithoutExplicitClaim.Contains(info.LoginProvider);
+        if (!emailVerified)
         {
             ErrorMessage = "This external account's email address is not verified with the provider. Contact your administrator.";
             return Page();

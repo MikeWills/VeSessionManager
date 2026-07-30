@@ -46,11 +46,7 @@ public class VecSubmissionModel(
         var user = await userManager.GetUserWithManagerAsync(dbContext, User) ?? throw new InvalidOperationException("No authenticated user for an [Authorize]d page.");
         CanEdit = user.Role != UserRole.TeamLead;
 
-        AvailableTeams = user.Role == UserRole.SystemAdmin
-            ? await dbContext.Teams.OrderBy(t => t.Name).Select(t => new ValueTuple<int, string>(t.Id, t.Name)).ToListAsync()
-            : (accessScope.GetEffectiveTeamIds(user) ?? [])
-                .Join(await dbContext.Teams.ToListAsync(), id => id, t => t.Id, (_, t) => new ValueTuple<int, string>(t.Id, t.Name))
-                .OrderBy(t => t.Item2).ToList();
+        AvailableTeams = await accessScope.GetAvailableTeamsAsync(dbContext, user);
 
         var teamId = accessScope.TryResolveViewableTeamId(user, TeamId);
         TeamId = teamId;
