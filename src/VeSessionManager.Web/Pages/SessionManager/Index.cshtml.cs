@@ -183,11 +183,7 @@ public class IndexModel(AppDbContext dbContext, UserManager<User> userManager, S
         var user = await userManager.GetUserWithManagerAsync(dbContext, User) ?? throw new InvalidOperationException("No authenticated user for an [Authorize]d page.");
         var now = timeProvider.GetUtcNow().UtcDateTime;
 
-        AvailableTeams = user.Role == UserRole.SystemAdmin
-            ? await dbContext.Teams.OrderBy(t => t.Name).Select(t => new ValueTuple<int, string>(t.Id, t.Name)).ToListAsync()
-            : (accessScope.GetEffectiveTeamIds(user) ?? [])
-                .Join(await dbContext.Teams.ToListAsync(), id => id, t => t.Id, (_, t) => new ValueTuple<int, string>(t.Id, t.Name))
-                .OrderBy(t => t.Item2).ToList();
+        AvailableTeams = await accessScope.GetAvailableTeamsAsync(dbContext, user);
         TeamSummaryLabel = TeamId is not null
             ? AvailableTeams.FirstOrDefault(t => t.Id == TeamId).Name ?? "All teams"
             : "All teams";

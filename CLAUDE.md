@@ -100,6 +100,19 @@ cap and a newer entry needs to be added; oldest goes first.
   requests while investigating, so the URL shape couldn't be verified; see TODO.md's Feature
   requests section for the parked follow-up (the `UniqueSystemIdentifier` this needs is already
   captured in `FccUlsApplicationRecord`, just not persisted to `Candidate` yet).
+- **Duplicate-code cleanup + credential encryption + two security fixes (2026-07-30).** No single
+  linked doc — three small, independent items from a full-project code review: (1) `SessionAccessScope.GetAvailableTeamsAsync`
+  replaced 5 copy-pasted team-picker blocks across the SessionManager pages; (2) `LicenseClassFormatter`
+  replaced two independently-drifted license-class-transition formatters (`CandidateDetail`/`ApplicantStatus`);
+  (3) `PerTeamDailyJob` (Worker) replaced the identical 24h-PeriodicTimer-per-team scaffold duplicated
+  across `PaymentReminderJob`/`SquareLinkPurgeJob`/`DayBeforeReminderJob`. Plus: `ExternalLoginCallback`'s
+  email-verification check now fails closed for any unrecognized external provider instead of
+  trusting one by silent omission (Microsoft is explicitly allowlisted, with rationale, not
+  accidentally trusted); the auth cookie now pins `CookieSecurePolicy.Always` outside Development.
+  See `docs/credential-encryption.md` for the fourth, larger item from the same review — `Team`'s
+  credential columns (ExamTools/Zoom/Square/SMTP secrets) are now encrypted at rest via
+  `EncryptedStringConverter`, with `TeamSecretsMigrationService`/`--migrate-team-secrets` as the
+  (idempotent, safe-to-rerun) upgrade path for existing plaintext data.
 - **Applicant Status page (2026-07-29).** `docs/exam-result-license-class.md`'s "Applicant Status
   page" section — new team-wide `Pages/SessionManager/ApplicantStatus.cshtml(.cs)`: a "Pending FCC
   grant" worklist (passed but not yet `Granted`, drops a candidate the instant they are) plus a
@@ -146,19 +159,6 @@ cap and a newer entry needs to be added; oldest goes first.
   convention), and `SessionAccessScope`/`AdminAccessScope` moved from scalar equality to
   set-membership (`Contains`) throughout — covered by explicit cross-team-leak regression tests per
   role, not just the new happy paths.
-- **Completed-session backfill (issue #22, 2026-07-28).** `docs/examtools-api.md`'s "Stale `"pend"`
-  sessions exist" section — `SessionIngestionService` now also first-ingests a `"done"` session up
-  to ~30 days past its start (previously never ingested at all), gated by the new
-  `Session.HasEnded` helper so `SessionEventSchedulingService`/`CandidateNotificationService` don't
-  try to live-schedule or email a session that already happened.
-- **FCC upgrade-exam PII purge anchor fix (2026-07-28).** `docs/fcc-uls-watcher.md`'s "Upgrade exam
-  handling" section — found live running the FCC daily watcher against real HRCC data (William
-  Denney/Jason Pelowitz, both re-detected against an already-old license). FCC's Grant Date doesn't
-  change on a class upgrade, so `PiiPurgeService`'s retention Trigger A now anchors on the later of
-  `LicenseGrantDateUtc`/`Session.ScheduledStartUtc` (new `Candidate.LicenseGrantPredatesSession()`
-  helper) instead of the bare grant date, which would otherwise purge an upgrade/repeat candidate's
-  PII almost immediately after their real, current session. No schema change — computed from data
-  already stored. Also surfaced on the applicant detail page.
 Everything through Phase 0-10's initial build (ExamTools ingestion, Zoom/Discord, Square, email
 notifications, FCC ULS watcher, payment reminders, VE tracking, VEC submission tracker, admin
 auth/config/candidate-actions, PII purge) plus the public privacy page has aged out to
@@ -283,6 +283,7 @@ To pick up updates: `/plugin marketplace update claude-tools`
 - **A job tick timed for "the evening" in US Eastern can land at/after UTC midnight** — EDT is UTC-4, EST is UTC-5, so anything from ~8pm ET onward is already tomorrow in raw UTC. `TimeProvider.GetUtcNow().UtcDateTime.DayOfWeek` (or any UTC-based "what day is it" check) is wrong for that window; convert through `TimeZoneInfo.ConvertTimeFromUtc(..., FccUlsSchedule.EasternTimeZone)` first (IANA id `"America/New_York"`, resolves cross-platform since .NET 6 — verified directly on this repo's target framework on both Windows and the Linux deploy target). Found live 2026-07-23 building `FccDailyWatcherJob`'s same-day retry; see `docs/fcc-uls-watcher.md`. Reuse `FccUlsSchedule.EasternTimeZone` for any future US-Eastern-anchored scheduling rather than re-resolving the id.
 - **Not every job here can safely reuse the "24h `PeriodicTimer` from Worker start, extra ticks are free" idiom** — that reasoning (used by `DayBeforeReminderJob`/`PaymentReminderJob`/`PiiPurgeJob`/`FccWeeklyCatchupJob`) assumes a missed tick is harmless because idempotent tracking catches it up next time. It breaks when the *data itself* — not just the job's own state — is only available in a narrow, non-retryable window, as with FCC's day-name files (see the same-day-retry entry above). Before adding a new job on this idiom, check whether the thing it polls has that same "one-shot window" property.
 - **Square webhook subscriptions are separate per Sandbox/Production, each with its own signature key** — an existing subscription registered under one mode receives zero delivery attempts for events in the other (not a 401, no attempt at all), and reusing one mode's `WebhookSignatureKey` against the other mode's subscription makes every delivery fail signature verification (401) even though the URL/event config is otherwise correct. Found live 2026-07-25 testing Team 2 (MARC)'s payment flow — the "Ve Session Manager" subscription had been created under Production while all local testing used Sandbox credentials/payment links. Fix: add (or move) the subscription under the correct mode's tab in the Square dashboard, then set `Team.SquareWebhookSignatureKey` to *that* subscription's own signature key, not the other mode's. See `docs/square-payments.md`.
+- **`Web` and `Worker` must register Data Protection with the exact same application name and key-ring path, or one process's writes silently become unreadable by the other.** `Team`'s credential columns (ExamTools/Zoom/Square/SMTP secrets) are encrypted at rest via `EncryptedStringConverter` (2026-07-30) — both `Program.cs` files call `AddDataProtection().SetApplicationName("VeSessionManager").PersistKeysToFileSystem(...)` with the same hardcoded app name and the same `DataProtection:KeyRingPath` config value. A drift here doesn't throw — `EncryptedStringConverter`'s legacy-plaintext fallback (needed for the migration path) means a value encrypted under a different key just looks like it was never migrated. See `docs/credential-encryption.md`. Also: **if the key-ring directory is ever lost, every encrypted credential becomes permanently unrecoverable** — it must be backed up with the same discipline as the DB file itself (see `docs/deployment.md`).
 - (Environment-specific quirks and gotchas go here as they're discovered — e.g. API quirks, IIS behavior, network/DMZ restrictions, auth issues)
 
 ## Definition of Done

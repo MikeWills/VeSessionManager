@@ -228,7 +228,7 @@ public class CandidateDetailModel(
             LicenseNote: candidate.LicenseGrantPredatesSession()
                 ? $"Already licensed before this session (held since {candidate.LicenseGrantDateUtc:M/d/yyyy}) — likely a repeat test or class upgrade, not a new grant."
                 : null,
-            LicenseClassLine: FormatLicenseClassLine(candidate.InitialLicenseClass, candidate.NewLicenseClass),
+            LicenseClassLine: LicenseClassFormatter.FormatTransition(candidate.InitialLicenseClass, candidate.NewLicenseClass),
             ResultMarkedLine: FormatUtcOrNull(candidate.ResultMarkedUtc),
             ResultMarkedByName: candidate.ResultMarkedByUser?.Name,
             Tested: candidate.Tested,
@@ -253,14 +253,6 @@ public class CandidateDetailModel(
     // marked yet.
     private static string? FormatUtcOrNull(DateTime? value) =>
         value is { } v ? v.ToString("M/d/yyyy h:mm tt", CultureInfo.InvariantCulture) + " UTC" : null;
-
-    // Derived purely from exam elements graded this sitting — see ExamResultSyncService.ResolveLicenseClasses.
-    // Only set for a candidate who passed at least one graded element, so both are always null or both set.
-    private static string? FormatLicenseClassLine(LicenseClass? initial, LicenseClass? newClass) =>
-        initial is { } i && newClass is { } n ? $"{FormatClass(i)} → {FormatClass(n)}" : null;
-
-    private static string FormatClass(LicenseClass licenseClass) =>
-        licenseClass == LicenseClass.None ? "Unlicensed" : licenseClass.ToString();
 
     private static PaymentRow ToPaymentRow(Payment payment)
     {

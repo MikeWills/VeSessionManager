@@ -1,3 +1,5 @@
+using Microsoft.EntityFrameworkCore;
+using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Entities;
 
 namespace VeSessionManager.Core.Authorization;
@@ -116,5 +118,27 @@ public class SessionAccessScope
         }
 
         return effectiveTeamIds.Count > 0 ? effectiveTeamIds[0] : null;
+    }
+
+    /// <summary>
+    /// The "which teams should this user's team-picker dropdown list" resolution — extracted
+    /// 2026-07-29 after a duplicate-code review found the identical 5-line "SystemAdmin sees every
+    /// team, everyone else joins GetEffectiveTeamIds against dbContext.Teams" block copy-pasted
+    /// across Index/VeRoster/ApplicantStatus/VecSubmission/UnmatchedPayments' OnGetAsync methods.
+    /// SystemAdmin sees every team (for the team-picker); everyone else sees only the team(s) they
+    /// belong to, ordered by name either way.
+    /// </summary>
+    public async Task<IReadOnlyList<(int Id, string Name)>> GetAvailableTeamsAsync(AppDbContext dbContext, User user)
+    {
+        if (user.Role == UserRole.SystemAdmin)
+        {
+            return await dbContext.Teams.OrderBy(t => t.Name).Select(t => new ValueTuple<int, string>(t.Id, t.Name)).ToListAsync();
+        }
+
+        var effectiveTeamIds = GetEffectiveTeamIds(user) ?? [];
+        return effectiveTeamIds
+            .Join(await dbContext.Teams.ToListAsync(), id => id, t => t.Id, (_, t) => new ValueTuple<int, string>(t.Id, t.Name))
+            .OrderBy(t => t.Item2)
+            .ToList();
     }
 }

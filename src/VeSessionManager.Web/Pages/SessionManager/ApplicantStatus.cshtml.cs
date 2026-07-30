@@ -41,11 +41,7 @@ public class ApplicantStatusModel(AppDbContext dbContext, UserManager<User> user
     {
         var user = await userManager.GetUserWithManagerAsync(dbContext, User) ?? throw new InvalidOperationException("No authenticated user for an [Authorize]d page.");
 
-        AvailableTeams = user.Role == UserRole.SystemAdmin
-            ? await dbContext.Teams.OrderBy(t => t.Name).Select(t => new ValueTuple<int, string>(t.Id, t.Name)).ToListAsync()
-            : (accessScope.GetEffectiveTeamIds(user) ?? [])
-                .Join(await dbContext.Teams.ToListAsync(), id => id, t => t.Id, (_, t) => new ValueTuple<int, string>(t.Id, t.Name))
-                .OrderBy(t => t.Item2).ToList();
+        AvailableTeams = await accessScope.GetAvailableTeamsAsync(dbContext, user);
 
         var teamId = accessScope.TryResolveViewableTeamId(user, TeamId, AvailableTeams);
         TeamId = teamId;
@@ -89,7 +85,7 @@ public class ApplicantStatusModel(AppDbContext dbContext, UserManager<User> user
             c.Session.Id,
             c.Name ?? "—",
             c.Session.ScheduledStartUtc.ToString("MMM d, yyyy", CultureInfo.InvariantCulture),
-            FormatLicenseClassLine(c.InitialLicenseClass, c.NewLicenseClass),
+            LicenseClassFormatter.FormatTransition(c.InitialLicenseClass, c.NewLicenseClass) ?? "—",
             c.ApplicationStatus == CandidateApplicationStatus.Received ? "Received" : "Awaiting FCC match",
             daysPending);
     }
@@ -101,14 +97,8 @@ public class ApplicantStatusModel(AppDbContext dbContext, UserManager<User> user
             c.Name ?? "—",
             c.Session.ScheduledStartUtc.ToString("MMM d, yyyy", CultureInfo.InvariantCulture),
             c.CallSign ?? "—",
-            FormatLicenseClassLine(c.InitialLicenseClass, c.NewLicenseClass),
+            LicenseClassFormatter.FormatTransition(c.InitialLicenseClass, c.NewLicenseClass) ?? "—",
             c.LicenseGrantDateUtc!.Value.ToString("MMM d, yyyy", CultureInfo.InvariantCulture));
-
-    // Same derivation/formatting as CandidateDetail.cshtml.cs — see ExamResultSyncService.ResolveLicenseClasses.
-    private static string FormatLicenseClassLine(LicenseClass? initial, LicenseClass? newClass) =>
-        initial is { } i && newClass is { } n
-            ? $"{(i == LicenseClass.None ? "Unlicensed" : i.ToString())} → {n}"
-            : "—";
 
     public record PendingRow(int CandidateId, int SessionId, string Name, string SessionDateLine, string LicenseClassLine, string StatusLabel, int DaysPending);
 

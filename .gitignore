@@ -486,6 +486,12 @@ $RECYCLE.BIN/
 *.db-shm
 *.db-wal
 
+# Local dev Data Protection key ring (encrypts Team's credential columns at rest — see
+# EncryptedStringConverter) — generated, machine-specific, never committed, same as the .db files
+# above. Production's key ring lives outside the repo entirely (/var/lib/vesessionmanager/...).
+.dataprotection-keys/
+.dataprotection-keys.test/
+
 # Local-only server ops scripts (names internal server accounts/paths -- copy to the server by
 # hand, never commit; see docs/deployment.md)
 /ops/
