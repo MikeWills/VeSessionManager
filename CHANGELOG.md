@@ -8,6 +8,10 @@ that window, or immediately if it's phase-numbered work already summarized in "C
 design rationale for any entry still lives in its linked `/docs/*.md` file, not here or in
 CLAUDE.md — this file, like CLAUDE.md's Change Log, is pointers only.
 
+- **Stale unpaid Square payment link purge (2026-07-28).** `docs/payment-link-purge.md` — a daily,
+  per-team scan (`SquareLinkPurgeJob`) deletes an Unpaid Payment's Square link after
+  `Team.PurgeUnpaidLinkDays` (default 30), reusing `ISquareClient.DeletePaymentLinkAsync` from the
+  youth-payment feature above.
 - **Multi-team users + session list team filter (issues #17/#19, 2026-07-28).** `docs/admin-auth.md`'s
   "Team scoping" section — replaced the single, nullable `User.TeamId` with a real many-to-many
   `UserTeam` join table so a TeamAdmin/SessionManager can belong to more than one team; the session

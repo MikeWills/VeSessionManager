@@ -114,7 +114,7 @@ public class SessionIngestionServiceTests
         new(dbContext, client, new FixedTimeProvider(Now), Options.Create(new ExamToolsOptions()), NullLogger<SessionIngestionService>.Instance);
 
     private static ExamToolsSession PendingSession(
-        string id = "session-1", DateTime? date = null, int? applicantCount = 0, string summary = "July Session") =>
+        string id = "session-1", DateTime? date = null, int? applicantCount = 0, string summary = "July Session", string? extId = "AD2GX") =>
         new()
         {
             Id = id,
@@ -122,7 +122,7 @@ public class SessionIngestionServiceTests
             Vec = "arrl",
             State = "pend",
             ApplicantCount = applicantCount,
-            SessionDef = new ExamToolsSessionDef { Summary = summary }
+            SessionDef = new ExamToolsSessionDef { Summary = summary, ExtId = extId }
         };
 
     private static ExamToolsApplicant Applicant(
@@ -155,6 +155,7 @@ public class SessionIngestionServiceTests
         var session = Assert.Single(dbContext.Sessions);
         Assert.Equal("session-1", session.ExamToolsSessionId);
         Assert.Equal("July Session", session.Title);
+        Assert.Equal("AD2GX", session.ExtId);
         Assert.Equal(SessionStart, session.ScheduledStartUtc);
         Assert.Equal(SessionStatus.Active, session.Status);
         Assert.Equal(Now, session.CreatedUtc);
@@ -400,6 +401,28 @@ public class SessionIngestionServiceTests
         await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
 
         Assert.Equal("0099999999", dbContext.Candidates.Single().Frn);
+    }
+
+    [Fact]
+    public async Task ExistingSessionWithNullExtId_BackfillsFromNextPoll_ButNeverOverwritesOnceSet()
+    {
+        await using var dbContext = CreateContext();
+        await SeedVecAndFeeConfigAsync(dbContext);
+        var team = await SeedTeamAsync(dbContext);
+        var client = new FakeExamToolsClient();
+        client.SessionsFor(team.Id).Add(PendingSession(extId: null)); // simulates a session ingested before ExtId existed
+        await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+        Assert.Null(dbContext.Sessions.Single().ExtId);
+
+        client.SessionsFor(team.Id)[0] = PendingSession(extId: "AD2GX");
+        await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+        Assert.Equal("AD2GX", dbContext.Sessions.Single().ExtId);
+
+        // A later poll reporting a different ExtId (e.g. lead VE reassigned) must not overwrite —
+        // same "set once" precedent as Title itself.
+        client.SessionsFor(team.Id)[0] = PendingSession(extId: "W5CBW");
+        await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+        Assert.Equal("AD2GX", dbContext.Sessions.Single().ExtId);
     }
 
     [Fact]

@@ -346,7 +346,7 @@ public class DetailModel(
 
         Session = new SessionSummary(
             session.Id,
-            session.ExamToolsSessionId,
+            SessionBreadcrumbFormatter.Format(session.ExtId, session.Title),
             $"Session — {session.ScheduledStartUtc.ToString("ddd, MMM d, yyyy · h:mm tt", CultureInfo.InvariantCulture)}",
             session.Vec.Name,
             session.ZoomJoinUrl,
@@ -443,7 +443,7 @@ public class DetailModel(
 
     public record SessionSummary(
         int Id,
-        string ExamToolsSessionId,
+        string BreadcrumbLabel,
         string Heading,
         string VecName,
         string? ZoomJoinUrl,

@@ -84,6 +84,12 @@ public class SessionIngestionService(
             if (localByExternalId.TryGetValue(remote.Id, out var local))
             {
                 ApplyRescheduleRules(local, remote, now, result);
+
+                // Backfill (2026-07-30): ExtId was added after many sessions were already ingested;
+                // same "fill in a null field on the next poll" idiom as ExamResultSyncService's
+                // license-class backfill — no one-off migration script needed, every existing
+                // session picks it up the next time it's still in the feed.
+                local.ExtId ??= remote.SessionDef?.ExtId;
             }
             else if (ShouldIngestNewSession(remote, now))
             {
@@ -171,6 +177,7 @@ public class SessionIngestionService(
         {
             ExamToolsSessionId = remote.Id,
             Title = string.IsNullOrWhiteSpace(remote.SessionDef?.Summary) ? remote.Id : remote.SessionDef!.Summary,
+            ExtId = remote.SessionDef?.ExtId,
             ScheduledStartUtc = remote.Date,
             DurationMinutes = remote.SessionDef?.Duration > 0 ? remote.SessionDef.Duration / 60 : DefaultDurationMinutes,
             VecId = vec.Id,

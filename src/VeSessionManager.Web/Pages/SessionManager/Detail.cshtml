@@ -1,13 +1,13 @@
 @page "{id:int}"
 @model VeSessionManager.Web.Pages.SessionManager.DetailModel
 @{
-    ViewData["Title"] = Model.Session.ExamToolsSessionId;
+    ViewData["Title"] = Model.Session.BreadcrumbLabel;
     ViewData["ActiveNav"] = "Sessions";
     ViewData["WideMain"] = true;
     Layout = "_AppLayout";
 }
 
-<div class="crumb"><a asp-page="./Index">← Sessions</a> / @Model.Session.ExamToolsSessionId</div>
+<div class="crumb"><a asp-page="./Index">← Sessions</a> / @Model.Session.BreadcrumbLabel</div>
 
 @if (Model.Session.RescheduleFlagged)
 {
@@ -241,7 +241,7 @@
     <!-- Delete session modal — TeamAdmin/SystemAdmin-only, see TODO.md's "delete a session outright" feature request -->
     <div class="modal-backdrop" id="deleteSessionModal">
         <div class="modal">
-            <h3>Delete session @Model.Session.ExamToolsSessionId?</h3>
+            <h3>Delete session @Model.Session.BreadcrumbLabel?</h3>
             <p>
                 This permanently deletes this session, along with @Model.Candidates.Count candidate(s),
                 every payment record attached to them, and @Model.VeRoster.Count VE roster assignment(s).

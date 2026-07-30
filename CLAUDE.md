@@ -77,6 +77,17 @@ would be pure duplication — and goes straight to `CHANGELOG.md` instead. Non-p
 redesigns, hardening passes) start here and move to `CHANGELOG.md` once the section is at/over the
 cap and a newer entry needs to be added; oldest goes first.
 
+- **Session.ExtId + breadcrumb rework (2026-07-30).** No linked doc. `Session.ExamToolsSessionId`
+  (a raw Mongo id) turned out to be meaningless to a user for "which session is this" purposes —
+  new `Session.ExtId` maps `sessionDef.extId` instead, ExamTools' own short lead-VE-callsign code
+  (e.g. `"KM6Z - W5CBW"`, `"AD2GX"`), verified byte-for-byte against real HRCC sessions to be the
+  exact parenthetical text ExamTools' own calendar UI shows next to the team name. Already present
+  on the cheap team-list endpoint (`GetTeamSessionsAsync`) — no extra per-session API call needed.
+  Replaces the session list's "Session ID" column and, combined with `Session.Title` via new
+  `SessionBreadcrumbFormatter`, the Detail/CandidateDetail breadcrumbs, page title, and delete-modal
+  heading. Existing sessions backfill lazily (same idiom as the license-class backfill) — no
+  one-off migration script — `SessionIngestionService` fills in a null `ExtId` the next time that
+  session is still in the feed, and never overwrites once set.
 - **FCC ULS watcher reliability: weekly-catchup retry, upgrade-exam false-positive guard, FRN
   column (2026-07-30).** No linked doc — see `docs/fcc-uls-watcher.md` for the underlying job
   design this builds on. Found live investigating a real HRCC discrepancy (Applicant Status showed
@@ -173,10 +184,6 @@ cap and a newer entry needs to be added; oldest goes first.
   standard-rate Square payment link to the session's configured youth rate, replacing reliance on
   the separate Square-hosted page + manual `AmountMismatchFlaggedUtc` reconciliation for the
   in-app-generated case.
-- **Stale unpaid Square payment link purge (2026-07-28).** `docs/payment-link-purge.md` — a daily,
-  per-team scan (`SquareLinkPurgeJob`) deletes an Unpaid Payment's Square link after
-  `Team.PurgeUnpaidLinkDays` (default 30), reusing `ISquareClient.DeletePaymentLinkAsync` from the
-  youth-payment feature above.
 Everything through Phase 0-10's initial build (ExamTools ingestion, Zoom/Discord, Square, email
 notifications, FCC ULS watcher, payment reminders, VE tracking, VEC submission tracker, admin
 auth/config/candidate-actions, PII purge) plus the public privacy page has aged out to

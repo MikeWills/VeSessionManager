@@ -9,6 +9,13 @@ public class Session
 
     public required string Title { get; set; }
 
+    /// <summary>ExamTools' own short lead-VE-callsign code (sessionDef.extId, e.g. "KM6Z - W5CBW" or
+    /// "AD2GX") — the parenthetical text ExamTools' own calendar UI shows next to the team name.
+    /// Meaningful to a human in a way ExamToolsSessionId's raw Mongo id never is; used alongside
+    /// Title for the session list and breadcrumbs. Set once at ingestion, same "not re-synced later"
+    /// precedent as Title itself — null on sessions ingested before this field existed.</summary>
+    public string? ExtId { get; set; }
+
     public DateTime ScheduledStartUtc { get; set; }
 
     /// <summary>From ExamTools' sessionDef.duration (seconds), converted at ingestion time. Not in the original shared data model — added in Phase 2 because both the Zoom meeting and the Discord event require an explicit length/end time.</summary>
