@@ -347,15 +347,17 @@ public class FccUlsWatcherServiceTests
     }
 
     [Fact]
-    public async Task RunDailyAsync_RequestsCurrentDayOfWeekFromTimeProvider()
+    public async Task RunDailyAsync_RequestsYesterdayAndTodayFromTimeProvider()
     {
+        // Checks yesterday's day-name file too, not just today's — see RunDailyAsync's own remarks
+        // on why a same-day-only check can permanently miss a late-published grant.
         await using var dbContext = CreateContext();
         var client = new FakeFccUlsClient();
 
         await CreateService(dbContext, client).RunDailyAsync(CancellationToken.None);
 
-        Assert.Equal([DayOfWeek.Monday], client.DailyApplicationCallDays);
-        Assert.Equal([DayOfWeek.Monday], client.DailyLicenseCallDays);
+        Assert.Equal([DayOfWeek.Sunday, DayOfWeek.Monday], client.DailyApplicationCallDays);
+        Assert.Equal([DayOfWeek.Sunday, DayOfWeek.Monday], client.DailyLicenseCallDays);
         Assert.Equal(0, client.WeeklyApplicationCalls);
         Assert.Equal(0, client.WeeklyLicenseCalls);
     }
@@ -376,8 +378,8 @@ public class FccUlsWatcherServiceTests
 
         await service.RunDailyAsync(CancellationToken.None);
 
-        Assert.Equal([DayOfWeek.Wednesday], client.DailyApplicationCallDays);
-        Assert.Equal([DayOfWeek.Wednesday], client.DailyLicenseCallDays);
+        Assert.Equal([DayOfWeek.Tuesday, DayOfWeek.Wednesday], client.DailyApplicationCallDays);
+        Assert.Equal([DayOfWeek.Tuesday, DayOfWeek.Wednesday], client.DailyLicenseCallDays);
     }
 
     [Fact]

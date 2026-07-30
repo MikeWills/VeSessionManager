@@ -61,13 +61,35 @@ public class FccUlsWatcherService(
 {
     private const string ActiveLicenseStatus = "A";
 
-    public Task<FccUlsWatchResult> RunDailyAsync(CancellationToken cancellationToken)
+    /// <summary>
+    /// Checks both today's and yesterday's day-name file, not just today's — found live 2026-07-30
+    /// via a real missed grant (FRN 0038641205/KR4NZD): each day-name file keeps accumulating that
+    /// weekday's own transactions until the day passes, so a grant FCC publishes later in the day
+    /// than this job's one same-day check (the job only runs once or twice a day, see
+    /// FccDailyWatcherJob) is otherwise gone forever the moment "today" rolls over to the next
+    /// day-name — there is no other same-week path back to it (FccWeeklyCatchupJob's "complete"
+    /// snapshot lags too far behind, see that job's own remarks). Re-checking yesterday's file is a
+    /// cheap, idempotent no-op the rest of the time (FccUlsWatcherService only ever touches
+    /// non-terminal candidates). See docs/fcc-uls-watcher.md.
+    /// </summary>
+    public async Task<FccUlsWatchResult> RunDailyAsync(CancellationToken cancellationToken)
     {
         // Eastern time, not raw UTC: FccDailyWatcherJob's evening retry (default 8pm ET) lands
         // at/after UTC midnight for most of the year, which would otherwise resolve to tomorrow's
         // DayOfWeek and fetch the wrong (not-yet-published) file. See docs/fcc-uls-watcher.md.
-        var day = TimeZoneInfo.ConvertTimeFromUtc(timeProvider.GetUtcNow().UtcDateTime, FccUlsSchedule.EasternTimeZone).DayOfWeek;
-        return RunForDayAsync(day, cancellationToken);
+        var today = TimeZoneInfo.ConvertTimeFromUtc(timeProvider.GetUtcNow().UtcDateTime, FccUlsSchedule.EasternTimeZone).DayOfWeek;
+        var yesterday = (DayOfWeek)(((int)today + 6) % 7);
+
+        var yesterdayResult = await RunForDayAsync(yesterday, cancellationToken);
+        var todayResult = await RunForDayAsync(today, cancellationToken);
+
+        return new FccUlsWatchResult
+        {
+            CandidatesMarkedReceived = yesterdayResult.CandidatesMarkedReceived + todayResult.CandidatesMarkedReceived,
+            CandidatesMarkedGranted = yesterdayResult.CandidatesMarkedGranted + todayResult.CandidatesMarkedGranted,
+            ApplicationFileAvailable = yesterdayResult.ApplicationFileAvailable || todayResult.ApplicationFileAvailable,
+            LicenseFileAvailable = yesterdayResult.LicenseFileAvailable || todayResult.LicenseFileAvailable
+        };
     }
 
     /// <summary>

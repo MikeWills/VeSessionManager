@@ -172,6 +172,28 @@ until its columns are set via direct DB edit (no admin UI yet):
 
 ## Feature requests (not yet triaged)
 
+- [ ] **Applicant Status page — surface candidates possibly stuck in FCC review, not just "not yet
+  matched"** (requested 2026-07-30, prompted by a live incident where a real candidate's grant was
+  briefly missed — see the FCC ULS watcher reliability fixes below and CLAUDE.md's Change Log).
+  Motivation: a candidate can be genuinely held up by FCC before their application even gets
+  processed — most often because they answered "yes" on the Basic Qualification Question (felony
+  disclosure), which triggers a manual character-qualification review; Red Light Rule (delinquent
+  federal debt) holds happen too, semi-regularly, though BQQ is the more common cause per the user.
+  Confirmed live (2026-07-30) that FCC's public ULS bulk data — daily or weekly, license or
+  application zip, doesn't matter, same record types either way — never exposes *why* something is
+  stuck: `EN.dat`'s status-code fields were blank across every row checked, `CO.dat` only ever
+  contains call-sign-issuance comments, and a full-text grep of every `.dat` file in both zips for
+  "character"/"qualification"/"red light"/"debt"/"delinquent" turned up nothing. So there is no way
+  to positively detect *which* hold applies from FCC's own data. What we do already have on our side:
+  `Candidate.HasFelonyDisclosure` (the BQQ answer itself, captured from ExamTools at ingestion,
+  currently only used to trigger the felony-disclosure-instructions email) — a reasonable proxy for
+  "may be under extended FCC review" when combined with the candidate still sitting in
+  `Unmatched`/`Received` past a normal turnaround. No equivalent signal exists for Red Light holds
+  (we have no visibility into FCC debt records), so a generic "days pending" duration column is the
+  best fallback there — stuck-too-long is a hint, not a confirmed cause. Not yet scoped: the aging
+  threshold, exact wording (must not overclaim — "may be under FCC review" not "is under review"),
+  and whether the BQQ flag and the generic aging column both ship or just one.
+
 - [ ] **Link to the candidate's pending FCC *application* (not just the granted license) on the
   Candidate Detail page** (requested 2026-07-29, alongside the license link below). The license
   link (`https://wireless2.fcc.gov/UlsApp/UlsSearch/license.jsp?licKey=...`) is confirmed and
