@@ -1,4 +1,3 @@
-using System.Globalization;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -347,12 +346,12 @@ public class DetailModel(
         Session = new SessionSummary(
             session.Id,
             SessionBreadcrumbFormatter.Format(session.ExtId, session.Title),
-            $"Session — {session.ScheduledStartUtc.ToString("ddd, MMM d, yyyy · h:mm tt", CultureInfo.InvariantCulture)}",
+            $"Session — {EasternTimeFormatter.Format(session.ScheduledStartUtc, "ddd, MMM d, yyyy · h:mm tt")}",
             session.Vec.Name,
             session.ZoomJoinUrl,
             discordEventUrl,
             feeLine,
-            session.TestingCompletedUtc is null ? "Not yet completed" : $"Completed {session.TestingCompletedUtc:MMM d, yyyy}",
+            session.TestingCompletedUtc is null ? "Not yet completed" : $"Completed {EasternTimeFormatter.Format(session.TestingCompletedUtc.Value, "MMM d, yyyy")}",
             session.VecSubmissionStatus == VecSubmissionStatus.Submitted ? "chip-green" : "chip-neutral",
             session.VecSubmissionStatus == VecSubmissionStatus.Submitted ? "Submitted" : "Not submitted",
             session.VecSubmissionStatus == VecSubmissionStatus.Submitted,

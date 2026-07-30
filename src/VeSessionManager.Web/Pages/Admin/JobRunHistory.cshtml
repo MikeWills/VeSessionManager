@@ -34,8 +34,8 @@
             <tr>
                 <td class="session-title">@run.JobName</td>
                 <td>@(run.TeamName ?? "(global)")</td>
-                <td class="mono">@run.StartedUtc.ToString("MMM d, yyyy h:mm:ss tt")</td>
-                <td class="mono">@(run.CompletedUtc?.ToString("MMM d, yyyy h:mm:ss tt") ?? "—")</td>
+                <td class="mono">@EasternTimeFormatter.Format(run.StartedUtc, "MMM d, yyyy h:mm:ss tt")</td>
+                <td class="mono">@(EasternTimeFormatter.Format(run.CompletedUtc, "MMM d, yyyy h:mm:ss tt") ?? "—")</td>
                 <td>
                     @if (run.Success)
                     {

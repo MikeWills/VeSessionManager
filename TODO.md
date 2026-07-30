@@ -172,27 +172,44 @@ until its columns are set via direct DB edit (no admin UI yet):
 
 ## Feature requests (not yet triaged)
 
-- [ ] **Applicant Status page — surface candidates possibly stuck in FCC review, not just "not yet
-  matched"** (requested 2026-07-30, prompted by a live incident where a real candidate's grant was
-  briefly missed — see the FCC ULS watcher reliability fixes below and CLAUDE.md's Change Log).
-  Motivation: a candidate can be genuinely held up by FCC before their application even gets
-  processed — most often because they answered "yes" on the Basic Qualification Question (felony
-  disclosure), which triggers a manual character-qualification review; Red Light Rule (delinquent
-  federal debt) holds happen too, semi-regularly, though BQQ is the more common cause per the user.
-  Confirmed live (2026-07-30) that FCC's public ULS bulk data — daily or weekly, license or
-  application zip, doesn't matter, same record types either way — never exposes *why* something is
-  stuck: `EN.dat`'s status-code fields were blank across every row checked, `CO.dat` only ever
-  contains call-sign-issuance comments, and a full-text grep of every `.dat` file in both zips for
-  "character"/"qualification"/"red light"/"debt"/"delinquent" turned up nothing. So there is no way
-  to positively detect *which* hold applies from FCC's own data. What we do already have on our side:
-  `Candidate.HasFelonyDisclosure` (the BQQ answer itself, captured from ExamTools at ingestion,
-  currently only used to trigger the felony-disclosure-instructions email) — a reasonable proxy for
-  "may be under extended FCC review" when combined with the candidate still sitting in
-  `Unmatched`/`Received` past a normal turnaround. No equivalent signal exists for Red Light holds
-  (we have no visibility into FCC debt records), so a generic "days pending" duration column is the
-  best fallback there — stuck-too-long is a hint, not a confirmed cause. Not yet scoped: the aging
-  threshold, exact wording (must not overclaim — "may be under FCC review" not "is under review"),
-  and whether the BQQ flag and the generic aging column both ship or just one.
+- [ ] **Applicant Status page — surface candidates currently held for FCC Red Light or Basic
+  Qualification Question (BQQ) review** (requested 2026-07-30, prompted by a live incident where a
+  real candidate's grant was briefly missed — see the FCC ULS watcher reliability fixes below and
+  CLAUDE.md's Change Log). Motivation, from someone with real FCC domain expertise: **every**
+  application sits in Red Light status while its $35 fee is unpaid — that's normal, not a signal of a
+  problem — the actionable case is an application still Red Light *after* payment, meaning something's
+  actually wrong. BQQ/felony-disclosure character review is the more common cause of a genuine hold
+  per the user, but both matter.
+
+  **Solved — confirmed against FCC's own two reference docs** (both blocked to automated fetches the
+  same way `wireless2.fcc.gov` is elsewhere in this app; Mike pulled both manually 2026-07-30):
+  `ULS Data File Formats` (https://www.fcc.gov/file/13762/download, record layouts) and
+  `uls_code_definitions` (the code-value legend the layout doc itself doesn't include). Initial
+  attempts to find this in `EN.dat`/`CO.dat`/license-file status fields, and a same-day guess at
+  `AD.dat`'s Application Status field (values `G`/`2`/`D`/`W`/`R`, now confirmed to literally mean
+  Granted/Pending/Dismissed/Withdrawn/Returned per the code-definitions doc — a generic application
+  status, not a red-light/BQQ-specific one), all turned out to be the wrong record type entirely.
+
+  **The real signal lives in `HS.dat` (History) — currently unused by this app at all** (Phase 5 only
+  ever reads `HD.dat`/`EN.dat` from both the application and license zips; `HS.dat`'s `Code` char(6)
+  field, keyed by Unique System Identifier + Log Date, was never parsed). The code-definitions doc
+  gives explicit, human-readable pairs for both causes:
+  - `RDLOFF` = "Offlined for Red Light" / `RDLCOM` = "Redlight Review Completed"
+  - `BQOFF` = "Offlined for Basic Qualification Review" / `BQCOM` = "Basic Qualification Review Completed"
+
+  Detection is now genuinely tractable and not a proxy or a guess: for a candidate's application (by
+  Unique System Identifier), pull its `HS.dat` rows sorted by Log Date; if the most recent of
+  `{RDLOFF, RDLCOM}` is `RDLOFF` (no later `RDLCOM`), it's currently Red-Light-held; same pattern for
+  `{BQOFF, BQCOM}`. This replaces `Candidate.HasFelonyDisclosure` as the BQQ signal too — that field
+  is still fine as a pre-FCC-processing heads-up (it's known the moment ExamTools reports the answer,
+  before an application even exists), but `HS.dat` is the authoritative "is FCC actually holding this
+  up right now" answer for both causes, straight from FCC.
+
+  Not yet scoped: adding `HS.dat` parsing to `FccUlsClient`/`FccUlsRecordParser` (new
+  `FccUlsHistoryRecord`?), where in `FccUlsWatcherService`'s scan this check runs (own pass after
+  applications/licenses?), what persists on `Candidate` to reflect it (a nullable "held reason"
+  enum/flag + the log date?), exact wording on the Applicant Status page, and whether this fully
+  replaces or just supplements the `HasFelonyDisclosure` pre-check.
 
 - [ ] **Link to the candidate's pending FCC *application* (not just the granted license) on the
   Candidate Detail page** (requested 2026-07-29, alongside the license link below). The license

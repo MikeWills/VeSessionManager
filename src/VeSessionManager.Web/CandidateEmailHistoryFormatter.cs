@@ -1,4 +1,3 @@
-using System.Globalization;
 using VeSessionManager.Core.Entities;
 
 namespace VeSessionManager.Web;
@@ -44,11 +43,8 @@ public static class CandidateEmailHistoryFormatter
         return lines;
     }
 
-    // No stored per-session/per-user timezone anywhere in this app's data model (same reasoning
-    // docs/email-reference.md's SessionDate placeholder documents), so this is the raw UTC instant,
-    // not converted to any local time — labeled so it isn't mistaken for one.
     public static string FormatSentUtc(DateTime sentUtc) =>
-        sentUtc.ToString("M/d/yyyy h:mm tt", CultureInfo.InvariantCulture) + " UTC";
+        EasternTimeFormatter.Format(sentUtc, "M/d/yyyy h:mm tt");
 }
 
 public record EmailHistoryLine(string Label, string SentDisplay);

@@ -59,7 +59,7 @@ public sealed class FccUlsClient : IFccUlsClient, IDisposable
     private async Task<IReadOnlyList<FccUlsApplicationRecord>?> DownloadApplicationsAsync(string url, CancellationToken cancellationToken)
     {
         var files = await DownloadDatFilesAsync(url, cancellationToken);
-        return files is null ? null : FccUlsRecordParser.ParseApplications(files.Value.HdContent, files.Value.EnContent);
+        return files is null ? null : FccUlsRecordParser.ParseApplications(files.Value.HdContent, files.Value.EnContent, files.Value.HsContent);
     }
 
     private async Task<IReadOnlyList<FccUlsLicenseRecord>?> DownloadLicensesAsync(string url, CancellationToken cancellationToken)
@@ -68,7 +68,7 @@ public sealed class FccUlsClient : IFccUlsClient, IDisposable
         return files is null ? null : FccUlsRecordParser.ParseLicenses(files.Value.HdContent, files.Value.EnContent);
     }
 
-    private async Task<(string HdContent, string EnContent)?> DownloadDatFilesAsync(string url, CancellationToken cancellationToken)
+    private async Task<(string HdContent, string EnContent, string? HsContent)?> DownloadDatFilesAsync(string url, CancellationToken cancellationToken)
     {
         using var response = await _httpClient.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         if (response.StatusCode == HttpStatusCode.NotFound)
@@ -81,13 +81,25 @@ public sealed class FccUlsClient : IFccUlsClient, IDisposable
 
         await using var zipStream = await response.Content.ReadAsStreamAsync(cancellationToken);
         using var archive = new ZipArchive(zipStream, ZipArchiveMode.Read);
-        return (ReadEntryText(archive, "HD.dat"), ReadEntryText(archive, "EN.dat"));
+        // HS.dat (History — Red Light/Basic Qualification hold codes) read leniently: it's only
+        // needed for the applications path's hold-reason lookup, and unlike HD.dat/EN.dat its
+        // presence hasn't been verified across every ULS zip variant (e.g. the weekly "complete"
+        // snapshot), so a missing entry there shouldn't fail the whole download.
+        return (ReadEntryText(archive, "HD.dat"), ReadEntryText(archive, "EN.dat"), TryReadEntryText(archive, "HS.dat"));
     }
 
-    private static string ReadEntryText(ZipArchive archive, string entryName)
-    {
-        var entry = archive.GetEntry(entryName)
+    private static string ReadEntryText(ZipArchive archive, string entryName) =>
+        TryReadEntryText(archive, entryName)
             ?? throw new InvalidOperationException($"FCC ULS zip did not contain the expected {entryName} entry.");
+
+    private static string? TryReadEntryText(ZipArchive archive, string entryName)
+    {
+        var entry = archive.GetEntry(entryName);
+        if (entry is null)
+        {
+            return null;
+        }
+
         using var stream = entry.Open();
         using var reader = new StreamReader(stream);
         return reader.ReadToEnd();

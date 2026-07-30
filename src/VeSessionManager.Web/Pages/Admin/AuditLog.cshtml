@@ -31,7 +31,7 @@
         @foreach (var entry in Model.Entries)
         {
             <tr>
-                <td class="mono">@entry.TimestampUtc.ToString("MMM d, yyyy h:mm:ss tt")</td>
+                <td class="mono">@EasternTimeFormatter.Format(entry.TimestampUtc, "MMM d, yyyy")</td>
                 <td>@(entry.UserName ?? "(background job)")</td>
                 <td>@entry.Action</td>
                 <td class="mono">@entry.EntityType #@entry.EntityId</td>

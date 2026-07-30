@@ -43,13 +43,14 @@ else
                 <th>Session</th>
                 <th>License class</th>
                 <th>Status</th>
+                <th>Fee</th>
                 <th>Days pending</th>
             </tr>
         </thead>
         <tbody>
             @if (Model.Pending.Count == 0)
             {
-                <tr><td colspan="6">Nobody is currently waiting on an FCC grant.</td></tr>
+                <tr><td colspan="7">Nobody is currently waiting on an FCC grant.</td></tr>
             }
             @foreach (var row in Model.Pending)
             {
@@ -59,6 +60,7 @@ else
                     <td><a asp-page="./Detail" asp-route-id="@row.SessionId">@row.SessionDateLine</a></td>
                     <td class="mono">@row.LicenseClassLine</td>
                     <td>@row.StatusLabel</td>
+                    <td>@row.FeeLabel</td>
                     <td class="count">@row.DaysPending</td>
                 </tr>
             }

@@ -40,7 +40,7 @@ else
                 <h2 class="mono">@template.Key</h2>
                 @if (template.UpdatedUtc is not null)
                 {
-                    <span class="session-sub">Last updated @template.UpdatedUtc.Value.ToString("MMM d, yyyy h:mm tt") UTC</span>
+                    <span class="session-sub">Last updated @EasternTimeFormatter.Format(template.UpdatedUtc.Value, "MMM d, yyyy h:mm tt")</span>
                 }
             </div>
             <div class="roster-list" style="margin-bottom:12px;">

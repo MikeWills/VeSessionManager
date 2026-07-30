@@ -1,4 +1,3 @@
-using System.Globalization;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -67,7 +66,7 @@ public class VecSubmissionModel(
         Sessions = sessions.Select(s => new SessionRow(
             s.Id,
             s.ExamToolsSessionId,
-            s.ScheduledStartUtc.ToString("MMM d, yyyy", CultureInfo.InvariantCulture),
+            EasternTimeFormatter.Format(s.ScheduledStartUtc, "MMM d, yyyy"),
             s.Vec.Name,
             s.VecSubmissionStatus == VecSubmissionStatus.Submitted,
             s.VecSubmissionStatus == VecSubmissionStatus.Submitted ? "chip-green" : "chip-neutral",

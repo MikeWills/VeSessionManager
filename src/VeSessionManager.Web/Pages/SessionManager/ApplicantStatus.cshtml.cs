@@ -77,31 +77,72 @@ public class ApplicantStatusModel(AppDbContext dbContext, UserManager<User> user
 
     private static PendingRow ToPendingRow(Candidate c, DateTime now)
     {
-        var anchor = c.ApplicationDateEnteredUtc ?? c.DateRegisteredUtc;
-        var daysPending = (int)(now.Date - anchor.Date).TotalDays;
+        // Falls back to the session date, not DateRegisteredUtc — a candidate can register for an
+        // exam days before actually taking it, and FCC has nothing to process until the exam itself
+        // happens. Using DateRegisteredUtc here made an Unmatched candidate whose session was
+        // literally today show several "days pending" already, counting time before the exam ever
+        // occurred. ApplicationDateEnteredUtc (once Received) remains the accurate anchor — that's
+        // FCC's own Last Action Date on the matched application.
+        var anchor = c.ApplicationDateEnteredUtc ?? c.Session.ScheduledStartUtc;
+        var daysPending = Math.Max(0, (int)(now.Date - anchor.Date).TotalDays);
 
         return new PendingRow(
             c.Id,
             c.Session.Id,
             c.Name ?? "—",
             c.Frn ?? "—",
-            c.Session.ScheduledStartUtc.ToString("MMM d, yyyy", CultureInfo.InvariantCulture),
+            EasternTimeFormatter.Format(c.Session.ScheduledStartUtc, "MMM d, yyyy"),
             LicenseClassFormatter.FormatTransition(c.InitialLicenseClass, c.NewLicenseClass) ?? "—",
-            c.ApplicationStatus == CandidateApplicationStatus.Received ? "Received" : "Awaiting FCC match",
+            FccStatusLabel(c),
+            FccFeeLabel(c),
             daysPending);
     }
+
+    /// <summary>
+    /// The real FCC-side status, not just "did our own matching find it yet": Unmatched means FCC
+    /// has no application on file at all — still with the VEC, not FCC's problem to report on — so
+    /// "VEC Processing" rather than an internal-sounding "Awaiting FCC match". Once Received, FCC has
+    /// it; FccHoldReason (from FCC's own HS.dat history codes, refreshed every watcher run — see
+    /// FccUlsWatcherService) reports whether it's currently held for Red Light (usually just an
+    /// unpaid-fee window, not itself a problem) or Basic Qualification (character) review, straight
+    /// from FCC rather than a proxy like Candidate.HasFelonyDisclosure.
+    /// </summary>
+    private static string FccStatusLabel(Candidate c) =>
+        c.ApplicationStatus == CandidateApplicationStatus.Unmatched
+            ? "VEC Processing"
+            : c.FccHoldReason switch
+            {
+                FccApplicationHoldReason.RedLight => "Held — Red Light",
+                FccApplicationHoldReason.BasicQualification => "Held — Basic Qualification",
+                FccApplicationHoldReason.RedLightAndBasicQualification => "Held — Red Light + Basic Qualification",
+                _ => "Application Received/Processing"
+            };
+
+    /// <summary>Separate from FccStatusLabel — FccPaymentStatus (also from HS.dat) answers the fee question specifically, since a candidate can be Application Received/Processing with the fee either confirmed or still unverified.</summary>
+    private static string FccFeeLabel(Candidate c) =>
+        c.ApplicationStatus == CandidateApplicationStatus.Unmatched
+            ? "—"
+            : c.FccPaymentStatus switch
+            {
+                FccApplicationPaymentStatus.Paid => "Paid",
+                FccApplicationPaymentStatus.PendingVerification => "Pending",
+                _ => "—"
+            };
 
     private static RecentlyIssuedRow ToRecentlyIssuedRow(Candidate c) =>
         new(
             c.Id,
             c.Session.Id,
             c.Name ?? "—",
-            c.Session.ScheduledStartUtc.ToString("MMM d, yyyy", CultureInfo.InvariantCulture),
+            EasternTimeFormatter.Format(c.Session.ScheduledStartUtc, "MMM d, yyyy"),
             c.CallSign ?? "—",
             LicenseClassFormatter.FormatTransition(c.InitialLicenseClass, c.NewLicenseClass) ?? "—",
+            // Date-only FCC field (see ToPendingRow's anchor comment / EasternTimeFormatter's own
+            // doc remarks) — not run through EasternTimeFormatter, same reasoning as
+            // CandidateDetail.cshtml.cs's LicenseGrantDateLine.
             c.LicenseGrantDateUtc!.Value.ToString("MMM d, yyyy", CultureInfo.InvariantCulture));
 
-    public record PendingRow(int CandidateId, int SessionId, string Name, string Frn, string SessionDateLine, string LicenseClassLine, string StatusLabel, int DaysPending);
+    public record PendingRow(int CandidateId, int SessionId, string Name, string Frn, string SessionDateLine, string LicenseClassLine, string StatusLabel, string FeeLabel, int DaysPending);
 
     public record RecentlyIssuedRow(int CandidateId, int SessionId, string Name, string SessionDateLine, string CallSign, string LicenseClassLine, string GrantDateLine);
 }

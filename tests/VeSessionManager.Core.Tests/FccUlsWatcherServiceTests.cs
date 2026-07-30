@@ -173,6 +173,67 @@ public class FccUlsWatcherServiceTests
     }
 
     [Fact]
+    public async Task ReceivedCandidate_HoldReasonRefreshesFromApplicationFile_EvenWithoutAStatusTransition()
+    {
+        // FccHoldReason must refresh every run, not just on the Unmatched->Received transition — a
+        // Red Light/Basic Qualification hold can be placed or cleared well after the candidate was
+        // first matched. See FccUlsWatcherService.ProcessApplicationsAsync.
+        await using var dbContext = CreateContext();
+        var sessionStart = new DateTime(2026, 7, 15, 0, 0, 0, DateTimeKind.Utc);
+        var candidate = await SeedCandidateAsync(dbContext, frn: "0001234567", status: CandidateApplicationStatus.Received, sessionStartUtc: sessionStart);
+        var lastActionDate = new DateTime(2026, 7, 20, 0, 0, 0, DateTimeKind.Utc);
+        var client = new FakeFccUlsClient
+        {
+            DailyApplications = [new FccUlsApplicationRecord("100", "0001234567", lastActionDate, FccApplicationHoldReason.RedLight)]
+        };
+
+        var result = await CreateService(dbContext, client).RunDailyAsync(CancellationToken.None);
+
+        Assert.Equal(0, result.CandidatesMarkedReceived); // already Received — no transition
+        var updated = await dbContext.Candidates.SingleAsync(c => c.Id == candidate.Id);
+        Assert.Equal(CandidateApplicationStatus.Received, updated.ApplicationStatus);
+        Assert.Equal(FccApplicationHoldReason.RedLight, updated.FccHoldReason);
+    }
+
+    [Fact]
+    public async Task ReceivedCandidate_PaymentStatusRefreshesFromApplicationFile_EvenWithoutAStatusTransition()
+    {
+        await using var dbContext = CreateContext();
+        var sessionStart = new DateTime(2026, 7, 15, 0, 0, 0, DateTimeKind.Utc);
+        var candidate = await SeedCandidateAsync(dbContext, frn: "0001234567", status: CandidateApplicationStatus.Received, sessionStartUtc: sessionStart);
+        var lastActionDate = new DateTime(2026, 7, 20, 0, 0, 0, DateTimeKind.Utc);
+        var client = new FakeFccUlsClient
+        {
+            DailyApplications = [new FccUlsApplicationRecord("100", "0001234567", lastActionDate, PaymentStatus: FccApplicationPaymentStatus.Paid)]
+        };
+
+        await CreateService(dbContext, client).RunDailyAsync(CancellationToken.None);
+
+        var updated = await dbContext.Candidates.SingleAsync(c => c.Id == candidate.Id);
+        Assert.Equal(FccApplicationPaymentStatus.Paid, updated.FccPaymentStatus);
+    }
+
+    [Fact]
+    public async Task ReceivedCandidate_HoldReasonClears_WhenApplicationFileNoLongerShowsAHold()
+    {
+        await using var dbContext = CreateContext();
+        var sessionStart = new DateTime(2026, 7, 15, 0, 0, 0, DateTimeKind.Utc);
+        var candidate = await SeedCandidateAsync(dbContext, frn: "0001234567", status: CandidateApplicationStatus.Received, sessionStartUtc: sessionStart);
+        candidate.FccHoldReason = FccApplicationHoldReason.RedLight;
+        await dbContext.SaveChangesAsync();
+        var lastActionDate = new DateTime(2026, 7, 20, 0, 0, 0, DateTimeKind.Utc);
+        var client = new FakeFccUlsClient
+        {
+            DailyApplications = [new FccUlsApplicationRecord("100", "0001234567", lastActionDate, FccApplicationHoldReason.None)]
+        };
+
+        await CreateService(dbContext, client).RunDailyAsync(CancellationToken.None);
+
+        var updated = await dbContext.Candidates.SingleAsync(c => c.Id == candidate.Id);
+        Assert.Equal(FccApplicationHoldReason.None, updated.FccHoldReason);
+    }
+
+    [Fact]
     public async Task ReceivedCandidate_FrnInActiveLicenseFile_BecomesGranted_WithCallSignAndGrantDate()
     {
         await using var dbContext = CreateContext();

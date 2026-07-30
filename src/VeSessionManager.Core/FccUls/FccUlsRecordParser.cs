@@ -1,4 +1,5 @@
 using System.Globalization;
+using VeSessionManager.Core.Entities;
 
 namespace VeSessionManager.Core.FccUls;
 
@@ -26,9 +27,22 @@ public static class FccUlsRecordParser
     private const int EnUsiField = 2;
     private const int EnFrnField = 23;
 
-    public static IReadOnlyList<FccUlsApplicationRecord> ParseApplications(string hdContent, string enContent)
+    private const int HsUsiField = 2;
+    private const int HsCodeField = 6;
+
+    private const string RedLightOffCode = "RDLOFF";
+    private const string RedLightCompleteCode = "RDLCOM";
+    private const string BasicQualificationOffCode = "BQOFF";
+    private const string BasicQualificationCompleteCode = "BQCOM";
+    private const string PaymentOffCode = "FVPOFF";
+    private const string PaymentConfirmedCode = "FVPCNF";
+    private const string PaymentVerificationCompleteCode = "FVPCOM";
+
+    /// <summary>hsContent is optional — a caller that doesn't have History data (or is only after license records) can omit it and every application simply comes back with HoldReason None / PaymentStatus Unknown.</summary>
+    public static IReadOnlyList<FccUlsApplicationRecord> ParseApplications(string hdContent, string enContent, string? hsContent = null)
     {
         var frnByUsi = ParseFrnByUsi(enContent);
+        var signalsByUsi = ParseHistorySignalsByUsi(hsContent);
         var results = new List<FccUlsApplicationRecord>();
 
         foreach (var row in ParseRows(hdContent, "HD"))
@@ -45,10 +59,86 @@ public static class FccUlsRecordParser
                 continue;
             }
 
-            results.Add(new FccUlsApplicationRecord(usi, frn, lastActionDate.Value));
+            var (holdReason, paymentStatus) = signalsByUsi.GetValueOrDefault(usi, (FccApplicationHoldReason.None, FccApplicationPaymentStatus.Unknown));
+            results.Add(new FccUlsApplicationRecord(usi, frn, lastActionDate.Value, holdReason, paymentStatus));
         }
 
         return results;
+    }
+
+    /// <summary>
+    /// HS.dat's History rows are keyed by Unique System Identifier + a day-granularity Log Date (no
+    /// time component), so same-day rows aren't reliably orderable by date alone — this walks each
+    /// USI's rows in the file's own natural (already-chronological) order instead of re-sorting by
+    /// Log Date, toggling each of the three OFF/COM code pairs (Red Light, Basic Qualification, fee
+    /// Payment Verification) as it's encountered. Codes are FCC's own documented values (see
+    /// uls_code_definitions), not guessed from data correlation.
+    /// </summary>
+    private static Dictionary<string, (FccApplicationHoldReason HoldReason, FccApplicationPaymentStatus PaymentStatus)> ParseHistorySignalsByUsi(string? hsContent)
+    {
+        var result = new Dictionary<string, (FccApplicationHoldReason, FccApplicationPaymentStatus)>();
+        if (hsContent is null)
+        {
+            return result;
+        }
+
+        var redLightHeldByUsi = new Dictionary<string, bool>();
+        var basicQualificationHeldByUsi = new Dictionary<string, bool>();
+        var paymentPendingByUsi = new Dictionary<string, bool>();
+
+        foreach (var row in ParseRows(hsContent, "HS"))
+        {
+            var usi = Field(row, HsUsiField);
+            var code = Field(row, HsCodeField);
+            if (usi is null || code is null)
+            {
+                continue;
+            }
+
+            switch (code)
+            {
+                case RedLightOffCode:
+                    redLightHeldByUsi[usi] = true;
+                    break;
+                case RedLightCompleteCode:
+                    redLightHeldByUsi[usi] = false;
+                    break;
+                case BasicQualificationOffCode:
+                    basicQualificationHeldByUsi[usi] = true;
+                    break;
+                case BasicQualificationCompleteCode:
+                    basicQualificationHeldByUsi[usi] = false;
+                    break;
+                case PaymentOffCode:
+                    paymentPendingByUsi[usi] = true;
+                    break;
+                case PaymentConfirmedCode:
+                case PaymentVerificationCompleteCode:
+                    paymentPendingByUsi[usi] = false;
+                    break;
+            }
+        }
+
+        foreach (var usi in redLightHeldByUsi.Keys.Union(basicQualificationHeldByUsi.Keys).Union(paymentPendingByUsi.Keys))
+        {
+            var redLightHeld = redLightHeldByUsi.GetValueOrDefault(usi);
+            var basicQualificationHeld = basicQualificationHeldByUsi.GetValueOrDefault(usi);
+            var holdReason = (redLightHeld, basicQualificationHeld) switch
+            {
+                (true, true) => FccApplicationHoldReason.RedLightAndBasicQualification,
+                (true, false) => FccApplicationHoldReason.RedLight,
+                (false, true) => FccApplicationHoldReason.BasicQualification,
+                (false, false) => FccApplicationHoldReason.None
+            };
+
+            var paymentStatus = paymentPendingByUsi.TryGetValue(usi, out var pending)
+                ? (pending ? FccApplicationPaymentStatus.PendingVerification : FccApplicationPaymentStatus.Paid)
+                : FccApplicationPaymentStatus.Unknown;
+
+            result[usi] = (holdReason, paymentStatus);
+        }
+
+        return result;
     }
 
     public static IReadOnlyList<FccUlsLicenseRecord> ParseLicenses(string hdContent, string enContent)
