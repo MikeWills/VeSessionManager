@@ -275,6 +275,54 @@ public class SessionActionServiceTests
         Assert.Empty(dbContext.AuditLogs);
     }
 
+    // ---- SetRetainedAmountOverrideAsync ----
+
+    [Fact]
+    public async Task SetRetainedAmountOverride_SetsValueAndAuditsAndTracksActingUser()
+    {
+        await using var dbContext = CreateContext();
+        var (_, user, session) = await SeedSessionAsync(dbContext);
+
+        var result = await CreateService(dbContext, new FakeEmailSender()).SetRetainedAmountOverrideAsync(session.Id, 20m, user.Id, CancellationToken.None);
+
+        Assert.Equal(SessionActionResult.Success, result);
+        var updated = dbContext.Sessions.Single();
+        Assert.Equal(20m, updated.RetainedAmountOverride);
+        Assert.Equal(user.Id, updated.RetainedAmountOverrideByUserId);
+        Assert.Equal(Now, updated.RetainedAmountOverrideUtc);
+        Assert.Single(dbContext.AuditLogs, a => a.Action == "SessionRetainedAmountOverrideSet");
+    }
+
+    [Fact]
+    public async Task SetRetainedAmountOverride_Null_ClearsExistingOverride()
+    {
+        await using var dbContext = CreateContext();
+        var (_, user, session) = await SeedSessionAsync(dbContext);
+        session.RetainedAmountOverride = 20m;
+        session.RetainedAmountOverrideByUserId = user.Id;
+        session.RetainedAmountOverrideUtc = Now;
+        await dbContext.SaveChangesAsync();
+
+        var result = await CreateService(dbContext, new FakeEmailSender()).SetRetainedAmountOverrideAsync(session.Id, null, user.Id, CancellationToken.None);
+
+        Assert.Equal(SessionActionResult.Success, result);
+        var updated = dbContext.Sessions.Single();
+        Assert.Null(updated.RetainedAmountOverride);
+        Assert.Null(updated.RetainedAmountOverrideByUserId);
+        Assert.Null(updated.RetainedAmountOverrideUtc);
+    }
+
+    [Fact]
+    public async Task SetRetainedAmountOverride_SessionNotFound_ReturnsNotFound()
+    {
+        await using var dbContext = CreateContext();
+        var (_, user, _) = await SeedSessionAsync(dbContext);
+
+        var result = await CreateService(dbContext, new FakeEmailSender()).SetRetainedAmountOverrideAsync(9999, 20m, user.Id, CancellationToken.None);
+
+        Assert.Equal(SessionActionResult.NotFound, result);
+    }
+
     // ---- DeleteAsync ----
 
     [Fact]

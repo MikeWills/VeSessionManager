@@ -55,6 +55,22 @@
                 </span>
             </div>
             <div class="meta-item"><span class="k">Fee</span><span class="v mono">@Model.Session.FeeLine</span></div>
+            <div class="meta-item"><span class="k">Total collected</span><span class="v mono">@Model.Session.TotalCollectedLine</span></div>
+            <div class="meta-item">
+                <span class="k">Total retained</span>
+                <span class="v mono">
+                    @Model.Session.TotalRetainedLine
+                    @if (Model.Session.RetainedAmountOverridden)
+                    {
+                        <span class="chip chip-amber" style="margin-left:6px;">Overridden</span>
+                    }
+                    @if (Model.CanEdit)
+                    {
+                        <button type="button" class="btn-secondary btn-sm" style="margin-left:6px;" data-open-modal="retainedAmountOverrideModal">Edit</button>
+                    }
+                </span>
+            </div>
+            <div class="meta-item"><span class="k">Remit to VEC</span><span class="v mono">@Model.Session.TotalRemitToVecLine</span></div>
             <div class="meta-item"><span class="k">Testing status</span><span class="v">@Model.Session.TestingStatusLine</span></div>
             <div class="meta-item">
                 <span class="k">VEC submission</span>
@@ -259,6 +275,29 @@
 
 @if (Model.CanEdit)
 {
+    <!-- Retained amount override modal -->
+    <div class="modal-backdrop" id="retainedAmountOverrideModal">
+        <div class="modal">
+            <h3>Override total retained for this session</h3>
+            <p class="session-sub">
+                The default is @Model.Session.FeeLine, applied per candidate and summed. Most sessions'
+                real costs (pencils, paper, postage) are a flat session expense, not a per-candidate
+                one — enter the actual total your team is keeping from this session instead. Leave
+                blank to clear the override and go back to the per-candidate default.
+            </p>
+            <form method="post" asp-page-handler="SetRetainedAmountOverride">
+                <div class="field">
+                    <label for="retainedAmountOverride">Total retained ($)</label>
+                    <input id="retainedAmountOverride" name="overrideAmount" type="number" step="0.01" min="0" value="@Model.Session.RetainedAmountOverrideRawValue" placeholder="Use per-candidate default" />
+                </div>
+                <div class="modal-actions">
+                    <button type="button" class="btn-secondary btn-sm" data-close-modal>Cancel</button>
+                    <button type="submit" class="btn-primary btn-sm">Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
     <!-- Add VE modal -->
     <div class="modal-backdrop" id="addVeModal">
         <div class="modal">

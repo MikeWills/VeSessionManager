@@ -164,52 +164,48 @@ until its columns are set via direct DB edit (no admin UI yet):
 
 - [x] ~~**`claude-review` GitHub Action errors out on larger PRs instead of completing**~~ (found 2026-07-22 on PR #6; fixed 2026-07-22). `.github/workflows/claude-code-review.yml` ran the `code-review` plugin's `/code-review:code-review` command with no explicit tool-permission configuration for the sandboxed run — on a PR of any real size, the review agent needed things like `dotnet build`/`dotnet test` to review meaningfully, got denied every time (`permission_denials_count: 46` on PR #6's run), and the whole run reported `is_error: true` and failed — not because it found real issues, just an infra/config gap. `build-and-test` (the real quality gate) was unaffected. Fixed by adding `claude_args: --allowedTools "Bash(dotnet build *)" "Bash(dotnet test *)" "Bash(dotnet restore *)" "Bash(git diff *)" "Bash(git log *)" "Bash(git show *)"` — permission rule syntax (space before the wildcard) confirmed against this repo's own real `.claude/settings.local.json`, not guessed. Not blocking merges today (no branch protection on this private/free repo), but the check should now actually complete instead of erroring out — worth watching the next PR's run to confirm.
 
-- [ ] **Session list filter row is confusing — the Status filter doesn't match the Status column, and the Team filter behaves differently than the other two** (reported 2026-07-29). `Pages/SessionManager/Index.cshtml(.cs)`. Three related fixes requested:
-  1. The Status filter checkboxes (Upcoming/NeedsReview/Past) don't correspond to the labels actually shown in the table's Status chip (`ToRow`'s `statusLabel`: Active/Reschedule flagged/Completed/Cancelled) — align the filter's options to the same set of labels the column actually shows.
-  2. Move "Upcoming" out of the Status filter and into the Date range dropdown instead (it's a time-window concept, not a lifecycle-status one).
-  3. Reorder the filter row: Status, Date range, Team, then Page size — and move Page size to the right side of the table (near pagination) instead of sitting in the filter row.
-  4. The Team `<select>` currently auto-submits on `onchange` with no Apply button, while Status and Date range are dropdown menus with an explicit Apply button — inconsistent and confusing per the report. Make Team match whichever pattern the other two end up using once (1)/(2)/(3) are settled.
+- [x] ~~**Session list filter row is confusing — the Status filter doesn't match the Status column, and the Team filter behaves differently than the other two**~~ (reported 2026-07-29, found already built when re-checked 2026-07-30 — this entry had just never been marked done; see `IndexModel.cs`'s own class doc comment and CLAUDE.md's Change Log, "Filter-row realignment"). `Pages/SessionManager/Index.cshtml(.cs)`. All four requested fixes confirmed present:
+  1. Status filter checkboxes now exactly match the table's Status chip labels — `Active`/`RescheduleFlagged` ("Reschedule flagged")/`Completed`/`Cancelled`, replacing the old `Upcoming`/`NeedsReview`/`Past` set.
+  2. "Upcoming" lives in the Date range dropdown (`Upcoming`, `Last7PlusUpcoming`, `Last7`/`14`/`30`/`60`/`90`, `Last6Months`, `Last12Months`, plus "Any time"), not the Status filter.
+  3. Filter row order is Status → Date range → Team; Page size now sits in the pagination block (references the filter form via `form="sessionFilters"` rather than being physically inside it).
+  4. Team is now the same radio-buttons-plus-explicit-Apply-button `.filter-dropdown` pattern as Status and Date range — no more auto-submitting `onchange`.
 
 ## Feature requests (not yet triaged)
 
-- [ ] **Applicant Status page — surface candidates currently held for FCC Red Light or Basic
-  Qualification Question (BQQ) review** (requested 2026-07-30, prompted by a live incident where a
-  real candidate's grant was briefly missed — see the FCC ULS watcher reliability fixes below and
-  CLAUDE.md's Change Log). Motivation, from someone with real FCC domain expertise: **every**
-  application sits in Red Light status while its $35 fee is unpaid — that's normal, not a signal of a
-  problem — the actionable case is an application still Red Light *after* payment, meaning something's
-  actually wrong. BQQ/felony-disclosure character review is the more common cause of a genuine hold
-  per the user, but both matter.
+- [x] ~~**Applicant Status page — surface candidates currently held for FCC Red Light or Basic
+  Qualification Question (BQQ) review**~~ (requested 2026-07-30, built and merged same day, PR
+  [#53](https://github.com/MikeWills/VeSessionManager/pull/53)). Motivation, from someone with real
+  FCC domain expertise: **every** application sits in Red Light status while its $35 fee is unpaid —
+  that's normal, not a signal of a problem — the actionable case is an application still Red Light
+  *after* payment, meaning something's actually wrong. BQQ/felony-disclosure character review is the
+  more common cause of a genuine hold per the user, but both matter.
 
-  **Solved — confirmed against FCC's own two reference docs** (both blocked to automated fetches the
-  same way `wireless2.fcc.gov` is elsewhere in this app; Mike pulled both manually 2026-07-30):
-  `ULS Data File Formats` (https://www.fcc.gov/file/13762/download, record layouts) and
-  `uls_code_definitions` (the code-value legend the layout doc itself doesn't include). Initial
-  attempts to find this in `EN.dat`/`CO.dat`/license-file status fields, and a same-day guess at
-  `AD.dat`'s Application Status field (values `G`/`2`/`D`/`W`/`R`, now confirmed to literally mean
-  Granted/Pending/Dismissed/Withdrawn/Returned per the code-definitions doc — a generic application
-  status, not a red-light/BQQ-specific one), all turned out to be the wrong record type entirely.
+  Confirmed against FCC's own two reference docs (both blocked to automated fetches the same way
+  `wireless2.fcc.gov` is elsewhere in this app; Mike pulled both manually 2026-07-30): `ULS Data File
+  Formats` (record layouts) and `uls_code_definitions` (the code-value legend the layout doc doesn't
+  include). Initial attempts to find this in `EN.dat`/`CO.dat`/license-file status fields, and a
+  same-day guess at `AD.dat`'s Application Status field (values `G`/`2`/`D`/`W`/`R`, confirmed to mean
+  Granted/Pending/Dismissed/Withdrawn/Returned — a generic status, not red-light/BQQ-specific), all
+  turned out to be the wrong record type. The real signal is `HS.dat` (History, previously unused by
+  this app) — `RDLOFF`/`RDLCOM` ("Offlined for Red Light"/"Redlight Review Completed") and
+  `BQOFF`/`BQCOM` ("Offlined for Basic Qualification Review"/"...Completed"), each parsed as an
+  OFF/COM toggle keyed by Unique System Identifier, walked in the file's own natural order (Log Date
+  is day-granularity only, not reliably sortable within a day).
 
-  **The real signal lives in `HS.dat` (History) — currently unused by this app at all** (Phase 5 only
-  ever reads `HD.dat`/`EN.dat` from both the application and license zips; `HS.dat`'s `Code` char(6)
-  field, keyed by Unique System Identifier + Log Date, was never parsed). The code-definitions doc
-  gives explicit, human-readable pairs for both causes:
-  - `RDLOFF` = "Offlined for Red Light" / `RDLCOM` = "Redlight Review Completed"
-  - `BQOFF` = "Offlined for Basic Qualification Review" / `BQCOM` = "Basic Qualification Review Completed"
-
-  Detection is now genuinely tractable and not a proxy or a guess: for a candidate's application (by
-  Unique System Identifier), pull its `HS.dat` rows sorted by Log Date; if the most recent of
-  `{RDLOFF, RDLCOM}` is `RDLOFF` (no later `RDLCOM`), it's currently Red-Light-held; same pattern for
-  `{BQOFF, BQCOM}`. This replaces `Candidate.HasFelonyDisclosure` as the BQQ signal too — that field
-  is still fine as a pre-FCC-processing heads-up (it's known the moment ExamTools reports the answer,
-  before an application even exists), but `HS.dat` is the authoritative "is FCC actually holding this
-  up right now" answer for both causes, straight from FCC.
-
-  Not yet scoped: adding `HS.dat` parsing to `FccUlsClient`/`FccUlsRecordParser` (new
-  `FccUlsHistoryRecord`?), where in `FccUlsWatcherService`'s scan this check runs (own pass after
-  applications/licenses?), what persists on `Candidate` to reflect it (a nullable "held reason"
-  enum/flag + the log date?), exact wording on the Applicant Status page, and whether this fully
-  replaces or just supplements the `HasFelonyDisclosure` pre-check.
+  Shipped: `FccUlsClient` now reads `HS.dat` alongside `HD.dat`/`EN.dat` (lenient — missing entry
+  doesn't fail the download); `FccUlsRecordParser.ParseApplications` gained an optional `hsContent`
+  param computing both `FccApplicationHoldReason` (None/RedLight/BasicQualification/Both) and, as a
+  bonus second signal found in the same file, `FccApplicationPaymentStatus`
+  (Unknown/PendingVerification/Paid) from `FVPOFF`/`FVPCNF`/`FVPCOM` ("Offlined for Payment
+  Verification"/"Payment Confirmed"/"Payment Verification Completed"). Both new `Candidate` fields
+  refresh every `FccUlsWatcherService` run, including for already-`Received` candidates (a hold can be
+  placed or cleared after the initial match, not just at match time). Applicant Status page now shows
+  "VEC Processing" (not in FCC's system yet) / "Application Received/Processing" / "Held — Red Light"
+  / "Held — Basic Qualification" plus a separate Fee column (Paid/Pending/—). Also fixed in the same
+  pass: "Days pending" was anchoring `Unmatched` candidates on `DateRegisteredUtc` (days before the
+  actual exam) instead of the session date. `Candidate.HasFelonyDisclosure` is kept as-is (a
+  pre-FCC-processing heads-up), not replaced — `HS.dat` is the authoritative "is FCC holding this up
+  right now" signal, that field is "did the candidate self-report something that might trigger one."
 
 - [ ] **Link to the candidate's pending FCC *application* (not just the granted license) on the
   Candidate Detail page** (requested 2026-07-29, alongside the license link below). The license
@@ -246,20 +242,21 @@ until its columns are set via direct DB edit (no admin UI yet):
   `README.md`/`CONTRIBUTING.md`/`CHANGELOG.md` do). No scope/format decided yet — revisit once
   ready to figure out what a real Session Manager/TeamAdmin actually needs walked through.
 
-- [ ] **TeamAdmin (and SystemAdmin) need the ability to delete a session outright** (requested
+- [x] ~~**TeamAdmin (and SystemAdmin) need the ability to delete a session outright**~~ (requested
   2026-07-29, prompted by the orphaned walk-in-candidate rows found while verifying the
-  license-class backfill — see `docs/exam-result-license-class.md`). Session Manager already can't
-  delete a session; nothing in the admin backend can either. Scope it to TeamAdmin/SystemAdmin only
-  (not SessionManager) since this is a destructive, hard-to-reverse cleanup action, not a routine
-  session-management one — see CLAUDE.md's "Executing actions with care" guidance on this class of
-  action generally. Not a trivial delete: `Candidate.SessionId` and
-  `SessionVolunteerExaminer.SessionId` are both `DeleteBehavior.Restrict` in `AppDbContext`, so
-  cascading (or blocking-with-a-clear-error, e.g. "N candidates still attached") needs a deliberate
-  decision, not just removing the FK constraint. Should audit-log the deletion
-  (`AuditLogExtensions.AddAuditLog`) same as every other destructive action in this app, and likely
-  wants a confirmation step given it can't be undone. Also worth deciding whether re-ingestion would
-  silently recreate the session next poll if it's still present in ExamTools' feed (probably should
-  — this is for cleaning up genuinely orphaned/stale local rows, not fighting the source of truth).
+  license-class backfill — see `docs/exam-result-license-class.md`; found already built when
+  re-checked 2026-07-30, this entry had just never been marked done). Scoped to TeamAdmin/SystemAdmin
+  only (`AdminAccessScope.CanManageTeam`, not the regular Session Manager `CanEdit`), per CLAUDE.md's
+  "Executing actions with care" guidance for a destructive, hard-to-reverse action.
+  `SessionActionService.DeleteAsync` (`src/VeSessionManager.Core/Sessions/SessionActionService.cs`)
+  removes, in one transaction and FK-safe order, Payments → Candidates → SessionVolunteerExaminers →
+  the Session itself, writes an `AuditLog` entry first, and **blocks** the delete
+  (`SessionActionResult.Blocked`) if any of the session's payments are still referenced by an
+  unresolved `UnmatchedSquarePayment.MatchedPaymentId` match. `Detail.cshtml(.cs)`'s
+  `OnPostDeleteSessionAsync` wires it to a confirmation modal (`#deleteSessionModal`) listing exactly
+  how many candidates/payments/VE assignments will be removed, gated behind `CanDeleteSession`. Not
+  addressed: whether re-ingestion would recreate the session if still present in ExamTools' feed —
+  untested, not confirmed either way.
 
 ## Carried over from earlier phases
 

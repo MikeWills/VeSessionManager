@@ -41,6 +41,22 @@ public class Session
     public int FeeConfigurationId { get; set; }
     public FeeConfiguration FeeConfiguration { get; set; } = null!;
 
+    /// <summary>
+    /// Flat TOTAL dollar amount this whole session retains, overriding the default per-candidate
+    /// FeeConfiguration.RetainedAmount x candidate-count math entirely. A VE team may only keep
+    /// enough to cover its real expenses (capped at RetainedAmount per candidate) — most sessions'
+    /// real costs (pencils, paper, postage) are a fixed session-level expense, not a per-candidate
+    /// one, so a team with $20 of real expenses and 50 candidates wants to retain $20 total, not
+    /// compute/edit a per-candidate figure across 50 rows. Null means "use the per-candidate default
+    /// as normal" (FeeConfiguration.RemitToVecAmount summed across every Paid payment) — the common
+    /// case for teams whose real costs (e.g. Zoom) already justify keeping the full per-candidate
+    /// amount. See GetFeeSummary.
+    /// </summary>
+    public decimal? RetainedAmountOverride { get; set; }
+    public int? RetainedAmountOverrideByUserId { get; set; }
+    public User? RetainedAmountOverrideByUser { get; set; }
+    public DateTime? RetainedAmountOverrideUtc { get; set; }
+
     public SessionStatus Status { get; set; } = SessionStatus.Active;
     public DateTime? CancelledUtc { get; set; }
 
@@ -70,4 +86,28 @@ public class Session
     /// something that already happened. Not EF-mapped, computed on demand — always call with the
     /// same TimeProvider-sourced `now` a service is already using, not DateTime.UtcNow directly.</summary>
     public bool HasEnded(DateTime now) => ScheduledStartUtc.AddMinutes(DurationMinutes) <= now;
+
+    /// <summary>
+    /// Session-level fee reconciliation — TotalCollected sums every Paid payment's Amount across
+    /// every candidate in the session (only money actually in hand can be remitted). Without an
+    /// override, TotalRemitToVec is the sum of each individual payment's own
+    /// FeeConfiguration.RemitToVecAmount (the normal per-candidate default, clamped per-payment so a
+    /// youth fee under the retained cap never goes negative). With RetainedAmountOverride set,
+    /// TotalRemitToVec is instead TotalCollected minus that flat total, clamped at zero — no
+    /// per-candidate math at all. TotalRetained is always whatever's left of TotalCollected. Requires
+    /// FeeConfiguration and Candidates (with their Payments) loaded.
+    /// </summary>
+    public SessionFeeSummary GetFeeSummary()
+    {
+        var paidPayments = Candidates.SelectMany(c => c.Payments).Where(p => p.Status == PaymentStatus.Paid).ToList();
+        var totalCollected = paidPayments.Sum(p => p.Amount);
+        var totalRemitToVec = RetainedAmountOverride is { } overrideAmount
+            ? Math.Max(0m, totalCollected - overrideAmount)
+            : paidPayments.Sum(p => FeeConfiguration.RemitToVecAmount(p.Amount) ?? 0m);
+
+        return new SessionFeeSummary(totalCollected, totalCollected - totalRemitToVec, totalRemitToVec);
+    }
 }
+
+/// <summary>See Session.GetFeeSummary.</summary>
+public record SessionFeeSummary(decimal TotalCollected, decimal TotalRetained, decimal TotalRemitToVec);

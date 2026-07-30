@@ -96,6 +96,39 @@ public class SessionActionService(
         return new SessionCompletionResult(SessionActionResult.Success, candidatesJustTested.Count, felonyDisclosuresSent);
     }
 
+    /// <summary>
+    /// "Override how much this specific session retains in total, instead of the fee schedule's
+    /// default per-candidate max-retention amount summed across every candidate" (requested
+    /// 2026-07-30). Real per-session expenses (pencils, paper, postage) are usually a flat session
+    /// cost, not a per-candidate one — a team with $20 of real expenses across 50 candidates wants to
+    /// type $20 once, not compute/edit a per-candidate figure. Pass null to clear the override and
+    /// revert to the per-candidate default (Session.GetFeeSummary). No validation on overrideAmount
+    /// here beyond non-negative — the caller (Detail.cshtml.cs) parses/validates the raw form input
+    /// first, same division of responsibility as SetFrnAsync's blank-check.
+    /// </summary>
+    public async Task<SessionActionResult> SetRetainedAmountOverrideAsync(int sessionId, decimal? overrideAmount, int userId, CancellationToken cancellationToken)
+    {
+        var session = await dbContext.Sessions.FirstOrDefaultAsync(s => s.Id == sessionId, cancellationToken);
+        if (session is null)
+        {
+            return SessionActionResult.NotFound;
+        }
+
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+        session.RetainedAmountOverride = overrideAmount;
+        session.RetainedAmountOverrideByUserId = overrideAmount is null ? null : userId;
+        session.RetainedAmountOverrideUtc = overrideAmount is null ? null : now;
+
+        dbContext.AddAuditLog(userId, "SessionRetainedAmountOverrideSet", nameof(Session), session.Id,
+            overrideAmount is null
+                ? $"Session {session.ExamToolsSessionId} total-retained override cleared — back to the per-candidate fee schedule default."
+                : $"Session {session.ExamToolsSessionId} total-retained override set to ${overrideAmount:F2} for the whole session.",
+            now);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        logger.LogInformation("Session {SessionId} retained-amount override set to {OverrideAmount} by user {UserId}", session.Id, overrideAmount, userId);
+        return SessionActionResult.Success;
+    }
+
     /// <summary>"review and clear a session's RescheduleFlaggedForReview flag once they've manually communicated the change to candidates and confirmed the new date."</summary>
     public async Task<SessionActionResult> ClearRescheduleFlagAsync(int sessionId, int userId, CancellationToken cancellationToken)
     {
