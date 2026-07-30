@@ -86,6 +86,35 @@ public class DetailModel(
         return RedirectToPage(new { id = Id });
     }
 
+    /// <summary>
+    /// Blank overrideAmount clears back to the fee schedule's per-candidate default. A non-blank
+    /// value must parse as a non-negative decimal — SessionActionService itself trusts the caller to
+    /// have already validated this, same division of responsibility as OnPostSetFrnAsync's blank-check.
+    /// </summary>
+    public async Task<IActionResult> OnPostSetRetainedAmountOverrideAsync(string? overrideAmount)
+    {
+        var auth = await AuthorizeAsync();
+        if (auth is null) return Forbid();
+
+        decimal? parsedAmount = null;
+        if (!string.IsNullOrWhiteSpace(overrideAmount))
+        {
+            if (!decimal.TryParse(overrideAmount, out var value) || value < 0)
+            {
+                SetStatus(false, "", "Retained amount must be a non-negative dollar amount.");
+                return RedirectToPage(new { id = Id });
+            }
+
+            parsedAmount = value;
+        }
+
+        var result = await sessionActionService.SetRetainedAmountOverrideAsync(Id, parsedAmount, auth.Value.User.Id, CancellationToken.None);
+        SetStatus(result == SessionActionResult.Success,
+            parsedAmount is null ? "Retained amount override cleared." : $"Retained amount overridden to ${parsedAmount:F2} for this session.",
+            "Could not update retained amount override.");
+        return RedirectToPage(new { id = Id });
+    }
+
     public async Task<IActionResult> OnPostToggleVecSubmissionAsync()
     {
         var auth = await AuthorizeAsync();
@@ -343,6 +372,8 @@ public class DetailModel(
             ? $"${session.FeeConfiguration.ExamFeeAmount:F2} exam · ${session.FeeConfiguration.RetainedAmount:F2} retained"
             : "No fee collected";
 
+        var feeSummary = session.GetFeeSummary();
+
         Session = new SessionSummary(
             session.Id,
             SessionBreadcrumbFormatter.Format(session.ExtId, session.Title),
@@ -351,6 +382,11 @@ public class DetailModel(
             session.ZoomJoinUrl,
             discordEventUrl,
             feeLine,
+            $"${feeSummary.TotalCollected:F2}",
+            $"${feeSummary.TotalRetained:F2}",
+            $"${feeSummary.TotalRemitToVec:F2}",
+            session.RetainedAmountOverride is not null,
+            session.RetainedAmountOverride?.ToString("F2"),
             session.TestingCompletedUtc is null ? "Not yet completed" : $"Completed {EasternTimeFormatter.Format(session.TestingCompletedUtc.Value, "MMM d, yyyy")}",
             session.VecSubmissionStatus == VecSubmissionStatus.Submitted ? "chip-green" : "chip-neutral",
             session.VecSubmissionStatus == VecSubmissionStatus.Submitted ? "Submitted" : "Not submitted",
@@ -448,6 +484,11 @@ public class DetailModel(
         string? ZoomJoinUrl,
         string? DiscordEventUrl,
         string FeeLine,
+        string TotalCollectedLine,
+        string TotalRetainedLine,
+        string TotalRemitToVecLine,
+        bool RetainedAmountOverridden,
+        string? RetainedAmountOverrideRawValue,
         string TestingStatusLine,
         string VecSubmissionChipClass,
         string VecSubmissionChipLabel,
