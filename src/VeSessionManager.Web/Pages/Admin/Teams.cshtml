@@ -33,7 +33,7 @@
             <tr>
                 <td class="count">@team.Id</td>
                 <td class="session-title">@team.Name</td>
-                <td>@team.CreatedUtc.ToString("MMM d, yyyy")</td>
+                <td>@EasternTimeFormatter.Format(team.CreatedUtc, "MMM d, yyyy")</td>
                 <td class="row-actions">
                     <a class="view-link" asp-page="./TeamSettings" asp-route-teamId="@team.Id">Manage settings →</a>
                 </td>

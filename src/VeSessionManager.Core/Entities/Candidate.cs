@@ -43,6 +43,12 @@ public class Candidate
     /// <summary>FCC ULS "Unique System Identifier" from the matched license record — the same value ULS's own web UI calls `licKey` (e.g. `https://wireless2.fcc.gov/UlsApp/UlsSearch/license.jsp?licKey=...`). Set alongside CallSign/LicenseGrantDateUtc by FccUlsWatcherService; not PII (a public FCC record locator, same privacy class as CallSign), so not cleared by CandidatePiiFields.Clear.</summary>
     public string? FccUlsLicenseKey { get; set; }
 
+    /// <summary>Whether FCC is currently holding this candidate's application for Red Light (unpaid fee, if lingering past normal) or Basic Qualification (character) review — refreshed every FccUlsWatcherService run from FCC's own HS.dat history codes, cleared back to None once no longer in the application file's non-terminal window (see ApplicationStatus). Only meaningful while ApplicationStatus is Unmatched/Received.</summary>
+    public FccApplicationHoldReason FccHoldReason { get; set; } = FccApplicationHoldReason.None;
+
+    /// <summary>Whether FCC's fee-payment verification step has confirmed this candidate's application fee — refreshed alongside FccHoldReason, same source (HS.dat) and same non-terminal-window caveat.</summary>
+    public FccApplicationPaymentStatus FccPaymentStatus { get; set; } = FccApplicationPaymentStatus.Unknown;
+
     /// <summary>License class held walking into this session's exam (None = not previously licensed). Set alongside NewLicenseClass — see ExamResultSyncService.</summary>
     public LicenseClass? InitialLicenseClass { get; set; }
 

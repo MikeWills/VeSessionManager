@@ -1,4 +1,3 @@
-using System.Globalization;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
@@ -381,7 +380,7 @@ public class IndexModel(AppDbContext dbContext, UserManager<User> userManager, S
         return new SessionRow(
             s.Id,
             s.ExtId ?? "—",
-            s.ScheduledStartUtc.ToString("ddd, MMM d · h:mm tt", CultureInfo.InvariantCulture),
+            EasternTimeFormatter.Format(s.ScheduledStartUtc, "ddd, MMM d"),
             string.Join(" · ", subParts),
             s.Vec.Name,
             s.Team.Name,

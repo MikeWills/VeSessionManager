@@ -148,25 +148,48 @@ public class FccUlsWatcherService(
             .GroupBy(r => r.Frn)
             .ToDictionary(g => g.Key, g => g.OrderByDescending(r => r.LastActionDateUtc).First());
 
+        // Unmatched-or-Received (not just Unmatched): FccHoldReason needs refreshing every run even
+        // for a candidate already marked Received in a prior run — a Red Light/Basic Qualification
+        // hold can be placed or cleared well after the initial application match.
         var candidates = await dbContext.Candidates
             .Include(c => c.Session)
-            .Where(c => c.ApplicationStatus == CandidateApplicationStatus.Unmatched && c.Frn != null)
+            .Where(c => (c.ApplicationStatus == CandidateApplicationStatus.Unmatched || c.ApplicationStatus == CandidateApplicationStatus.Received)
+                        && c.Frn != null)
             .ToListAsync(cancellationToken);
 
+        var anyChanges = false;
         foreach (var candidate in candidates)
         {
-            if (candidate.Frn is not null
-                && recordByFrn.TryGetValue(candidate.Frn, out var record)
-                && record.LastActionDateUtc.Date >= candidate.Session.ScheduledStartUtc.Date)
+            if (candidate.Frn is null
+                || !recordByFrn.TryGetValue(candidate.Frn, out var record)
+                || record.LastActionDateUtc.Date < candidate.Session.ScheduledStartUtc.Date)
+            {
+                continue;
+            }
+
+            if (candidate.FccHoldReason != record.HoldReason)
+            {
+                candidate.FccHoldReason = record.HoldReason;
+                anyChanges = true;
+            }
+
+            if (candidate.FccPaymentStatus != record.PaymentStatus)
+            {
+                candidate.FccPaymentStatus = record.PaymentStatus;
+                anyChanges = true;
+            }
+
+            if (candidate.ApplicationStatus == CandidateApplicationStatus.Unmatched)
             {
                 candidate.ApplicationStatus = CandidateApplicationStatus.Received;
                 candidate.ApplicationDateEnteredUtc = record.LastActionDateUtc;
                 result.CandidatesMarkedReceived++;
+                anyChanges = true;
                 logger.LogInformation("Candidate {CandidateId} FRN matched in FCC application file — marked Received", candidate.Id);
             }
         }
 
-        if (result.CandidatesMarkedReceived > 0)
+        if (anyChanges)
         {
             await dbContext.SaveChangesAsync(cancellationToken);
         }

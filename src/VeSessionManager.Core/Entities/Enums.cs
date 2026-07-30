@@ -65,6 +65,39 @@ public enum PaymentReason
     Retest
 }
 
+/// <summary>
+/// Whether FCC is currently holding a candidate's application for one of its own review processes
+/// — sourced from FCC ULS's HS.dat History record's Code field, not a guess: RDLOFF/RDLCOM
+/// ("Offlined for Red Light"/"Redlight Review Completed") and BQOFF/BQCOM ("Offlined for Basic
+/// Qualification Review"/"Basic Qualification Review Completed") are FCC's own documented codes
+/// (see uls_code_definitions). None means neither hold is currently active — most applications sit
+/// briefly in a Red Light hold while their $35 fee is unpaid, which is normal, not a signal of a
+/// problem; this only reflects the hold's *current* state (the most recent OFF/COM pair per USI),
+/// not history. See FccUlsRecordParser/FccUlsWatcherService and docs/fcc-uls-watcher.md.
+/// </summary>
+public enum FccApplicationHoldReason
+{
+    None,
+    RedLight,
+    BasicQualification,
+    RedLightAndBasicQualification
+}
+
+/// <summary>
+/// Whether FCC's own fee-payment verification step (separate from the Red Light Rule debt system —
+/// this is ULS's internal fee-validation workflow) has confirmed the candidate's $35 application fee.
+/// Sourced from HS.dat's Code field, same as FccApplicationHoldReason: FVPOFF ("Offlined for Payment
+/// Verification") vs FVPCNF ("Payment Confirmed") / FVPCOM ("Payment Verification Completed") — see
+/// uls_code_definitions. Unknown means this application's history has no fee-verification event at
+/// all yet (the common case for a very recently filed application — not itself a problem).
+/// </summary>
+public enum FccApplicationPaymentStatus
+{
+    Unknown,
+    PendingVerification,
+    Paid
+}
+
 public enum PaymentStatus
 {
     Unpaid,

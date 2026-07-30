@@ -1,3 +1,4 @@
+using VeSessionManager.Core.Entities;
 using VeSessionManager.Core.FccUls;
 using Xunit;
 
@@ -30,6 +31,16 @@ public class FccUlsRecordParserTests
         fields[0] = "EN";
         fields[1] = usi;
         if (frn is not null) fields[22] = frn;
+        return string.Join('|', fields);
+    }
+
+    private static string BuildHsRow(string usi, string code)
+    {
+        var fields = new string[6];
+        Array.Fill(fields, string.Empty);
+        fields[0] = "HS";
+        fields[1] = usi;
+        fields[5] = code;
         return string.Join('|', fields);
     }
 
@@ -98,6 +109,128 @@ public class FccUlsRecordParserTests
         var result = FccUlsRecordParser.ParseApplications(hd, en);
 
         Assert.Single(result);
+    }
+
+    [Fact]
+    public void ParseApplications_NoHsContent_HoldReasonDefaultsNone()
+    {
+        var hd = BuildHdRow("100", lastActionDate: "07/13/2026");
+        var en = BuildEnRow("100", frn: "0001234567");
+
+        var result = FccUlsRecordParser.ParseApplications(hd, en);
+
+        Assert.Equal(FccApplicationHoldReason.None, Assert.Single(result).HoldReason);
+    }
+
+    [Fact]
+    public void ParseApplications_HsRedLightOff_SetsHoldReasonRedLight()
+    {
+        var hd = BuildHdRow("100", lastActionDate: "07/13/2026");
+        var en = BuildEnRow("100", frn: "0001234567");
+        var hs = BuildHsRow("100", "RDLOFF");
+
+        var result = FccUlsRecordParser.ParseApplications(hd, en, hs);
+
+        Assert.Equal(FccApplicationHoldReason.RedLight, Assert.Single(result).HoldReason);
+    }
+
+    [Fact]
+    public void ParseApplications_HsRedLightOffThenCompleted_HoldReasonIsNone()
+    {
+        var hd = BuildHdRow("100", lastActionDate: "07/13/2026");
+        var en = BuildEnRow("100", frn: "0001234567");
+        var hs = string.Join('\n', [BuildHsRow("100", "RDLOFF"), BuildHsRow("100", "RDLCOM")]);
+
+        var result = FccUlsRecordParser.ParseApplications(hd, en, hs);
+
+        Assert.Equal(FccApplicationHoldReason.None, Assert.Single(result).HoldReason);
+    }
+
+    [Fact]
+    public void ParseApplications_HsBasicQualificationOff_SetsHoldReasonBasicQualification()
+    {
+        var hd = BuildHdRow("100", lastActionDate: "07/13/2026");
+        var en = BuildEnRow("100", frn: "0001234567");
+        var hs = BuildHsRow("100", "BQOFF");
+
+        var result = FccUlsRecordParser.ParseApplications(hd, en, hs);
+
+        Assert.Equal(FccApplicationHoldReason.BasicQualification, Assert.Single(result).HoldReason);
+    }
+
+    [Fact]
+    public void ParseApplications_BothHoldsActive_SetsHoldReasonRedLightAndBasicQualification()
+    {
+        var hd = BuildHdRow("100", lastActionDate: "07/13/2026");
+        var en = BuildEnRow("100", frn: "0001234567");
+        var hs = string.Join('\n', [BuildHsRow("100", "RDLOFF"), BuildHsRow("100", "BQOFF")]);
+
+        var result = FccUlsRecordParser.ParseApplications(hd, en, hs);
+
+        Assert.Equal(FccApplicationHoldReason.RedLightAndBasicQualification, Assert.Single(result).HoldReason);
+    }
+
+    [Fact]
+    public void ParseApplications_HsRowForDifferentUsi_DoesNotAffectThisRecord()
+    {
+        var hd = BuildHdRow("100", lastActionDate: "07/13/2026");
+        var en = BuildEnRow("100", frn: "0001234567");
+        var hs = BuildHsRow("999", "RDLOFF"); // different USI
+
+        var result = FccUlsRecordParser.ParseApplications(hd, en, hs);
+
+        Assert.Equal(FccApplicationHoldReason.None, Assert.Single(result).HoldReason);
+    }
+
+    [Fact]
+    public void ParseApplications_NoHsContent_PaymentStatusDefaultsUnknown()
+    {
+        var hd = BuildHdRow("100", lastActionDate: "07/13/2026");
+        var en = BuildEnRow("100", frn: "0001234567");
+
+        var result = FccUlsRecordParser.ParseApplications(hd, en);
+
+        Assert.Equal(FccApplicationPaymentStatus.Unknown, Assert.Single(result).PaymentStatus);
+    }
+
+    [Fact]
+    public void ParseApplications_HsPaymentOffline_SetsPaymentStatusPendingVerification()
+    {
+        var hd = BuildHdRow("100", lastActionDate: "07/13/2026");
+        var en = BuildEnRow("100", frn: "0001234567");
+        var hs = BuildHsRow("100", "FVPOFF");
+
+        var result = FccUlsRecordParser.ParseApplications(hd, en, hs);
+
+        Assert.Equal(FccApplicationPaymentStatus.PendingVerification, Assert.Single(result).PaymentStatus);
+    }
+
+    [Theory]
+    [InlineData("FVPCNF")]
+    [InlineData("FVPCOM")]
+    public void ParseApplications_HsPaymentOfflineThenResolved_SetsPaymentStatusPaid(string resolvingCode)
+    {
+        var hd = BuildHdRow("100", lastActionDate: "07/13/2026");
+        var en = BuildEnRow("100", frn: "0001234567");
+        var hs = string.Join('\n', [BuildHsRow("100", "FVPOFF"), BuildHsRow("100", resolvingCode)]);
+
+        var result = FccUlsRecordParser.ParseApplications(hd, en, hs);
+
+        Assert.Equal(FccApplicationPaymentStatus.Paid, Assert.Single(result).PaymentStatus);
+    }
+
+    [Fact]
+    public void ParseApplications_HoldAndPaymentSignals_AreIndependent()
+    {
+        var hd = BuildHdRow("100", lastActionDate: "07/13/2026");
+        var en = BuildEnRow("100", frn: "0001234567");
+        var hs = string.Join('\n', [BuildHsRow("100", "RDLOFF"), BuildHsRow("100", "FVPCNF")]);
+
+        var result = FccUlsRecordParser.ParseApplications(hd, en, hs);
+
+        var record = Assert.Single(result);
+        Assert.Equal(FccApplicationHoldReason.RedLight, record.HoldReason);
+        Assert.Equal(FccApplicationPaymentStatus.Paid, record.PaymentStatus);
     }
 
     [Fact]

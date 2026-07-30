@@ -69,7 +69,7 @@
 
         @if (Model.UpdatedUtc is not null)
         {
-            <p class="session-sub" style="margin-top:16px;">Last updated @Model.UpdatedUtc.Value.ToString("MMM d, yyyy h:mm tt") UTC</p>
+            <p class="session-sub" style="margin-top:16px;">Last updated @EasternTimeFormatter.Format(Model.UpdatedUtc.Value, "MMM d, yyyy h:mm tt")</p>
         }
 
         <div class="panel-actions" style="align-items:flex-start; margin-top:20px;">

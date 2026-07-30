@@ -187,25 +187,28 @@ public class CandidateDetailModel(
 
         var isWithdrawn = candidate.ApplicationStatus == CandidateApplicationStatus.NotTested;
 
+        // Materialized first, then mapped in memory (not a server-side .Select() projection) — EF
+        // Core can't translate EasternTimeFormatter.Format's TimeZoneInfo conversion to SQL.
         var otherAttempts = candidate.Frn is null
             ? []
-            : await dbContext.Candidates
+            : (await dbContext.Candidates
                 .Include(c => c.Session)
                 .Where(c => c.Id != Id && c.Frn == candidate.Frn && c.Session.TeamId == candidate.Session.TeamId)
                 .OrderByDescending(c => c.Session.ScheduledStartUtc)
+                .ToListAsync())
                 .Select(c => new OtherAttemptRow(
                     c.Id,
                     c.Session.Id,
                     c.Name ?? "—",
-                    c.Session.ScheduledStartUtc.ToString("MMM d, yyyy", CultureInfo.InvariantCulture),
+                    EasternTimeFormatter.Format(c.Session.ScheduledStartUtc, "MMM d, yyyy"),
                     c.ApplicationStatus == CandidateApplicationStatus.NotTested ? "Withdrew/no-show" : c.ApplicationStatus.ToString()))
-                .ToListAsync();
+                .ToList();
 
         Candidate = new CandidateDetailView(
             Id: candidate.Id,
             SessionId: candidate.Session.Id,
             SessionBreadcrumbLabel: SessionBreadcrumbFormatter.Format(candidate.Session.ExtId, candidate.Session.Title),
-            SessionDateLine: candidate.Session.ScheduledStartUtc.ToString("ddd, MMM d, yyyy · h:mm tt", CultureInfo.InvariantCulture),
+            SessionDateLine: EasternTimeFormatter.Format(candidate.Session.ScheduledStartUtc, "ddd, MMM d, yyyy · h:mm tt"),
             IsWithdrawn: isWithdrawn,
             DisplayName: isWithdrawn ? "Withdrew — PII cleared" : candidate.Name ?? "—",
             FirstName: isWithdrawn ? null : candidate.FirstName,
@@ -222,7 +225,12 @@ public class CandidateDetailModel(
                 ? null
                 : $"https://wireless2.fcc.gov/UlsApp/UlsSearch/license.jsp?licKey={Uri.EscapeDataString(candidate.FccUlsLicenseKey)}",
             StatusLabel: candidate.ApplicationStatus == CandidateApplicationStatus.NotTested ? "Not tested" : candidate.ApplicationStatus.ToString(),
-            RegisteredLine: candidate.DateRegisteredUtc.ToString("M/d/yyyy h:mm tt", CultureInfo.InvariantCulture) + " UTC",
+            RegisteredLine: EasternTimeFormatter.Format(candidate.DateRegisteredUtc, "M/d/yyyy h:mm tt"),
+            // ApplicationDateEnteredUtc/LicenseGrantDateUtc are FCC's own date-only fields (parsed
+            // from an MM/dd/yyyy source with no time component, stored as UTC midnight) — NOT run
+            // through EasternTimeFormatter. Converting a date-only value shifts it back a calendar
+            // day (UTC midnight is 8pm the previous day in ET), which would misreport the actual
+            // FCC-reported date rather than just relabel its timezone.
             ApplicationDateLine: candidate.ApplicationDateEnteredUtc?.ToString("M/d/yyyy", CultureInfo.InvariantCulture),
             LicenseGrantDateLine: candidate.LicenseGrantDateUtc?.ToString("M/d/yyyy", CultureInfo.InvariantCulture),
             LicenseNote: candidate.LicenseGrantPredatesSession()
@@ -246,13 +254,8 @@ public class CandidateDetailModel(
         return true;
     }
 
-    // Same "no stored timezone" reasoning as CandidateEmailHistoryFormatter.FormatSentUtc — labeled
-    // UTC since it isn't converted to any local time. Null-safe: `x?.ToString() + " UTC"` on its own
-    // still appends " UTC" to a null value (the `+` runs unconditionally), producing a bare "UTC"
-    // string instead of null — caught live rendering this page against a candidate with no result
-    // marked yet.
     private static string? FormatUtcOrNull(DateTime? value) =>
-        value is { } v ? v.ToString("M/d/yyyy h:mm tt", CultureInfo.InvariantCulture) + " UTC" : null;
+        EasternTimeFormatter.Format(value, "M/d/yyyy h:mm tt");
 
     private static PaymentRow ToPaymentRow(Payment payment)
     {

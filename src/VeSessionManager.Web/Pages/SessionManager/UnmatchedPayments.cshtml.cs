@@ -1,4 +1,3 @@
-using System.Globalization;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -57,7 +56,7 @@ public class UnmatchedPaymentsModel(
 
         UnmatchedPayments = unmatched.Select(u => new UnmatchedPaymentRow(
             u.Id,
-            u.ReceivedUtc.ToString("MMM d, yyyy h:mm tt", CultureInfo.InvariantCulture) + " UTC",
+            EasternTimeFormatter.Format(u.ReceivedUtc, "MMM d, yyyy"),
             u.AmountUsd,
             u.BuyerEmailAddress,
             u.SquareOrderId)).ToList();
@@ -77,7 +76,7 @@ public class UnmatchedPaymentsModel(
         MatchableCandidates = candidates.Select(c => new MatchableCandidate(
             c.Id,
             c.Name ?? "—",
-            c.Session.ScheduledStartUtc.ToString("MMM d, yyyy", CultureInfo.InvariantCulture),
+            EasternTimeFormatter.Format(c.Session.ScheduledStartUtc, "MMM d, yyyy"),
             c.Payments.Where(p => p.Status == PaymentStatus.Unpaid).OrderByDescending(p => p.CreatedUtc).First().Amount)).ToList();
     }
 
