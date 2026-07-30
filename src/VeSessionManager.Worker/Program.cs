@@ -136,6 +136,8 @@ using (var scope = host.Services.CreateScope())
     {
         await DevDataSeeder.SeedAsync(dbContext, startupLogger);
     }
+
+    startupLogger.LogInformation("Ready to work!");
 }
 
 host.Run();

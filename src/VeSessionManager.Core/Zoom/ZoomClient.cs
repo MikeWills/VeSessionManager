@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text;
@@ -64,8 +65,18 @@ public sealed class ZoomClient : IZoomClient, IDisposable
 
     public async Task DeleteMeetingAsync(ZoomCredentials credentials, string meetingId, CancellationToken cancellationToken)
     {
-        await SendAsync(credentials, HttpMethod.Delete, $"{ApiBaseUrl}/v2/meetings/{Uri.EscapeDataString(meetingId)}",
-            body: null, cancellationToken);
+        var response = await SendAsync(credentials, HttpMethod.Delete, $"{ApiBaseUrl}/v2/meetings/{Uri.EscapeDataString(meetingId)}",
+            body: null, cancellationToken, treatNotFoundAsSuccess: true);
+
+        if (response.StatusCode == HttpStatusCode.NotFound)
+        {
+            // Zoom has no record of this meeting anymore (deleted manually, expired, etc.) — the
+            // cleanup goal (no meeting left behind) is already met, so treat this the same as a
+            // successful delete rather than retrying forever every scheduling poll.
+            _logger.LogInformation("Zoom meeting {ZoomMeetingId} for team {TeamId} was already gone (404) — treating cleanup as done.", meetingId, credentials.TeamId);
+            return;
+        }
+
         _logger.LogInformation("Deleted Zoom meeting {ZoomMeetingId} for team {TeamId}", meetingId, credentials.TeamId);
     }
 
@@ -103,7 +114,7 @@ public sealed class ZoomClient : IZoomClient, IDisposable
             : null
     };
 
-    private async Task<HttpResponseMessage> SendAsync(ZoomCredentials credentials, HttpMethod method, string absoluteUrl, object? body, CancellationToken cancellationToken)
+    private async Task<HttpResponseMessage> SendAsync(ZoomCredentials credentials, HttpMethod method, string absoluteUrl, object? body, CancellationToken cancellationToken, bool treatNotFoundAsSuccess = false)
     {
         var token = await GetAccessTokenAsync(credentials, cancellationToken);
 
@@ -115,6 +126,11 @@ public sealed class ZoomClient : IZoomClient, IDisposable
         }
 
         var response = await _httpClient.SendAsync(request, cancellationToken);
+        if (treatNotFoundAsSuccess && response.StatusCode == HttpStatusCode.NotFound)
+        {
+            return response;
+        }
+
         await EnsureSuccessOrThrowWithBodyAsync(response, cancellationToken);
         return response;
     }
