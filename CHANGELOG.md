@@ -8,6 +8,13 @@ that window, or immediately if it's phase-numbered work already summarized in "C
 design rationale for any entry still lives in its linked `/docs/*.md` file, not here or in
 CLAUDE.md — this file, like CLAUDE.md's Change Log, is pointers only.
 
+- **Multi-team users + session list team filter (issues #17/#19, 2026-07-28).** `docs/admin-auth.md`'s
+  "Team scoping" section — replaced the single, nullable `User.TeamId` with a real many-to-many
+  `UserTeam` join table so a TeamAdmin/SessionManager can belong to more than one team; the session
+  list gets a Team column and a `?teamId=` filter-pill (reusing the existing SystemAdmin team-picker
+  convention), and `SessionAccessScope`/`AdminAccessScope` moved from scalar equality to
+  set-membership (`Contains`) throughout — covered by explicit cross-team-leak regression tests per
+  role, not just the new happy paths.
 - **Completed-session backfill (issue #22, 2026-07-28).** `docs/examtools-api.md`'s "Stale `"pend"`
   sessions exist" section — `SessionIngestionService` now also first-ingests a `"done"` session up
   to ~30 days past its start (previously never ingested at all), gated by the new
