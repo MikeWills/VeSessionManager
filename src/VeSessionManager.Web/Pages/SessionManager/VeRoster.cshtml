@@ -17,6 +17,10 @@
     @if (Model.AvailableTeams.Count > 1)
     {
         <select name="teamId" class="filter-select" onchange="document.getElementById('veRosterFilters').submit()">
+            @if (Model.TeamId is null)
+            {
+                <option value="" selected disabled>Select a team…</option>
+            }
             @foreach (var team in Model.AvailableTeams)
             {
                 <option value="@team.Id" selected="@(team.Id == Model.TeamId)">@team.Name</option>

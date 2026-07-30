@@ -43,7 +43,7 @@ public class ApplicantStatusModel(AppDbContext dbContext, UserManager<User> user
 
         AvailableTeams = await accessScope.GetAvailableTeamsAsync(dbContext, user);
 
-        var teamId = accessScope.TryResolveViewableTeamId(user, TeamId);
+        var teamId = accessScope.TryResolveViewableTeamId(user, TeamId, AvailableTeams);
         TeamId = teamId;
         HasTeamContext = teamId is not null;
 

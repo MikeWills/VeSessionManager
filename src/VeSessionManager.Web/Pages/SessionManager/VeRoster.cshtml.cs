@@ -67,7 +67,7 @@ public class VeRosterModel(AppDbContext dbContext, UserManager<User> userManager
 
         AvailableTeams = await accessScope.GetAvailableTeamsAsync(dbContext, user);
 
-        var teamId = accessScope.TryResolveViewableTeamId(user, TeamId);
+        var teamId = accessScope.TryResolveViewableTeamId(user, TeamId, AvailableTeams);
         TeamId = teamId;
         HasTeamContext = teamId is not null;
 

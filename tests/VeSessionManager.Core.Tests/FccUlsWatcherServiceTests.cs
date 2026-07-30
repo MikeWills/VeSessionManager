@@ -190,6 +190,7 @@ public class FccUlsWatcherServiceTests
         Assert.Equal(CandidateApplicationStatus.Granted, updated.ApplicationStatus);
         Assert.Equal("K0BFR", updated.CallSign);
         Assert.Equal(grantDate, updated.LicenseGrantDateUtc);
+        Assert.Equal("100", updated.FccUlsLicenseKey);
     }
 
     [Fact]

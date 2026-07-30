@@ -96,16 +96,19 @@ public class SessionAccessScope
     /// The single "which team is this user actually looking at right now" resolution for the
     /// per-team list pages (VE Roster, VEC Submission, Unmatched Payments, Fee Configurations) that
     /// show one team's data at a time rather than a mixed multi-team list like the session list.
-    /// SystemAdmin uses whatever was requested (their own team-picker choice, or null if they
-    /// haven't picked one yet); everyone else picks from their own teams — the requested team if
-    /// it's one of theirs, otherwise the first team they belong to (or null if they have none).
-    /// Mirrors AdminAccessScope.TryResolveManageableTeamId's shape for the admin-config side.
+    /// SystemAdmin uses whatever was requested (their own team-picker choice, or the sole team if
+    /// the deployment only has one — there's no picker to make a choice with otherwise — or null if
+    /// there's more than one and they haven't picked yet); everyone else picks from their own teams —
+    /// the requested team if it's one of theirs, otherwise the first team they belong to (or null if
+    /// they have none). Mirrors AdminAccessScope.TryResolveManageableTeamId's shape for the
+    /// admin-config side (that one deliberately does NOT get the same single-team default — a null
+    /// team there means "show every team merged," a valid state, not "nothing to show").
     /// </summary>
-    public int? TryResolveViewableTeamId(User user, int? requestedTeamId)
+    public int? TryResolveViewableTeamId(User user, int? requestedTeamId, IReadOnlyList<(int Id, string Name)> availableTeams)
     {
         if (user.Role == UserRole.SystemAdmin)
         {
-            return requestedTeamId;
+            return requestedTeamId ?? (availableTeams.Count == 1 ? availableTeams[0].Id : null);
         }
 
         var effectiveTeamIds = GetEffectiveTeamIds(user) ?? [];

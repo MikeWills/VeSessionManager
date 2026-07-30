@@ -218,6 +218,9 @@ public class CandidateDetailModel(
                         ? "Missing at registration"
                         : "No FRN on file",
             CallSign: isWithdrawn ? null : candidate.CallSign,
+            FccLicenseUrl: isWithdrawn || candidate.FccUlsLicenseKey is null
+                ? null
+                : $"https://wireless2.fcc.gov/UlsApp/UlsSearch/license.jsp?licKey={Uri.EscapeDataString(candidate.FccUlsLicenseKey)}",
             StatusLabel: candidate.ApplicationStatus == CandidateApplicationStatus.NotTested ? "Not tested" : candidate.ApplicationStatus.ToString(),
             RegisteredLine: candidate.DateRegisteredUtc.ToString("M/d/yyyy h:mm tt", CultureInfo.InvariantCulture) + " UTC",
             ApplicationDateLine: candidate.ApplicationDateEnteredUtc?.ToString("M/d/yyyy", CultureInfo.InvariantCulture),
@@ -291,6 +294,7 @@ public class CandidateDetailModel(
         string? Email,
         string FrnLine,
         string? CallSign,
+        string? FccLicenseUrl,
         string StatusLabel,
         string RegisteredLine,
         string? ApplicationDateLine,

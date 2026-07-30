@@ -40,6 +40,9 @@ public class Candidate
     public string? CallSign { get; set; }
     public DateTime? LicenseGrantDateUtc { get; set; }
 
+    /// <summary>FCC ULS "Unique System Identifier" from the matched license record — the same value ULS's own web UI calls `licKey` (e.g. `https://wireless2.fcc.gov/UlsApp/UlsSearch/license.jsp?licKey=...`). Set alongside CallSign/LicenseGrantDateUtc by FccUlsWatcherService; not PII (a public FCC record locator, same privacy class as CallSign), so not cleared by CandidatePiiFields.Clear.</summary>
+    public string? FccUlsLicenseKey { get; set; }
+
     /// <summary>License class held walking into this session's exam (None = not previously licensed). Set alongside NewLicenseClass — see ExamResultSyncService.</summary>
     public LicenseClass? InitialLicenseClass { get; set; }
 

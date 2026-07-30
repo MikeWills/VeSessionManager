@@ -48,7 +48,7 @@ public class VecSubmissionModel(
 
         AvailableTeams = await accessScope.GetAvailableTeamsAsync(dbContext, user);
 
-        var teamId = accessScope.TryResolveViewableTeamId(user, TeamId);
+        var teamId = accessScope.TryResolveViewableTeamId(user, TeamId, AvailableTeams);
         TeamId = teamId;
         HasTeamContext = teamId is not null;
         if (teamId is not int id)
