@@ -77,6 +77,29 @@ would be pure duplication — and goes straight to `CHANGELOG.md` instead. Non-p
 redesigns, hardening passes) start here and move to `CHANGELOG.md` once the section is at/over the
 cap and a newer entry needs to be added; oldest goes first.
 
+- **Team-picker `<select>` first-click bug + SystemAdmin single-team default + FCC license link
+  (2026-07-30).** No linked doc. Bug: `ApplicantStatus`/`VeRoster`'s team `<select onchange>` never
+  set an explicit `selected` option when no team was chosen yet (SystemAdmin's default state), so
+  the browser silently pre-selected the first team in the list while the model still read
+  `TeamId = null` — clicking that same (already-displayed) team didn't fire `onchange` at all until
+  a *different* team was picked first. `ApplicantStatus` now uses the same filter-pill `<a>`
+  pattern as `VecSubmission`/`UnmatchedPayments` (always a real navigation); `VeRoster` (whose
+  `<select>` shares a form with the date-range filter, so pills weren't a drop-in fix) instead gets
+  an explicit "Select a team…" placeholder option so the visible and actual state always match.
+  Also: `SessionAccessScope.TryResolveViewableTeamId` now takes the already-fetched
+  `AvailableTeams` list and defaults SystemAdmin to the sole team when a deployment only has one
+  (previously only non-SystemAdmin roles auto-defaulted — a single-team SystemAdmin had no picker
+  to make a choice with and no default either, a dead end). `AdminAccessScope.TryResolveManageableTeamId`
+  deliberately keeps its own different null-means-"show every team merged" behavior, unchanged.
+  Separately: new `Candidate.FccUlsLicenseKey` (the FCC ULS "Unique System Identifier", set by
+  `FccUlsWatcherService` alongside `CallSign`/`LicenseGrantDateUtc`) powers a "(FCC license ↗)" link
+  next to Call sign on the Candidate Detail page — confirmed live that ExamTools itself links to
+  this exact `wireless2.fcc.gov/UlsApp/UlsSearch/license.jsp?licKey=...` URL shape. The equivalent
+  *pending application* deep link was deliberately **not** built — `wireless2.fcc.gov`'s Application
+  Search pages returned Akamai "Access Denied" for both automated and the user's own manual browser
+  requests while investigating, so the URL shape couldn't be verified; see TODO.md's Feature
+  requests section for the parked follow-up (the `UniqueSystemIdentifier` this needs is already
+  captured in `FccUlsApplicationRecord`, just not persisted to `Candidate` yet).
 - **Applicant Status page (2026-07-29).** `docs/exam-result-license-class.md`'s "Applicant Status
   page" section — new team-wide `Pages/SessionManager/ApplicantStatus.cshtml(.cs)`: a "Pending FCC
   grant" worklist (passed but not yet `Granted`, drops a candidate the instant they are) plus a

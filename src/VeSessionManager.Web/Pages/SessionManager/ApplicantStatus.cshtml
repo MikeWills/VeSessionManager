@@ -15,14 +15,12 @@
 
 @if (Model.AvailableTeams.Count > 1)
 {
-    <form method="get" id="applicantStatusFilters" class="filters" style="margin-bottom:20px; align-items:flex-start;">
-        <select name="teamId" class="filter-select" onchange="document.getElementById('applicantStatusFilters').submit()">
-            @foreach (var team in Model.AvailableTeams)
-            {
-                <option value="@team.Id" selected="@(team.Id == Model.TeamId)">@team.Name</option>
-            }
-        </select>
-    </form>
+    <div class="filters" style="margin-bottom:16px;">
+        @foreach (var team in Model.AvailableTeams)
+        {
+            <a class="filter-pill @(team.Id == Model.TeamId ? "active" : "")" asp-page="./ApplicantStatus" asp-route-teamId="@team.Id">@team.Name</a>
+        }
+    </div>
 }
 
 @if (!Model.HasTeamContext)

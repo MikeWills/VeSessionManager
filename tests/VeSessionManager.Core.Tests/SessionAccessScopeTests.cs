@@ -329,8 +329,18 @@ public class SessionAccessScopeTests
     [Fact]
     public void TryResolveViewableTeamId_SystemAdmin_UsesWhateverWasRequested()
     {
-        Assert.Equal(5, Scope.TryResolveViewableTeamId(new User { Name = "Sys Admin", Role = UserRole.SystemAdmin }, 5));
-        Assert.Null(Scope.TryResolveViewableTeamId(new User { Name = "Sys Admin", Role = UserRole.SystemAdmin }, null));
+        var teams = new (int Id, string Name)[] { (5, "A"), (6, "B") };
+
+        Assert.Equal(5, Scope.TryResolveViewableTeamId(new User { Name = "Sys Admin", Role = UserRole.SystemAdmin }, 5, teams));
+        Assert.Null(Scope.TryResolveViewableTeamId(new User { Name = "Sys Admin", Role = UserRole.SystemAdmin }, null, teams));
+    }
+
+    [Fact]
+    public void TryResolveViewableTeamId_SystemAdmin_DefaultsToSoleTeam_WhenNothingRequestedAndOnlyOneTeamExists()
+    {
+        var teams = new (int Id, string Name)[] { (5, "Only Team") };
+
+        Assert.Equal(5, Scope.TryResolveViewableTeamId(new User { Name = "Sys Admin", Role = UserRole.SystemAdmin }, null, teams));
     }
 
     [Fact]
@@ -338,7 +348,7 @@ public class SessionAccessScopeTests
     {
         var user = NewUser("SM", UserRole.SessionManager, 10, 20);
 
-        Assert.Equal(10, Scope.TryResolveViewableTeamId(user, null));
+        Assert.Equal(10, Scope.TryResolveViewableTeamId(user, null, []));
     }
 
     [Fact]
@@ -346,7 +356,7 @@ public class SessionAccessScopeTests
     {
         var user = NewUser("SM", UserRole.SessionManager, 10, 20);
 
-        Assert.Equal(20, Scope.TryResolveViewableTeamId(user, 20));
+        Assert.Equal(20, Scope.TryResolveViewableTeamId(user, 20, []));
     }
 
     [Fact]
@@ -354,7 +364,7 @@ public class SessionAccessScopeTests
     {
         var user = NewUser("SM", UserRole.SessionManager, 10, 20);
 
-        Assert.Equal(10, Scope.TryResolveViewableTeamId(user, 999));
+        Assert.Equal(10, Scope.TryResolveViewableTeamId(user, 999, []));
     }
 
     [Fact]
@@ -362,6 +372,6 @@ public class SessionAccessScopeTests
     {
         var user = NewUser("SM", UserRole.SessionManager);
 
-        Assert.Null(Scope.TryResolveViewableTeamId(user, null));
+        Assert.Null(Scope.TryResolveViewableTeamId(user, null, []));
     }
 }

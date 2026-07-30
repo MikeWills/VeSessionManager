@@ -490,6 +490,9 @@ $RECYCLE.BIN/
 # hand, never commit; see docs/deployment.md)
 /ops/
 
+# Local ASP.NET Data Protection key ring -- machine-local secret material, never commit
+.dataprotection-keys/
+
 # Claude Code: agents/ and skills/ under .claude/ are shared project config and ARE tracked;
 # settings.local.json (per-user permission allowlist, names local machine paths) and
 # scheduled_tasks.lock (a runtime PID/session lock file) are local-only.

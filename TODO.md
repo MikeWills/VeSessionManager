@@ -171,6 +171,21 @@ until its columns are set via direct DB edit (no admin UI yet):
 
 ## Feature requests (not yet triaged)
 
+- [ ] **Link to the candidate's pending FCC *application* (not just the granted license) on the
+  Candidate Detail page** (requested 2026-07-29, alongside the license link below). The license
+  link (`https://wireless2.fcc.gov/UlsApp/UlsSearch/license.jsp?licKey=...`) is confirmed and
+  shipped — ExamTools itself links to exactly this URL/param shape, and `FccUlsWatcherService`
+  already captures the FCC ULS "Unique System Identifier" it needs (`Candidate.FccUlsLicenseKey`,
+  set from `FccUlsLicenseRecord.UniqueSystemIdentifier`). The equivalent *application* (pre-grant,
+  `Received` status) deep-link URL could not be verified live — `wireless2.fcc.gov`'s Application
+  Search pages (`searchAppl.jsp`, and the site generally) returned Akamai "Access Denied" for both
+  automated browsing and the user's own manual browser request during this investigation, so the
+  `applView.jsp?applKey=...`-shaped guess was deliberately not shipped rather than risk a wrong
+  link (see CLAUDE.md's "verify, don't guess" instruction). `FccUlsApplicationRecord` already
+  carries the same `UniqueSystemIdentifier` needed once the URL shape is confirmed — revisit once
+  ExamTools' own application-detail link (or a working manual FCC ULS search) can be observed
+  directly, the same way the license link was confirmed this time.
+
 - [x] ~~**Applicant Status page — rolling list of candidates awaiting their FCC grant**~~ (requested
   2026-07-29, built same day — see `docs/exam-result-license-class.md`'s "Applicant Status page"
   section, PR [#44](https://github.com/MikeWills/VeSessionManager/pull/44) open, not yet merged).

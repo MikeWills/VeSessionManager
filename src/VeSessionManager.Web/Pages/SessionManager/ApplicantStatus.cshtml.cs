@@ -47,7 +47,7 @@ public class ApplicantStatusModel(AppDbContext dbContext, UserManager<User> user
                 .Join(await dbContext.Teams.ToListAsync(), id => id, t => t.Id, (_, t) => new ValueTuple<int, string>(t.Id, t.Name))
                 .OrderBy(t => t.Item2).ToList();
 
-        var teamId = accessScope.TryResolveViewableTeamId(user, TeamId);
+        var teamId = accessScope.TryResolveViewableTeamId(user, TeamId, AvailableTeams);
         TeamId = teamId;
         HasTeamContext = teamId is not null;
 

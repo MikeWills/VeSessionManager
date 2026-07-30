@@ -19,7 +19,16 @@
         <div class="meta-grid">
             <div class="meta-item"><span class="k">Session</span><span class="v"><a asp-page="./Detail" asp-route-id="@c.SessionId">@c.SessionDateLine</a></span></div>
             <div class="meta-item"><span class="k">Status</span><span class="v">@c.StatusLabel</span></div>
-            <div class="meta-item"><span class="k">Call sign</span><span class="v mono">@(c.CallSign ?? "—")</span></div>
+            <div class="meta-item">
+                <span class="k">Call sign</span>
+                <span class="v mono">
+                    @(c.CallSign ?? "—")
+                    @if (c.FccLicenseUrl is not null)
+                    {
+                        <a href="@c.FccLicenseUrl" target="_blank" rel="noopener">(FCC license ↗)</a>
+                    }
+                </span>
+            </div>
             <div class="meta-item"><span class="k">FRN</span><span class="v mono">@c.FrnLine</span></div>
             @if (!c.IsWithdrawn)
             {

@@ -149,6 +149,7 @@ public class FccUlsWatcherService(
                 candidate.ApplicationStatus = CandidateApplicationStatus.Granted;
                 candidate.CallSign = record.CallSign;
                 candidate.LicenseGrantDateUtc = record.GrantDateUtc;
+                candidate.FccUlsLicenseKey = record.UniqueSystemIdentifier;
                 result.CandidatesMarkedGranted++;
                 logger.LogInformation("Candidate {CandidateId} FRN matched in FCC license file — marked Granted with call sign {CallSign}", candidate.Id, record.CallSign);
             }
