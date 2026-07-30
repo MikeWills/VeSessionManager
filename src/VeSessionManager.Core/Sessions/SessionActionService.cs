@@ -10,7 +10,10 @@ namespace VeSessionManager.Core.Sessions;
 /// <summary>
 /// Phase 9b: the two session-level Session Manager actions that aren't already covered by an
 /// existing Phase 8 service (VecSubmissionService.MarkSubmittedAsync is reused directly, no
-/// wrapper needed here).
+/// wrapper needed here). DeleteAsync (added 2026-07-29) is TeamAdmin/SystemAdmin-only, not a
+/// Session Manager action — the caller (Detail.cshtml.cs) gates it via AdminAccessScope.CanManageTeam,
+/// not SessionAccessScope.CanEdit, since it's a destructive cleanup action out of scope for routine
+/// session management — see CLAUDE.md's "Executing actions with care" guidance.
 /// </summary>
 public class SessionActionService(
     AppDbContext dbContext,
@@ -115,13 +118,73 @@ public class SessionActionService(
         logger.LogInformation("Reschedule flag cleared for session {SessionId} by user {UserId}", session.Id, userId);
         return SessionActionResult.Success;
     }
+
+    /// <summary>
+    /// Feature request (2026-07-29, prompted by orphaned walk-in-candidate rows found while
+    /// verifying the license-class backfill — see TODO.md/docs/exam-result-license-class.md): a
+    /// genuine hard delete of a Session and everything attached to it, unlike the rest of this
+    /// app's usual "PII nulled in place, row kept for stats" pattern — the whole point here is
+    /// removing a stale/orphaned local row outright, not retaining it. Candidate.SessionId and
+    /// SessionVolunteerExaminer.SessionId are both DeleteBehavior.Restrict (see AppDbContext), so
+    /// this removes Payments, then Candidates, then SessionVolunteerExaminer rows, then the Session
+    /// itself, in that FK-safe order, inside SaveChangesAsync's own transaction.
+    ///
+    /// Deliberately does NOT block just because candidates are attached — the motivating case *is*
+    /// a session with orphaned candidate rows still on it — but does block if any of this session's
+    /// Payments are still referenced by an UnmatchedSquarePayment.MatchedPaymentId (that FK is also
+    /// Restrict), since silently orphaning a manual-match record would be more confusing than making
+    /// the caller resolve it first.
+    /// </summary>
+    public async Task<SessionDeleteResult> DeleteAsync(int sessionId, int userId, CancellationToken cancellationToken)
+    {
+        var session = await dbContext.Sessions
+            .Include(s => s.Candidates).ThenInclude(c => c.Payments)
+            .Include(s => s.SessionVolunteerExaminers)
+            .FirstOrDefaultAsync(s => s.Id == sessionId, cancellationToken);
+        if (session is null)
+        {
+            return new SessionDeleteResult(SessionActionResult.NotFound, 0, 0, 0);
+        }
+
+        var payments = session.Candidates.SelectMany(c => c.Payments).ToList();
+        var candidateCount = session.Candidates.Count;
+        var veCount = session.SessionVolunteerExaminers.Count;
+
+        var paymentIds = payments.Select(p => p.Id).ToList();
+        var blockedByUnmatchedPayments = paymentIds.Count > 0 &&
+            await dbContext.UnmatchedSquarePayments.AnyAsync(u => u.MatchedPaymentId != null && paymentIds.Contains(u.MatchedPaymentId.Value), cancellationToken);
+        if (blockedByUnmatchedPayments)
+        {
+            return new SessionDeleteResult(SessionActionResult.Blocked, candidateCount, payments.Count, veCount);
+        }
+
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+
+        // Written before the rows themselves are removed — EntityId is a plain int column (no FK
+        // to Session), so it stays a valid forensic record after the delete goes through.
+        dbContext.AddAuditLog(userId, "SessionDeleted", nameof(Session), session.Id,
+            $"Session {session.ExamToolsSessionId} deleted, along with {candidateCount} candidate(s), {payments.Count} payment(s), and {veCount} VE roster assignment(s).", now);
+
+        dbContext.Payments.RemoveRange(payments);
+        dbContext.Candidates.RemoveRange(session.Candidates);
+        dbContext.SessionVolunteerExaminers.RemoveRange(session.SessionVolunteerExaminers);
+        dbContext.Sessions.Remove(session);
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        logger.LogWarning("Session {SessionId} ({ExamToolsSessionId}) deleted by user {UserId} — {CandidateCount} candidate(s), {PaymentCount} payment(s), {VeCount} VE roster assignment(s) removed with it",
+            session.Id, session.ExamToolsSessionId, userId, candidateCount, payments.Count, veCount);
+        return new SessionDeleteResult(SessionActionResult.Success, candidateCount, payments.Count, veCount);
+    }
 }
 
 public enum SessionActionResult
 {
     Success,
     NotFound,
-    AlreadyDone
+    AlreadyDone,
+    Blocked
 }
 
 public record SessionCompletionResult(SessionActionResult Result, int CandidatesTested, int FelonyDisclosureEmailsSent);
+
+public record SessionDeleteResult(SessionActionResult Result, int CandidatesRemoved, int PaymentsRemoved, int VeAssignmentsRemoved);

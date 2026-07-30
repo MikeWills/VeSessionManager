@@ -522,6 +522,71 @@ public class SessionEventSchedulingServiceTests
     }
 
     [Fact]
+    public async Task CancelledSession_ZoomNotConfiguredForTeam_LeavesZoomMeetingIdSet_NoErrorLogged()
+    {
+        // Regression test for the "SessionEventScheduling repeats a real [ERR] every tick" bug
+        // (found 2026-07-29, see TODO.md/CLAUDE.md): a cancelled session whose team never
+        // finished (or removed) its Zoom config must not throw every poll — it should stay
+        // pending, reported via SessionsAwaitingIntegrationConfig, and retry automatically once
+        // Zoom is configured.
+        await using var dbContext = CreateContext();
+        var (vec, feeConfig) = await SeedRefsAsync(dbContext);
+        var team = await SeedTeamAsync(dbContext, zoomConfigured: false);
+        var session = NewSession(vec, feeConfig, team);
+        session.ZoomMeetingId = "zoom-1";
+        session.ZoomJoinUrl = "https://zoom.us/j/zoom-1";
+        session.DiscordEventId = "discord-1";
+        session.Status = SessionStatus.Cancelled;
+        session.CancelledUtc = Now;
+        dbContext.Sessions.Add(session);
+        await dbContext.SaveChangesAsync();
+
+        var zoom = new FakeZoomClient();
+        var discord = new FakeDiscordEventClient();
+        var result = await CreateService(dbContext, zoom, discord).RunAsync(team, CancellationToken.None);
+
+        Assert.Equal(0, result.SessionsCleanedUp);
+        Assert.Equal(1, result.SessionsAwaitingIntegrationConfig);
+        Assert.Equal(0, result.SessionsFailed);
+        Assert.Empty(zoom.DeleteCalls);
+        Assert.Single(discord.DeleteCalls);
+
+        var saved = dbContext.Sessions.Single();
+        Assert.Equal("zoom-1", saved.ZoomMeetingId);
+        Assert.Null(saved.DiscordEventId);
+    }
+
+    [Fact]
+    public async Task CancelledSession_DiscordNotConfiguredForTeam_LeavesDiscordEventIdSet_NoErrorLogged()
+    {
+        await using var dbContext = CreateContext();
+        var (vec, feeConfig) = await SeedRefsAsync(dbContext);
+        var team = await SeedTeamAsync(dbContext, discordConfigured: false);
+        var session = NewSession(vec, feeConfig, team);
+        session.ZoomMeetingId = "zoom-1";
+        session.ZoomJoinUrl = "https://zoom.us/j/zoom-1";
+        session.DiscordEventId = "discord-1";
+        session.Status = SessionStatus.Cancelled;
+        session.CancelledUtc = Now;
+        dbContext.Sessions.Add(session);
+        await dbContext.SaveChangesAsync();
+
+        var zoom = new FakeZoomClient();
+        var discord = new FakeDiscordEventClient();
+        var result = await CreateService(dbContext, zoom, discord).RunAsync(team, CancellationToken.None);
+
+        Assert.Equal(0, result.SessionsCleanedUp);
+        Assert.Equal(1, result.SessionsAwaitingIntegrationConfig);
+        Assert.Equal(0, result.SessionsFailed);
+        Assert.Single(zoom.DeleteCalls);
+        Assert.Empty(discord.DeleteCalls);
+
+        var saved = dbContext.Sessions.Single();
+        Assert.Null(saved.ZoomMeetingId);
+        Assert.Equal("discord-1", saved.DiscordEventId);
+    }
+
+    [Fact]
     public async Task NeverScheduled_CancelledSession_IsNotProcessed()
     {
         await using var dbContext = CreateContext();

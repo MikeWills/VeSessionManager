@@ -77,6 +77,10 @@
                 <button type="submit" class="btn-primary">Mark session completed</button>
             </form>
         }
+        @if (Model.CanDeleteSession)
+        {
+            <button type="button" class="btn-danger" data-open-modal="deleteSessionModal">Delete session</button>
+        }
     </div>
 </div>
 
@@ -231,6 +235,27 @@
         }
     </div>
 </footer>
+
+@if (Model.CanDeleteSession)
+{
+    <!-- Delete session modal — TeamAdmin/SystemAdmin-only, see TODO.md's "delete a session outright" feature request -->
+    <div class="modal-backdrop" id="deleteSessionModal">
+        <div class="modal">
+            <h3>Delete session @Model.Session.ExamToolsSessionId?</h3>
+            <p>
+                This permanently deletes this session, along with @Model.Candidates.Count candidate(s),
+                every payment record attached to them, and @Model.VeRoster.Count VE roster assignment(s).
+                <b>This cannot be undone.</b>
+            </p>
+            <form method="post" asp-page-handler="DeleteSession">
+                <div class="modal-actions">
+                    <button type="button" class="btn-secondary btn-sm" data-close-modal>Cancel</button>
+                    <button type="submit" class="btn-danger btn-sm">Delete session</button>
+                </div>
+            </form>
+        </div>
+    </div>
+}
 
 @if (Model.CanEdit)
 {

@@ -62,14 +62,34 @@ namespace VeSessionManager.Web.Pages.SessionManager;
 /// in the Detail page's breadcrumb/title — now gets its own column instead of being buried inside the
 /// title cell's sub-line text, so it's usable to tell sessions apart at a glance and cross-reference
 /// against ExamTools' own UI, per the issue's "know whose session is whose" ask.
+///
+/// Filter-row realignment (reported 2026-07-29): the Status filter's old Upcoming/NeedsReview/Past
+/// checkboxes didn't correspond to anything the Status column actually showed (Active/Reschedule
+/// flagged/Completed/Cancelled) — Status is now that same four-value set, matching ToRow's
+/// statusLabel priority exactly. "Upcoming" was a time-window concept, not a lifecycle status, so it
+/// moved into the Date range dropdown as a distinct forward-looking preset (ScheduledStartUtc >= now,
+/// unbounded) alongside the existing backward-looking Last7/Last14/... presets — it keeps the default
+/// ascending sort rather than the look-back presets' newest-first flip, since its whole point is the
+/// *soonest* session. The filter row is now Status, Date range, Team, in that order, with Team
+/// converted from an auto-submitting bare &lt;select&gt; to the same dropdown-menu-plus-Apply pattern
+/// as Status/Date range for consistency; Page size moved out of the filter row entirely to sit next to
+/// the pagination controls below the table (via a `form` attribute referencing the filter form, since
+/// it's no longer physically inside the &lt;form&gt; tag).
 /// </summary>
 [Authorize(Roles = "SystemAdmin,TeamAdmin,SessionManager,TeamLead")]
 public class IndexModel(AppDbContext dbContext, UserManager<User> userManager, SessionAccessScope accessScope, TimeProvider timeProvider) : PageModel
 {
     private const string FilterCookieName = "vsm_session_filters";
-    private static readonly string[] KnownStatuses = ["Upcoming", "NeedsReview", "Past"];
+
+    // Realigned 2026-07-29 (reported filter-row confusion) to match the labels ToRow's statusLabel
+    // actually shows in the Status column (Active/Reschedule flagged/Completed/Cancelled) instead
+    // of the old Upcoming/NeedsReview/Past set, which didn't correspond to anything in the table.
+    // "Upcoming" was a time-window concept, not a lifecycle status, so it moved to the Date range
+    // filter instead (DateRange == "Upcoming", handled alongside DateRangePresets below).
+    private static readonly string[] KnownStatuses = ["Active", "RescheduleFlagged", "Completed", "Cancelled"];
     internal static readonly int[] AllowedPageSizes = [10, 25, 50, 100];
     private const int DefaultPageSize = 10;
+    private const string UpcomingDateRangeKey = "Upcoming";
 
     internal static readonly IReadOnlyDictionary<string, (int Days, string Label)> DateRangePresets = new Dictionary<string, (int, string)>
     {
@@ -113,6 +133,7 @@ public class IndexModel(AppDbContext dbContext, UserManager<User> userManager, S
     public IReadOnlyList<SessionRow> Sessions { get; private set; } = [];
     public string StatusSummaryLabel { get; private set; } = "";
     public string DateRangeSummaryLabel { get; private set; } = "Any time";
+    public string TeamSummaryLabel { get; private set; } = "All teams";
     public int TotalCount { get; private set; }
     public int TotalPages { get; private set; }
 
@@ -128,16 +149,16 @@ public class IndexModel(AppDbContext dbContext, UserManager<User> userManager, S
         if (Applied)
         {
             PageSize = AllowedPageSizes.Contains(PageSize) ? PageSize : DefaultPageSize;
-            DateRange = DateRangePresets.ContainsKey(DateRange) ? DateRange : "";
+            DateRange = IsKnownDateRange(DateRange) ? DateRange : "";
             SaveFilterCookie(Status, TeamId, PageSize, DateRange);
         }
         else
         {
             var (cookieStatus, cookieTeamId, cookiePageSize, cookieDateRange) = ReadFilterCookie();
-            Status = cookieStatus ?? ["Upcoming"];
+            Status = cookieStatus ?? [];
             TeamId = cookieTeamId;
             PageSize = cookiePageSize ?? DefaultPageSize;
-            DateRange = cookieDateRange ?? "";
+            DateRange = cookieDateRange ?? UpcomingDateRangeKey;
             PageNumber = 1;
         }
 
@@ -155,6 +176,7 @@ public class IndexModel(AppDbContext dbContext, UserManager<User> userManager, S
             (not null, not null) => $"{DateFrom:MMM d} – {DateTo:MMM d}",
             (not null, null) => $"From {DateFrom:MMM d}",
             (null, not null) => $"Through {DateTo:MMM d}",
+            _ when DateRange == UpcomingDateRangeKey => "Upcoming",
             _ => DateRangePresets.TryGetValue(DateRange, out var preset) ? preset.Label : "Any time"
         };
 
@@ -166,21 +188,28 @@ public class IndexModel(AppDbContext dbContext, UserManager<User> userManager, S
             : (accessScope.GetEffectiveTeamIds(user) ?? [])
                 .Join(await dbContext.Teams.ToListAsync(), id => id, t => t.Id, (_, t) => new ValueTuple<int, string>(t.Id, t.Name))
                 .OrderBy(t => t.Item2).ToList();
+        TeamSummaryLabel = TeamId is not null
+            ? AvailableTeams.FirstOrDefault(t => t.Id == TeamId).Name ?? "All teams"
+            : "All teams";
 
         IQueryable<Session> query = accessScope.Scope(dbContext.Sessions, user, TeamId)
             .Include(s => s.Vec)
             .Include(s => s.Team)
             .Include(s => s.Candidates);
 
-        var wantUpcoming = Status.Contains("Upcoming");
-        var wantNeedsReview = Status.Contains("NeedsReview");
-        var wantPast = Status.Contains("Past");
-        if (wantUpcoming || wantNeedsReview || wantPast)
+        // These mirror ToRow's statusLabel priority exactly (Cancelled > Reschedule flagged >
+        // Completed > Active) so a checked box always matches what the Status column shows.
+        var wantActive = Status.Contains("Active");
+        var wantRescheduleFlagged = Status.Contains("RescheduleFlagged");
+        var wantCompleted = Status.Contains("Completed");
+        var wantCancelled = Status.Contains("Cancelled");
+        if (wantActive || wantRescheduleFlagged || wantCompleted || wantCancelled)
         {
             query = query.Where(s =>
-                (wantUpcoming && s.Status == SessionStatus.Active && s.ScheduledStartUtc >= now)
-                || (wantNeedsReview && s.RescheduleFlaggedForReview)
-                || (wantPast && s.ScheduledStartUtc < now));
+                (wantActive && s.Status == SessionStatus.Active && !s.RescheduleFlaggedForReview && s.TestingCompletedUtc == null)
+                || (wantRescheduleFlagged && s.Status == SessionStatus.Active && s.RescheduleFlaggedForReview)
+                || (wantCompleted && s.Status == SessionStatus.Active && !s.RescheduleFlaggedForReview && s.TestingCompletedUtc != null)
+                || (wantCancelled && s.Status == SessionStatus.Cancelled));
         }
 
         var (dateFromUtc, dateToUtc) = ResolveDateRange(now);
@@ -193,9 +222,12 @@ public class IndexModel(AppDbContext dbContext, UserManager<User> userManager, S
             query = query.Where(s => s.ScheduledStartUtc <= dateToUtc.Value);
         }
 
-        // A date filter's whole point is finding a *recent* session fast — oldest-first would still
-        // bury it on a late page, so flip to newest-first whenever one is active.
-        query = dateFromUtc is not null || dateToUtc is not null
+        // A look-back date filter's whole point is finding a *recent* session fast — oldest-first
+        // would still bury it on a late page, so flip to newest-first whenever one is active. The
+        // "Upcoming" preset is the opposite: its whole point is the *soonest* session, so it keeps
+        // the default ascending sort instead of flipping.
+        var isUpcomingPreset = DateRange == UpcomingDateRangeKey && DateFrom is null && DateTo is null;
+        query = (dateFromUtc is not null || dateToUtc is not null) && !isUpcomingPreset
             ? query.OrderByDescending(s => s.ScheduledStartUtc)
             : query.OrderBy(s => s.ScheduledStartUtc);
 
@@ -243,16 +275,25 @@ public class IndexModel(AppDbContext dbContext, UserManager<User> userManager, S
                 DateTo?.ToDateTime(TimeOnly.MaxValue));
         }
 
+        if (DateRange == UpcomingDateRangeKey)
+        {
+            return (now, null);
+        }
+
         return DateRangePresets.TryGetValue(DateRange, out var preset)
             ? (now.AddDays(-preset.Days), now)
             : (null, null);
     }
 
+    private static bool IsKnownDateRange(string dateRange) =>
+        dateRange == UpcomingDateRangeKey || DateRangePresets.ContainsKey(dateRange);
+
     private static string StatusLabel(string status) => status switch
     {
-        "Upcoming" => "Upcoming",
-        "NeedsReview" => "Needs review",
-        "Past" => "Past",
+        "Active" => "Active",
+        "RescheduleFlagged" => "Reschedule flagged",
+        "Completed" => "Completed",
+        "Cancelled" => "Cancelled",
         _ => status
     };
 
@@ -267,7 +308,7 @@ public class IndexModel(AppDbContext dbContext, UserManager<User> userManager, S
         var status = parts[0].Length == 0 ? [] : parts[0].Split(',').Where(s => KnownStatuses.Contains(s)).ToList();
         int? teamId = parts.Length > 1 && int.TryParse(parts[1], out var id) ? id : null;
         int? pageSize = parts.Length > 2 && int.TryParse(parts[2], out var size) && AllowedPageSizes.Contains(size) ? size : null;
-        string? dateRange = parts.Length > 3 && DateRangePresets.ContainsKey(parts[3]) ? parts[3] : null;
+        string? dateRange = parts.Length > 3 && IsKnownDateRange(parts[3]) ? parts[3] : null;
         return (status, teamId, pageSize, dateRange);
     }
 
