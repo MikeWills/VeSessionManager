@@ -109,6 +109,8 @@ thead th { text-align: left; font-family: "IBM Plex Mono", monospace; font-size:
 tbody td { padding: 14px 16px; border-bottom: 1px solid var(--line); font-size: 13.5px; vertical-align: middle; }
 tbody tr:last-child td { border-bottom: none; }
 tbody tr:hover { background: var(--row-hover); }
+tbody tr.row-past { background: var(--paper); }
+tbody tr.row-past:hover { background: var(--row-hover); }
 .session-title { font-weight: 600; }
 .session-sub { font-family: "IBM Plex Mono", monospace; font-size: 12px; color: var(--ink-soft); margin-top: 2px; }
 .count { font-family: "IBM Plex Mono", monospace; }

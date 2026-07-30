@@ -77,6 +77,15 @@ namespace VeSessionManager.Web.Pages.SessionManager;
 /// as Status/Date range for consistency; Page size moved out of the filter row entirely to sit next to
 /// the pagination controls below the table (via a `form` attribute referencing the filter form, since
 /// it's no longer physically inside the &lt;form&gt; tag).
+///
+/// "Last 7 + Upcoming" preset + past-row shading (2026-07-30): a second forward-looking preset
+/// alongside Upcoming, covering ScheduledStartUtc from 7 days ago through the unbounded future in
+/// one filter — same ascending-sort treatment as Upcoming, just with the lower bound pushed back a
+/// week. Replaced Upcoming as the fallback default for a fresh visit with no filter cookie yet (a
+/// returning visitor's remembered cookie choice is untouched either way). Independent of any date
+/// filter, every row now also gets a `row-past` CSS class once Session.HasEnded(now) — a light
+/// background tint (see app.css) so a mixed list (this preset, or no date filter at all) makes it
+/// obvious at a glance which sessions already happened without needing to read every date.
 /// </summary>
 [Authorize(Roles = "SystemAdmin,TeamAdmin,SessionManager,TeamLead")]
 public class IndexModel(AppDbContext dbContext, UserManager<User> userManager, SessionAccessScope accessScope, TimeProvider timeProvider) : PageModel
@@ -92,6 +101,13 @@ public class IndexModel(AppDbContext dbContext, UserManager<User> userManager, S
     internal static readonly int[] AllowedPageSizes = [10, 25, 50, 100];
     private const int DefaultPageSize = 10;
     private const string UpcomingDateRangeKey = "Upcoming";
+
+    /// <summary>Requested 2026-07-30: "Last 7 + Upcoming" — everything from 7 days ago through the
+    /// unbounded future, so a Session Manager can spot a just-finished session alongside what's
+    /// still coming up without the two separate filters. Same "unbounded forward, keep ascending
+    /// sort" shape as UpcomingDateRangeKey, just with the lower bound pushed back a week instead of
+    /// pinned to "now".</summary>
+    private const string Last7PlusUpcomingDateRangeKey = "Last7PlusUpcoming";
 
     internal static readonly IReadOnlyDictionary<string, (int Days, string Label)> DateRangePresets = new Dictionary<string, (int, string)>
     {
@@ -160,7 +176,7 @@ public class IndexModel(AppDbContext dbContext, UserManager<User> userManager, S
             Status = cookieStatus ?? [];
             TeamId = cookieTeamId;
             PageSize = cookiePageSize ?? DefaultPageSize;
-            DateRange = cookieDateRange ?? UpcomingDateRangeKey;
+            DateRange = cookieDateRange ?? Last7PlusUpcomingDateRangeKey;
             PageNumber = 1;
         }
 
@@ -179,6 +195,7 @@ public class IndexModel(AppDbContext dbContext, UserManager<User> userManager, S
             (not null, null) => $"From {DateFrom:MMM d}",
             (null, not null) => $"Through {DateTo:MMM d}",
             _ when DateRange == UpcomingDateRangeKey => "Upcoming",
+            _ when DateRange == Last7PlusUpcomingDateRangeKey => "Last 7 + Upcoming",
             _ => DateRangePresets.TryGetValue(DateRange, out var preset) ? preset.Label : "Any time"
         };
 
@@ -222,10 +239,11 @@ public class IndexModel(AppDbContext dbContext, UserManager<User> userManager, S
 
         // A look-back date filter's whole point is finding a *recent* session fast — oldest-first
         // would still bury it on a late page, so flip to newest-first whenever one is active. The
-        // "Upcoming" preset is the opposite: its whole point is the *soonest* session, so it keeps
-        // the default ascending sort instead of flipping.
-        var isUpcomingPreset = DateRange == UpcomingDateRangeKey && DateFrom is null && DateTo is null;
-        query = (dateFromUtc is not null || dateToUtc is not null) && !isUpcomingPreset
+        // "Upcoming" and "Last 7 + Upcoming" presets are the opposite: their whole point is the
+        // *soonest* session, so they keep the default ascending sort instead of flipping.
+        var isForwardLookingPreset = (DateRange == UpcomingDateRangeKey || DateRange == Last7PlusUpcomingDateRangeKey)
+            && DateFrom is null && DateTo is null;
+        query = (dateFromUtc is not null || dateToUtc is not null) && !isForwardLookingPreset
             ? query.OrderByDescending(s => s.ScheduledStartUtc)
             : query.OrderBy(s => s.ScheduledStartUtc);
 
@@ -234,7 +252,7 @@ public class IndexModel(AppDbContext dbContext, UserManager<User> userManager, S
         PageNumber = Math.Min(PageNumber, TotalPages);
 
         var sessions = await query.Skip((PageNumber - 1) * PageSize).Take(PageSize).ToListAsync();
-        Sessions = sessions.Select(ToRow).ToList();
+        Sessions = sessions.Select(s => ToRow(s, now)).ToList();
     }
 
     /// <summary>Builds a Prev/Next/page-size link preserving every current filter — asp-route-* tag helpers can't represent Status's multiple values, so this constructs the query string directly.</summary>
@@ -278,13 +296,18 @@ public class IndexModel(AppDbContext dbContext, UserManager<User> userManager, S
             return (now, null);
         }
 
+        if (DateRange == Last7PlusUpcomingDateRangeKey)
+        {
+            return (now.AddDays(-7), null);
+        }
+
         return DateRangePresets.TryGetValue(DateRange, out var preset)
             ? (now.AddDays(-preset.Days), now)
             : (null, null);
     }
 
     private static bool IsKnownDateRange(string dateRange) =>
-        dateRange == UpcomingDateRangeKey || DateRangePresets.ContainsKey(dateRange);
+        dateRange == UpcomingDateRangeKey || dateRange == Last7PlusUpcomingDateRangeKey || DateRangePresets.ContainsKey(dateRange);
 
     private static string StatusLabel(string status) => status switch
     {
@@ -328,7 +351,7 @@ public class IndexModel(AppDbContext dbContext, UserManager<User> userManager, S
         });
     }
 
-    private static SessionRow ToRow(Session s)
+    private static SessionRow ToRow(Session s, DateTime now)
     {
         // ExtId gets its own column (issue #35 — "know whose session is whose"), not repeated in
         // the sub-line the way it used to be.
@@ -365,7 +388,8 @@ public class IndexModel(AppDbContext dbContext, UserManager<User> userManager, S
             s.Candidates.Count,
             s.RescheduleFlaggedForReview,
             statusClass, statusLabel,
-            vecClass, vecLabel);
+            vecClass, vecLabel,
+            s.HasEnded(now));
     }
 
     public record SessionRow(
@@ -380,5 +404,6 @@ public class IndexModel(AppDbContext dbContext, UserManager<User> userManager, S
         string StatusChipClass,
         string StatusChipLabel,
         string VecSubmissionChipClass,
-        string VecSubmissionChipLabel);
+        string VecSubmissionChipLabel,
+        bool IsPast);
 }

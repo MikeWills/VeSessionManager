@@ -230,6 +230,23 @@ until its columns are set via direct DB edit (no admin UI yet):
 
 ## Deferred (no urgency, revisit when ready)
 
+- [ ] **Self-update notification for admins** (requested 2026-07-30, low priority — scope
+  deliberately not decided yet, revisit when someone has time to design it). The idea: a
+  SystemAdmin should see some kind of indicator when a new version is available, especially a
+  critical fix, and be able to trigger the update at a time of their choosing rather than
+  discovering the app is stale only by accident. Nothing built yet — genuinely just a note that
+  this would be useful, not a design. Whoever picks this up should start from the deploy pipeline
+  that already exists rather than inventing a new one: `.github/workflows/deploy.yml` only
+  triggers on a pushed version tag (`v*.*.*`), and `docs/deployment.md` documents the two-service
+  (`vesessionmanager-worker`/`vesessionmanager-web`) systemd topology it deploys to — the simplest
+  version of this feature might just be "compare the currently-running build's version against the
+  latest GitHub tag, show a banner if behind, let an admin click a button that triggers the
+  existing workflow" rather than building a whole separate update mechanism. Open questions this
+  TODO deliberately leaves unanswered: how "critical" gets flagged (a tag suffix? a separate
+  release-notes field?), whether the trigger comes from GitHub Actions, a webhook, or the app
+  polling GitHub itself, and what "take the action" actually does given deploys currently need SSH
+  access to a Tailscale-gated server (see CLAUDE.md's Known Constraints).
+
 - [x] ~~Deployment: no systemd unit file or working GitHub Actions deploy step exists yet~~ — **stale, this was actually finished 2026-07-21** (see `CLAUDE.md`'s "Known Constraints"/"Deploy topology" bullets; this TODO entry just never got updated to match). `.github/workflows/deploy.yml` is a fully working deploy pipeline (GitHub-hosted runner + ephemeral Tailscale join, no self-hosted runner needed), and `docs/deployment.md` documents the systemd unit files and one-time server setup in full.
   - [ ] **Genuinely still open:** the public domain, `ve.wx0mik.radio`, was decided 2026-07-22 (see `docs/deployment.md`'s "Apache Virtual Host" section) but the Apache vhost + Let's Encrypt cert haven't actually been provisioned on the real server yet. A second domain for a second team is possible later but not needed now — purely cosmetic branding, no code/deploy change required either way.
   - [ ] **Genuinely still open:** the one-time server-side setup (`vesessionmanager` service account, sudoers file, app/data directories, 5 GitHub repo secrets — all documented step-by-step in `docs/deployment.md`) hasn't been run against the real server yet. Operational work, not code.
