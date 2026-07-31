@@ -8,6 +8,12 @@ that window, or immediately if it's phase-numbered work already summarized in "C
 design rationale for any entry still lives in its linked `/docs/*.md` file, not here or in
 CLAUDE.md — this file, like CLAUDE.md's Change Log, is pointers only.
 
+- **Applicant Status page (2026-07-29).** `docs/exam-result-license-class.md`'s "Applicant Status
+  page" section — new team-wide `Pages/SessionManager/ApplicantStatus.cshtml(.cs)`: a "Pending FCC
+  grant" worklist (passed but not yet `Granted`, drops a candidate the instant they are) plus a
+  "Recently issued" section (`Granted` in the last 7 days) so a Session Manager can confirm a
+  specific person's license/upgrade actually came through. No new backing fields — built entirely
+  on `InitialLicenseClass`/`NewLicenseClass` from the license-class tracking work below.
 - **License class tracking + exam-result backfill (2026-07-29).** `docs/exam-result-license-class.md`
   — new `Candidate.InitialLicenseClass`/`NewLicenseClass`, derived purely from which exam elements
   ExamTools reports graded+passed this sitting (no FCC `AM.dat` fetch needed — a VE session never

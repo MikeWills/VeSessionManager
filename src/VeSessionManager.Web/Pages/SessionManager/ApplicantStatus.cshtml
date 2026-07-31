@@ -54,7 +54,7 @@ else
             <p class="eyebrow" style="margin-top:0;">Passed but not yet issued — drops off once granted</p>
         </div>
     </div>
-    <table>
+    <table data-sortable="pending-fcc-grant">
         <thead>
             <tr>
                 <th>Candidate</th>
@@ -83,7 +83,8 @@ else
                     {
                         <td>@row.TeamName</td>
                     }
-                    <td class="mono">
+                    @* Explicit sort value so the trailing ULS "↗" link text doesn't ride along. *@
+                    <td class="mono" data-sort-value="@row.Frn">
                         @row.Frn
                         @if (!string.IsNullOrWhiteSpace(row.LicenseUrl))
                         {
@@ -91,7 +92,7 @@ else
                                title="This candidate's current FCC licence in ULS — for an upgrade, the licence they already hold while this exam is still pending">↗</a>
                         }
                     </td>
-                    <td><a asp-page="./Detail" asp-route-id="@row.SessionId">@row.SessionDateLine</a></td>
+                    <td data-sort-value="@row.SessionDateSortValue"><a asp-page="./Detail" asp-route-id="@row.SessionId">@row.SessionDateLine</a></td>
                     <td class="mono">@row.LicenseClassLine</td>
                     <td>@row.StatusLabel</td>
                     <td>@row.FeeLabel</td>
@@ -107,7 +108,7 @@ else
             <p class="eyebrow" style="margin-top:0;">Granted in the last @VeSessionManager.Web.Pages.SessionManager.ApplicantStatusModel.RecentlyIssuedWindowDays days</p>
         </div>
     </div>
-    <table>
+    <table data-sortable="recently-issued">
         <thead>
             <tr>
                 <th>Candidate</th>
@@ -134,8 +135,9 @@ else
                     {
                         <td>@row.TeamName</td>
                     }
-                    <td><a asp-page="./Detail" asp-route-id="@row.SessionId">@row.SessionDateLine</a></td>
-                    <td class="mono">
+                    <td data-sort-value="@row.SessionDateSortValue"><a asp-page="./Detail" asp-route-id="@row.SessionId">@row.SessionDateLine</a></td>
+                    @* Explicit sort value so the trailing ULS "↗" link text doesn't ride along. *@
+                    <td class="mono" data-sort-value="@row.CallSign">
                         @row.CallSign
                         @if (!string.IsNullOrWhiteSpace(row.LicenseUrl))
                         {
@@ -143,7 +145,7 @@ else
                         }
                     </td>
                     <td class="mono">@row.LicenseClassLine</td>
-                    <td class="mono">@row.GrantDateLine</td>
+                    <td class="mono" data-sort-value="@row.GrantDateSortValue">@row.GrantDateLine</td>
                 </tr>
             }
         </tbody>

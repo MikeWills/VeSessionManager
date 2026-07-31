@@ -13,7 +13,7 @@
     </div>
 </div>
 
-<table>
+<table data-sortable="audit-entries">
     <thead>
         <tr>
             <th>When</th>
@@ -31,7 +31,8 @@
         @foreach (var entry in Model.Entries)
         {
             <tr>
-                <td class="mono">@EasternTimeFormatter.Format(entry.TimestampUtc, "MMM d, yyyy")</td>
+                @* Sorts on the raw timestamp — "MMM d, yyyy" sorts alphabetically as text (Apr before Mar). *@
+                <td class="mono" data-sort-value="@entry.TimestampUtc.ToString("o")">@EasternTimeFormatter.Format(entry.TimestampUtc, "MMM d, yyyy")</td>
                 <td>@(entry.UserName ?? "(background job)")</td>
                 <td>@entry.Action</td>
                 <td class="mono">@entry.EntityType #@entry.EntityId</td>

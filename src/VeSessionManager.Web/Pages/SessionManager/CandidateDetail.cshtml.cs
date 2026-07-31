@@ -201,6 +201,7 @@ public class CandidateDetailModel(
                     c.Session.Id,
                     c.Name ?? "—",
                     EasternTimeFormatter.Format(c.Session.ScheduledStartUtc, "MMM d, yyyy"),
+                    c.Session.ScheduledStartUtc.ToString("o", CultureInfo.InvariantCulture),
                     c.ApplicationStatus == CandidateApplicationStatus.NotTested ? "Withdrew/no-show" : c.ApplicationStatus.ToString()))
                 .ToList();
 
@@ -276,6 +277,7 @@ public class CandidateDetailModel(
             chipLabel,
             payment.PaymentLinkUrl,
             FormatUtcOrNull(payment.PaidDateUtc),
+            payment.PaidDateUtc?.ToString("o", CultureInfo.InvariantCulture),
             payment.RefundRequested,
             payment.RefundNotes,
             amountMismatchLine,
@@ -324,6 +326,8 @@ public class CandidateDetailModel(
         string ChipLabel,
         string? PaymentLinkUrl,
         string? PaidDateLine,
+        /// <summary>Raw timestamp behind PaidDateLine, for the payments table's click-to-sort header (see app.js) — the displayed M/d/yyyy form sorts wrong as text. Null (an unpaid payment) sorts last in both directions.</summary>
+        string? PaidDateSortValue,
         bool RefundRequested,
         string? RefundNotes,
         string? AmountMismatchLine,
@@ -331,5 +335,6 @@ public class CandidateDetailModel(
         bool SquareOrderCompleted,
         bool CanMarkPaid);
 
-    public record OtherAttemptRow(int CandidateId, int SessionId, string Name, string SessionDateLine, string StatusLabel);
+    /// <summary>SessionDateSortValue is the raw session start behind SessionDateLine, for the table's click-to-sort header (see app.js).</summary>
+    public record OtherAttemptRow(int CandidateId, int SessionId, string Name, string SessionDateLine, string SessionDateSortValue, string StatusLabel);
 }

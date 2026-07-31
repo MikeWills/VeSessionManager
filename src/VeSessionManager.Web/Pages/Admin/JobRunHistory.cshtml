@@ -13,7 +13,7 @@
     </div>
 </div>
 
-<table>
+<table data-sortable="job-runs">
     <thead>
         <tr>
             <th>Job</th>
@@ -34,8 +34,11 @@
             <tr>
                 <td class="session-title">@run.JobName</td>
                 <td>@(run.TeamName ?? "(global)")</td>
-                <td class="mono">@EasternTimeFormatter.Format(run.StartedUtc, "MMM d, yyyy h:mm:ss tt")</td>
-                <td class="mono">@(EasternTimeFormatter.Format(run.CompletedUtc, "MMM d, yyyy h:mm:ss tt") ?? "—")</td>
+                @* Sort on the raw timestamps — the display format sorts alphabetically as text. A
+                   still-running job has no CompletedUtc, so its sort value is empty and it lands at
+                   the bottom in both directions, same as the em dash it shows. *@
+                <td class="mono" data-sort-value="@run.StartedUtc.ToString("o")">@EasternTimeFormatter.Format(run.StartedUtc, "MMM d, yyyy h:mm:ss tt")</td>
+                <td class="mono" data-sort-value="@(run.CompletedUtc?.ToString("o"))">@(EasternTimeFormatter.Format(run.CompletedUtc, "MMM d, yyyy h:mm:ss tt") ?? "—")</td>
                 <td>
                     @if (run.Success)
                     {

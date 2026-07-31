@@ -113,7 +113,7 @@
     }
 </div>
 
-<table>
+<table data-sortable="session-candidates">
     <thead>
         <tr>
             <th>Candidate</th>
@@ -131,7 +131,10 @@
         @foreach (var candidate in Model.Candidates)
         {
             <tr>
-                <td>
+                @* Explicit sort values throughout: each of these cells renders more than one piece
+                   of text (call sign + FRN sub-line, refund/mismatch tags, a ✓/· glyph), and the
+                   concatenation of all of it is not what the column means. *@
+                <td data-sort-value="@candidate.DisplayName">
                     <div class="cand-name">
                         @if (candidate.IsWithdrawn)
                         {
@@ -155,7 +158,7 @@
                         <span class="status-label">@candidate.StatusLabel</span>
                     </div>
                 </td>
-                <td>
+                <td data-sort-value="@candidate.PaymentChipLabel">
                     <span class="chip @candidate.PaymentChipClass">@candidate.PaymentChipLabel</span>
                     @if (candidate.RefundRequested)
                     {
@@ -166,7 +169,7 @@
                         <span class="mismatch-tag" title="Matched via Square anyway — this team's real-world payments don't always equal the amount owed (e.g. the ARRL youth rate) until confirmed at test time.">@candidate.AmountMismatchLine</span>
                     }
                 </td>
-                <td><span class="tested-check @(candidate.Tested ? "on" : "")">@(candidate.Tested ? "✓" : "·")</span></td>
+                <td data-sort-value="@(candidate.Tested ? 1 : 0)"><span class="tested-check @(candidate.Tested ? "on" : "")">@(candidate.Tested ? "✓" : "·")</span></td>
                 <td class="row-actions">
                     @if (!Model.CanEdit)
                     {
