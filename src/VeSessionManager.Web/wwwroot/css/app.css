@@ -90,6 +90,12 @@ h1 { font-size: 24px; margin: 0 0 4px; letter-spacing: -.01em; }
 .filters a.filter-pill { font-family: "IBM Plex Mono", monospace; font-size: 12px; padding: 7px 13px; border-radius: 99px; border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink-soft); cursor: pointer; text-decoration: none; display: inline-block; }
 .filters a.filter-pill.active { background: var(--panel); color: #fff; border-color: var(--panel); }
 
+/* Outstanding-work count inside a team-picker pill (Applicant Status / Unmatched Payments). Unlike
+   .nav-badge this always renders, including "0" — comparing teams at a glance is the whole point —
+   so .zero mutes it instead of hiding. currentColor keeps it legible on the dark .active pill too. */
+.filters a.filter-pill .pill-count { margin-left: 7px; padding: 1px 6px; border-radius: 99px; background: color-mix(in srgb, currentColor 14%, transparent); font-size: 11px; font-weight: 600; }
+.filters a.filter-pill .pill-count.zero { opacity: .45; font-weight: 400; }
+
 /* Filter dropdowns (Sessions list — status multi-select + team single-select) — reuse the
    row-actions kebab/menu toggle component, styled as a bordered pill like filter-pill rather than
    the ghost-icon look the kebab has inside a table row, and left-aligned since the trigger sits at

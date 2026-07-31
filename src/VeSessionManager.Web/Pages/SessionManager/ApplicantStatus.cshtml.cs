@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using VeSessionManager.Core.Authorization;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Entities;
+using VeSessionManager.Core.Navigation;
 
 namespace VeSessionManager.Web.Pages.SessionManager;
 
@@ -25,7 +26,12 @@ namespace VeSessionManager.Web.Pages.SessionManager;
 /// candidate detail page remain the source of truth for anything older.
 /// </summary>
 [Authorize(Roles = "SystemAdmin,TeamAdmin,SessionManager,TeamLead")]
-public class ApplicantStatusModel(AppDbContext dbContext, UserManager<User> userManager, SessionAccessScope accessScope, TimeProvider timeProvider) : PageModel
+public class ApplicantStatusModel(
+    AppDbContext dbContext,
+    UserManager<User> userManager,
+    SessionAccessScope accessScope,
+    NavBadgeCountService badgeCounts,
+    TimeProvider timeProvider) : PageModel
 {
     internal const int RecentlyIssuedWindowDays = 7;
 
@@ -34,6 +40,14 @@ public class ApplicantStatusModel(AppDbContext dbContext, UserManager<User> user
 
     public bool HasTeamContext { get; private set; }
     public IReadOnlyList<(int Id, string Name)> AvailableTeams { get; private set; } = [];
+
+    /// <summary>
+    /// Pending-FCC-grant count per team, for the team picker — so a multi-team user can see which
+    /// team actually has work waiting without clicking through each pill. Uses the same predicate
+    /// as the Pending table below (both come from NavBadgeCountService), so a pill's number always
+    /// equals the row count you get after clicking it.
+    /// </summary>
+    public IReadOnlyDictionary<int, int> PendingCountsByTeam { get; private set; } = new Dictionary<int, int>();
     public IReadOnlyList<PendingRow> Pending { get; private set; } = [];
     public IReadOnlyList<RecentlyIssuedRow> RecentlyIssued { get; private set; } = [];
 
@@ -42,6 +56,13 @@ public class ApplicantStatusModel(AppDbContext dbContext, UserManager<User> user
         var user = await userManager.GetUserWithManagerAsync(dbContext, User) ?? throw new InvalidOperationException("No authenticated user for an [Authorize]d page.");
 
         AvailableTeams = await accessScope.GetAvailableTeamsAsync(dbContext, user);
+
+        // Only worth querying when a picker will actually render (see the Count > 1 guard in the view).
+        if (AvailableTeams.Count > 1)
+        {
+            PendingCountsByTeam = await badgeCounts.GetApplicantsPendingGrantByTeamAsync(
+                [.. AvailableTeams.Select(t => t.Id)], HttpContext.RequestAborted);
+        }
 
         var teamId = accessScope.TryResolveViewableTeamId(user, TeamId, AvailableTeams);
         TeamId = teamId;
