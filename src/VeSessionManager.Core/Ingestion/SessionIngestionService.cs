@@ -79,10 +79,32 @@ public class SessionIngestionService(
         var localSessions = await dbContext.Sessions.Include(s => s.Candidates).Where(s => s.TeamId == team.Id).ToListAsync(cancellationToken);
         var localByExternalId = localSessions.ToDictionary(s => s.ExamToolsSessionId);
 
+        // Captured *before* this run stamps any new closes. "Poll while the session is open"
+        // has to include the poll that discovers it closed — that run is the last chance to pick up
+        // final candidate changes. Testing against ExamToolsClosedUtc directly in the candidate loop
+        // below would skip that final sync, because the stamp is applied earlier in this same run.
+        var closedBeforeThisRun = localSessions
+            .Where(s => s.ExamToolsClosedUtc is not null)
+            .Select(s => s.ExamToolsSessionId)
+            .ToHashSet();
+
         foreach (var remote in remoteSessions)
         {
             if (localByExternalId.TryGetValue(remote.Id, out var local))
             {
+                // ExamTools reporting the session closed is recorded the first time we see it, and
+                // never re-stamped. This is what stops issue #68's false cancellations: without it,
+                // nothing ever moved a session out of "open", so every real completed session
+                // eventually looked like a disappearance and got flipped to Cancelled. It is NOT
+                // TestingCompletedUtc — see Session.ExamToolsClosedUtc's own remarks for why that
+                // distinction is load-bearing.
+                if (remote.State == DoneState && local.ExamToolsClosedUtc is null)
+                {
+                    local.ExamToolsClosedUtc = now;
+                    result.SessionsClosedByExamTools++;
+                    logger.LogInformation("Session {ExamToolsSessionId} reported closed by ExamTools — no further session-level polling", local.ExamToolsSessionId);
+                }
+
                 ApplyRescheduleRules(local, remote, now, result);
 
                 // Backfill (2026-07-30): ExtId was added after many sessions were already ingested;
@@ -106,10 +128,26 @@ public class SessionIngestionService(
 
         // Cancellation: ExamTools has no cancelled flag; a known, still-open session vanishing
         // from the feed by id *is* the cancellation signal (confirmed against real API responses).
+        // Two guards, both added for issue #68, and deliberately not one:
+        //
+        //   ExamToolsClosedUtc — ExamTools has told us this session is closed, so its later
+        //   disappearance from the feed is expected, not a cancellation.
+        //
+        //   !HasEnded(now) — a session whose scheduled window has already elapsed cannot
+        //   meaningfully be "cancelled" by vanishing; at that point disappearing just means it aged
+        //   past CompletedSessionBackfillWindow. This one is the backstop that does not depend on
+        //   having *observed* the close: sessions that aged out before ExamToolsClosedUtc existed
+        //   (and any session ExamTools drops without ever reporting "done") have no closed-stamp to
+        //   rely on, and were being flipped to Cancelled 30 days after they really ran.
+        //
+        // Cancellation therefore now only applies to a session that is still in its future — which
+        // is the only case the heuristic was ever meant to catch.
         foreach (var local in localSessions.Where(s =>
                      s.Id != 0 && // freshly added this run — always still in the feed
                      s.Status == SessionStatus.Active &&
                      s.TestingCompletedUtc is null &&
+                     s.ExamToolsClosedUtc is null &&
+                     !s.HasEnded(now) &&
                      !remoteIds.Contains(s.ExamToolsSessionId)))
         {
             local.Status = SessionStatus.Cancelled;
@@ -121,9 +159,15 @@ public class SessionIngestionService(
         // Candidate sync for every open session still in the feed.
         foreach (var remote in remoteSessions)
         {
+            // Poll while the session is open, including the run that discovers it closed — that
+            // last sync is what captures any final candidate changes. From the *next* run on there
+            // is nothing further to pull: candidate-level updates for a finished session arrive
+            // through ExamResultSyncService (per applicant id) and the ULS watcher (per FRN),
+            // neither of which uses this feed.
             if (!localByExternalId.TryGetValue(remote.Id, out var local)
                 || local.Status != SessionStatus.Active
-                || local.TestingCompletedUtc is not null)
+                || local.TestingCompletedUtc is not null
+                || closedBeforeThisRun.Contains(remote.Id))
             {
                 continue;
             }

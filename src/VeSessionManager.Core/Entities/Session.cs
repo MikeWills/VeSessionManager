@@ -69,6 +69,21 @@ public class Session
     public int? TestingCompletedByUserId { get; set; }
     public User? TestingCompletedByUser { get; set; }
 
+    /// <summary>
+    /// Set by ingestion the first time ExamTools itself reports this session as closed ("done").
+    /// **Deliberately separate from TestingCompletedUtc**, which means "a Session Manager clicked
+    /// Mark completed" and carries real side effects (flipping candidates to Tested, completing
+    /// Square orders, sending felony-disclosure emails). ExamTools closing a session is an
+    /// observation, not that decision, so it must not silently trigger those.
+    ///
+    /// Its job is to record that there is nothing further to poll for this session, which makes it
+    /// the guard against the false-cancellation bug (issue #68): the cancellation heuristic reads
+    /// "a known, still-open session vanished from the feed", and before this field existed every
+    /// real completed session eventually looked exactly like that once it aged out of the
+    /// closed-session window — silently flipping genuine sessions to Cancelled 30 days after they ran.
+    /// </summary>
+    public DateTime? ExamToolsClosedUtc { get; set; }
+
     /// <summary>Renamed from Arrl* to Vec* (Phase 8) — submission goes to whichever VEC this session is actually under (VecId), not always ARRL specifically.</summary>
     public VecSubmissionStatus VecSubmissionStatus { get; set; } = VecSubmissionStatus.NotSubmitted;
     public DateTime? VecSubmittedDate { get; set; }

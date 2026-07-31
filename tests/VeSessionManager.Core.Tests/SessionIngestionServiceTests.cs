@@ -545,6 +545,145 @@ public class SessionIngestionServiceTests
     }
 
     [Fact]
+    public async Task ExamToolsReportingSessionDone_RecordsExamToolsClosedUtc_ButNotTestingCompletedUtc()
+    {
+        await using var dbContext = CreateContext();
+        await SeedVecAndFeeConfigAsync(dbContext);
+        var team = await SeedTeamAsync(dbContext);
+        var client = new FakeExamToolsClient();
+        client.SessionsFor(team.Id).Add(PendingSession());
+        await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+        Assert.Null(dbContext.Sessions.Single().ExamToolsClosedUtc);
+
+        // ExamTools closes the session: it leaves the pend feed and appears in the closed feed.
+        client.SessionsFor(team.Id).Clear();
+        var done = PendingSession();
+        done.State = "done";
+        client.ClosedSessionsFor(team.Id).Add(done);
+
+        var result = await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+
+        Assert.Equal(1, result.SessionsClosedByExamTools);
+        var session = dbContext.Sessions.Single();
+        Assert.Equal(Now, session.ExamToolsClosedUtc);
+        // Load-bearing: ExamTools closing a session is an observation, not the Session Manager's
+        // "Mark completed" decision, which carries side effects (candidates flipped to Tested,
+        // Square orders completed, felony-disclosure emails). Conflating them would fire those.
+        Assert.Null(session.TestingCompletedUtc);
+        Assert.Equal(SessionStatus.Active, session.Status);
+
+        // Never re-stamped on a later poll, so the timestamp keeps meaning "when we first saw it closed".
+        var repoll = await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+        Assert.Equal(0, repoll.SessionsClosedByExamTools);
+        Assert.Equal(Now, dbContext.Sessions.Single().ExamToolsClosedUtc);
+    }
+
+    [Fact]
+    public async Task ExamToolsClosedSession_AgingOutOfTheClosedFeed_IsNotCancelled()
+    {
+        // Regression for issue #68, found live 2026-07-31 against real HRCC data: two genuine
+        // completed sessions (one with all three candidates already Tested) were flipped to
+        // Cancelled exactly 30 days after they ran. Nothing ever moved a session out of "open" —
+        // TestingCompletedUtc is only ever set by a human clicking Mark completed — so once a
+        // session aged past CompletedSessionBackfillWindow it dropped out of the merged feed and
+        // the "vanished from the feed == cancelled" heuristic fired on it.
+        await using var dbContext = CreateContext();
+        await SeedVecAndFeeConfigAsync(dbContext);
+        var team = await SeedTeamAsync(dbContext);
+        var client = new FakeExamToolsClient();
+        client.SessionsFor(team.Id).Add(PendingSession());
+        await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+
+        client.SessionsFor(team.Id).Clear();
+        var done = PendingSession();
+        done.State = "done";
+        client.ClosedSessionsFor(team.Id).Add(done);
+        await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+
+        // 30+ days later it falls out of the closed-session window too — the exact moment the bug fired.
+        client.ClosedSessionsFor(team.Id).Clear();
+        var result = await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+
+        Assert.Equal(0, result.SessionsCancelled);
+        var session = dbContext.Sessions.Single();
+        Assert.Equal(SessionStatus.Active, session.Status);
+        Assert.Null(session.CancelledUtc);
+    }
+
+    [Fact]
+    public async Task AlreadyEndedSession_DisappearingFromFeed_IsNotCancelled_EvenWithoutAClosedStamp()
+    {
+        // The other half of issue #68. ExamToolsClosedUtc only protects sessions we actually
+        // observed ExamTools close — sessions that had already aged out of the closed-session feed
+        // before that field existed have no stamp and never will, so they were still due to be
+        // flipped to Cancelled on the very next tick. Three real HRCC sessions were in exactly that
+        // state when the fix was written. A session whose window has elapsed cannot meaningfully be
+        // cancelled by vanishing, so HasEnded is the backstop that does not require observation.
+        await using var dbContext = CreateContext();
+        await SeedVecAndFeeConfigAsync(dbContext);
+        var team = await SeedTeamAsync(dbContext);
+        var client = new FakeExamToolsClient();
+        // Ingested via the closed feed (the only feed a completed session ever appears in), dated
+        // inside the backfill window so it is created at all. A first ingest never stamps
+        // ExamToolsClosedUtc — that only happens on a later poll of an already-known session — so
+        // this lands in exactly the pre-fix state: already ended, no closed stamp, and never
+        // going to get one now that it has aged out.
+        var done = PendingSession(date: Now.AddDays(-20));
+        done.State = "done";
+        client.ClosedSessionsFor(team.Id).Add(done);
+        await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+
+        var seeded = dbContext.Sessions.Single();
+        Assert.Null(seeded.ExamToolsClosedUtc);
+        Assert.True(seeded.HasEnded(Now));
+
+        client.SessionsFor(team.Id).Clear();
+        client.ClosedSessionsFor(team.Id).Clear();
+        var result = await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+
+        Assert.Equal(0, result.SessionsCancelled);
+        var session = dbContext.Sessions.Single();
+        Assert.Equal(SessionStatus.Active, session.Status);
+        Assert.Null(session.CancelledUtc);
+    }
+
+    [Fact]
+    public async Task ClosingRunStillSyncsCandidatesOnce_ThenSessionIsNeverPolledAgain()
+    {
+        // "Only poll it if it's open" includes the poll that discovers it closed — that run is the
+        // last chance to pick up final candidate changes, so it must still sync. From the next run
+        // on there is nothing further to pull: candidate-level updates for a finished session come
+        // from ExamResultSyncService (per applicant id) and the ULS watcher (per FRN), neither of
+        // which uses this feed.
+        await using var dbContext = CreateContext();
+        await SeedVecAndFeeConfigAsync(dbContext);
+        var team = await SeedTeamAsync(dbContext);
+        var client = new FakeExamToolsClient();
+        client.SessionsFor(team.Id).Add(PendingSession(applicantCount: 1));
+        client.ApplicantsFor(team.Id)["session-1"] = [Applicant()];
+        await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+        Assert.Single(dbContext.Candidates);
+        var fetchesWhileOpen = client.ApplicantFetches.Count;
+
+        // ExamTools closes it, and a late change lands in that same feed response.
+        client.SessionsFor(team.Id).Clear();
+        var done = PendingSession(applicantCount: 1);
+        done.State = "done";
+        client.ClosedSessionsFor(team.Id).Add(done);
+        client.ApplicantsFor(team.Id)["session-1"] = [Applicant(email: "changed@example.com")];
+        await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+
+        // The closing run polled once more, and picked the change up.
+        Assert.Equal(fetchesWhileOpen + 1, client.ApplicantFetches.Count);
+        Assert.Equal("changed@example.com", dbContext.Candidates.Single().Email);
+
+        // Every run after that leaves it alone.
+        await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+        await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+        Assert.Equal(fetchesWhileOpen + 1, client.ApplicantFetches.Count);
+    }
+
+    [Fact]
     public async Task ApplicantFetch_IsSkippedWhenFeedShowsZeroAndNoLocalCandidates()
     {
         await using var dbContext = CreateContext();
