@@ -70,7 +70,17 @@
     <header class="chassis">
         <a class="brand" asp-page="/SessionManager/Index"><span class="dot"></span>VESESSIONMGR</a>
         <nav class="chassis-nav">
-            <a asp-page="/SessionManager/Index" class="@(activeNav == "Sessions" ? "active" : "")">Sessions</a>
+            @* The VEC-submission badge rides on Sessions since the standalone VEC Submission page was
+               removed as redundant — that worklist is now the Sessions page's "Pending VEC submission"
+               status filter. Titled because a bare number next to "Sessions" wouldn't say what it counts. *@
+            <a asp-page="/SessionManager/Index" class="@(activeNav == "Sessions" ? "active" : "")"
+               title="@(badges.SessionsPendingVecSubmission > 0 ? $"{badges.SessionsPendingVecSubmission} session(s) pending VEC submission" : null)">
+                Sessions
+                @if (badges.SessionsPendingVecSubmission > 0)
+                {
+                    <span class="nav-badge">@badges.SessionsPendingVecSubmission</span>
+                }
+            </a>
             @* Applicants/VEs are deliberately dropdowns even at one item today — they're the homes
                more applicant- and VE-facing pages land in, so the nav doesn't reshuffle later. The
                Applicants badge sits on the trigger since a badge inside a closed menu is invisible. *@
@@ -93,13 +103,6 @@
                     <a class="item @(activeNav == "VeRoster" ? "active" : "")" asp-page="/SessionManager/VeRoster">VE Roster</a>
                 </div>
             </div>
-            <a asp-page="/SessionManager/VecSubmission" class="@(activeNav == "VecSubmission" ? "active" : "")">
-                VEC Submission
-                @if (badges.SessionsPendingVecSubmission > 0)
-                {
-                    <span class="nav-badge">@badges.SessionsPendingVecSubmission</span>
-                }
-            </a>
             @* Gated to match UnmatchedPayments.cshtml.cs's own [Authorize] — a TeamLead previously
                saw this link and got a 403 on click. *@
             @if (currentUser?.Role is not UserRole.TeamLead)

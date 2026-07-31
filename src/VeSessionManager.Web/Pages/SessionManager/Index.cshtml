@@ -24,6 +24,10 @@
             <label class="item"><input type="checkbox" name="status" value="Completed" @(Model.Status.Contains("Completed") ? "checked" : "") /> Completed</label>
             <label class="item"><input type="checkbox" name="status" value="Cancelled" @(Model.Status.Contains("Cancelled") ? "checked" : "") /> Cancelled</label>
             <hr />
+            @* Separated by a rule because this cuts across the four lifecycle states above rather
+               than being another one of them — see KnownStatuses in the page model. *@
+            <label class="item"><input type="checkbox" name="status" value="PendingVecSubmission" @(Model.Status.Contains("PendingVecSubmission") ? "checked" : "") /> Pending VEC submission</label>
+            <hr />
             <button type="submit" class="item">Apply</button>
         </div>
     </div>
@@ -82,12 +86,13 @@
             <th>Status</th>
             <th>VEC submission</th>
             <th></th>
+            <th></th>
         </tr>
     </thead>
     <tbody>
         @if (Model.Sessions.Count == 0)
         {
-            <tr><td colspan="8">No sessions match this filter.</td></tr>
+            <tr><td colspan="9">No sessions match this filter.</td></tr>
         }
         @foreach (var session in Model.Sessions)
         {
@@ -109,10 +114,73 @@
                 <td><span class="chip @session.StatusChipClass">@session.StatusChipLabel</span></td>
                 <td><span class="chip @session.VecSubmissionChipClass">@session.VecSubmissionChipLabel</span></td>
                 <td><a class="view-link" asp-page="./Detail" asp-route-id="@session.Id">View →</a></td>
+                @* Row action menu (requested 2026-07-30) — same kebab/menu component the candidate
+                   roster on the Detail page uses. Every item posts the session id and is re-authorized
+                   server-side; the Can* flags only decide what's worth rendering. *@
+                <td class="row-actions">
+                    @if (session.HasAnyAction)
+                    {
+                        <button type="button" class="kebab">⋮</button>
+                        <div class="menu">
+                            @if (session.CanMarkSubmitted)
+                            {
+                                <form method="post" action="@Model.BuildActionUrl("MarkSubmitted")" asp-antiforgery="true">
+                                    <input type="hidden" name="sessionId" value="@session.Id" />
+                                    <button type="submit" class="item">Mark submitted to VEC</button>
+                                </form>
+                            }
+                            @if (session.CanMarkCompleted)
+                            {
+                                <form method="post" action="@Model.BuildActionUrl("MarkCompleted")" asp-antiforgery="true">
+                                    <input type="hidden" name="sessionId" value="@session.Id" />
+                                    <button type="submit" class="item">Mark session completed</button>
+                                </form>
+                            }
+                            @if (session.CanClearFlag)
+                            {
+                                <form method="post" action="@Model.BuildActionUrl("ClearFlag")" asp-antiforgery="true">
+                                    <input type="hidden" name="sessionId" value="@session.Id" />
+                                    <button type="submit" class="item">Clear reschedule flag</button>
+                                </form>
+                            }
+                            @if (session.CanDelete)
+                            {
+                                @if (session.CanMarkSubmitted || session.CanMarkCompleted || session.CanClearFlag)
+                                {
+                                    <hr />
+                                }
+                                <button type="button" class="item danger" data-open-modal="deleteSessionModal-@session.Id">Delete session</button>
+                            }
+                        </div>
+                    }
+                </td>
             </tr>
         }
     </tbody>
 </table>
+
+@* One confirmation modal per deletable row — matches the per-item modal pattern the Detail page
+   already uses for candidate refund/FRN. Bounded by page size (max 100). *@
+@foreach (var session in Model.Sessions.Where(s => s.CanDelete))
+{
+    <div class="modal-backdrop" id="deleteSessionModal-@session.Id">
+        <div class="modal">
+            <h3>Delete session @session.TitleLine?</h3>
+            <p>
+                This permanently deletes the session, along with its @session.CandidateCount candidate(s),
+                every payment record attached to them, and its VE roster assignments.
+                <b>This cannot be undone.</b>
+            </p>
+            <form method="post" action="@Model.BuildActionUrl("DeleteSession")" asp-antiforgery="true">
+                <input type="hidden" name="sessionId" value="@session.Id" />
+                <div class="modal-actions">
+                    <button type="button" class="btn-secondary btn-sm" data-close-modal>Cancel</button>
+                    <button type="submit" class="btn-danger btn-sm">Delete session</button>
+                </div>
+            </form>
+        </div>
+    </div>
+}
 
 <div class="pagination">
     @if (Model.TotalCount > 0)
