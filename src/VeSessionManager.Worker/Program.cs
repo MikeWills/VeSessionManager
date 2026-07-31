@@ -11,6 +11,7 @@ using VeSessionManager.Core.ExamTools;
 using VeSessionManager.Core.FccUls;
 using VeSessionManager.Core.Ingestion;
 using VeSessionManager.Core.Jobs;
+using VeSessionManager.Core.Navigation;
 using VeSessionManager.Core.Notifications;
 using VeSessionManager.Core.Payments;
 using VeSessionManager.Core.PiiPurge;
@@ -90,6 +91,10 @@ builder.Services.AddScoped<PaymentReminderService>();
 // Phase 8: no job/worker involvement — a manual, user-triggered action + a dashboard query, both
 // called directly by Phase 9's (not yet built) admin UI. Registered now so they're ready for it.
 builder.Services.AddScoped<VecSubmissionService>();
+// VecSubmissionReportService delegates its pending-count predicate to NavBadgeCountService (which
+// the Web project also uses for the nav badges), so that has to be registered here too even though
+// the Worker itself renders no nav.
+builder.Services.AddScoped<NavBadgeCountService>();
 builder.Services.AddScoped<VecSubmissionReportService>();
 
 // Phase 10: also used by VeSessionManager.Web's Admin/SystemSettings page to edit the same row.
