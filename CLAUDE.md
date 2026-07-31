@@ -354,6 +354,22 @@ To pick up updates: `/plugin marketplace update claude-tools`
 - **`wireless2.fcc.gov` (ULS's own web UI) returns Akamai "Access Denied" (HTTP 403) to automated requests, and has done so for at least one manual browser attempt too.** This is why `FccUlsLinks` ships the *licence* deep link (`UlsSearch/license.jsp?licKey=…`, whose shape is verified — ExamTools links to exactly it) but deliberately **not** an application deep link: the `applView.jsp?applID=…` shape has never been confirmed against a working response, and an unverified link would send a Session Manager to a dead page. `exam.tools`' own ULS mirror is unaffected and is what the app actually calls.
 - **The FCC bulk-file constraints are historical as of 2026-07-31** — the weekly-snapshot staleness, the day-name publication schedule, the Sunday-file-is-empty trap, and the `AM.dat`/Grant-Date upgrade behaviour all described a subsystem this app no longer runs. They are preserved in `docs/fcc-uls-watcher.md` (marked as removed) because the *matching rules* they justify are still enforced in `UlsWatcherService`. The one that still bites day-to-day: **FCC's Grant Date does NOT advance on a class upgrade — the effective/last-action date does**, so any "did this exam produce a result?" check written against grant date is correct for a first-time licensee and permanently false for an upgrade. Confirming an upgrade needs the operator class matching `NewLicenseClass` **and** the effective date on/after the session; neither alone is sufficient. See `docs/uls-watcher.md`.
 - **`SessionAccessScope` has two team-resolution methods and picking the wrong one silently empties a page.** `ResolveViewableTeamIds(user, selectedTeamId)` returns the team-id *set* to filter by, where **null means every team** (SystemAdmin, unfiltered) — use it for any list that can render several teams merged. `TryResolveViewableTeamId` collapses to a *single* team and returns null for "no team context, show nothing" — only correct for a page that genuinely cannot render without one team chosen. Applicant Status and Unmatched Payments used the latter and so had no "All teams" and bounced to an empty page after every action (fixed 2026-07-30). Related trap in the same area: a guard written as `GetEffectiveTeamIds(user)?.Contains(id) ?? false` is **always false for a SystemAdmin** (that method returns null for them, meaning "all teams"), which is exactly how a SystemAdmin ended up 403ing on every unmatched-payment match.
+- **Browser-verifying any authenticated page needs Mike to log in — Claude will not type the dev
+  password into the login form.** Every Session Manager and Admin page is `[Authorize]`d, so a UI
+  change can't be clicked through until someone signs in. Claude declines to enter a password to
+  authenticate as a standing rule; that this one is a throwaway dev fixture published in the README
+  and `DevAuthSeeder.DevPassword` doesn't change it, and knowing the password was never the blocker.
+  Agreed working arrangement (2026-07-31): **Mike logs in once at `http://localhost:5158/Account/Login`,
+  and the auth cookie carries the rest of the session** — Claude can then navigate, click, and read
+  pages freely without touching the login form again. Plan for this step rather than discovering it
+  mid-task; if it's not worth the interruption, the fallback is shipping verified by `dotnet build`
+  + `dotnet test` only, with the UI clicked through by Mike. **Front-end logic that doesn't depend on
+  real data can still be verified unattended** — an `<iframe srcdoc>` harness that loads
+  `/js/app.js` against a synthetic table exercises the real shipped code with no login (used to
+  verify the table sorter, 2026-07-31). Watch one trap there: re-`eval`ing `app.js` in an
+  already-loaded page and dispatching a synthetic `DOMContentLoaded` **also re-fires the original
+  instance's listener**, double-initialising every handler and making one click run two state
+  cycles — which reads as a real bug and isn't. Use a fresh iframe, not `eval` + dispatch.
 - (Environment-specific quirks and gotchas go here as they're discovered — e.g. API quirks, IIS behavior, network/DMZ restrictions, auth issues)
 
 ## Definition of Done
