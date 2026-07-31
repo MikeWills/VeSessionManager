@@ -124,17 +124,42 @@ real candidates before the switchover, 66 had `FccPaymentStatus = Unknown` and *
 
 ## FCC links on Applicant Status
 
-- **Licence link** — `https://wireless2.fcc.gov/UlsApp/UlsSearch/license.jsp?licKey={u_id}`.
-  Verified shape: ExamTools itself links to exactly this. Built by `FccUlsLinks.License`.
-- **Application link** — deliberately **not** a per-application deep link. `wireless2.fcc.gov`
-  returns Akamai "Access Denied" (HTTP 403) to automated requests *and* to at least one manual
-  browser attempt, so an `applView.jsp?applID=…`-shaped guess has never been confirmed against a
-  working response. Shipping it would send a Session Manager to a dead page with no way to tell
-  whether the application is missing or the URL is wrong. Instead the page links to FCC's Application
-  Search and renders `Candidate.UlsApplicationFileNumber` beside it for paste-in lookup.
+**Licence link only, rendered whenever a licence key exists.** Built by `FccUlsLinks.License` as
+`https://wireless2.fcc.gov/UlsApp/UlsSearch/license.jsp?licKey={u_id}`.
 
-  To close this: observe a working ULS application URL from a browser that can reach the site, then
-  replace `FccUlsLinks.ApplicationSearch` with the real shape.
+Verified end to end 2026-07-31 against a real record: FRN `0038616330` → `lookup2` `u_id: 5339575` →
+the FCC URL Mike opened, `…/license.jsp?licKey=5339575` (KD3DPX). So `u_id` *is* `licKey` — the
+shape is confirmed, not inferred, and the page resolves.
+
+`UlsWatcherService.ApplyLicenseKey` persists the key **on every run that returns one, not only on
+grant**. An upgrade candidate already holds a licence while their upgrade is pending, so the link
+works for the whole waiting period. A first-time applicant has no licence until the grant, so the key
+stays null and the link simply isn't rendered — which is the whole reason it's conditional.
+
+### No application deep link — closed, not deferred
+
+Investigated to a conclusion and abandoned for three independent reasons, any one sufficient:
+
+1. **The results page is session-scoped.** Searching by FRN lands on
+   `results.jsp?applSearchKey=applSearchKey20266311340484` — a server-generated token encoding *the
+   search that was just run*, with a timestamp in it. There is no stable URL to construct even with
+   unrestricted access.
+2. **`ApplicationSearch/*` is blocked for this deployment's operator** — Akamai 403, reproduced from
+   multiple VPN exits. A link would land on an error page. (`UlsSearch/*` on the same host is *not*
+   blocked, which is why the licence link is fine — Akamai rules differ per path.)
+3. **We don't hold the key it would need.** An application has its own USI, distinct from the
+   licence's (Anthony Losada: application `16131111`, licence `5339614`). The ULS lookup API does not
+   expose it — `pendingApplications[]` carries only `uls_filenumber`, `application_purpose`, `source`,
+   `receipt_date`, `history`, `comments`. The deleted FCC `AD.dat`/`EN.dat` parser *did* carry it, and
+   resurrecting a file-parsing subsystem for a convenience link would be a bad trade.
+
+`Candidate.UlsApplicationFileNumber` is still captured — it is real data, cheap to store, and usable
+by anyone who can reach FCC's search — it is simply not rendered as a link.
+
+**Better direction if application visibility is wanted:** `pendingApplications[].history[]` already
+returns human-readable entries (`code_text: "Redlight Review Completed"`) with dates, and the watcher
+currently discards everything but the hold flag. Surfacing that timeline inline would give more than
+the FCC page would, with no dependency on a site that won't load. Logged in TODO.md.
 
 ## Risks worth revisiting
 

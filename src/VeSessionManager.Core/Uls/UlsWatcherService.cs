@@ -75,7 +75,8 @@ public class UlsWatcherService(
                 continue;
             }
 
-            var changed = ApplyPendingApplication(candidate, lookup);
+            var changed = ApplyLicenseKey(candidate, lookup);
+            changed |= ApplyPendingApplication(candidate, lookup);
             changed |= ApplyGrant(candidate, lookup, result);
 
             if (changed)
@@ -88,6 +89,30 @@ public class UlsWatcherService(
 
         logger.LogInformation("ULS watch finished: {Result}", result);
         return result;
+    }
+
+    /// <summary>
+    /// Persists the ULS licence key (`u_id`) whenever ULS reports one — **not only on grant**.
+    ///
+    /// <para>An upgrade candidate already holds a licence while their upgrade is still pending, so
+    /// capturing the key early gives Applicant Status a working "view in FCC ULS" link for the whole
+    /// waiting period rather than only after the grant lands. Verified 2026-07-31 that `u_id` is
+    /// exactly the `licKey` FCC's own URL takes
+    /// (`UlsSearch/license.jsp?licKey=5339575` ⇔ `u_id: 5339575` for FRN 0038616330).</para>
+    ///
+    /// <para>For a first-time applicant there is no licence yet, so this stays null until the grant —
+    /// which is precisely why the link is rendered conditionally.</para>
+    /// </summary>
+    private static bool ApplyLicenseKey(Candidate candidate, UlsLookupResult lookup)
+    {
+        var key = lookup.UniqueSystemIdentifier?.ToString();
+        if (key is null || candidate.FccUlsLicenseKey == key)
+        {
+            return false;
+        }
+
+        candidate.FccUlsLicenseKey = key;
+        return true;
     }
 
     /// <summary>
@@ -168,7 +193,8 @@ public class UlsWatcherService(
         // "licensed in 2021" for a 2026 upgrade. Effective date is when the upgrade actually landed,
         // which is what every UI using this field is asking about.
         candidate.LicenseGrantDateUtc = isNewLicense ? lookup.GrantDateUtc : lookup.EffectiveDateUtc;
-        candidate.FccUlsLicenseKey = lookup.UniqueSystemIdentifier?.ToString();
+        // FccUlsLicenseKey is deliberately NOT set here — ApplyLicenseKey already ran this pass and
+        // captures it whether or not the grant confirms. One assignment, one place.
         result.CandidatesMarkedGranted++;
 
         logger.LogInformation(

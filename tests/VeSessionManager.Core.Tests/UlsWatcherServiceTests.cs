@@ -330,6 +330,35 @@ public class UlsWatcherServiceTests
         Assert.Equal(CandidateApplicationStatus.Unmatched, (await dbContext.Candidates.SingleAsync()).ApplicationStatus);
     }
 
+    /// <summary>
+    /// The licence key is captured whenever ULS reports one, **not only on grant** — an upgrade
+    /// candidate already holds a licence while their upgrade is pending, and Applicant Status renders
+    /// its "view in FCC ULS" link off exactly this field. Verified live that `u_id` is the `licKey`
+    /// FCC's URL takes.
+    /// </summary>
+    [Fact]
+    public async Task PendingUpgrade_CapturesLicenseKey_WithoutMarkingGranted()
+    {
+        await using var dbContext = CreateContext();
+        await SeedCandidateAsync(dbContext, newLicenseClass: LicenseClass.General, initialLicenseClass: LicenseClass.Technician);
+        var client = new FakeUlsLookupClient(new()
+        {
+            // Still holds Technician from before the exam — no grant yet, but the licence exists.
+            ["0038704029"] = ActiveLicense(
+                grantDate: new DateTime(2026, 5, 22, 0, 0, 0, DateTimeKind.Utc),
+                effectiveDate: new DateTime(2026, 5, 22, 0, 0, 0, DateTimeKind.Utc),
+                operatorClass: LicenseClass.Technician)
+        });
+
+        var result = await CreateService(dbContext, client).RunAsync(CancellationToken.None);
+
+        Assert.Equal(0, result.CandidatesMarkedGranted);
+        var updated = await dbContext.Candidates.SingleAsync();
+        Assert.Equal(CandidateApplicationStatus.Unmatched, updated.ApplicationStatus);
+        Assert.Equal("5339614", updated.FccUlsLicenseKey);   // captured despite no grant
+        Assert.Null(updated.CallSign);                        // but the call sign is not adopted
+    }
+
     [Fact]
     public async Task NotFound_LeavesCandidateUnchanged_AndIsNotAFailure()
     {

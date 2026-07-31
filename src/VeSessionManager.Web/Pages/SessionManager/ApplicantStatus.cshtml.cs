@@ -150,7 +150,7 @@ public class ApplicantStatusModel(
             FccFeeLabel(c),
             daysPending,
             DaysPendingCssClass(daysPending, c),
-            c.UlsApplicationFileNumber);
+            FccUlsLinks.License(c.FccUlsLicenseKey));
     }
 
     /// <summary>
@@ -227,7 +227,7 @@ public class ApplicantStatusModel(
             c.LicenseGrantDateUtc!.Value.ToString("MMM d, yyyy", CultureInfo.InvariantCulture),
             FccUlsLinks.License(c.FccUlsLicenseKey));
 
-    public record PendingRow(int CandidateId, int SessionId, string TeamName, string Name, string Frn, string SessionDateLine, string LicenseClassLine, string StatusLabel, string FeeLabel, int? DaysPending, string DaysPendingCssClass, string? UlsApplicationFileNumber);
+    public record PendingRow(int CandidateId, int SessionId, string TeamName, string Name, string Frn, string SessionDateLine, string LicenseClassLine, string StatusLabel, string FeeLabel, int? DaysPending, string DaysPendingCssClass, string? LicenseUrl);
 
     public record RecentlyIssuedRow(int CandidateId, int SessionId, string TeamName, string Name, string SessionDateLine, string CallSign, string LicenseClassLine, string GrantDateLine, string? LicenseUrl);
 }
