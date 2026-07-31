@@ -449,7 +449,14 @@ until its columns are set via direct DB edit (no admin UI yet):
   itself the idempotency guard, so a crash mid-run cannot double-process.
 
 - [ ] **Ask ExamTools whether `/api/uls/lookup2/` is a supported endpoint** (raised 2026-07-31, not
-  yet done). The ULS watcher now depends on it entirely. It is undocumented and unauthenticated, so
+  yet done — **lower priority than first assessed**). Mike, same day: *"lookup2 is talked about often,
+  so the license side is supported. The application part of that isn't so much."* That maps neatly
+  onto how this app uses it: **every field the grant logic depends on is licence-side**
+  (`u_id`, `license_status`, `license_class`, `prev_license_class`, `effective_date`, `grant_date`),
+  and the shakier `pendingApplications` block only drives display, which was already the deliberate
+  trust boundary. So the critical path sits on the well-exercised half. Still worth asking about
+  polling etiquette, and worth knowing if the application block is liable to change.
+  The ULS watcher now depends on it entirely. It is undocumented and unauthenticated, so
   it can change shape, add auth, or start rate-limiting with no notice, and it is ExamTools' own
   mirror rather than FCC direct. Worth a short message asking (a) whether it's supported/stable,
   (b) whether automated polling is acceptable and at what rate — the app currently makes one request
