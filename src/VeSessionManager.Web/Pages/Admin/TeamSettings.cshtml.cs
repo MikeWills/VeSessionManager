@@ -23,6 +23,10 @@ public class TeamSettingsModel(AppDbContext dbContext, UserManager<User> userMan
     public int? TeamId { get; set; }
 
     public bool IsSystemAdmin { get; private set; }
+
+    /// <summary>Label for the team-picker trigger. "Select a team…" rather than "All teams" — this page edits one team's configuration, so there is no merged view to fall back to.</summary>
+    public string TeamSummaryLabel { get; private set; } = "Select a team…";
+
     public IReadOnlyList<(int Id, string Name)> AvailableTeams { get; private set; } = [];
     public Team? Team { get; private set; }
     public EmailSettings? EmailSettings { get; private set; }
@@ -40,6 +44,9 @@ public class TeamSettingsModel(AppDbContext dbContext, UserManager<User> userMan
             .OrderBy(t => t.Name).Select(t => new ValueTuple<int, string>(t.Id, t.Name)).ToListAsync();
 
         var effectiveTeamId = adminAccessScope.TryResolveManageableTeamId(user, TeamId);
+        TeamSummaryLabel = effectiveTeamId is not null
+            ? AvailableTeams.FirstOrDefault(t => t.Id == effectiveTeamId).Name ?? "Select a team…"
+            : "Select a team…";
         if (effectiveTeamId is null)
         {
             // SystemAdmin hasn't picked a team yet, or a TeamAdmin/SessionManager isn't assigned to

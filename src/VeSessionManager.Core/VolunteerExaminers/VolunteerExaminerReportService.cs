@@ -11,15 +11,22 @@ namespace VeSessionManager.Core.VolunteerExaminers;
 public class VolunteerExaminerReportService(AppDbContext dbContext)
 {
     /// <summary>
-    /// Counts non-cancelled sessions each VE is linked to for one team, optionally restricted to a
+    /// Counts non-cancelled sessions each VE is linked to, optionally restricted to a
     /// ScheduledStartUtc range (either bound may be null for an open-ended range). A cancelled
     /// session never happened, so it's excluded regardless of range.
+    ///
+    /// <para><paramref name="teamIds"/> follows the same convention as everywhere else in this app:
+    /// **null means every team**, not "no teams" (see SessionAccessScope.ResolveViewableTeamIds).
+    /// Widened from a single teamId 2026-07-30 so the VE Roster page can offer "All teams" like the
+    /// session list. A VolunteerExaminer is itself team-scoped, so a merged run still yields one row
+    /// per VE-per-team rather than silently combining the same person across teams — hence TeamName
+    /// on the result.</para>
     /// </summary>
     public async Task<IReadOnlyList<VeSessionCount>> GetSessionCountsAsync(
-        int teamId, DateTime? fromUtc, DateTime? toUtc, CancellationToken cancellationToken)
+        IReadOnlyList<int>? teamIds, DateTime? fromUtc, DateTime? toUtc, CancellationToken cancellationToken)
     {
         var query = dbContext.SessionVolunteerExaminers
-            .Where(sve => sve.Session.TeamId == teamId && sve.Session.Status == SessionStatus.Active);
+            .Where(sve => (teamIds == null || teamIds.Contains(sve.Session.TeamId)) && sve.Session.Status == SessionStatus.Active);
 
         if (fromUtc is not null)
         {
@@ -34,8 +41,8 @@ public class VolunteerExaminerReportService(AppDbContext dbContext)
         // Materialize the grouped counts first, then order client-side — the InMemory provider
         // can't translate OrderBy chained directly onto this GroupBy/Select projection.
         var counts = await query
-            .GroupBy(sve => new { sve.VolunteerExaminerId, sve.VolunteerExaminer.Name, sve.VolunteerExaminer.CallSign })
-            .Select(g => new VeSessionCount(g.Key.VolunteerExaminerId, g.Key.Name, g.Key.CallSign, g.Count()))
+            .GroupBy(sve => new { sve.VolunteerExaminerId, sve.VolunteerExaminer.Name, sve.VolunteerExaminer.CallSign, TeamName = sve.VolunteerExaminer.Team.Name })
+            .Select(g => new VeSessionCount(g.Key.VolunteerExaminerId, g.Key.Name, g.Key.CallSign, g.Key.TeamName, g.Count()))
             .ToListAsync(cancellationToken);
 
         return counts
@@ -45,4 +52,4 @@ public class VolunteerExaminerReportService(AppDbContext dbContext)
     }
 }
 
-public record VeSessionCount(int VolunteerExaminerId, string Name, string? CallSign, int SessionCount);
+public record VeSessionCount(int VolunteerExaminerId, string Name, string? CallSign, string TeamName, int SessionCount);

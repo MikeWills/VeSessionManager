@@ -19,7 +19,7 @@ public class UserManagementService(UserManager<User> userManager, AppDbContext d
     /// <summary>A brand-new user starts with zero team memberships — team assignment is now a
     /// separate action (SetTeamsAsync), same as role assignment already was, since a user can belong
     /// to more than one team (issue #19).</summary>
-    public async Task<(UserActionResult Result, User? User)> CreateAsync(string email, string name, UserRole role, string initialPassword, int actingUserId, CancellationToken cancellationToken)
+    public async Task<(UserActionResult Result, User? User)> CreateAsync(string email, string name, UserRole role, string initialPassword, int actingUserId, CancellationToken cancellationToken, string? callSign = null)
     {
         if (await userManager.FindByEmailAsync(email) is not null)
         {
@@ -32,6 +32,7 @@ public class UserManagementService(UserManager<User> userManager, AppDbContext d
             Email = email,
             EmailConfirmed = true,
             Name = name,
+            CallSign = NormalizeCallSign(callSign),
             Role = role
         };
 
@@ -65,6 +66,33 @@ public class UserManagementService(UserManager<User> userManager, AppDbContext d
 
         return UserActionResult.Success;
     }
+
+    /// <summary>
+    /// Sets (or clears) the account holder's call sign. Blank input clears rather than storing an
+    /// empty string, so "no call sign" has one representation. Stored upper-invariant to match
+    /// VolunteerExaminer.CallSign's existing convention.
+    /// </summary>
+    public async Task<UserActionResult> SetCallSignAsync(int targetUserId, string? callSign, int actingUserId, CancellationToken cancellationToken)
+    {
+        var user = await userManager.FindByIdAsync(targetUserId.ToString());
+        if (user is null)
+        {
+            return UserActionResult.NotFound;
+        }
+
+        user.CallSign = NormalizeCallSign(callSign);
+        await userManager.UpdateAsync(user);
+
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+        AddAudit(actingUserId, "UserCallSignChanged", user.Id,
+            $"User {user.Id} call sign set to {user.CallSign ?? "(none)"}.", now);
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        return UserActionResult.Success;
+    }
+
+    private static string? NormalizeCallSign(string? callSign) =>
+        string.IsNullOrWhiteSpace(callSign) ? null : callSign.Trim().ToUpperInvariant();
 
     /// <summary>Replaces a TeamAdmin/SessionManager's team memberships wholesale — the actual
     /// mechanism behind issue #19 (a Session Manager can belong to multiple teams). Diffs the

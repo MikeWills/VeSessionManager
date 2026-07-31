@@ -99,7 +99,7 @@ public class VolunteerExaminerReportServiceTests
         await dbContext.SaveChangesAsync();
 
         var counts = await new VolunteerExaminerReportService(dbContext)
-            .GetSessionCountsAsync(team.Id, fromUtc: null, toUtc: null, CancellationToken.None);
+            .GetSessionCountsAsync([team.Id], fromUtc: null, toUtc: null, CancellationToken.None);
 
         Assert.Equal(2, counts.Count);
         var lead = counts.Single(c => c.VolunteerExaminerId == veLead.Id);
@@ -128,7 +128,7 @@ public class VolunteerExaminerReportServiceTests
         await dbContext.SaveChangesAsync();
 
         var counts = await new VolunteerExaminerReportService(dbContext).GetSessionCountsAsync(
-            team.Id,
+            [team.Id],
             fromUtc: new DateTime(2026, 6, 1, 0, 0, 0, DateTimeKind.Utc),
             toUtc: new DateTime(2026, 6, 30, 0, 0, 0, DateTimeKind.Utc),
             CancellationToken.None);
@@ -152,7 +152,7 @@ public class VolunteerExaminerReportServiceTests
         await dbContext.SaveChangesAsync();
 
         var counts = await new VolunteerExaminerReportService(dbContext)
-            .GetSessionCountsAsync(team.Id, fromUtc: null, toUtc: null, CancellationToken.None);
+            .GetSessionCountsAsync([team.Id], fromUtc: null, toUtc: null, CancellationToken.None);
 
         var result = Assert.Single(counts);
         Assert.Equal(1, result.SessionCount);
@@ -175,10 +175,61 @@ public class VolunteerExaminerReportServiceTests
         await dbContext.SaveChangesAsync();
 
         var counts = await new VolunteerExaminerReportService(dbContext)
-            .GetSessionCountsAsync(teamA.Id, fromUtc: null, toUtc: null, CancellationToken.None);
+            .GetSessionCountsAsync([teamA.Id], fromUtc: null, toUtc: null, CancellationToken.None);
 
         var result = Assert.Single(counts);
         Assert.Equal(veA.Id, result.VolunteerExaminerId);
         Assert.Equal("Team A's VE", result.Name);
+    }
+
+    // ---- "All teams" (2026-07-30) ----
+    // teamIds is now a set, with null meaning every team — backs the VE Roster page's "All teams"
+    // option, matching the session list.
+
+    [Fact]
+    public async Task NullTeamIds_CountsEveryTeam_WithEachVeStillAttributedToItsOwnTeam()
+    {
+        await using var dbContext = CreateContext();
+        var teamA = await SeedTeamAsync(dbContext, "TEAMA");
+        var teamB = await SeedTeamAsync(dbContext, "TEAMB");
+        var vec = await SeedVecAsync(dbContext);
+        var feeConfiguration = await SeedFeeConfigurationAsync(dbContext, vec);
+        var sessionA = await SeedSessionAsync(dbContext, teamA, vec, feeConfiguration, new DateTime(2026, 6, 1, 0, 0, 0, DateTimeKind.Utc));
+        var sessionB = await SeedSessionAsync(dbContext, teamB, vec, feeConfiguration, new DateTime(2026, 6, 1, 0, 0, 0, DateTimeKind.Utc));
+        var veA = await SeedVeAsync(dbContext, teamA, "N2SPG", "Team A's VE");
+        var veB = await SeedVeAsync(dbContext, teamB, "N2SPG", "Team B's VE"); // same callsign, different team
+        Link(dbContext, sessionA, veA);
+        Link(dbContext, sessionB, veB);
+        await dbContext.SaveChangesAsync();
+
+        var counts = await new VolunteerExaminerReportService(dbContext)
+            .GetSessionCountsAsync(null, fromUtc: null, toUtc: null, CancellationToken.None);
+
+        // Two rows, not one merged row — a VolunteerExaminer is team-scoped, so the same callsign in
+        // two teams is two different records and must not be silently combined.
+        Assert.Equal(2, counts.Count);
+        Assert.Equal(["TEAMA", "TEAMB"], counts.Select(c => c.TeamName).OrderBy(n => n));
+    }
+
+    [Fact]
+    public async Task MultipleTeamIds_CountsOnlyThoseTeams()
+    {
+        await using var dbContext = CreateContext();
+        var teamA = await SeedTeamAsync(dbContext, "TEAMA");
+        var teamB = await SeedTeamAsync(dbContext, "TEAMB");
+        var teamC = await SeedTeamAsync(dbContext, "TEAMC");
+        var vec = await SeedVecAsync(dbContext);
+        var feeConfiguration = await SeedFeeConfigurationAsync(dbContext, vec);
+        foreach (var (team, name) in new[] { (teamA, "A"), (teamB, "B"), (teamC, "C") })
+        {
+            var session = await SeedSessionAsync(dbContext, team, vec, feeConfiguration, new DateTime(2026, 6, 1, 0, 0, 0, DateTimeKind.Utc));
+            Link(dbContext, session, await SeedVeAsync(dbContext, team, $"CALL{name}", $"VE {name}"));
+        }
+        await dbContext.SaveChangesAsync();
+
+        var counts = await new VolunteerExaminerReportService(dbContext)
+            .GetSessionCountsAsync([teamA.Id, teamC.Id], fromUtc: null, toUtc: null, CancellationToken.None);
+
+        Assert.Equal(["TEAMA", "TEAMC"], counts.Select(c => c.TeamName).OrderBy(n => n));
     }
 }

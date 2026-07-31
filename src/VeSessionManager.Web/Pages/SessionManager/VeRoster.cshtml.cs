@@ -51,7 +51,11 @@ public class VeRosterModel(AppDbContext dbContext, UserManager<User> userManager
     [BindProperty(SupportsGet = true)]
     public DateOnly? DateTo { get; set; }
 
+    /// <summary>False only when the account belongs to no team at all — a null TeamId now means "all teams merged", not "no context" (2026-07-30, matching the session list).</summary>
     public bool HasTeamContext { get; private set; }
+
+    /// <summary>Label for the team-picker trigger, same shape as the session list's.</summary>
+    public string TeamSummaryLabel { get; private set; } = "All teams";
     public IReadOnlyList<(int Id, string Name)> AvailableTeams { get; private set; } = [];
     public IReadOnlyList<VeSessionCount> Counts { get; private set; } = [];
     public string DateRangeSummaryLabel { get; private set; } = "Any time";
@@ -67,9 +71,12 @@ public class VeRosterModel(AppDbContext dbContext, UserManager<User> userManager
 
         AvailableTeams = await accessScope.GetAvailableTeamsAsync(dbContext, user);
 
-        var teamId = accessScope.TryResolveViewableTeamId(user, TeamId, AvailableTeams);
-        TeamId = teamId;
-        HasTeamContext = teamId is not null;
+        // null TeamId == every team this user can see, merged — same convention as the session list.
+        var teamIds = accessScope.ResolveViewableTeamIds(user, TeamId);
+        HasTeamContext = teamIds is null || teamIds.Count > 0;
+        TeamSummaryLabel = TeamId is not null
+            ? AvailableTeams.FirstOrDefault(t => t.Id == TeamId).Name ?? "All teams"
+            : "All teams";
 
         var now = timeProvider.GetUtcNow().UtcDateTime;
         var (fromUtc, toUtc) = ResolveDateRange(now);
@@ -81,9 +88,9 @@ public class VeRosterModel(AppDbContext dbContext, UserManager<User> userManager
             _ => IndexModel.DateRangePresets.TryGetValue(DateRange, out var preset) ? preset.Label : "Any time"
         };
 
-        if (teamId is int id)
+        if (HasTeamContext)
         {
-            Counts = await reportService.GetSessionCountsAsync(id, fromUtc, toUtc, CancellationToken.None);
+            Counts = await reportService.GetSessionCountsAsync(teamIds, fromUtc, toUtc, CancellationToken.None);
         }
     }
 
