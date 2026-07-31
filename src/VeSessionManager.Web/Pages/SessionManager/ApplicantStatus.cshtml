@@ -14,24 +14,37 @@
     </div>
 </div>
 
+@* Same team-picker component as the session list — a radio dropdown inside a GET form, including an
+   "All teams" option, rather than the one-team-only pills this page used to have. Counts ride on the
+   menu items (rendered even at zero, since comparing teams at a glance is the point) and "All teams"
+   carries the total, so the answer to "where is the work?" survives the menu being closed. *@
 @if (Model.AvailableTeams.Count > 1)
 {
-    <div class="filters" style="margin-bottom:16px;">
-        @foreach (var team in Model.AvailableTeams)
-        {
-            @* Count is rendered even at zero (unlike the nav badge, which hides) — the point of the
-               picker is comparing teams at a glance, and "0" is the useful answer for "do I need to
-               look here?". .pill-count.zero mutes it so a busy team still stands out. *@
-            <a class="filter-pill @(team.Id == Model.TeamId ? "active" : "")" asp-page="./ApplicantStatus" asp-route-teamId="@team.Id">
-                @team.Name<span class="pill-count @(Model.PendingCountsByTeam.CountFor(team.Id) == 0 ? "zero" : "")">@Model.PendingCountsByTeam.CountFor(team.Id)</span>
-            </a>
-        }
-    </div>
+    <form method="get" id="applicantFilters" class="filters" style="margin-bottom:16px; align-items:flex-start;">
+        <div class="filter-dropdown">
+            <button type="button" class="kebab @(Model.TeamId is not null ? "active" : "")">Team: @Model.TeamSummaryLabel ▾</button>
+            <div class="menu">
+                <label class="item">
+                    <input type="radio" name="teamId" value="" @(Model.TeamId is null ? "checked" : "") />
+                    All teams<span class="pill-count @(Model.PendingCountsByTeam.Values.Sum() == 0 ? "zero" : "")">@Model.PendingCountsByTeam.Values.Sum()</span>
+                </label>
+                @foreach (var team in Model.AvailableTeams)
+                {
+                    <label class="item">
+                        <input type="radio" name="teamId" value="@team.Id" @(team.Id == Model.TeamId ? "checked" : "") />
+                        @team.Name<span class="pill-count @(Model.PendingCountsByTeam.CountFor(team.Id) == 0 ? "zero" : "")">@Model.PendingCountsByTeam.CountFor(team.Id)</span>
+                    </label>
+                }
+                <hr />
+                <button type="submit" class="item">Apply</button>
+            </div>
+        </div>
+    </form>
 }
 
 @if (!Model.HasTeamContext)
 {
-    <p>No team context for this account — applicant status is per-team.</p>
+    <p>This account isn't assigned to any team yet, so there is nothing to show.</p>
 }
 else
 {
@@ -45,6 +58,10 @@ else
         <thead>
             <tr>
                 <th>Candidate</th>
+                @if (Model.AvailableTeams.Count > 1)
+                {
+                    <th>Team</th>
+                }
                 <th>FRN</th>
                 <th>Session</th>
                 <th>License class</th>
@@ -56,18 +73,22 @@ else
         <tbody>
             @if (Model.Pending.Count == 0)
             {
-                <tr><td colspan="7">Nobody is currently waiting on an FCC grant.</td></tr>
+                <tr><td colspan="@(Model.AvailableTeams.Count > 1 ? 8 : 7)">Nobody is currently waiting on an FCC grant.</td></tr>
             }
             @foreach (var row in Model.Pending)
             {
                 <tr>
                     <td><a asp-page="./CandidateDetail" asp-route-id="@row.CandidateId">@row.Name</a></td>
+                    @if (Model.AvailableTeams.Count > 1)
+                    {
+                        <td>@row.TeamName</td>
+                    }
                     <td class="mono">@row.Frn</td>
                     <td><a asp-page="./Detail" asp-route-id="@row.SessionId">@row.SessionDateLine</a></td>
                     <td class="mono">@row.LicenseClassLine</td>
                     <td>@row.StatusLabel</td>
                     <td>@row.FeeLabel</td>
-                    <td class="count">@row.DaysPending</td>
+                    <td class="count"><span class="@row.DaysPendingCssClass" title="@(row.DaysPendingCssClass == "days-critical" ? "Fee unpaid past day 10 — the nightly job marks this payment expired and notifies the Session Manager" : row.DaysPendingCssClass == "days-warning" ? "Fee unpaid past day 5 — a payment reminder has gone to the candidate; expires at day 10" : null)">@(row.DaysPending?.ToString() ?? "—")</span></td>
                 </tr>
             }
         </tbody>
@@ -83,6 +104,10 @@ else
         <thead>
             <tr>
                 <th>Candidate</th>
+                @if (Model.AvailableTeams.Count > 1)
+                {
+                    <th>Team</th>
+                }
                 <th>Session</th>
                 <th>Call sign</th>
                 <th>License class</th>
@@ -92,12 +117,16 @@ else
         <tbody>
             @if (Model.RecentlyIssued.Count == 0)
             {
-                <tr><td colspan="5">No grants in the last @VeSessionManager.Web.Pages.SessionManager.ApplicantStatusModel.RecentlyIssuedWindowDays days.</td></tr>
+                <tr><td colspan="@(Model.AvailableTeams.Count > 1 ? 6 : 5)">No grants in the last @VeSessionManager.Web.Pages.SessionManager.ApplicantStatusModel.RecentlyIssuedWindowDays days.</td></tr>
             }
             @foreach (var row in Model.RecentlyIssued)
             {
                 <tr>
                     <td><a asp-page="./CandidateDetail" asp-route-id="@row.CandidateId">@row.Name</a></td>
+                    @if (Model.AvailableTeams.Count > 1)
+                    {
+                        <td>@row.TeamName</td>
+                    }
                     <td><a asp-page="./Detail" asp-route-id="@row.SessionId">@row.SessionDateLine</a></td>
                     <td class="mono">@row.CallSign</td>
                     <td class="mono">@row.LicenseClassLine</td>

@@ -8,6 +8,15 @@ that window, or immediately if it's phase-numbered work already summarized in "C
 design rationale for any entry still lives in its linked `/docs/*.md` file, not here or in
 CLAUDE.md — this file, like CLAUDE.md's Change Log, is pointers only.
 
+- **Session ID column + VE roster fix (issues #35/#38, 2026-07-29).** `docs/examtools-api.md`'s
+  `export/full.json` section — real prod data (`alpha.exam.tools`) confirmed the wrapper key really
+  does differ from dev, more than expected: prod doesn't wrap the VE list under `DEVDOC` at all,
+  it's top-level. `VolunteerExaminerSyncService` had found zero VEs for every real HRCC session the
+  whole time because of this; `ExamToolsFullExport.ResolveVes()` now checks both shapes. Also added
+  a Session ID column to the session list (#35) and converted the VE Roster page's team-pill/plain
+  date inputs to the same dropdown pattern as the session list (#38), reusing `IndexModel.DateRangePresets`
+  directly rather than duplicating it.
+
 - **Per-team ExamTools host override (issue #18, 2026-07-28).** `docs/examtools-api.md`'s "Per-team
   host override" section — nullable `Team.ExamToolsBaseUrl` override column (not an
   `Team.ExamToolsEnvironment` enum) so a team can point at a different ExamTools host than the

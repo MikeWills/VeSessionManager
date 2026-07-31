@@ -209,6 +209,49 @@ until its columns are set via direct DB edit (no admin UI yet):
   holds current state for every active license regardless of grant date, whereas a daily file only
   carries one day's transactions and can never recover a prior week's candidate.
 
+- [x] ~~**Applicant Status / Unmatched Payments: days-pending anchor, 5/10-day colouring, and
+  Sessions-style team filter**~~ (all reported 2026-07-30, done same day). Three related passes over
+  the same two pages, no linked doc.
+
+  **Days pending now counts only from `ApplicationDateEnteredUtc`** — FCC's Last Action Date on the
+  matched application. While a candidate is still Unmatched ("VEC Processing") FCC has nothing on
+  file, so there is no clock and the column shows an em dash rather than a number. Two earlier
+  anchors were wrong for the same underlying reason — they measured time FCC wasn't responsible for:
+  `DateRegisteredUtc` counted from sign-up (a same-day session already showed several days), and
+  falling back to `Session.ScheduledStartUtc` still started at the exam, during the VEC's own
+  processing window.
+
+  **Day 5 / day 10 colouring** against `PaymentReminderService`'s own two passes — those constants
+  are now `public` and referenced, not restated, so a tuned reminder can't silently leave the UI
+  colouring rows on days when nothing happens. Escalation is gated on an outstanding **Unpaid**
+  payment, mirroring what both passes actually require: with no unpaid payment no reminder is sent
+  and nothing is ever marked `ExpiredUnpaid`, so a red row would warn about an impossible event
+  (this also correctly covers `NotApplicable` payments and fee-free sessions). An earlier version
+  gated on FCC's `FccPaymentStatus` instead, built on an invented "FCC dismisses at 10 days"
+  rationale — wrong mechanism entirely, corrected once the real one was checked.
+
+  **Team filter now matches the session list, including "All teams."** Both pages used
+  `TryResolveViewableTeamId`, which collapses to one team and treats null as "no context, show
+  nothing" — hence the empty page needing a re-pick after every action. New
+  `SessionAccessScope.ResolveViewableTeamIds` (null = every team, extracted from the existing
+  `Scope()` so all three pages share one definition; `Scope()` reimplemented on top of it) plus the
+  same radio-dropdown component, with per-team counts on the menu items and the total on "All teams".
+
+  Two bugs the merged view exposed, both fixed here: (1) **a SystemAdmin could never match an
+  unmatched payment** — the guard read `GetEffectiveTeamIds(user)?.Contains(...) ?? false`, which is
+  null for SystemAdmin and so always `false`; invisible while the page forced one team, and a
+  standing comment wrongly described it as deliberate. (2) **cross-team matching became possible** —
+  with several teams on screen nothing stopped attributing Team A's money to Team B's candidate; the
+  dropdown now offers same-team candidates only and `OnPostMatchAsync` re-checks server-side. Also
+  added a Team column to both pages (shown only when more than one team is available, as Sessions
+  does) so merged rows are attributable.
+
+  **Not covered by tests:** the days-pending/colouring logic lives in a Razor page model and there is
+  no Web test project (`EasternTimeFormatter`/`LicenseClassFormatter` are uncovered for the same
+  reason). Verified instead against a throwaway DB copy with backdated rows — which is how the
+  `display:inline-block`-on-a-`<td>` bug got caught. `ResolveViewableTeamIds` is in Core and does
+  have tests.
+
 - [x] ~~**FCC upgrade recovery missed 4 candidates — the weekly snapshot arrives days stale**~~
   (found 2026-07-30 by the user spotting still-pending FRNs that were in fact issued, fixed same
   day). See `docs/fcc-uls-watcher.md`'s "The weekly snapshot is not a rolling backstop". Immediate

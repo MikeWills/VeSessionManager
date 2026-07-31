@@ -14,17 +14,29 @@
     </div>
 </div>
 
+@* Same team-picker component as the session list — see the equivalent comment in ApplicantStatus.cshtml. *@
 @if (Model.AvailableTeams.Count > 1)
 {
-    <div class="filters" style="margin-bottom:16px;">
-        @foreach (var team in Model.AvailableTeams)
-        {
-            @* Zero still renders — see the equivalent comment in ApplicantStatus.cshtml. *@
-            <a class="filter-pill @(team.Id == Model.TeamId ? "active" : "")" asp-page="./UnmatchedPayments" asp-route-teamId="@team.Id">
-                @team.Name<span class="pill-count @(Model.UnmatchedCountsByTeam.CountFor(team.Id) == 0 ? "zero" : "")">@Model.UnmatchedCountsByTeam.CountFor(team.Id)</span>
-            </a>
-        }
-    </div>
+    <form method="get" id="unmatchedFilters" class="filters" style="margin-bottom:16px; align-items:flex-start;">
+        <div class="filter-dropdown">
+            <button type="button" class="kebab @(Model.TeamId is not null ? "active" : "")">Team: @Model.TeamSummaryLabel ▾</button>
+            <div class="menu">
+                <label class="item">
+                    <input type="radio" name="teamId" value="" @(Model.TeamId is null ? "checked" : "") />
+                    All teams<span class="pill-count @(Model.UnmatchedCountsByTeam.Values.Sum() == 0 ? "zero" : "")">@Model.UnmatchedCountsByTeam.Values.Sum()</span>
+                </label>
+                @foreach (var team in Model.AvailableTeams)
+                {
+                    <label class="item">
+                        <input type="radio" name="teamId" value="@team.Id" @(team.Id == Model.TeamId ? "checked" : "") />
+                        @team.Name<span class="pill-count @(Model.UnmatchedCountsByTeam.CountFor(team.Id) == 0 ? "zero" : "")">@Model.UnmatchedCountsByTeam.CountFor(team.Id)</span>
+                    </label>
+                }
+                <hr />
+                <button type="submit" class="item">Apply</button>
+            </div>
+        </div>
+    </form>
 }
 
 @if (!Model.HasTeamContext)
@@ -39,6 +51,10 @@ else
         <thead>
             <tr>
                 <th>Received</th>
+                @if (Model.AvailableTeams.Count > 1)
+                {
+                    <th>Team</th>
+                }
                 <th>Amount</th>
                 <th>Buyer email</th>
                 <th>Square order</th>
@@ -48,17 +64,25 @@ else
         <tbody>
             @if (Model.UnmatchedPayments.Count == 0)
             {
-                <tr><td colspan="5">Nothing waiting on a match.</td></tr>
+                <tr><td colspan="@(Model.AvailableTeams.Count > 1 ? 6 : 5)">Nothing waiting on a match.</td></tr>
             }
             @foreach (var payment in Model.UnmatchedPayments)
             {
                 <tr>
                     <td>@payment.ReceivedLine</td>
+                    @if (Model.AvailableTeams.Count > 1)
+                    {
+                        <td>@payment.TeamName</td>
+                    }
                     <td>$@payment.AmountUsd.ToString("F2")</td>
                     <td>@(payment.BuyerEmailAddress ?? "—")</td>
                     <td><span class="session-sub">@payment.SquareOrderId</span></td>
                     <td class="row-actions" style="text-align:left;">
-                        @if (Model.MatchableCandidates.Count == 0)
+                        @* Same-team candidates only — with "All teams" the page shows several teams
+                           at once, and matching Team A's money to Team B's candidate must not be
+                           offerable. OnPostMatchAsync enforces the same rule server-side. *@
+                        @{ var matchable = Model.MatchableCandidates.Where(c => c.TeamId == payment.TeamId).ToList(); }
+                        @if (matchable.Count == 0)
                         {
                             <span class="session-sub">No candidates with an outstanding unpaid payment.</span>
                         }
@@ -68,7 +92,7 @@ else
                                 <input type="hidden" name="unmatchedPaymentId" value="@payment.Id" />
                                 <select name="candidateId" required style="font-family:'IBM Plex Mono',monospace; font-size:13px; padding:6px 8px; border:1px solid var(--line-strong); border-radius:5px; background:var(--surface); color:var(--ink);">
                                     <option value="">Select candidate…</option>
-                                    @foreach (var candidate in Model.MatchableCandidates)
+                                    @foreach (var candidate in matchable)
                                     {
                                         <option value="@candidate.Id">@candidate.Name — @candidate.SessionDateLine ($@candidate.AmountOwed.ToString("F2"))</option>
                                     }
