@@ -34,12 +34,19 @@ namespace VeSessionManager.Core.FccUls;
 ///     stale record would immediately mark them Granted the moment any watcher run touched their
 ///     row, even though FCC hasn't processed today's upgrade at all yet. Confirmed live 2026-07-30
 ///     against three real same-day upgrade candidates (Erik Nielsen, Katelynn Schneider, Zachary
-///     Coffey) all showing Grant Dates weeks-to-years before their actual session. This app never
-///     fetches FCC's AM.dat operator-class field (see docs/fcc-uls-watcher.md), so there is no way
-///     to positively confirm an upgrade went through — the honest tradeoff this guard makes is:
-///     an upgrade candidate simply stays Unmatched/Received indefinitely (since FCC's Grant Date is
-///     documented not to change on a class upgrade — see Candidate.LicenseGrantPredatesSession's own
-///     comment) rather than ever risk a false "Granted" from unrelated old data.
+///     Coffey) all showing Grant Dates weeks-to-years before their actual session.
+///   - **Upgrades are confirmed via AM.dat + Last Action Date (2026-07-30).** The guard above,
+///     shipped alone, made upgrades permanently undetectable — 20 real candidates sat pending, the
+///     oldest for 19 days. The missing signal turned out to exist after all: AM.dat (present in both
+///     the daily and weekly-complete archives, now read by FccUlsClient) carries the current operator
+///     class, and while FCC pins Grant Date to the original license, HD's **Last Action Date does**
+///     advance on the upgrade. So an upgrade counts as granted only when the class FCC now reports
+///     equals Candidate.NewLicenseClass *and* Last Action Date is on/after the session — two
+///     independent confirmations. Verified against six real stuck candidates before shipping, and
+///     confirmed to still correctly reject a same-day upgrade FCC hadn't processed yet (Katelynn
+///     Schneider: class still Technician, last action predating her session — rejected on both
+///     counts). Without AM.dat in a given archive, OperatorClass is None and the old
+///     stays-pending behavior applies.
 ///   - Terminal statuses (Granted/Failed/NotTested) and candidates with a null Frn are excluded by
 ///     the queries below, not by an explicit check — they're just never selected again.
 ///
@@ -210,17 +217,43 @@ public class FccUlsWatcherService(
 
         foreach (var candidate in candidates)
         {
-            if (candidate.Frn is not null
-                && recordByFrn.TryGetValue(candidate.Frn, out var record)
-                && record.GrantDateUtc.Date >= candidate.Session.ScheduledStartUtc.Date)
+            if (candidate.Frn is null || !recordByFrn.TryGetValue(candidate.Frn, out var record))
             {
-                candidate.ApplicationStatus = CandidateApplicationStatus.Granted;
-                candidate.CallSign = record.CallSign;
-                candidate.LicenseGrantDateUtc = record.GrantDateUtc;
-                candidate.FccUlsLicenseKey = record.UniqueSystemIdentifier;
-                result.CandidatesMarkedGranted++;
-                logger.LogInformation("Candidate {CandidateId} FRN matched in FCC license file — marked Granted with call sign {CallSign}", candidate.Id, record.CallSign);
+                continue;
             }
+
+            // A first-time licensee gets a brand-new record, so Grant Date itself proves this sitting
+            // caused it. Unchanged from the original rule — this path is what already worked.
+            var isNewLicense = record.GrantDateUtc.Date >= candidate.Session.ScheduledStartUtc.Date;
+
+            // An upgrade never moves Grant Date (FCC pins it to the original license — a 2026 upgrade
+            // can still report a 2021 Grant Date, verified against real data), which is why the
+            // Grant-Date-only rule left every upgrade stuck Unmatched/Received forever. Confirm it two
+            // independent ways instead: the class they now hold is the one they tested for, AND FCC
+            // touched the record on/after the exam. Either alone is insufficient — the class alone
+            // would re-confirm a licensee who already held it walking in, and the date alone would
+            // match any unrelated administrative action.
+            var isConfirmedUpgrade =
+                candidate.NewLicenseClass is not null
+                && record.OperatorClass == candidate.NewLicenseClass
+                && record.LastActionDateUtc.Date >= candidate.Session.ScheduledStartUtc.Date;
+
+            if (!isNewLicense && !isConfirmedUpgrade)
+            {
+                continue;
+            }
+
+            candidate.ApplicationStatus = CandidateApplicationStatus.Granted;
+            candidate.CallSign = record.CallSign;
+            // For an upgrade, Grant Date is the *original* license's — showing it would read as
+            // "licensed in 2021" for a 2026 upgrade. Last Action Date is when the upgrade actually
+            // landed, which is what every UI surface using this field is asking about.
+            candidate.LicenseGrantDateUtc = isNewLicense ? record.GrantDateUtc : record.LastActionDateUtc;
+            candidate.FccUlsLicenseKey = record.UniqueSystemIdentifier;
+            result.CandidatesMarkedGranted++;
+            logger.LogInformation(
+                "Candidate {CandidateId} FRN matched in FCC license file ({MatchKind}) — marked Granted with call sign {CallSign}",
+                candidate.Id, isNewLicense ? "new license" : "class upgrade", record.CallSign);
         }
 
         if (result.CandidatesMarkedGranted > 0)

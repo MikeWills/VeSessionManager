@@ -25,9 +25,11 @@ which this doc records so nobody has to redo that verification.
   just a full nationwide snapshot instead of one day's transactions. Used by `FccWeeklyCatchupJob`
   as a catch-up pass, per the spec.
 - Each zip contains multiple `.dat` files, one per ULS record type (`HD.dat`, `EN.dat`, `AM.dat`,
-  plus several irrelevant ones — `AD`, `AT`, `HS`, `SC`, `VC`, `CO`, `LA`). This app only reads
-  `HD.dat` and `EN.dat`; `AM.dat` (and the rest) are never opened, since everything needed —
-  including Call Sign — is already present on `HD`.
+  plus several others — `AD`, `AT`, `HS`, `SC`, `VC`, `CO`, `LA`). This app reads four: `HD.dat`
+  (call sign, status, grant/last-action dates) and `EN.dat` (the FRN join) are required; `HS.dat`
+  (Red Light / Basic Qualification hold codes) and `AM.dat` (operator class) are read leniently and
+  each drives one enrichment. **`AM.dat` was added 2026-07-30** — see "Confirming a class upgrade"
+  below; before that it genuinely was never opened, which is what made upgrades undetectable.
 
 ## Field layout — verified against real data, not just the FCC's own PDF
 
@@ -105,9 +107,52 @@ watcher against real HRCC candidates:
 
 This also confirmed empirically (not guessed) that **FCC's Grant Date does not change when an
 existing licensee upgrades their class** — Denney's stayed `2026-06-23` across two later sessions.
-`ProcessLicensesAsync` still can't avoid re-detecting a pre-existing license this way (and doesn't
-try to — the AM.dat record type, which carries operator class, still isn't fetched), but that
-Grant Date is still accurate historical fact worth storing as-is.
+That Grant Date is still accurate historical fact worth storing as-is. See "Confirming a class
+upgrade" below for how upgrades are now detected despite it.
+
+## Confirming a class upgrade (2026-07-30)
+
+The session-date guard on license matches (added earlier the same day to stop stale pre-existing
+licenses producing false "Granted"s) had an unintended consequence: since Grant Date never advances
+on an upgrade, **an upgrade candidate could never satisfy it and stayed pending forever**. Found live
+with 20 real HRCC candidates stuck, the oldest for 19 days.
+
+Two facts, both verified against real downloaded data rather than inferred, make upgrades detectable:
+
+1. **`AM.dat` carries the current operator class**, keyed by the same USI as `HD`/`EN`. It's present
+   in both the daily (`l_am_thu.zip`, ~6 KB) and weekly-complete (`l_amat.zip`, ~64 MB) archives.
+   Field positions confirmed against a real file: USI at position 2, operator class at 6, previous
+   operator class at 17. Codes are `T`/`G`/`E`, plus legacy `A` (Advanced) and `N` (Novice).
+2. **`HD`'s Last Action Date *does* advance on the upgrade**, even though Grant Date doesn't. A real
+   General→Extra upgrade taken 2026-07-19 reported Grant Date `2021-04-30` and Last Action Date
+   `2026-07-21`.
+
+So `ProcessLicensesAsync` now grants on either of two independent paths:
+
+| Path | Rule |
+|---|---|
+| New license | `GrantDate >= session date` — unchanged, this always worked |
+| Class upgrade | `AM operator class == Candidate.NewLicenseClass` **and** `LastActionDate >= session date` |
+
+Both halves of the upgrade rule are load-bearing. The class alone would re-confirm someone who
+already held that class walking in; the date alone would match any unrelated administrative action.
+Legacy `A`/`N` codes map to `LicenseClass.None` so they can never equal a `NewLicenseClass` — nobody
+can earn those today, so they only ever appear as a class someone walked in *with*.
+
+`LicenseGrantDateUtc` is set to Last Action Date on the upgrade path (not the original Grant Date),
+since every UI surface reading that field is asking "when did this come through" — showing 2021 for a
+2026 upgrade would be actively misleading.
+
+Verified before shipping against six real stuck candidates, then run for real: **11 recovered** in one
+weekly catch-up pass, with the invariant "no granted candidate has a grant date predating its
+session" holding across all 48 granted rows afterward. It also still correctly refused two candidates
+FCC hadn't processed — one whose class was still the old one, and one with no license record at all.
+
+**Recovering historical candidates uses the weekly file, not the daily one.** The weekly complete
+snapshot holds current state for every active license regardless of when it was granted; a daily file
+only carries that one day's transactions and so can never recover a candidate from a previous week.
+Run it on demand with `dotnet run --project src/VeSessionManager.Worker -- --run-fcc-weekly`
+(`--run-fcc-daily` also exists). Both exit without starting the normal jobs, and both are idempotent.
 
 What actually needed fixing was downstream: `PiiPurgeService.PurgeGrantedCandidatesAsync`'s
 retention Trigger A anchored purely on `LicenseGrantDateUtc` — for an upgrade/repeat candidate, that

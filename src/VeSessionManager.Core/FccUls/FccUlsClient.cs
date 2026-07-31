@@ -65,10 +65,10 @@ public sealed class FccUlsClient : IFccUlsClient, IDisposable
     private async Task<IReadOnlyList<FccUlsLicenseRecord>?> DownloadLicensesAsync(string url, CancellationToken cancellationToken)
     {
         var files = await DownloadDatFilesAsync(url, cancellationToken);
-        return files is null ? null : FccUlsRecordParser.ParseLicenses(files.Value.HdContent, files.Value.EnContent);
+        return files is null ? null : FccUlsRecordParser.ParseLicenses(files.Value.HdContent, files.Value.EnContent, files.Value.AmContent);
     }
 
-    private async Task<(string HdContent, string EnContent, string? HsContent)?> DownloadDatFilesAsync(string url, CancellationToken cancellationToken)
+    private async Task<(string HdContent, string EnContent, string? HsContent, string? AmContent)?> DownloadDatFilesAsync(string url, CancellationToken cancellationToken)
     {
         using var response = await _httpClient.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
         if (response.StatusCode == HttpStatusCode.NotFound)
@@ -81,11 +81,17 @@ public sealed class FccUlsClient : IFccUlsClient, IDisposable
 
         await using var zipStream = await response.Content.ReadAsStreamAsync(cancellationToken);
         using var archive = new ZipArchive(zipStream, ZipArchiveMode.Read);
-        // HS.dat (History — Red Light/Basic Qualification hold codes) read leniently: it's only
-        // needed for the applications path's hold-reason lookup, and unlike HD.dat/EN.dat its
-        // presence hasn't been verified across every ULS zip variant (e.g. the weekly "complete"
-        // snapshot), so a missing entry there shouldn't fail the whole download.
-        return (ReadEntryText(archive, "HD.dat"), ReadEntryText(archive, "EN.dat"), TryReadEntryText(archive, "HS.dat"));
+        // HS.dat (History — Red Light/Basic Qualification hold codes) and AM.dat (Amateur — operator
+        // class) are both read leniently: each feeds one enrichment rather than the core FRN join, so
+        // a variant zip missing either shouldn't fail the whole download. Without AM.dat an upgrade
+        // simply stays unconfirmed (exactly the pre-2026-07-30 behavior), which is the safe direction
+        // — see FccUlsWatcherService.ProcessLicensesAsync. Both were confirmed present in the daily
+        // (l_am_thu.zip) and weekly-complete (l_amat.zip) archives on 2026-07-30.
+        return (
+            ReadEntryText(archive, "HD.dat"),
+            ReadEntryText(archive, "EN.dat"),
+            TryReadEntryText(archive, "HS.dat"),
+            TryReadEntryText(archive, "AM.dat"));
     }
 
     private static string ReadEntryText(ZipArchive archive, string entryName) =>
