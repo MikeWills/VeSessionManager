@@ -413,6 +413,79 @@ public class FccUlsWatcherServiceTests
         Assert.Equal(grantDate, updated.LicenseGrantDateUtc);
     }
 
+    // ---- Full-week daily sweep (2026-07-30) ----
+    // The weekly "complete" snapshot is regenerated only weekly and stamps its own creation date:
+    // the one fetched on Thu 2026-07-30 read "Sun Jul 26" with no data past 07/25. RunDailyAsync only
+    // reads yesterday+today. Anything FCC acted on in between is in NO file either path reads — three
+    // real upgrades sat pending with their data in l_am_mon.zip/l_am_tue.zip the whole time.
+
+    [Fact]
+    public async Task RunAllDailyFiles_RequestsEveryPublishedDay_MondayThroughSaturday()
+    {
+        await using var dbContext = CreateContext();
+        await SeedCandidateAsync(dbContext, frn: "0001234567");
+        var client = new FakeFccUlsClient();
+
+        await CreateService(dbContext, client).RunAllDailyFilesAsync(CancellationToken.None);
+
+        DayOfWeek[] expected =
+        [
+            DayOfWeek.Monday, DayOfWeek.Tuesday, DayOfWeek.Wednesday,
+            DayOfWeek.Thursday, DayOfWeek.Friday, DayOfWeek.Saturday
+        ];
+        Assert.Equal(expected, client.DailyLicenseCallDays);
+        Assert.Equal(expected, client.DailyApplicationCallDays);
+        // No Sunday file exists — FCC publishes Tue-Sat covering Mon-Fri, so asking is a wasted call.
+        Assert.DoesNotContain(DayOfWeek.Sunday, client.DailyLicenseCallDays);
+    }
+
+    [Fact]
+    public async Task RunAllDailyFiles_GrantsAnUpgradeSittingInAMidWeekFile()
+    {
+        // Jason Pelowitz's real shape: session Jul 24, upgrade recorded 07/27 in l_am_mon.zip —
+        // newer than the weekly snapshot, older than "yesterday", so previously invisible.
+        await using var dbContext = CreateContext();
+        var sessionStart = new DateTime(2026, 7, 24, 18, 0, 0, DateTimeKind.Utc);
+        var candidate = await SeedCandidateAsync(
+            dbContext, frn: "0001234567", sessionStartUtc: sessionStart,
+            initialLicenseClass: LicenseClass.Technician, newLicenseClass: LicenseClass.General);
+        var client = new FakeFccUlsClient
+        {
+            DailyApplications = null,
+            DailyLicenses =
+            [
+                new FccUlsLicenseRecord("100", "0001234567", "KJ5RDA", "A",
+                    new DateTime(2026, 7, 14, 0, 0, 0, DateTimeKind.Utc),
+                    new DateTime(2026, 7, 27, 0, 0, 0, DateTimeKind.Utc),
+                    LicenseClass.General)
+            ]
+        };
+
+        var result = await CreateService(dbContext, client).RunAllDailyFilesAsync(CancellationToken.None);
+
+        // Granted exactly once despite the same record appearing in all six day files — the scan only
+        // ever selects non-terminal candidates, so later days are a no-op.
+        Assert.Equal(1, result.CandidatesMarkedGranted);
+        var updated = await dbContext.Candidates.SingleAsync(c => c.Id == candidate.Id);
+        Assert.Equal(CandidateApplicationStatus.Granted, updated.ApplicationStatus);
+        Assert.Equal("KJ5RDA", updated.CallSign);
+    }
+
+    [Fact]
+    public async Task WeeklyCatchup_AlsoSweepsDailyFiles_NotJustTheSnapshot()
+    {
+        // The snapshot alone can't be a backstop when it arrives days stale; the daily sweep is what
+        // makes the weekly job actually catch up.
+        await using var dbContext = CreateContext();
+        await SeedCandidateAsync(dbContext, frn: "0001234567");
+        var client = new FakeFccUlsClient();
+
+        await CreateService(dbContext, client).RunWeeklyCatchupAsync(CancellationToken.None);
+
+        Assert.Equal(1, client.WeeklyLicenseCalls);
+        Assert.Equal(6, client.DailyLicenseCallDays.Count);
+    }
+
     [Fact]
     public async Task UnmatchedCandidate_FrnInActiveLicenseFile_ShortCircuitsStraightToGranted()
     {
@@ -575,8 +648,14 @@ public class FccUlsWatcherServiceTests
     }
 
     [Fact]
-    public async Task RunWeeklyCatchupAsync_CallsWeeklyEndpoints_NotDaily()
+    public async Task RunWeeklyCatchupAsync_HitsTheWeeklySnapshotEndpointsExactlyOnce()
     {
+        // This test previously also asserted the weekly catch-up touches NO daily endpoint. That
+        // assertion encoded the very premise that turned out to be wrong (2026-07-30): the weekly
+        // snapshot can arrive days stale, so a snapshot-only "catch-up" cannot actually catch up.
+        // The daily sweep is now part of the job — covered by
+        // WeeklyCatchup_AlsoSweepsDailyFiles_NotJustTheSnapshot — so what's pinned here is narrower:
+        // the snapshot is still fetched, and fetched only once.
         await using var dbContext = CreateContext();
         var candidate = await SeedCandidateAsync(dbContext, frn: "0001234567");
         var client = new FakeFccUlsClient
@@ -589,8 +668,6 @@ public class FccUlsWatcherServiceTests
         Assert.Equal(1, result.CandidatesMarkedReceived);
         Assert.Equal(1, client.WeeklyApplicationCalls);
         Assert.Equal(1, client.WeeklyLicenseCalls);
-        Assert.Empty(client.DailyApplicationCallDays);
-        Assert.Empty(client.DailyLicenseCallDays);
         var updated = await dbContext.Candidates.SingleAsync(c => c.Id == candidate.Id);
         Assert.Equal(CandidateApplicationStatus.Received, updated.ApplicationStatus);
     }

@@ -8,6 +8,12 @@ that window, or immediately if it's phase-numbered work already summarized in "C
 design rationale for any entry still lives in its linked `/docs/*.md` file, not here or in
 CLAUDE.md — this file, like CLAUDE.md's Change Log, is pointers only.
 
+- **Per-team ExamTools host override (issue #18, 2026-07-28).** `docs/examtools-api.md`'s "Per-team
+  host override" section — nullable `Team.ExamToolsBaseUrl` override column (not an
+  `Team.ExamToolsEnvironment` enum) so a team can point at a different ExamTools host than the
+  deployment's global `ExamTools:BaseUrl` default; `ExamToolsCredentials.For(team, ...)` is the one
+  place the override-falls-back-to-global logic lives.
+
 - **Payment reminders retest-gating fix (2026-07-22).** `docs/payment-reminders.md`'s "Retest
   payments" section — a same-session retest fee previously never got a reminder or expiration.
 

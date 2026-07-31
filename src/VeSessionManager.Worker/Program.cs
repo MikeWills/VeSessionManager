@@ -143,7 +143,8 @@ using (var scope = host.Services.CreateScope())
     // one day's transactions and so can never recover a candidate from a previous week.
     var fccDaily = args.Contains("--run-fcc-daily");
     var fccWeekly = args.Contains("--run-fcc-weekly");
-    if (fccDaily || fccWeekly)
+    var fccAllDailies = args.Contains("--run-fcc-all-dailies");
+    if (fccDaily || fccWeekly || fccAllDailies)
     {
         var fccLogger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
         var watcher = scope.ServiceProvider.GetRequiredService<FccUlsWatcherService>();
@@ -153,6 +154,15 @@ using (var scope = host.Services.CreateScope())
         {
             fccLogger.LogInformation("Running FCC weekly catch-up on demand (--run-fcc-weekly)...");
             await jobRunHistoryLogger.RunAsync("FccWeeklyCatchup", watcher.RunWeeklyCatchupAsync, null, CancellationToken.None);
+        }
+
+        // The fast recovery path: sweeps Mon-Sat day files (tens of KB each) without the weekly
+        // snapshot's ~199 MB / 5-minute download. This is usually the one you want — the weekly
+        // snapshot can be days stale on arrival, so the dailies are where recent activity actually is.
+        if (fccAllDailies)
+        {
+            fccLogger.LogInformation("Sweeping every FCC daily file on demand (--run-fcc-all-dailies)...");
+            await jobRunHistoryLogger.RunAsync("FccDailySweep", watcher.RunAllDailyFilesAsync, null, CancellationToken.None);
         }
 
         if (fccDaily)

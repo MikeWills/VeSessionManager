@@ -113,11 +113,64 @@ public class FccUlsWatcherService(
             () => fccUlsClient.DownloadDailyLicensesAsync(day, cancellationToken),
             cancellationToken);
 
-    public Task<FccUlsWatchResult> RunWeeklyCatchupAsync(CancellationToken cancellationToken) =>
-        RunAsync(
+    /// <summary>
+    /// Sweeps **every** day-name file (Mon-Sat), not just yesterday/today. This is the only thing
+    /// that closes the gap between the weekly snapshot's age and now.
+    ///
+    /// <para>Found live 2026-07-30: the weekly "complete" snapshot is not a rolling backstop the way
+    /// its name suggests — it is regenerated roughly weekly and stamps its own creation date inside
+    /// the zip. The one fetched that Thursday evening read <c>File Creation Date: Sun Jul 26</c> with
+    /// no data newer than 07/25, i.e. it was already 4-5 days stale on arrival. Meanwhile
+    /// RunDailyAsync only ever reads yesterday + today. Anything FCC acted on in between — Monday's
+    /// and Tuesday's files here — is in **no file either path reads**, and stays invisible until the
+    /// next weekly snapshot is cut. Three real upgrade candidates sat pending for exactly this
+    /// reason, with the correct data sitting in l_am_mon.zip/l_am_tue.zip the whole time.</para>
+    ///
+    /// <para>Cheap: each day file is tens of KB (vs. ~199 MB for the weekly). Sunday is skipped —
+    /// FCC publishes Tue-Sat covering Mon-Fri activity, so there is no Sunday transaction file.
+    /// A day whose file 404s or is simply stale is a normal no-op, same as any other run.</para>
+    /// </summary>
+    public async Task<FccUlsWatchResult> RunAllDailyFilesAsync(CancellationToken cancellationToken)
+    {
+        var combined = new FccUlsWatchResult();
+
+        foreach (var day in FccUlsSchedule.PublishedDays)
+        {
+            var dayResult = await RunForDayAsync(day, cancellationToken);
+            combined.CandidatesMarkedReceived += dayResult.CandidatesMarkedReceived;
+            combined.CandidatesMarkedGranted += dayResult.CandidatesMarkedGranted;
+            combined.ApplicationFileAvailable |= dayResult.ApplicationFileAvailable;
+            combined.LicenseFileAvailable |= dayResult.LicenseFileAvailable;
+        }
+
+        return combined;
+    }
+
+    /// <summary>
+    /// The weekly "complete" snapshot **plus** a sweep of every daily file. The snapshot alone is
+    /// structurally incapable of being a catch-up backstop — it can be up to a week stale on arrival
+    /// (see RunAllDailyFilesAsync) — so the daily sweep is what actually makes this a backstop rather
+    /// than merely a re-scan of data the daily job already had. The snapshot still earns its place:
+    /// it carries every active license regardless of grant date, which is the only way to recover a
+    /// candidate whose day-name file has since been overwritten by the following week's.
+    /// </summary>
+    public async Task<FccUlsWatchResult> RunWeeklyCatchupAsync(CancellationToken cancellationToken)
+    {
+        var snapshotResult = await RunAsync(
             () => fccUlsClient.DownloadWeeklyApplicationsAsync(cancellationToken),
             () => fccUlsClient.DownloadWeeklyLicensesAsync(cancellationToken),
             cancellationToken);
+
+        var dailySweepResult = await RunAllDailyFilesAsync(cancellationToken);
+
+        return new FccUlsWatchResult
+        {
+            CandidatesMarkedReceived = snapshotResult.CandidatesMarkedReceived + dailySweepResult.CandidatesMarkedReceived,
+            CandidatesMarkedGranted = snapshotResult.CandidatesMarkedGranted + dailySweepResult.CandidatesMarkedGranted,
+            ApplicationFileAvailable = snapshotResult.ApplicationFileAvailable || dailySweepResult.ApplicationFileAvailable,
+            LicenseFileAvailable = snapshotResult.LicenseFileAvailable || dailySweepResult.LicenseFileAvailable
+        };
+    }
 
     private async Task<FccUlsWatchResult> RunAsync(
         Func<Task<IReadOnlyList<FccUlsApplicationRecord>?>> downloadApplications,
