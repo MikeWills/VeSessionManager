@@ -64,7 +64,7 @@ public class SessionIngestionJob(
             var paymentGenerationService = scope.ServiceProvider.GetRequiredService<PaymentGenerationService>();
             var notificationService = scope.ServiceProvider.GetRequiredService<CandidateNotificationService>();
 
-            // Read fresh every tick (not once at startup like FccDailyWatcherJob's own interval) —
+            // Read fresh every tick (not once at startup like UlsWatcherJob's own interval) —
             // the query is trivial (once per tick, not once per team) and means an admin's edit
             // takes effect on the very next tick, not after a Worker restart.
             var normalIntervalMinutes = (await systemSettingsService.GetAsync(stoppingToken)).SessionIngestionIntervalMinutes;

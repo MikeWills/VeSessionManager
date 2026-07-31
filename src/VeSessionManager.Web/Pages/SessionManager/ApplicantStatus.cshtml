@@ -83,7 +83,14 @@ else
                     {
                         <td>@row.TeamName</td>
                     }
-                    <td class="mono">@row.Frn</td>
+                    <td class="mono">
+                        @row.Frn
+                        @if (!string.IsNullOrWhiteSpace(row.LicenseUrl))
+                        {
+                            <a href="@row.LicenseUrl" target="_blank" rel="noopener"
+                               title="This candidate's current FCC licence in ULS — for an upgrade, the licence they already hold while this exam is still pending">↗</a>
+                        }
+                    </td>
                     <td><a asp-page="./Detail" asp-route-id="@row.SessionId">@row.SessionDateLine</a></td>
                     <td class="mono">@row.LicenseClassLine</td>
                     <td>@row.StatusLabel</td>
@@ -128,7 +135,13 @@ else
                         <td>@row.TeamName</td>
                     }
                     <td><a asp-page="./Detail" asp-route-id="@row.SessionId">@row.SessionDateLine</a></td>
-                    <td class="mono">@row.CallSign</td>
+                    <td class="mono">
+                        @row.CallSign
+                        @if (!string.IsNullOrWhiteSpace(row.LicenseUrl))
+                        {
+                            <a href="@row.LicenseUrl" target="_blank" rel="noopener" title="This licence in FCC ULS">↗</a>
+                        }
+                    </td>
                     <td class="mono">@row.LicenseClassLine</td>
                     <td class="mono">@row.GrantDateLine</td>
                 </tr>

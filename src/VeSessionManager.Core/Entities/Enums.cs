@@ -73,7 +73,7 @@ public enum PaymentReason
 /// (see uls_code_definitions). None means neither hold is currently active — most applications sit
 /// briefly in a Red Light hold while their $35 fee is unpaid, which is normal, not a signal of a
 /// problem; this only reflects the hold's *current* state (the most recent OFF/COM pair per USI),
-/// not history. See FccUlsRecordParser/FccUlsWatcherService and docs/fcc-uls-watcher.md.
+/// not history. See UlsWatcherService and docs/uls-watcher.md.
 /// </summary>
 public enum FccApplicationHoldReason
 {

@@ -25,28 +25,15 @@
         <div class="section-head" style="margin-top:24px;"><h2>ULS Polling</h2></div>
         <div class="meta-grid">
             <div class="field" style="max-width:200px;">
-                <label for="fccDailyWatcherStartHourEt">Daily watcher start hour (ET, 0-23)</label>
-                <input id="fccDailyWatcherStartHourEt" name="fccDailyWatcherStartHourEt" type="number" min="0" max="23" value="@Model.FccDailyWatcherStartHourEt" required />
+                <label for="ulsWatcherStartHourEt">First check of the day (ET, 0-23)</label>
+                <input id="ulsWatcherStartHourEt" name="ulsWatcherStartHourEt" type="number" min="0" max="23" value="@Model.UlsWatcherStartHourEt" required />
             </div>
             <div class="field" style="max-width:200px;">
-                <label for="fccDailyWatcherIntervalHours">Daily watcher retry interval (hours)</label>
-                <input id="fccDailyWatcherIntervalHours" name="fccDailyWatcherIntervalHours" type="number" min="1" value="@Model.FccDailyWatcherIntervalHours" required />
-            </div>
-            <div class="field" style="max-width:200px;">
-                <label for="fccWeeklyCatchupIntervalHours">Weekly catch-up interval (hours)</label>
-                <input id="fccWeeklyCatchupIntervalHours" name="fccWeeklyCatchupIntervalHours" type="number" min="1" value="@Model.FccWeeklyCatchupIntervalHours" required />
-            </div>
-            <div class="field" style="max-width:200px;">
-                <label for="fccWeeklyCatchupDayOfWeek">Weekly catch-up day</label>
-                <select id="fccWeeklyCatchupDayOfWeek" name="fccWeeklyCatchupDayOfWeek">
-                    @foreach (var day in Enum.GetValues<DayOfWeek>())
-                    {
-                        <option value="@day" selected="@(day == Model.FccWeeklyCatchupDayOfWeek)">@day</option>
-                    }
-                </select>
+                <label for="ulsWatcherIntervalHours">Check interval (hours)</label>
+                <input id="ulsWatcherIntervalHours" name="ulsWatcherIntervalHours" type="number" min="1" value="@Model.UlsWatcherIntervalHours" required />
             </div>
         </div>
-        <p class="session-sub">The daily watcher checks at the start hour (US Eastern) and again every retry interval after that — e.g. 8 + 12 checks at 8am and 8pm ET. FCC publishes each day's file ~5am ET; same-day retries catch a late publish without waiting a full week for that day-name file to come back around.</p>
+        <p class="session-sub">Checks at the start hour (US Eastern) and again every interval after that — e.g. 8 + 12 checks at 8am and 8pm ET. FCC issues licences at 2am ET Tue&ndash;Sat, so a morning check lands after that day's grants exist. Each check looks up only candidates still awaiting a grant, so it costs one request per pending applicant.</p>
 
         <div class="section-head" style="margin-top:24px;"><h2>Session Ingestion</h2></div>
         <div class="field" style="max-width:280px;">

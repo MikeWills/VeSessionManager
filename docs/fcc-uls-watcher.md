@@ -1,4 +1,16 @@
-# FCC ULS Application/License Watcher (Phase 5)
+# FCC ULS Application/License Watcher (Phase 5) — REMOVED 2026-07-31
+
+> **⚠️ This describes a subsystem that no longer exists.** The FCC bulk-file watcher
+> (`FccUlsClient`, `FccUlsRecordParser`, `FccDailyWatcherJob`, `FccWeeklyCatchupJob`) was replaced by
+> ExamTools' ULS lookup API — see **[`uls-watcher.md`](uls-watcher.md)** for the live design.
+>
+> **Kept because the matching rules survived the rewrite and this is where their reasoning lives.**
+> The Grant-Date guard, the AM.dat/Last-Action-Date upgrade test, and the stale-application window
+> are all still enforced in `UlsWatcherService`; the incidents that produced them are documented
+> below and nowhere else. Read this before relaxing any of those rules.
+>
+> Everything about *file formats, publication schedules, day-name archives and the weekly snapshot*
+> is now historical only — no code reads those files.
 
 What `FccUlsClient`/`FccUlsRecordParser`/`FccUlsWatcherService`
 (`VeSessionManager.Core/FccUls/`) rely on. No account setup, no credentials — this is a public FCC
@@ -16,11 +28,10 @@ which this doc records so nobody has to redo that verification.
   sees FCC connectivity failures, check which host the request is actually going to before
   assuming the API itself is down.
 - Daily files: `daily/a_am_<day>.zip` (applications), `daily/l_am_<day>.zip` (licenses), where
-  `<day>` is a lowercase 3-letter day abbreviation (`sun`/`mon`/`tue`/`wed`/`thu`/`fri`/`sat`) —
-  confirmed all seven exist in the daily directory listing, even though the spec's source material
-  says files are only generated Tue–Sat (weekend files may just be stale/empty rather than absent).
-  `FccUlsClient` requests whatever day `TimeProvider` says it currently is; a 404 is treated as "not
-  published yet," not an error.
+  `<day>` is a lowercase 3-letter day abbreviation (`sun`/`mon`/`tue`/`wed`/`thu`/`fri`/`sat`) — all
+  seven exist; the Sunday pair is always empty rather than absent. See "Publication schedule" below
+  for exactly when each is generated. `FccUlsClient` requests whatever day `TimeProvider` says it
+  currently is; a 404 is treated as "not published yet," not an error.
 - Weekly/complete files: `complete/a_amat.zip`, `complete/l_amat.zip` — same internal structure,
   just a full nationwide snapshot instead of one day's transactions. Used by `FccWeeklyCatchupJob`
   as a catch-up pass, per the spec.
@@ -30,6 +41,124 @@ which this doc records so nobody has to redo that verification.
   (Red Light / Basic Qualification hold codes) and `AM.dat` (operator class) are read leniently and
   each drives one enrichment. **`AM.dat` was added 2026-07-30** — see "Confirming a class upgrade"
   below; before that it genuinely was never opened, which is what made upgrades undetectable.
+
+## The FCC-side process behind the files
+
+Supplied 2026-07-31 by Mike (operator domain knowledge, not from an FCC document — treat as
+authoritative on the process, unverified on exact clock times):
+
+- **Fee payments are processed at 18:00 ET, Monday–Friday.** This is what clears an application's
+  Red Light hold — see the `RDLOFF`/`RDLCOM` toggle this app reads from `HS.dat`.
+- **Licenses are issued at 02:00 ET, Tuesday–Saturday.** This is the batch that actually grants an
+  application and assigns a call sign.
+
+**When the files are generated relative to those runs is *not* known** — that's the open piece. But
+the two facts together explain the publication table below, and one real record confirms the chain:
+
+> Luschin Harnish's license carries grant date **07/29** (Wednesday) — the 02:00 ET Wednesday
+> issuance run. It appeared in **`l_am_wed.zip`**, which published **Thursday 11:44 ET**.
+
+So a grant flows: `02:00 ET issuance` → transaction dated *that* day → collected into that
+day-name file → published the *following* day. **A license is therefore ~26–30 hours old before it
+is readable here**, which is the single most useful number in this doc for answering "why does
+ExamTools have a call sign we don't." ExamTools reads a live source; these files are a batch export
+of a batch process.
+
+Practical consequence for the 02:00 ET run specifically: a candidate granted at 02:00 Friday cannot
+appear before `l_am_fri.zip` publishes Saturday morning — no amount of re-running the watcher on
+Friday will find them, because the data does not exist in any file yet. Re-running is not the fix;
+waiting is.
+
+## Publication schedule — when each amateur file is actually generated
+
+Verified 2026-07-31 three independent ways that agree exactly: FCC's own
+[Daily & Weekly Transaction Files](https://www.fcc.gov/uls/transactions/daily-weekly) page (which
+prints, for every file, the date it was created), the `Last modified` column of the
+`data.fcc.gov/download/pub/uls/daily/` and `complete/` directory listings, and the
+`File Creation Date` stamped inside each zip's own `counts` entry.
+
+**The rule for daily files: a day-name file is published the *following* calendar day.** The date
+FCC's page shows next to "Wednesday" is the date Wednesday's file was *published*, not the data it
+covers. So on any given morning the newest amateur data available is **yesterday's** transactions.
+
+This rule is solid — FCC's own internal stamp names the weekday (`l_am_fri.zip` reads
+`File Creation Date: Sat Jul 25 04:00:10 EDT 2026`), and the PDF's dates agree independently.
+
+**But "contains that day's transactions" is not uniform across the two file types** (found
+2026-07-31, refining the above): an **application** file carries a tail into its own publication
+morning, a **license** file does not. `a_am_thu.zip`, cut Friday 08:03, holds 67 `RDLCOM` entries
+dated Friday 07/31; `l_am_thu.zip`, cut Friday 08:00, holds none dated 07/31 at all. Same week,
+same cut time, different behaviour. So for the question that actually matters here — *when can a
+grant first be read* — use the license rule: a license issued in the 02:00 ET run on day D appears
+in `l_am_<D>.zip`, published D+1. Don't assume the application file's tail applies to licenses.
+
+### `FccPaymentStatus`/`FccHoldReason` are rare by design, not broken
+
+The `FVP*` payment codes look like an **exception** path, not a per-application record — `FVPOFF`
+is literally "*Offlined* for Payment Verification," and Thursday's application file carries only 14
+`FVPCNF` against 115+ `RDLCOM`. Live data agrees: of 68 real candidates, 66 have
+`FccPaymentStatus = Unknown` (2 ever reached `Paid`) and **all 68** have `FccHoldReason = None` —
+the Red Light / BQQ detection added 2026-07-30 has never fired on a real candidate.
+
+A blank Fee column on Applicant Status is therefore the expected state for a normal applicant, not
+a parse failure. Don't "fix" it without first confirming the underlying `HS.dat` codes are actually
+present for the candidate in question.
+
+**The times below are one week's observation — n=1 per weekday — not a published SLA.** Treat the
+day column as reliable and the time column as indicative only. Wednesday's file already shows the
+spread: it landed at 11:44, not ~08:00. Source is the directory listing's `Last modified`, which was
+checked against every zip's internal `counts` stamp and matched to the second on 6 of 7 files (the
+7th differed by one second). The stamps carry an explicit `EDT`, so the timezone is read, not
+inferred.
+
+| Day file | Published | Observed time (ET, 1 sample) |
+|---|---|---|
+| `*_am_mon.zip` | Tuesday | 08:00 |
+| `*_am_tue.zip` | Wednesday | 08:00 |
+| `*_am_wed.zip` | Thursday | **11:44** — nearly 4h later than the rest |
+| `*_am_thu.zip` | Friday | 08:00 |
+| `*_am_fri.zip` | **Saturday** | **04:00** — earliest seen |
+| `*_am_sat.zip` | **Sunday** | **15:00** — latest seen |
+| `*_am_sun.zip` | Monday | 08:00 — **always empty**, see below |
+
+**There *is* a Sunday file, and it is always empty.** Earlier revisions of this doc and of
+`RunAllDailyFilesAsync` said "Mon–Sat, there is no Sunday file." Wrong on the mechanism: the URL
+returns HTTP 200 with a 212-byte archive containing only a `counts` entry and **no `.dat` members
+at all**. Skipping Sunday is still correct, but not because the file 404s — and the distinction
+matters, because `FccUlsClient` *throws* on a missing `HD.dat`/`EN.dat` (only `AM.dat`/`HS.dat` are
+lenient). Anyone "fixing" the sweep to include Sunday on the assumption the file is simply absent
+would get a confusing parse failure instead of the 404-tolerant skip they expected.
+
+**Weekly (`complete/`) amateur files are generated on two different days:**
+
+| File | Created | Observed time (ET, 1 sample) | Size |
+|---|---|---|---|
+| `complete/a_amat.zip` (applications) | **Saturday** | 04:16 | ~304 MB |
+| `complete/l_amat.zip` (licenses) | **Sunday** | 15:07 | ~190 MB |
+
+Day corroborated by both FCC's page ("Created 7/25" / "7/26") and the `complete/` directory listing;
+the times are from the listing alone, one observation each — same caveat as the daily table.
+
+This is per-service, not global — Antenna Structure Registration regenerates Tuesday, Airport
+Facilities Thursday. Don't generalize amateur's days to the rest of ULS or vice versa.
+
+### Consequence for `FccWeeklyCatchupJob`'s scheduled day
+
+`FccWeeklyCatchupDayOfWeek` currently defaults to (and is set in the DB to) **Monday**. Given the
+above, **Sunday evening ET is the better slot** — after ~16:00 ET, once that day's `l_amat.zip` has
+landed:
+
+- Sunday evening: licenses snapshot is hours old, applications snapshot ~2 days old.
+- Monday (today's setting): licenses ~1 day old, applications ~3 days old.
+
+Either way the job also sweeps the day-name files (`RunAllDailyFilesAsync`, added 2026-07-30), which
+is what actually covers the gap — the weekly snapshot is a backstop, not the primary path, and it is
+*never* fresher than the dailies. See "The weekly snapshot is not a rolling backstop" below. Moving
+the day is a settings change (`SystemSettings.FccWeeklyCatchupDayOfWeek`), not a code change.
+
+**A daily file is not regenerated until FCC next publishes it**, so mid-week the `fri`/`sat`/`sun`
+slots still hold *last* week's data — a full sweep covers "whatever FCC currently has," never a
+clean trailing seven days.
 
 ## Field layout — verified against real data, not just the FCC's own PDF
 
@@ -171,8 +300,8 @@ The cause is a property of FCC's own publishing, not of this app's matching:
 
 Three real upgrades sat pending with the correct data in those two files the whole time.
 
-`RunAllDailyFilesAsync` closes the gap by sweeping every published day file (Mon-Sat; there is no
-Sunday file — FCC publishes Tue-Sat covering Mon-Fri). `FccWeeklyCatchupJob` now runs it *alongside*
+`RunAllDailyFilesAsync` closes the gap by sweeping every non-empty day file (Mon-Sat — the Sunday
+file exists but is always empty; see "Publication schedule"). `FccWeeklyCatchupJob` now runs it *alongside*
 the snapshot, which is what makes that job a genuine backstop rather than a re-scan of data the daily
 job already had. The snapshot still earns its place: it carries every active license regardless of
 grant date, so it is the only way to recover a candidate whose day-name file has since been

@@ -6,7 +6,7 @@ namespace VeSessionManager.Worker;
 /// <summary>
 /// Phase 10's daily job: nulls candidate PII once SystemSettings.PiiRetentionWindowDays has
 /// elapsed. Same 24-hour PeriodicTimer idiom as the other daily jobs. Global, not per-team — unlike
-/// FccDailyWatcherJob/FccWeeklyCatchupJob (whose *run interval* is admin-configurable per
+/// UlsWatcherJob (whose *run interval* is admin-configurable per
 /// SystemSettings), the purge job's interval is a fixed config value; only the retention window
 /// itself is admin-configurable, and PiiPurgeService reads that fresh from SystemSettings every run.
 /// </summary>

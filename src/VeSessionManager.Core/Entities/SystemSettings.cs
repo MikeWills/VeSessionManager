@@ -9,19 +9,15 @@ public class SystemSettings
     public int? PiiRetentionWindowDays { get; set; }
 
     /// <summary>
-    /// Hours between FccDailyWatcherJob retry checks, anchored to FccDailyWatcherStartHourEt rather
-    /// than Worker start time (default 8/12 -> checks at 8am and 8pm ET). FCC publishes each day's
-    /// file ~5am ET; a fixed Worker-start-relative timer could tick before that window and then not
-    /// retry until the same day-name file rolls around again next week. See docs/fcc-uls-watcher.md.
+    /// Hours between UlsWatcherJob checks, anchored to UlsWatcherStartHourEt rather than Worker start
+    /// time (default 8/12 -> checks at 08:00 and 20:00 ET). Anchored to wall-clock ET because FCC
+    /// issues licences at 02:00 ET, so a morning slot lands after that day's grants exist.
+    /// See docs/uls-watcher.md.
     /// </summary>
-    public int FccDailyWatcherIntervalHours { get; set; }
+    public int UlsWatcherIntervalHours { get; set; }
 
-    /// <summary>First daily-watcher check of the day, in US Eastern hour-of-day (0-23). Default 8 —
-    /// comfortably after FCC's ~5am ET publish window with margin for a late publish.</summary>
-    public int FccDailyWatcherStartHourEt { get; set; }
-
-    public int FccWeeklyCatchupIntervalHours { get; set; }
-    public DayOfWeek FccWeeklyCatchupDayOfWeek { get; set; }
+    /// <summary>First ULS check of the day, in US Eastern hour-of-day (0-23). Default 8.</summary>
+    public int UlsWatcherStartHourEt { get; set; }
 
     /// <summary>
     /// The "normal" per-team cadence (minutes) for SessionIngestionJob's full per-team pipeline

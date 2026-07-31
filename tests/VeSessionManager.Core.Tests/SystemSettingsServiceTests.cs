@@ -35,10 +35,8 @@ public class SystemSettingsServiceTests
 
         Assert.Equal(SystemSettingsService.SingletonId, settings.Id);
         Assert.Null(settings.PiiRetentionWindowDays);
-        Assert.Equal(12, settings.FccDailyWatcherIntervalHours);
-        Assert.Equal(8, settings.FccDailyWatcherStartHourEt);
-        Assert.Equal(24, settings.FccWeeklyCatchupIntervalHours);
-        Assert.Equal(DayOfWeek.Monday, settings.FccWeeklyCatchupDayOfWeek);
+        Assert.Equal(12, settings.UlsWatcherIntervalHours);
+        Assert.Equal(8, settings.UlsWatcherStartHourEt);
         Assert.Equal(60, settings.SessionIngestionIntervalMinutes);
     }
 
@@ -50,9 +48,8 @@ public class SystemSettingsServiceTests
         {
             Id = SystemSettingsService.SingletonId,
             PiiRetentionWindowDays = 90,
-            FccDailyWatcherIntervalHours = 12,
-            FccWeeklyCatchupIntervalHours = 12,
-            FccWeeklyCatchupDayOfWeek = DayOfWeek.Sunday
+            UlsWatcherIntervalHours = 12,
+            UlsWatcherStartHourEt = 8
         });
         await dbContext.SaveChangesAsync();
 
@@ -70,15 +67,13 @@ public class SystemSettingsServiceTests
         dbContext.Users.Add(user);
         await dbContext.SaveChangesAsync();
 
-        var result = await CreateService(dbContext).UpdateAsync(90, 12, 9, 48, DayOfWeek.Sunday, 15, testModeEnabled: false, testModeOverrideEmail: null, user.Id, CancellationToken.None);
+        var result = await CreateService(dbContext).UpdateAsync(90, 12, 9, 15, testModeEnabled: false, testModeOverrideEmail: null, user.Id, CancellationToken.None);
 
         Assert.Equal(SystemSettingsActionResult.Success, result);
         var settings = await dbContext.SystemSettings.SingleAsync();
         Assert.Equal(90, settings.PiiRetentionWindowDays);
-        Assert.Equal(12, settings.FccDailyWatcherIntervalHours);
-        Assert.Equal(9, settings.FccDailyWatcherStartHourEt);
-        Assert.Equal(48, settings.FccWeeklyCatchupIntervalHours);
-        Assert.Equal(DayOfWeek.Sunday, settings.FccWeeklyCatchupDayOfWeek);
+        Assert.Equal(12, settings.UlsWatcherIntervalHours);
+        Assert.Equal(9, settings.UlsWatcherStartHourEt);
         Assert.Equal(15, settings.SessionIngestionIntervalMinutes);
         Assert.Equal(user.Id, settings.UpdatedByUserId);
         Assert.Equal(Now, settings.UpdatedUtc);
@@ -98,7 +93,7 @@ public class SystemSettingsServiceTests
         dbContext.Users.Add(user);
         await dbContext.SaveChangesAsync();
 
-        var result = await CreateService(dbContext).UpdateAsync(null, 24, 8, 24, DayOfWeek.Monday, 60, testModeEnabled: false, testModeOverrideEmail: null, user.Id, CancellationToken.None);
+        var result = await CreateService(dbContext).UpdateAsync(null, 24, 8, 60, testModeEnabled: false, testModeOverrideEmail: null, user.Id, CancellationToken.None);
 
         Assert.Equal(SystemSettingsActionResult.Success, result);
         var settings = await dbContext.SystemSettings.SingleAsync();
@@ -106,26 +101,26 @@ public class SystemSettingsServiceTests
     }
 
     [Theory]
-    [InlineData(0, 8, 24, 24, 60)]
-    [InlineData(24, 8, 0, 24, 60)]
-    [InlineData(24, 8, 24, 0, 60)]
-    [InlineData(24, 8, 24, 24, 0)]
-    [InlineData(24, -1, 24, 24, 60)]
-    [InlineData(24, 24, 24, 24, 60)]
-    public async Task UpdateAsync_InvalidIntervalOrRetentionOrStartHour_ReturnsInvalidValue_ChangesNothing(int daily, int startHourEt, int weekly, int retention, int sessionIngestionMinutes)
+    [InlineData(0, 8, 24, 60)]     // interval < 1
+    [InlineData(24, 8, 0, 60)]     // retention < 1
+    [InlineData(24, 8, 24, 0)]     // session ingestion < 1
+    [InlineData(24, -1, 24, 60)]   // start hour below range
+    [InlineData(24, 24, 24, 60)]   // start hour above range
+    public async Task UpdateAsync_InvalidIntervalOrRetentionOrStartHour_ReturnsInvalidValue_ChangesNothing(
+        int intervalHours, int startHourEt, int retention, int sessionIngestionMinutes)
     {
         await using var dbContext = CreateContext();
         var user = new User { Name = "Sys Admin", Role = UserRole.SystemAdmin };
         dbContext.Users.Add(user);
         await dbContext.SaveChangesAsync();
         var original = await CreateService(dbContext).GetAsync(CancellationToken.None);
-        var originalDaily = original.FccDailyWatcherIntervalHours;
+        var originalInterval = original.UlsWatcherIntervalHours;
 
-        var result = await CreateService(dbContext).UpdateAsync(retention, daily, startHourEt, weekly, DayOfWeek.Monday, sessionIngestionMinutes, testModeEnabled: false, testModeOverrideEmail: null, user.Id, CancellationToken.None);
+        var result = await CreateService(dbContext).UpdateAsync(retention, intervalHours, startHourEt, sessionIngestionMinutes, testModeEnabled: false, testModeOverrideEmail: null, user.Id, CancellationToken.None);
 
         Assert.Equal(SystemSettingsActionResult.InvalidValue, result);
         var settings = await dbContext.SystemSettings.SingleAsync();
-        Assert.Equal(originalDaily, settings.FccDailyWatcherIntervalHours);
+        Assert.Equal(originalInterval, settings.UlsWatcherIntervalHours);
         Assert.Empty(dbContext.AuditLogs);
     }
 
@@ -137,7 +132,7 @@ public class SystemSettingsServiceTests
         dbContext.Users.Add(user);
         await dbContext.SaveChangesAsync();
 
-        var result = await CreateService(dbContext).UpdateAsync(90, 24, 8, 24, DayOfWeek.Monday, 60, testModeEnabled: true, testModeOverrideEmail: "tester@example.com", user.Id, CancellationToken.None);
+        var result = await CreateService(dbContext).UpdateAsync(90, 24, 8, 60, testModeEnabled: true, testModeOverrideEmail: "tester@example.com", user.Id, CancellationToken.None);
 
         Assert.Equal(SystemSettingsActionResult.Success, result);
         var settings = await dbContext.SystemSettings.SingleAsync();
@@ -156,7 +151,7 @@ public class SystemSettingsServiceTests
         await dbContext.SaveChangesAsync();
         await CreateService(dbContext).GetAsync(CancellationToken.None); // ensure the singleton row already exists
 
-        var result = await CreateService(dbContext).UpdateAsync(90, 24, 8, 24, DayOfWeek.Monday, 60, testModeEnabled: true, testModeOverrideEmail: "  ", user.Id, CancellationToken.None);
+        var result = await CreateService(dbContext).UpdateAsync(90, 24, 8, 60, testModeEnabled: true, testModeOverrideEmail: "  ", user.Id, CancellationToken.None);
 
         Assert.Equal(SystemSettingsActionResult.TestModeMissingOverrideEmail, result);
         var settings = await dbContext.SystemSettings.SingleAsync();

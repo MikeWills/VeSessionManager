@@ -1,12 +1,12 @@
 using System.Globalization;
-using VeSessionManager.Core.FccUls;
+using VeSessionManager.Core.Uls;
 
 namespace VeSessionManager.Web;
 
 /// <summary>
 /// The one place every UI page converts a stored UTC instant to US Eastern for display, always
 /// suffixed "ET" so it's never mistaken for UTC or the viewer's own local time. Reuses
-/// FccUlsSchedule.EasternTimeZone (already resolved via the cross-platform "America/New_York" IANA
+/// UlsSchedule.EasternTimeZone (already resolved via the cross-platform "America/New_York" IANA
 /// id, verified on both Windows and the Linux deploy target) rather than re-resolving a second
 /// TimeZoneInfo for the same zone. EF Core/Sqlite round-trips DateTime as Kind=Unspecified, which
 /// TimeZoneInfo.ConvertTimeFromUtc requires Kind=Utc for — same "force Kind=Utc first" gotcha
@@ -26,5 +26,5 @@ public static class EasternTimeFormatter
         utc is null ? null : Format(utc.Value, format);
 
     private static DateTime ToEastern(DateTime utc) =>
-        TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(utc, DateTimeKind.Utc), FccUlsSchedule.EasternTimeZone);
+        TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(utc, DateTimeKind.Utc), UlsSchedule.EasternTimeZone);
 }
