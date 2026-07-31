@@ -12,7 +12,7 @@ namespace VeSessionManager.Worker;
 /// only in the job name, interval config key/default, and which service's method to call per team.
 ///
 /// Deliberately NOT used by every Worker job: PiiPurgeJob is global rather than per-team, and
-/// FccDailyWatcherJob is wall-clock-pinned (US Eastern) with its own hourly catch-up logic — neither
+/// UlsWatcherJob is wall-clock-pinned (US Eastern) with its own hourly catch-up logic — neither
 /// shares this shape, so they stay hand-written rather than being forced into it.
 /// </summary>
 public abstract class PerTeamDailyJob(

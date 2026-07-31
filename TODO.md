@@ -313,6 +313,269 @@ until its columns are set via direct DB edit (no admin UI yet):
 
 ## Feature requests (not yet triaged)
 
+- [x] ~~**Backfill license grants from ExamTools' ULS API for candidates the FCC files left pending**~~
+  — **superseded and shipped 2026-07-31 as a full replacement, not a backfill.** Mike's follow-on
+  decision: *"The more I think about it, the more I just want to use the ET API... I like the more
+  simple approach logic-wise, even if the application information isn't timely/100% accurate."* The
+  whole FCC bulk-file subsystem was deleted rather than kept as a primary path. See
+  `docs/uls-watcher.md` and CLAUDE.md's Change Log. **Open follow-ups pulled out of this item are
+  listed separately below.** Original research retained for context: ExamTools displays the issued call sign on its Manage Session screen
+  (`0038704029 (issued: KC1ZYU)`) *hours* before FCC's bulk files carry it — confirmed live that
+  morning: ET showed KC1ZYU at 08:08 while the call sign appeared in **zero** of the fourteen
+  published FCC daily archives. Mike believes there's an ET API for call sign lookup; finding it is
+  the first task.
+
+  **Already ruled out: `export/basic.json`'s `callsign` field is NOT it** (checked live 2026-07-31
+  against session `6a41e220f08c6c37d08459d5`, so nobody needs to re-run this). That field holds the
+  call sign the applicant **supplied at registration**, and never refreshes after issuance:
+
+  | Applicant | `basic.json` `callsign` | Reality |
+  |---|---|---|
+  | Bae | `WH6HJZ` | pre-existing, upgraded tech→gen |
+  | Buehler | `KN6ISV` | pre-existing, upgraded gen→extra |
+  | **Harnish** | **empty** | **granted KR4NZD 07/29 — two days before the check** |
+  | Losada | empty | granted KC1ZYU per ET's own UI |
+
+  Harnish is the decisive control: granted two days earlier, ET's UI shows "(issued: KR4NZD)", and
+  the field is *still* empty. The full key set on an applicant record is `id, pin, firstname, middle,
+  lastname, suffix, email, phone, frn, callsign, licenseClass, has_felony, created, addr, city,
+  state, zip, finalized` — **no issued-call-sign field of any kind**. So this is a real API hunt.
+
+  **FOUND IT — `GET https://exam.tools/api/uls/lookup/{callsignOrFrn}`** (Mike supplied the URL
+  2026-07-31; verified live the same hour, **unauthenticated**, no session cookie needed). Returns a
+  JSON ULS record far richer than what this app reconstructs from the bulk files:
+
+  ```
+  u_id, callsign, frn, license_status (Active|Pending), license_class, prev_license_class,
+  grant_date, effective_date, expired_date, cancellation_date, bqqResponse, is_revoked,
+  applicant_type, licensee_id, name/address fields,
+  pendingApplications[]: { uls_filenumber, application_status, application_purpose, source,
+                           receipt_date, history[]: { log_date, code, code_text }, comments[] }
+  ```
+
+  **This subsumes three separate pieces of hard-won FCC-file logic:**
+  - `license_class` + `prev_license_class` replace the `AM.dat` operator-class join (added 2026-07-30).
+  - **`effective_date` is the field that advances on an upgrade** — it is ExamTools' rendering of
+    HD's Last Action Date. Verified on Nielsen: `grant_date` 2024-08-21 (stuck at the original
+    license, exactly as FCC behaves) but `effective_date` 2026-07-30 with
+    `prev_license_class: General` → `license_class: Amateur Extra`. The whole "confirming a class
+    upgrade" problem is one field here.
+  - `pendingApplications[].history[]` (`RDLCOM` etc.) and `bqqResponse` replace the `HS.dat`
+    Red Light / BQQ / payment-verification parsing.
+  - `u_id` is the ULS Unique System Identifier — i.e. `Candidate.FccUlsLicenseKey` for the existing
+    "(FCC license ↗)" deep link.
+
+  **Use `/api/uls/lookup2/{frnOrCallsign}` — NOT `/lookup/`.** Mike supplied `lookup2` minutes after
+  `lookup`; it is strictly better and removes the only real obstacle. `/lookup/` by FRN returns a
+  stale index — Anthony's FRN gave `license_status: "Pending"` with no `callsign` at all while his
+  call sign gave the grant, a chicken-and-egg since the FRN is all we store. **`lookup2` by FRN
+  resolves the same-day grant correctly**, so keying on `Candidate.Frn` just works. It also adds a
+  `type` field: `existing` for a hit, **`notfound`** for an unknown FRN — a clean sentinel, so no
+  exception handling or empty-body special case is needed.
+
+  Verified live 2026-07-31 across five real candidates:
+
+  | Candidate | `lookup2` by FRN | Reading |
+  |---|---|---|
+  | Losada (granted today) | Active, `KC1ZYU`, Technician, eff **2026-07-31** | same-day grant, hours before FCC's file |
+  | cand 74 (tested today) | Active, KO6NUS, **Technician**, eff 2026-05-22 | pre-existing licence, upgrade **not** granted |
+  | cand 77 (tested today) | Active, KF8DBR, **Technician**, eff 2025-09-30 | pre-existing licence, upgrade **not** granted |
+  | Nielsen | Amateur Extra, prev `General`, eff 2026-07-30 | upgrade confirmed |
+  | `0000000000` | `type: "notfound"` | sentinel, not an error |
+
+  Candidates 74 and 77 are the useful negative case: both tested for General, both still report
+  `license_class: Technician` with an `effective_date` months *before* their session — so class
+  mismatch **and** stale effective date both say "not yet," which is exactly the two-part upgrade
+  rule `FccUlsWatcherService.ProcessLicensesAsync` implements, obtainable in one call. This also
+  independently confirmed the app's own "3 still pending" figure on the day.
+
+  Parsing note: `prev_license_class` is **absent** on some records and **present-but-empty** on
+  others (Losada absent, cand 74/77 `""`) — treat the two identically.
+
+  **Risks to weigh before depending on it:** undocumented and unauthenticated, so it can change or
+  start rate-limiting without notice; it is ExamTools' own ULS mirror, so it inherits their refresh
+  lag (demonstrated above) rather than being FCC-authoritative. Keep `FccUlsWatcherService` as the
+  source of truth and treat this as an accelerator — same constraint as the design note above.
+  Be polite with request volume: one lookup per candidate per poll, not per tick.
+
+  ### Decided approach (Mike, 2026-07-31) — gap-filler, not a replacement
+
+  > "I trust the ET license grants, I don't trust the applications."
+
+  **Process the FCC files exactly as today, then check this API only for the holes.** The FCC pass
+  stays the primary path and keeps its current semantics; afterwards, any candidate still sitting
+  unresolved gets one `lookup2` call. The goal Mike stated is explicitly **agreement with
+  ExamTools** — ET is what a Session Manager actually looks at, so a candidate showing granted there
+  and pending here is the defect being fixed, regardless of which system is "more correct."
+
+  **Scope — grants only.** Per the quote above, take *only* the license-grant fields:
+  `callsign`, `license_class`, `prev_license_class`, `effective_date`, `grant_date`, `u_id`
+  (→ `Candidate.FccUlsLicenseKey`, which makes the existing "(FCC license ↗)" link work at the same
+  time). **Deliberately out of scope: `pendingApplications[]`, its `history[]` codes, and
+  `bqqResponse`** — that is application data, which Mike does not trust from this source. Do **not**
+  wire it into `FccApplicationStatus`/`FccHoldReason`/`FccPaymentStatus`; those stay `HS.dat`-derived
+  (and see the note above about how rarely they populate at all). An earlier draft of this entry
+  listed those as bonuses — they are not, they are excluded.
+
+  **Which candidates count as a "hole":** `Tested && ApplicationStatus is Unmatched or Received` —
+  the same predicate the Applicant Status page's "Pending FCC grant" worklist already uses. Small
+  by construction (3 on the day this was written), so one call each is cheap and no batching or
+  rate-limit design is needed.
+
+  **Reuse the existing grant rules — do not invent new ones.** The two-part upgrade test in
+  `FccUlsWatcherService.ProcessLicensesAsync` (class equals `NewLicenseClass` **and** the advancing
+  date is on/after `Session.ScheduledStartUtc`) must apply identically here, with `effective_date`
+  as the advancing date — it is ET's rendering of HD's Last Action Date. Skipping that guard
+  re-opens the false-positive grants that hit Nielsen/Schneider/Coffey on 2026-07-30. Candidates 74
+  and 77 above are the ready-made regression case: `lookup2` returns them Active/Technician with an
+  `effective_date` predating their session, and correct behaviour is to leave them pending.
+
+  **Priority (Mike, 2026-07-31): "The issuance is the most important, the rest is just good
+  information."** Grant/issuance is the critical function; application status, hold reasons and fee
+  status are nice-to-have. Two consequences:
+
+  - **The backfill must run independently of the FCC file pass, not chained behind it.** The
+    download is the flaky half — `data.fcc.gov` 403'd on 2026-07-27 and left the weekly safety net
+    dark for a full week, and the snapshot arrives days stale regardless. If a file download fails
+    or returns nothing, the `lookup2` backfill should still run and still grant. Making the critical
+    function a continuation of the unreliable one inherits its failure modes for nothing. Run both
+    within the watcher tick, but let each succeed or fail on its own.
+  - Effort and test coverage belong on the grant path. A gap in `FccHoldReason`/`FccPaymentStatus`
+    is cosmetic (and those fields populate almost never anyway — see
+    `docs/fcc-uls-watcher.md`); a missed issuance is the thing a Session Manager actually notices,
+    because ExamTools is showing it on the same screen.
+
+  Follow the established scan-based/idempotent job shape — the `ApplicationStatus` transition is
+  itself the idempotency guard, so a crash mid-run cannot double-process.
+
+- [ ] **Ask ExamTools whether `/api/uls/lookup2/` is a supported endpoint** (raised 2026-07-31, not
+  yet done). The ULS watcher now depends on it entirely. It is undocumented and unauthenticated, so
+  it can change shape, add auth, or start rate-limiting with no notice, and it is ExamTools' own
+  mirror rather than FCC direct. Worth a short message asking (a) whether it's supported/stable,
+  (b) whether automated polling is acceptable and at what rate — the app currently makes one request
+  per non-terminal candidate, twice a day (7 requests on the day it shipped). A "yes" removes most of
+  the risk; a "please don't" is far better learned now than after a silent breakage. Fallback if it
+  goes away: the FCC file parser is recoverable from git history (deleted in the same commit).
+
+- [ ] **Confirm FCC's ULS *application* deep-link URL shape** (carried over, still open). The licence
+  link ships and is verified; the application equivalent does not, because `wireless2.fcc.gov` returns
+  Akamai "Access Denied" to automated requests *and* to a manual browser attempt, so
+  `applView.jsp?applID=…` was never confirmed. Applicant Status currently links to FCC's Application
+  Search landing page and renders `Candidate.UlsApplicationFileNumber` beside it for paste-in lookup.
+  To close: observe a working ULS application URL from a browser that can reach the site (or from
+  ExamTools' own applicant link) and replace `FccUlsLinks.ApplicationSearch`.
+
+- [ ] **Per-team, per-integration enable/disable switches** (requested 2026-07-31). Goal: run MARC as
+  a real production team, HRCC as the live-monitoring team, and a personal team pointed at ExamTools'
+  development environment for reproducing issues — **all in one deployment on one code base** — while
+  being able to exercise one integration at a time without the others emitting anything public or
+  leaving a mess that's awkward to clean up.
+
+  **Not a single Test/Production mode.** An earlier draft of this item proposed one binary per-team
+  flag; that was rejected on 2026-07-31 for being too coarse. The unit of control is the
+  **individual integration**, independently switchable per team, so "test Square link generation
+  tonight with Discord and email silent" is expressible.
+
+  **A master switch gates the whole group, and collapses it in the UI** (decided 2026-07-31). One
+  per-team master toggle sits above the per-integration switches; while it's off the individual
+  options are collapsed out of sight, so an ordinary production team's settings page doesn't grow a
+  wall of controls nobody touches. **Master off must also mean the individual switches don't
+  apply** — enforcement reads the master first — otherwise a switch left set from an old testing
+  session stays hidden behind a collapsed panel and silently mutes a team that's since gone
+  production. Corollary: turning the master off restores full normal operation in one action, which
+  is also the recovery path if a team was accidentally left muted.
+
+  **Visibility: TeamAdmin and SystemAdmin only** (decided 2026-07-31 — supersedes this item's earlier
+  SystemAdmin-only suggestion). SessionManager and TeamLead never see the control at all. As
+  everywhere else in this app, hiding the control is not the authorization check: the page handler
+  re-resolves the user and re-checks `AdminAccessScope.CanManageTeam` server-side, same rule as the
+  session-delete action.
+
+  **Off means off — not redirected.** Explicitly decided, and the opposite of what the existing
+  global test mode does: `SystemSettings.TestModeEnabled` / `TestModeOverrideEmail` (migration
+  `TestMode`, applied in `SmtpEmailSender` via `TestModeEmailRedirector`) only ever *redirects*
+  email to an override inbox. These switches suppress the call outright. The two are independent
+  layers and both must be honoured — a disabled integration is never redirected, it simply doesn't
+  happen.
+
+  **Four switches** — one per outbound system, each covering *every* call that system makes, not
+  just the obvious one:
+  - **Zoom** — `CreateMeetingAsync` / `UpdateMeetingAsync` / `DeleteMeetingAsync`. (Not in the
+    original ask; `SessionEventSchedulingService` creates real meetings on whatever account owns the
+    Server-to-Server credentials, so a test team churning them is calendar clutter at best and a
+    scheduling collision at worst.)
+  - **Discord** — `CreateEventAsync` / `UpdateEventAsync` / `DeleteEventAsync`, all three.
+  - **Square** — link creation is the obvious one, but `ISquareClient` has two more outbound calls
+    that hit a real merchant account: `CompleteOrderAsync` (fires when a session is marked completed)
+    and `DeletePaymentLinkAsync` (`SquareLinkPurgeJob`).
+  - **Email** — **one switch covering all five kinds** (decided 2026-07-31; per-template granularity
+    was considered and rejected as not worth the UI and settle-marker plumbing):
+    `RegistrationConfirmation`, `DayBeforeReminder`, `PaymentReminder5Day`,
+    `PaymentExpirationNotice` (goes to `EmailSettings.AdminNotificationEmail`, not a candidate —
+    still noise), and the youth-rate confirmation link.
+
+  **A switched-off integration deletes nothing** (decided 2026-07-31). Teardown is suppressed along
+  with creation — a cancelled session's Zoom meeting and Discord event stay put, and
+  `SquareLinkPurgeJob` leaves that team's links alone. Accepted consequence: anything already
+  created before the switch went off is **orphaned in the real account permanently** and needs
+  manual cleanup, since the no-backlog rule below means re-enabling won't retroactively tidy it
+  either. The safe order of operations when muting a team that has live resources is therefore
+  *clean up first, switch off second.*
+
+  **No backlog on re-enable** (decided 2026-07-31). Work skipped while a switch was off is never
+  queued — flipping it back on starts fresh from that moment, so a week of muted reminders can't
+  suddenly fire at a real candidate. This is what makes the settle marker below need to record
+  *why* something was skipped, not merely that it was.
+
+  **Deliberately not switchable** — all confirmed 2026-07-31: ExamTools ingestion (read-only, and
+  reproducing issues is the whole point — the dev host is already per-team via
+  `Team.ExamToolsBaseUrl`); the FCC ULS watcher (read-only download of a public bulk file, and the
+  job isn't per-team anyway); VE roster sync, exam-result sync, VEC submission marking, and
+  session/candidate actions (local DB writes only); **the Square inbound webhook** (a delivery only
+  arrives if someone acts in Square, which is deliberate by definition, and processing it is
+  local-only — keeping it is what lets a muted team still verify the payment flow); and the **PII
+  purge** (keeps running on every team — local deletes, and a muted team's data should age out like
+  anyone else's).
+
+  **Suppress the Worker's per-poll noise for a deliberately-disabled integration.** Explicitly
+  requested: a dev-environment team shouldn't produce a log line every tick about something that's
+  off on purpose. This forces a distinction the codebase doesn't currently draw —
+  **"unconfigured" ≠ "disabled"**:
+
+  | | Meaning | Log | Retry on next poll? |
+  |---|---|---|---|
+  | Unconfigured (`IsConfigured == false`) | admin hasn't finished setup | one quiet aggregate `INFO` per poll (existing behaviour) | yes — so adding credentials backfills automatically |
+  | **Disabled (new)** | deliberate, indefinite | once at startup/state-change, then silent | **no** |
+
+  That second row is the whole design problem. Every one of these gates sits right next to an
+  existing `IsConfigured` check, whose established pattern is "skip quietly, leave the
+  `...SentUtc`/`...Id` tracking field null so the next poll retries." Reusing it means a disabled
+  integration re-attempts and re-logs forever and never settles. A disabled integration must mark
+  the work *settled without doing it* — **but not by writing a real-looking `...SentUtc`**, or
+  re-enabling the switch would leave a backlog of sessions that look already-handled. Same class of
+  mistake as the `!IsConfigured || succeeded` gotcha in CLAUDE.md's Known Constraints. A dedicated
+  test should pin both halves: no calls made, *and* no re-attempt next tick, *and* no repeated log
+  line.
+
+  **Related bug this would also fix:** the "`SessionEventScheduling` repeats a real `[ERR]` every
+  tick, forever" entry in Bugs above is exactly this gap — cleanup of a cancelled session's stale
+  Zoom meeting throws every tick because the team's Zoom credentials were never set. A real
+  disabled-vs-unconfigured distinction gives that case somewhere sensible to land.
+
+  **Make it impossible to mistake a muted team's data for real:** show which integrations are off
+  wherever the team appears (session list Team column, team dropdown, Admin → Teams), and reuse the
+  existing `_TestModeBanner` partial's styling for a per-team variant. Log each suppressed action
+  once — not per tick — so the Worker log still shows what *would* have happened.
+
+  **All six open design questions were resolved 2026-07-31** and are folded into the sections above
+  — email granularity (one switch), teardown while off (deletes nothing), re-enabling (no backlog),
+  the Square inbound webhook (keeps running), the PII purge (keeps running), and who sees the
+  control (TeamAdmin + SystemAdmin). Nothing is blocking design here; this is ready to build
+  whenever it comes up the list. **Do not "improve" any of the six back the other way** without a
+  new decision — several of them look like oversights and aren't (particularly "deletes nothing,"
+  which knowingly accepts orphaned Zoom/Discord/Square resources rather than letting a muted team
+  reach into a real account for any reason).
+
 - [x] ~~**Every team selector uses the session list's dropdown**~~ (requested 2026-07-30, done same
   day). The last four pages still on the old pills / `<select onchange>` were converted:
 

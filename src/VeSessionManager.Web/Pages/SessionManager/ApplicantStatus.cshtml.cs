@@ -22,7 +22,7 @@ namespace VeSessionManager.Web.Pages.SessionManager;
 /// Deliberately narrow: Pending is Tested + not Failed/NotTested/Granted — the same "already earned
 /// a license class this sitting" candidates ExamResultSyncService computes InitialLicenseClass/
 /// NewLicenseClass for (see docs/exam-result-license-class.md), so no new backing fields were
-/// needed. A candidate drops off Pending the instant FccUlsWatcherService flips them to Granted; the
+/// needed. A candidate drops off Pending the instant UlsWatcherService flips them to Granted; the
 /// point of this page is "who's still waiting," not a permanent audit trail — PII purge and the
 /// candidate detail page remain the source of truth for anything older.
 /// </summary>
@@ -149,7 +149,8 @@ public class ApplicantStatusModel(
             FccStatusLabel(c),
             FccFeeLabel(c),
             daysPending,
-            DaysPendingCssClass(daysPending, c));
+            DaysPendingCssClass(daysPending, c),
+            c.UlsApplicationFileNumber);
     }
 
     /// <summary>
@@ -185,7 +186,7 @@ public class ApplicantStatusModel(
     /// has no application on file at all — still with the VEC, not FCC's problem to report on — so
     /// "VEC Processing" rather than an internal-sounding "Awaiting FCC match". Once Received, FCC has
     /// it; FccHoldReason (from FCC's own HS.dat history codes, refreshed every watcher run — see
-    /// FccUlsWatcherService) reports whether it's currently held for Red Light (usually just an
+    /// UlsWatcherService) reports whether it's currently held for Red Light (usually just an
     /// unpaid-fee window, not itself a problem) or Basic Qualification (character) review, straight
     /// from FCC rather than a proxy like Candidate.HasFelonyDisclosure.
     /// </summary>
@@ -223,9 +224,10 @@ public class ApplicantStatusModel(
             // Date-only FCC field (see ToPendingRow's anchor comment / EasternTimeFormatter's own
             // doc remarks) — not run through EasternTimeFormatter, same reasoning as
             // CandidateDetail.cshtml.cs's LicenseGrantDateLine.
-            c.LicenseGrantDateUtc!.Value.ToString("MMM d, yyyy", CultureInfo.InvariantCulture));
+            c.LicenseGrantDateUtc!.Value.ToString("MMM d, yyyy", CultureInfo.InvariantCulture),
+            FccUlsLinks.License(c.FccUlsLicenseKey));
 
-    public record PendingRow(int CandidateId, int SessionId, string TeamName, string Name, string Frn, string SessionDateLine, string LicenseClassLine, string StatusLabel, string FeeLabel, int? DaysPending, string DaysPendingCssClass);
+    public record PendingRow(int CandidateId, int SessionId, string TeamName, string Name, string Frn, string SessionDateLine, string LicenseClassLine, string StatusLabel, string FeeLabel, int? DaysPending, string DaysPendingCssClass, string? UlsApplicationFileNumber);
 
-    public record RecentlyIssuedRow(int CandidateId, int SessionId, string TeamName, string Name, string SessionDateLine, string CallSign, string LicenseClassLine, string GrantDateLine);
+    public record RecentlyIssuedRow(int CandidateId, int SessionId, string TeamName, string Name, string SessionDateLine, string CallSign, string LicenseClassLine, string GrantDateLine, string? LicenseUrl);
 }

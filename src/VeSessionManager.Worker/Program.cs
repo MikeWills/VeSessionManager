@@ -8,7 +8,7 @@ using VeSessionManager.Core.Discord;
 using VeSessionManager.Core.Email;
 using VeSessionManager.Core.ExamResults;
 using VeSessionManager.Core.ExamTools;
-using VeSessionManager.Core.FccUls;
+using VeSessionManager.Core.Uls;
 using VeSessionManager.Core.Ingestion;
 using VeSessionManager.Core.Jobs;
 using VeSessionManager.Core.Navigation;
@@ -79,11 +79,11 @@ builder.Services.AddScoped<IEmailSender, SmtpEmailSender>();
 builder.Services.AddScoped<EmailTemplateRenderer>();
 builder.Services.AddScoped<CandidateNotificationService>();
 
-builder.Services.Configure<FccUlsOptions>(builder.Configuration.GetSection(FccUlsOptions.SectionName));
+builder.Services.Configure<UlsLookupOptions>(builder.Configuration.GetSection(UlsLookupOptions.SectionName));
 // Singleton: owns its own HttpClient, same reasoning as the other API clients. No credentials, so
 // unlike Zoom/Square/Email this isn't an optional integration — it always runs.
-builder.Services.AddSingleton<IFccUlsClient, FccUlsClient>();
-builder.Services.AddScoped<FccUlsWatcherService>();
+builder.Services.AddSingleton<IUlsLookupClient, ExamToolsUlsLookupClient>();
+builder.Services.AddScoped<UlsWatcherService>();
 
 builder.Services.Configure<PaymentReminderOptions>(builder.Configuration.GetSection(PaymentReminderOptions.SectionName));
 builder.Services.AddScoped<PaymentReminderService>();
@@ -104,8 +104,7 @@ builder.Services.AddScoped<TeamSecretsMigrationService>();
 builder.Services.AddScoped<JobRunHistoryLogger>();
 builder.Services.AddHostedService<SessionIngestionJob>();
 builder.Services.AddHostedService<DayBeforeReminderJob>();
-builder.Services.AddHostedService<FccDailyWatcherJob>();
-builder.Services.AddHostedService<FccWeeklyCatchupJob>();
+builder.Services.AddHostedService<UlsWatcherJob>();
 builder.Services.AddHostedService<PaymentReminderJob>();
 builder.Services.AddHostedService<SquareLinkPurgeJob>();
 builder.Services.AddHostedService<PiiPurgeJob>();
@@ -132,46 +131,21 @@ using (var scope = host.Services.CreateScope())
         return;
     }
 
-    // Human-triggered FCC watcher runs (2026-07-30). Same exit-immediately shape as the flag above.
-    // Added because forcing a watcher run previously meant temporarily rewriting
-    // SystemSettings.FccDailyWatcherStartHourEt to move the slot guard, restarting the Worker, then
-    // putting the setting back — needed both to recover the upgrade-detection backlog and any time
-    // FCC publishes late. Both runs are idempotent (the watcher only ever touches non-terminal
-    // candidates), so re-running is always safe. --run-fcc-weekly is the one to reach for when
-    // recovering historical candidates: the weekly "complete" snapshot holds the current state of
-    // every active license regardless of when it was granted, whereas a daily file only carries that
-    // one day's transactions and so can never recover a candidate from a previous week.
-    var fccDaily = args.Contains("--run-fcc-daily");
-    var fccWeekly = args.Contains("--run-fcc-weekly");
-    var fccAllDailies = args.Contains("--run-fcc-all-dailies");
-    if (fccDaily || fccWeekly || fccAllDailies)
+    // Human-triggered ULS watcher run. Same exit-immediately shape as the flag above. Replaced
+    // --run-fcc-daily/--run-fcc-weekly/--run-fcc-all-dailies on 2026-07-31: those three existed
+    // because each FCC day-name file was a separate one-shot window that could be missed
+    // permanently, so recovery meant choosing *which* file to re-read. A ULS lookup returns current
+    // state on every call, so there is nothing to choose — one switch covers every case, including
+    // historical recovery. Idempotent: the watcher only ever touches non-terminal candidates.
+    if (args.Contains("--run-uls"))
     {
-        var fccLogger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
-        var watcher = scope.ServiceProvider.GetRequiredService<FccUlsWatcherService>();
+        var ulsLogger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+        var watcher = scope.ServiceProvider.GetRequiredService<UlsWatcherService>();
         var jobRunHistoryLogger = scope.ServiceProvider.GetRequiredService<JobRunHistoryLogger>();
 
-        if (fccWeekly)
-        {
-            fccLogger.LogInformation("Running FCC weekly catch-up on demand (--run-fcc-weekly)...");
-            await jobRunHistoryLogger.RunAsync("FccWeeklyCatchup", watcher.RunWeeklyCatchupAsync, null, CancellationToken.None);
-        }
-
-        // The fast recovery path: sweeps Mon-Sat day files (tens of KB each) without the weekly
-        // snapshot's ~199 MB / 5-minute download. This is usually the one you want — the weekly
-        // snapshot can be days stale on arrival, so the dailies are where recent activity actually is.
-        if (fccAllDailies)
-        {
-            fccLogger.LogInformation("Sweeping every FCC daily file on demand (--run-fcc-all-dailies)...");
-            await jobRunHistoryLogger.RunAsync("FccDailySweep", watcher.RunAllDailyFilesAsync, null, CancellationToken.None);
-        }
-
-        if (fccDaily)
-        {
-            fccLogger.LogInformation("Running FCC daily watcher on demand (--run-fcc-daily)...");
-            await jobRunHistoryLogger.RunAsync("FccDailyWatcher", watcher.RunDailyAsync, null, CancellationToken.None);
-        }
-
-        fccLogger.LogInformation("On-demand FCC run complete — exiting without starting the normal Worker jobs.");
+        ulsLogger.LogInformation("Running ULS watcher on demand (--run-uls)...");
+        await jobRunHistoryLogger.RunAsync("UlsWatcher", watcher.RunAsync, null, CancellationToken.None);
+        ulsLogger.LogInformation("On-demand ULS run complete — exiting without starting the normal Worker jobs.");
         return;
     }
 

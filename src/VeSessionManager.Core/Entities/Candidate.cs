@@ -40,10 +40,13 @@ public class Candidate
     public string? CallSign { get; set; }
     public DateTime? LicenseGrantDateUtc { get; set; }
 
-    /// <summary>FCC ULS "Unique System Identifier" from the matched license record — the same value ULS's own web UI calls `licKey` (e.g. `https://wireless2.fcc.gov/UlsApp/UlsSearch/license.jsp?licKey=...`). Set alongside CallSign/LicenseGrantDateUtc by FccUlsWatcherService; not PII (a public FCC record locator, same privacy class as CallSign), so not cleared by CandidatePiiFields.Clear.</summary>
+    /// <summary>FCC ULS "Unique System Identifier" from the matched license record — the same value ULS's own web UI calls `licKey` (e.g. `https://wireless2.fcc.gov/UlsApp/UlsSearch/license.jsp?licKey=...`). Set alongside CallSign/LicenseGrantDateUtc by UlsWatcherService; not PII (a public FCC record locator, same privacy class as CallSign), so not cleared by CandidatePiiFields.Clear.</summary>
     public string? FccUlsLicenseKey { get; set; }
 
-    /// <summary>Whether FCC is currently holding this candidate's application for Red Light (unpaid fee, if lingering past normal) or Basic Qualification (character) review — refreshed every FccUlsWatcherService run from FCC's own HS.dat history codes, cleared back to None once no longer in the application file's non-terminal window (see ApplicationStatus). Only meaningful while ApplicationStatus is Unmatched/Received.</summary>
+    /// <summary>ULS application file number for the candidate's pending application (e.g. `0012131564`), from the ULS lookup's pendingApplications block. Surfaced on Applicant Status so a Session Manager can look the application up in FCC's own Application Search — the pre-grant counterpart to FccUlsLicenseKey. Not PII, same reasoning as that field.</summary>
+    public string? UlsApplicationFileNumber { get; set; }
+
+    /// <summary>Whether FCC is currently holding this candidate's application for Red Light (unpaid fee, if lingering past normal) or Basic Qualification (character) review — refreshed every UlsWatcherService run from the ULS lookup's pending-application history codes (previously FCC's own HS.dat), cleared back to None once no longer reported (see ApplicationStatus). Only meaningful while ApplicationStatus is Unmatched/Received.</summary>
     public FccApplicationHoldReason FccHoldReason { get; set; } = FccApplicationHoldReason.None;
 
     /// <summary>Whether FCC's fee-payment verification step has confirmed this candidate's application fee — refreshed alongside FccHoldReason, same source (HS.dat) and same non-terminal-window caveat.</summary>
@@ -85,8 +88,8 @@ public class Candidate
     /// Confirmed live 2026-07-28 against real ULS data that FCC's Grant Date does not change on a
     /// class upgrade, so this is a reliable signal independently of AM.dat's operator-class field
     /// (which the watcher does now read, as of 2026-07-30, to confirm upgrades — see
-    /// docs/fcc-uls-watcher.md's "Confirming a class upgrade"). Note this stays meaningful on the
-    /// upgrade path only for candidates granted before that change: FccUlsWatcherService now stores
+    /// docs/uls-watcher.md's "Confirming a class upgrade"). Note this stays meaningful on the
+    /// upgrade path only for candidates granted before that change: UlsWatcherService now stores
     /// Last Action Date (the upgrade date) rather than the original Grant Date for a confirmed
     /// upgrade, so a newly-granted upgrade will not report true here. Requires Session loaded.
     /// </summary>

@@ -37,9 +37,8 @@ public class PiiPurgeServiceTests
         {
             Id = SystemSettingsService.SingletonId,
             PiiRetentionWindowDays = piiRetentionWindowDays,
-            FccDailyWatcherIntervalHours = 24,
-            FccWeeklyCatchupIntervalHours = 24,
-            FccWeeklyCatchupDayOfWeek = DayOfWeek.Monday
+            UlsWatcherIntervalHours = 24,
+            UlsWatcherStartHourEt = 8
         });
         await dbContext.SaveChangesAsync();
     }

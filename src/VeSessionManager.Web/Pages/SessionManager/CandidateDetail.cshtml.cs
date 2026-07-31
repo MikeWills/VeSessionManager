@@ -221,9 +221,7 @@ public class CandidateDetailModel(
                         ? "Missing at registration"
                         : "No FRN on file",
             CallSign: isWithdrawn ? null : candidate.CallSign,
-            FccLicenseUrl: isWithdrawn || candidate.FccUlsLicenseKey is null
-                ? null
-                : $"https://wireless2.fcc.gov/UlsApp/UlsSearch/license.jsp?licKey={Uri.EscapeDataString(candidate.FccUlsLicenseKey)}",
+            FccLicenseUrl: isWithdrawn ? null : FccUlsLinks.License(candidate.FccUlsLicenseKey),
             StatusLabel: candidate.ApplicationStatus == CandidateApplicationStatus.NotTested ? "Not tested" : candidate.ApplicationStatus.ToString(),
             RegisteredLine: EasternTimeFormatter.Format(candidate.DateRegisteredUtc, "M/d/yyyy h:mm tt"),
             // ApplicationDateEnteredUtc/LicenseGrantDateUtc are FCC's own date-only fields (parsed
