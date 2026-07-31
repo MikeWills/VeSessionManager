@@ -124,6 +124,20 @@ tbody tr.row-past:hover { background: var(--row-hover); }
 .session-title { font-weight: 600; }
 .session-sub { font-family: "IBM Plex Mono", monospace; font-size: 12px; color: var(--ink-soft); margin-top: 2px; }
 .count { font-family: "IBM Plex Mono", monospace; }
+
+/* Applicant Status "days pending" escalation, in step with PaymentReminderService's 5-day reminder
+   and 10-day expiration passes (see ApplicantStatusModel's threshold constants, which reference
+   that service's own values rather than restating them). Reuses the existing --amber/--brick token pairs
+   rather than introducing new colours, so both are already correct in light and dark themes. The
+   pill shape carries the signal on its own — colour alone would be invisible to a red/green
+   colour-blind viewer, and each cell also gets a title explaining what the state means.
+
+   Applied to a <span> inside the cell, never the <td> itself — display:inline-block on a table cell
+   pulls it out of the table formatting context and visibly breaks row alignment. */
+.count .days-warning,
+.count .days-critical { display: inline-block; min-width: 22px; padding: 1px 7px; border-radius: 99px; font-weight: 600; text-align: center; line-height: 1.5; }
+.count .days-warning { background: var(--amber-dim); color: var(--ink); }
+.count .days-critical { background: var(--brick); color: #fff; }
 .mono { font-family: "IBM Plex Mono", monospace; font-size: 12.5px; }
 
 .chip { display: inline-flex; align-items: center; gap: 6px; font-family: "IBM Plex Mono", monospace; font-size: 11.5px; font-weight: 500; padding: 4px 9px; border-radius: 99px; }

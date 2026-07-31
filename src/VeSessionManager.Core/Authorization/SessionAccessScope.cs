@@ -48,18 +48,35 @@ public class SessionAccessScope
     /// </summary>
     public IQueryable<Session> Scope(IQueryable<Session> sessions, User user, int? selectedTeamId = null)
     {
+        var teamIds = ResolveViewableTeamIds(user, selectedTeamId);
+        return teamIds is null ? sessions : sessions.Where(s => teamIds.Contains(s.TeamId));
+    }
+
+    /// <summary>
+    /// The team-id set a query should be filtered to, given the user and their team-picker choice.
+    /// **null means "every team" (an unfiltered SystemAdmin), never "no teams"** — the same
+    /// convention GetEffectiveTeamIds and NavBadgeCountService use. An empty list genuinely means
+    /// the user belongs to no team.
+    ///
+    /// <para>Extracted from <see cref="Scope"/> (2026-07-30) so pages querying something other than
+    /// Sessions — Applicant Status over Candidates, Unmatched Payments over UnmatchedSquarePayments —
+    /// can apply identical team scoping instead of each inventing its own. That in turn is what lets
+    /// those pages support "All teams" the way the session list already does. Contrast
+    /// <see cref="TryResolveViewableTeamId"/>, which collapses to a *single* team and treats null as
+    /// "no team context, show nothing" — the right shape for a page that genuinely cannot render
+    /// without one team chosen, and the wrong shape for a merged list.</para>
+    /// </summary>
+    public IReadOnlyList<int>? ResolveViewableTeamIds(User user, int? selectedTeamId)
+    {
         if (user.Role == UserRole.SystemAdmin)
         {
-            return selectedTeamId is null ? sessions : sessions.Where(s => s.TeamId == selectedTeamId);
+            return selectedTeamId is null ? null : [selectedTeamId.Value];
         }
 
-        var effectiveTeamIds = GetEffectiveTeamIds(user)!;
-        if (selectedTeamId is not null && effectiveTeamIds.Contains(selectedTeamId.Value))
-        {
-            return sessions.Where(s => s.TeamId == selectedTeamId);
-        }
-
-        return sessions.Where(s => effectiveTeamIds.Contains(s.TeamId));
+        var effectiveTeamIds = GetEffectiveTeamIds(user) ?? [];
+        return selectedTeamId is not null && effectiveTeamIds.Contains(selectedTeamId.Value)
+            ? [selectedTeamId.Value]
+            : effectiveTeamIds;
     }
 
     /// <summary>

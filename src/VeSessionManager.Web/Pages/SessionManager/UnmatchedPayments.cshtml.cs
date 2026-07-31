@@ -32,8 +32,12 @@ public class UnmatchedPaymentsModel(
     [BindProperty(SupportsGet = true)]
     public int? TeamId { get; set; }
 
+    /// <summary>False only when the account belongs to no team at all — a null TeamId now means "all teams merged", not "no context" (2026-07-30, matching the session list).</summary>
     public bool HasTeamContext { get; private set; }
     public IReadOnlyList<(int Id, string Name)> AvailableTeams { get; private set; } = [];
+
+    /// <summary>Label for the team-picker trigger, same shape as the session list's.</summary>
+    public string TeamSummaryLabel { get; private set; } = "All teams";
 
     /// <summary>
     /// Unresolved-payment count per team, for the team picker — same predicate as the table below
@@ -57,25 +61,33 @@ public class UnmatchedPaymentsModel(
                 [.. AvailableTeams.Select(t => t.Id)], HttpContext.RequestAborted);
         }
 
-        var teamId = accessScope.TryResolveViewableTeamId(user, TeamId, AvailableTeams);
-        TeamId = teamId;
-        HasTeamContext = teamId is not null;
-        if (teamId is not int id)
+        // null TeamId == every team this user can see, merged — same convention as the session list.
+        var teamIds = accessScope.ResolveViewableTeamIds(user, TeamId);
+        HasTeamContext = teamIds is null || teamIds.Count > 0;
+        TeamSummaryLabel = TeamId is not null
+            ? AvailableTeams.FirstOrDefault(t => t.Id == TeamId).Name ?? "All teams"
+            : "All teams";
+
+        if (!HasTeamContext)
         {
             return;
         }
 
         var unmatched = await dbContext.UnmatchedSquarePayments
-            .Where(u => u.TeamId == id && u.ResolvedUtc == null)
+            .Where(u => (teamIds == null || teamIds.Contains(u.TeamId)) && u.ResolvedUtc == null)
             .OrderBy(u => u.ReceivedUtc)
             .ToListAsync();
+
+        var teamNamesById = AvailableTeams.ToDictionary(t => t.Id, t => t.Name);
 
         UnmatchedPayments = unmatched.Select(u => new UnmatchedPaymentRow(
             u.Id,
             EasternTimeFormatter.Format(u.ReceivedUtc, "MMM d, yyyy"),
             u.AmountUsd,
             u.BuyerEmailAddress,
-            u.SquareOrderId)).ToList();
+            u.SquareOrderId,
+            u.TeamId,
+            teamNamesById.GetValueOrDefault(u.TeamId, "—"))).ToList();
 
         if (unmatched.Count == 0)
         {
@@ -85,7 +97,7 @@ public class UnmatchedPaymentsModel(
         var candidates = await dbContext.Candidates
             .Include(c => c.Session)
             .Include(c => c.Payments)
-            .Where(c => c.Session.TeamId == id && c.Payments.Any(p => p.Status == PaymentStatus.Unpaid))
+            .Where(c => (teamIds == null || teamIds.Contains(c.Session.TeamId)) && c.Payments.Any(p => p.Status == PaymentStatus.Unpaid))
             .OrderBy(c => c.Name)
             .ToListAsync();
 
@@ -93,7 +105,8 @@ public class UnmatchedPaymentsModel(
             c.Id,
             c.Name ?? "—",
             EasternTimeFormatter.Format(c.Session.ScheduledStartUtc, "MMM d, yyyy"),
-            c.Payments.Where(p => p.Status == PaymentStatus.Unpaid).OrderByDescending(p => p.CreatedUtc).First().Amount)).ToList();
+            c.Payments.Where(p => p.Status == PaymentStatus.Unpaid).OrderByDescending(p => p.CreatedUtc).First().Amount,
+            c.Session.TeamId)).ToList();
     }
 
     public async Task<IActionResult> OnPostMatchAsync(int unmatchedPaymentId, int candidateId)
@@ -106,13 +119,34 @@ public class UnmatchedPaymentsModel(
 
         // Defense in depth: re-check the unmatched payment actually belongs to one of this user's
         // teams before acting on a route/form value, same reasoning as every other session-scoped
-        // action in this app. Preserves this page's pre-existing behavior exactly (including for
-        // SystemAdmin, whose null effective-team-set never matches here) — not the place to revisit
-        // that, out of scope for this change.
+        // action in this app.
+        //
+        // This previously read `GetEffectiveTeamIds(user)?.Contains(...) ?? false`, which returns
+        // null for a SystemAdmin and so collapsed to `false` — a SystemAdmin got a 403 on every
+        // match attempt. It went unnoticed because the page used to force a single selected team;
+        // enabling "All teams" (2026-07-30) put SystemAdmins on this path routinely, which is how it
+        // surfaced. ResolveViewableTeamIds keeps null meaning "every team", so the check now reads
+        // the way it always looked like it read.
         var unmatched = await dbContext.UnmatchedSquarePayments.FirstOrDefaultAsync(u => u.Id == unmatchedPaymentId);
-        if (unmatched is null || !(accessScope.GetEffectiveTeamIds(user)?.Contains(unmatched.TeamId) ?? false))
+        var viewableTeamIds = accessScope.ResolveViewableTeamIds(user, selectedTeamId: null);
+        if (unmatched is null || (viewableTeamIds is not null && !viewableTeamIds.Contains(unmatched.TeamId)))
         {
             return Forbid();
+        }
+
+        // A payment and the candidate it's matched to must belong to the same team. Previously
+        // implicit — the page could only ever show one team at a time — but "All teams" now renders
+        // several teams' payments and candidates on one screen, so without this a tampered (or
+        // simply mis-picked) candidateId could attribute Team A's money to Team B's candidate. The
+        // view already offers only same-team options; this is the half that can't be bypassed.
+        var candidateTeamId = await dbContext.Candidates
+            .Where(c => c.Id == candidateId)
+            .Select(c => (int?)c.Session.TeamId)
+            .FirstOrDefaultAsync();
+        if (candidateTeamId != unmatched.TeamId)
+        {
+            TempData["ErrorMessage"] = "That candidate belongs to a different team than the payment.";
+            return RedirectToPage(new { teamId = TeamId });
         }
 
         var result = await matchingService.ManuallyMatchAsync(unmatchedPaymentId, candidateId, user.Id, CancellationToken.None);
@@ -129,6 +163,7 @@ public class UnmatchedPaymentsModel(
         return RedirectToPage(new { teamId = unmatched.TeamId });
     }
 
-    public record UnmatchedPaymentRow(int Id, string ReceivedLine, decimal AmountUsd, string? BuyerEmailAddress, string SquareOrderId);
-    public record MatchableCandidate(int Id, string Name, string SessionDateLine, decimal AmountOwed);
+    public record UnmatchedPaymentRow(int Id, string ReceivedLine, decimal AmountUsd, string? BuyerEmailAddress, string SquareOrderId, int TeamId, string TeamName);
+    /// <summary>TeamId is load-bearing, not decorative: with "All teams" the page lists payments and candidates from several teams at once, and the view uses it to offer only same-team candidates for a given payment. OnPostMatchAsync re-checks it server-side regardless.</summary>
+    public record MatchableCandidate(int Id, string Name, string SessionDateLine, decimal AmountOwed, int TeamId);
 }

@@ -374,4 +374,62 @@ public class SessionAccessScopeTests
 
         Assert.Null(Scope.TryResolveViewableTeamId(user, null, []));
     }
+
+    // ---- ResolveViewableTeamIds (2026-07-30) ----
+    // Backs the "All teams" option on Applicant Status / Unmatched Payments, which previously forced
+    // a single team via TryResolveViewableTeamId. null here means "every team", NOT "no teams" —
+    // getting that backwards would silently show a SystemAdmin an empty page.
+
+    [Fact]
+    public void ResolveViewableTeamIds_SystemAdminWithNoSelection_ReturnsNullMeaningEveryTeam()
+    {
+        var user = NewUser("SA", UserRole.SystemAdmin);
+
+        Assert.Null(Scope.ResolveViewableTeamIds(user, selectedTeamId: null));
+    }
+
+    [Fact]
+    public void ResolveViewableTeamIds_SystemAdminWithSelection_NarrowsToThatTeam()
+    {
+        var user = NewUser("SA", UserRole.SystemAdmin);
+
+        Assert.Equal([7], Scope.ResolveViewableTeamIds(user, selectedTeamId: 7));
+    }
+
+    [Fact]
+    public void ResolveViewableTeamIds_MultiTeamUserWithNoSelection_ReturnsAllTheirTeams()
+    {
+        var user = NewUser("SM", UserRole.SessionManager, 1, 2);
+
+        Assert.Equal([1, 2], Scope.ResolveViewableTeamIds(user, selectedTeamId: null));
+    }
+
+    [Fact]
+    public void ResolveViewableTeamIds_UserSelectingOwnTeam_NarrowsToIt()
+    {
+        var user = NewUser("SM", UserRole.SessionManager, 1, 2);
+
+        Assert.Equal([2], Scope.ResolveViewableTeamIds(user, selectedTeamId: 2));
+    }
+
+    [Fact]
+    public void ResolveViewableTeamIds_UserSelectingForeignTeam_FallsBackToOwnTeams_NeverLeaks()
+    {
+        // A tampered ?teamId= must not widen access — it is ignored, not honoured.
+        var user = NewUser("SM", UserRole.SessionManager, 1, 2);
+
+        Assert.Equal([1, 2], Scope.ResolveViewableTeamIds(user, selectedTeamId: 99));
+    }
+
+    [Fact]
+    public void ResolveViewableTeamIds_UserWithNoTeams_ReturnsEmpty_NotNull()
+    {
+        // Empty means "genuinely nothing"; null would mean "everything" and hand them every team.
+        var user = NewUser("SM", UserRole.SessionManager);
+
+        var result = Scope.ResolveViewableTeamIds(user, selectedTeamId: null);
+
+        Assert.NotNull(result);
+        Assert.Empty(result);
+    }
 }

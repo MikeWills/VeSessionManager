@@ -8,6 +8,7 @@ using VeSessionManager.Core.Authorization;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Entities;
 using VeSessionManager.Core.Navigation;
+using VeSessionManager.Core.Payments;
 
 namespace VeSessionManager.Web.Pages.SessionManager;
 
@@ -35,11 +36,31 @@ public class ApplicantStatusModel(
 {
     internal const int RecentlyIssuedWindowDays = 7;
 
+    /// <summary>
+    /// The days-pending column is a countdown against PaymentReminderService's own two passes, not
+    /// an arbitrary UI scale — both are anchored on ApplicationDateEnteredUtc, the same field this
+    /// page counts from, so the boundaries line up exactly:
+    ///
+    ///   - <see cref="PaymentReminderService.ReminderThresholdDays"/> (5): the nightly job sends the
+    ///     candidate a PaymentReminder5Day email.
+    ///   - <see cref="PaymentReminderService.ExpirationThresholdDays"/> (10): the nightly job sets
+    ///     Payment.ExpiredUnpaid and notifies the Session Manager.
+    ///
+    /// Deliberately referenced rather than re-declared — a local copy would drift and start
+    /// colouring rows on days when nothing actually happens.
+    /// </summary>
+    internal const int DaysPendingWarningThreshold = PaymentReminderService.ReminderThresholdDays;
+    internal const int DaysPendingCriticalThreshold = PaymentReminderService.ExpirationThresholdDays;
+
     [BindProperty(SupportsGet = true)]
     public int? TeamId { get; set; }
 
+    /// <summary>False only when the account belongs to no team at all — a null TeamId now means "all teams merged", not "no context" (2026-07-30, matching the session list).</summary>
     public bool HasTeamContext { get; private set; }
     public IReadOnlyList<(int Id, string Name)> AvailableTeams { get; private set; } = [];
+
+    /// <summary>Label for the team-picker trigger, same shape as the session list's.</summary>
+    public string TeamSummaryLabel { get; private set; } = "All teams";
 
     /// <summary>
     /// Pending-FCC-grant count per team, for the team picker — so a multi-team user can see which
@@ -64,11 +85,15 @@ public class ApplicantStatusModel(
                 [.. AvailableTeams.Select(t => t.Id)], HttpContext.RequestAborted);
         }
 
-        var teamId = accessScope.TryResolveViewableTeamId(user, TeamId, AvailableTeams);
-        TeamId = teamId;
-        HasTeamContext = teamId is not null;
+        // null TeamId == every team this user can see, merged — same convention as the session
+        // list. Only an account with no teams at all has nothing to render.
+        var teamIds = accessScope.ResolveViewableTeamIds(user, TeamId);
+        HasTeamContext = teamIds is null || teamIds.Count > 0;
+        TeamSummaryLabel = TeamId is not null
+            ? AvailableTeams.FirstOrDefault(t => t.Id == TeamId).Name ?? "All teams"
+            : "All teams";
 
-        if (teamId is not int id)
+        if (!HasTeamContext)
         {
             return;
         }
@@ -77,7 +102,8 @@ public class ApplicantStatusModel(
 
         var pending = await dbContext.Candidates
             .Include(c => c.Session)
-            .Where(c => c.Session.TeamId == id
+            .Include(c => c.Payments)   // needed by DaysPendingCssClass's unpaid-payment gate
+            .Where(c => (teamIds == null || teamIds.Contains(c.Session.TeamId))
                 && c.Tested
                 && (c.ApplicationStatus == CandidateApplicationStatus.Unmatched || c.ApplicationStatus == CandidateApplicationStatus.Received))
             .OrderBy(c => c.ApplicationDateEnteredUtc ?? c.DateRegisteredUtc)
@@ -87,7 +113,7 @@ public class ApplicantStatusModel(
         var cutoffUtc = now.AddDays(-RecentlyIssuedWindowDays);
         var recentlyIssued = await dbContext.Candidates
             .Include(c => c.Session)
-            .Where(c => c.Session.TeamId == id
+            .Where(c => (teamIds == null || teamIds.Contains(c.Session.TeamId))
                 && c.ApplicationStatus == CandidateApplicationStatus.Granted
                 && c.LicenseGrantDateUtc != null
                 && c.LicenseGrantDateUtc >= cutoffUtc)
@@ -96,27 +122,62 @@ public class ApplicantStatusModel(
         RecentlyIssued = recentlyIssued.Select(ToRecentlyIssuedRow).ToList();
     }
 
-    private static PendingRow ToPendingRow(Candidate c, DateTime now)
+    private PendingRow ToPendingRow(Candidate c, DateTime now)
     {
-        // Falls back to the session date, not DateRegisteredUtc — a candidate can register for an
-        // exam days before actually taking it, and FCC has nothing to process until the exam itself
-        // happens. Using DateRegisteredUtc here made an Unmatched candidate whose session was
-        // literally today show several "days pending" already, counting time before the exam ever
-        // occurred. ApplicationDateEnteredUtc (once Received) remains the accurate anchor — that's
-        // FCC's own Last Action Date on the matched application.
-        var anchor = c.ApplicationDateEnteredUtc ?? c.Session.ScheduledStartUtc;
-        var daysPending = Math.Max(0, (int)(now.Date - anchor.Date).TotalDays);
+        // Counts only from ApplicationDateEnteredUtc — FCC's own Last Action Date on the matched
+        // application, i.e. the moment FCC actually had something to work on. Null (still Unmatched /
+        // "VEC Processing") means FCC has no application on file yet, so there is no FCC clock to
+        // report and the column shows "—" rather than a number.
+        //
+        // Two earlier anchors were both wrong for the same underlying reason — they measured time
+        // FCC wasn't responsible for. DateRegisteredUtc counted from sign-up, so a candidate whose
+        // session was literally today already showed several days pending. Falling back to
+        // Session.ScheduledStartUtc fixed that case but still started the clock at the exam, which
+        // runs during the VEC's own processing window before FCC ever receives the paperwork.
+        int? daysPending = c.ApplicationDateEnteredUtc is { } enteredUtc
+            ? Math.Max(0, (int)(now.Date - enteredUtc.Date).TotalDays)
+            : null;
 
         return new PendingRow(
             c.Id,
             c.Session.Id,
+            TeamNameFor(c),
             c.Name ?? "—",
             c.Frn ?? "—",
             EasternTimeFormatter.Format(c.Session.ScheduledStartUtc, "MMM d, yyyy"),
             LicenseClassFormatter.FormatTransition(c.InitialLicenseClass, c.NewLicenseClass) ?? "—",
             FccStatusLabel(c),
             FccFeeLabel(c),
-            daysPending);
+            daysPending,
+            DaysPendingCssClass(daysPending, c));
+    }
+
+    /// <summary>
+    /// Escalates the days-pending cell in step with PaymentReminderService's reminder/expiration
+    /// passes — see the threshold constants.
+    ///
+    /// <para>**Only escalates while an Unpaid payment actually exists**, because that is the precise
+    /// condition both of those passes require: no unpaid payment means no reminder will be sent and
+    /// nothing will ever be marked ExpiredUnpaid, so a red row would be warning about an event that
+    /// cannot happen. Mirrors the reminder query's own `Status == PaymentStatus.Unpaid` filter
+    /// (Paid and NotApplicable both correctly drop out). A candidate with no payment rows at all —
+    /// a fee-free session — likewise never escalates.</para>
+    /// </summary>
+    /// <summary>Team name for a row, shown only when the picker offers more than one team — see the view.</summary>
+    private string TeamNameFor(Candidate c) =>
+        AvailableTeams.FirstOrDefault(t => t.Id == c.Session.TeamId).Name ?? "—";
+
+    private static string DaysPendingCssClass(int? daysPending, Candidate candidate)
+    {
+        var hasUnpaidPayment = candidate.Payments.Any(p => p.Status == PaymentStatus.Unpaid);
+        if (daysPending is not { } days || !hasUnpaidPayment)
+        {
+            return string.Empty;
+        }
+
+        return days >= DaysPendingCriticalThreshold ? "days-critical"
+            : days >= DaysPendingWarningThreshold ? "days-warning"
+            : string.Empty;
     }
 
     /// <summary>
@@ -150,10 +211,11 @@ public class ApplicantStatusModel(
                 _ => "—"
             };
 
-    private static RecentlyIssuedRow ToRecentlyIssuedRow(Candidate c) =>
+    private RecentlyIssuedRow ToRecentlyIssuedRow(Candidate c) =>
         new(
             c.Id,
             c.Session.Id,
+            TeamNameFor(c),
             c.Name ?? "—",
             EasternTimeFormatter.Format(c.Session.ScheduledStartUtc, "MMM d, yyyy"),
             c.CallSign ?? "—",
@@ -163,7 +225,7 @@ public class ApplicantStatusModel(
             // CandidateDetail.cshtml.cs's LicenseGrantDateLine.
             c.LicenseGrantDateUtc!.Value.ToString("MMM d, yyyy", CultureInfo.InvariantCulture));
 
-    public record PendingRow(int CandidateId, int SessionId, string Name, string Frn, string SessionDateLine, string LicenseClassLine, string StatusLabel, string FeeLabel, int DaysPending);
+    public record PendingRow(int CandidateId, int SessionId, string TeamName, string Name, string Frn, string SessionDateLine, string LicenseClassLine, string StatusLabel, string FeeLabel, int? DaysPending, string DaysPendingCssClass);
 
-    public record RecentlyIssuedRow(int CandidateId, int SessionId, string Name, string SessionDateLine, string CallSign, string LicenseClassLine, string GrantDateLine);
+    public record RecentlyIssuedRow(int CandidateId, int SessionId, string TeamName, string Name, string SessionDateLine, string CallSign, string LicenseClassLine, string GrantDateLine);
 }

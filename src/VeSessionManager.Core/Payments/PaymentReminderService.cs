@@ -58,8 +58,14 @@ public class PaymentReminderService(
 
     // Fixed by the spec's own feature names ("5-day reminder", "10-day expiration") — unlike
     // UnmatchedReviewWindowDays, these are not meant to be admin-configurable.
-    private const int ReminderThresholdDays = 5;
-    private const int ExpirationThresholdDays = 10;
+    //
+    // Public because the Applicant Status page colours its "days pending" column on exactly these
+    // boundaries (2026-07-30): amber once the 5-day reminder is due, red once the payment is due to
+    // expire. Those colours are meant to *explain* what this service already does, so they have to
+    // read the same numbers rather than restate them — a drift would show a Session Manager a red
+    // row on a day nothing actually happens.
+    public const int ReminderThresholdDays = 5;
+    public const int ExpirationThresholdDays = 10;
 
     public async Task<PaymentReminderResult> RunAsync(Team team, CancellationToken cancellationToken)
     {
