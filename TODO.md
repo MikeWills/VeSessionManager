@@ -112,6 +112,14 @@ until its columns are set via direct DB edit (no admin UI yet):
 
 ## Bugs / known issues
 
+- [x] ~~**TeamLead saw an "Unmatched Payments" nav link that 403'd on click**~~ (found 2026-07-30
+  while auditing the nav for the regrouping below; fixed same day). The link in `_AppLayout.cshtml`
+  was rendered ungated for every role, but `UnmatchedPayments.cshtml.cs` is
+  `[Authorize(Roles = "SystemAdmin,TeamAdmin,SessionManager")]` — it was the only nav link whose
+  visibility didn't match its page's own roles, so a TeamLead could see it and get an Access Denied.
+  Now gated on `Role is not UserRole.TeamLead`; live-verified the link is gone entirely for that
+  role, not merely non-functional.
+
 - [ ] **`SessionEventScheduling` repeats a real `[ERR]` every tick, forever, when a cancelled
   session's stale Zoom meeting can't be cleaned up because the team's Zoom credentials aren't set**
   (found 2026-07-29 live-reviewing the Worker log — `worker-20260729.log`). Team 1 (WX0MIK) has a
@@ -171,6 +179,29 @@ until its columns are set via direct DB edit (no admin UI yet):
   4. Team is now the same radio-buttons-plus-explicit-Apply-button `.filter-dropdown` pattern as Status and Date range — no more auto-submitting `onchange`.
 
 ## Feature requests (not yet triaged)
+
+- [x] ~~**Nav menu was cluttered again — regroup it**~~ (requested 2026-07-30, built same day).
+  A SystemAdmin saw **9 top-level items** (5 flat links + 3 dropdowns + a flat System Settings), and
+  the flat ones were an incoherent mix: the home base, two daily worklists, a periodic report
+  (VE Roster), and an exception queue. Regrouped **by domain object** rather than by page type —
+  now `Sessions | Applicants ▾ | VEs ▾ | VEC Submission | Unmatched Payments | Settings ▾`
+  (**9 → 6**). `Settings ▾` merges the old Team + VEC & Fees + Reports menus *and* the flat System
+  Settings link into one menu with four `<hr>`-separated sections (team/people · money/VEC · logs ·
+  deployment-wide).
+
+  **`Applicants ▾` and `VEs ▾` deliberately hold one page each today** (Applicant Status, VE Roster)
+  — they're structural homes for more applicant-/VE-facing pages already planned, established now so
+  the nav doesn't reshuffle under users when those land. Do **not** "fix" them back to flat links.
+  `Unmatched Payments` deliberately stays top-level (an exception queue shouldn't hide in a menu).
+
+  Also added pending-count badges on Applicants/VEC Submission/Unmatched Payments, backed by the new
+  `NavBadgeCountService` (`src/VeSessionManager.Core/Navigation/`). **Gotcha worth remembering:** its
+  `teamIds` parameter follows `SessionAccessScope.GetEffectiveTeamIds` — `null` means *every team*
+  (SystemAdmin), an empty list means *no teams*. Inverting that would silently show a SystemAdmin an
+  all-zero nav, which is exactly the kind of bug a badge can't self-report; there's a dedicated test
+  for it. `VecSubmissionReportService` now delegates its pending-count predicate to the same service
+  so the badge and the VEC Submission page can't drift apart. Badges hide entirely at zero rather
+  than rendering a "0". See also the TeamLead 403 bug fixed alongside this, in Bugs above.
 
 - [x] ~~**Applicant Status page — surface candidates currently held for FCC Red Light or Basic
   Qualification Question (BQQ) review**~~ (requested 2026-07-30, built and merged same day, PR

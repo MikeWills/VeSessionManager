@@ -61,7 +61,11 @@ nav.chassis-nav a { font-size: 13px; padding: 8px 12px; border-radius: 5px; text
 nav.chassis-nav a.active { background: var(--panel-2); color: #fff; }
 nav.chassis-nav a:hover { color: #fff; }
 
-/* Grouped nav dropdowns (Team / VEC & Fees / Reports) — same row-action kebab/menu component as
+/* Outstanding-work count on a nav link/trigger (see NavBadgeCountService). Only rendered when the
+   count is non-zero — an always-visible "0" is noise, so there's no zero-state style. */
+.nav-badge { display: inline-block; min-width: 16px; padding: 1px 5px; margin-left: 5px; border-radius: 99px; background: var(--brick); color: #fff; font-family: "IBM Plex Mono", monospace; font-size: 10.5px; font-weight: 600; line-height: 1.5; text-align: center; vertical-align: 1px; }
+
+/* Grouped nav dropdowns (Applicants / VEs / Settings) — same row-action kebab/menu component as
    everywhere else, restyled so the trigger reads as just another chassis-nav link. */
 .nav-group { position: relative; display: inline-flex; }
 .nav-group > .kebab { background: transparent; border: none; font-family: inherit; font-size: 13px; padding: 8px 12px; border-radius: 5px; color: #B9C0BC; cursor: pointer; }

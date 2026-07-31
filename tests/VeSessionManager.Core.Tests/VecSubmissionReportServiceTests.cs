@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Entities;
+using VeSessionManager.Core.Navigation;
 using VeSessionManager.Core.VecSubmissions;
 using Xunit;
 
@@ -86,7 +87,7 @@ public class VecSubmissionReportServiceTests
         AddCandidate(dbContext, session, terminalStatus);
         await dbContext.SaveChangesAsync();
 
-        var count = await new VecSubmissionReportService(dbContext).GetPendingSubmissionCountAsync(team.Id, CancellationToken.None);
+        var count = await new VecSubmissionReportService(new NavBadgeCountService(dbContext)).GetPendingSubmissionCountAsync(team.Id, CancellationToken.None);
 
         Assert.Equal(1, count);
     }
@@ -101,7 +102,7 @@ public class VecSubmissionReportServiceTests
         AddCandidate(dbContext, session, CandidateApplicationStatus.Granted);
         await dbContext.SaveChangesAsync();
 
-        var count = await new VecSubmissionReportService(dbContext).GetPendingSubmissionCountAsync(team.Id, CancellationToken.None);
+        var count = await new VecSubmissionReportService(new NavBadgeCountService(dbContext)).GetPendingSubmissionCountAsync(team.Id, CancellationToken.None);
 
         Assert.Equal(0, count);
     }
@@ -118,7 +119,7 @@ public class VecSubmissionReportServiceTests
         AddCandidate(dbContext, session, nonTerminalStatus);
         await dbContext.SaveChangesAsync();
 
-        var count = await new VecSubmissionReportService(dbContext).GetPendingSubmissionCountAsync(team.Id, CancellationToken.None);
+        var count = await new VecSubmissionReportService(new NavBadgeCountService(dbContext)).GetPendingSubmissionCountAsync(team.Id, CancellationToken.None);
 
         Assert.Equal(0, count);
     }
@@ -133,7 +134,7 @@ public class VecSubmissionReportServiceTests
         AddCandidate(dbContext, session, CandidateApplicationStatus.Granted);
         await dbContext.SaveChangesAsync();
 
-        var count = await new VecSubmissionReportService(dbContext).GetPendingSubmissionCountAsync(team.Id, CancellationToken.None);
+        var count = await new VecSubmissionReportService(new NavBadgeCountService(dbContext)).GetPendingSubmissionCountAsync(team.Id, CancellationToken.None);
 
         Assert.Equal(0, count);
     }
@@ -149,7 +150,7 @@ public class VecSubmissionReportServiceTests
         AddCandidate(dbContext, session, CandidateApplicationStatus.Granted);
         await dbContext.SaveChangesAsync();
 
-        var count = await new VecSubmissionReportService(dbContext).GetPendingSubmissionCountAsync(team.Id, CancellationToken.None);
+        var count = await new VecSubmissionReportService(new NavBadgeCountService(dbContext)).GetPendingSubmissionCountAsync(team.Id, CancellationToken.None);
 
         Assert.Equal(1, count);
     }
@@ -167,7 +168,7 @@ public class VecSubmissionReportServiceTests
         AddCandidate(dbContext, sessionB, CandidateApplicationStatus.Granted);
         await dbContext.SaveChangesAsync();
 
-        var count = await new VecSubmissionReportService(dbContext).GetPendingSubmissionCountAsync(teamA.Id, CancellationToken.None);
+        var count = await new VecSubmissionReportService(new NavBadgeCountService(dbContext)).GetPendingSubmissionCountAsync(teamA.Id, CancellationToken.None);
 
         Assert.Equal(1, count);
     }

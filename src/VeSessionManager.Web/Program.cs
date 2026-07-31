@@ -14,6 +14,7 @@ using VeSessionManager.Core.Entities;
 using VeSessionManager.Core.ExamTools;
 using VeSessionManager.Core.Ingestion;
 using VeSessionManager.Core.Jobs;
+using VeSessionManager.Core.Navigation;
 using VeSessionManager.Core.Notifications;
 using VeSessionManager.Core.Payments;
 using VeSessionManager.Core.Scheduling;
@@ -68,6 +69,10 @@ builder.Services.AddScoped<CandidateNotificationService>();
 builder.Services.AddScoped<VecSubmissionService>();
 builder.Services.AddScoped<VecSubmissionReportService>();
 builder.Services.AddScoped<VolunteerExaminerReportService>();
+
+// Pending-work counts shown as badges on the app nav (_AppLayout.cshtml); also the single source of
+// the pending-VEC-submission predicate VecSubmissionReportService delegates to.
+builder.Services.AddScoped<NavBadgeCountService>();
 
 // "Refresh candidates" button on the session detail page (Pages/SessionManager/Detail.cshtml.cs) —
 // same per-team pipeline as the Worker's SessionIngestionJob, run on demand instead of waiting for

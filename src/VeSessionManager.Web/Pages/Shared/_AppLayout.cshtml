@@ -3,12 +3,17 @@
 @using VeSessionManager.Core.Authorization
 @using VeSessionManager.Core.Data
 @using VeSessionManager.Core.Entities
+@using VeSessionManager.Core.Navigation
 @inject UserManager<User> UserManager
 @inject AppDbContext DbContext
 @inject SessionAccessScope AccessScope
+@inject NavBadgeCountService NavBadgeCounts
 @{
     var currentUser = await UserManager.GetUserAsync(User);
     var teamName = "All Teams";
+    // null means "every team" for a SystemAdmin, not "no teams" — see NavBadgeCountService's own
+    // remarks. Kept null rather than coalesced so the badge queries below stay unscoped for them.
+    IReadOnlyList<int>? effectiveTeamIds = null;
     if (currentUser is not null && currentUser.Role != UserRole.SystemAdmin)
     {
         // UserTeams (and, for a TeamLead, ManagedByUser.UserTeams) must be loaded before calling
@@ -18,14 +23,18 @@
             .Include(u => u.ManagedByUser).ThenInclude(m => m!.UserTeams)
             .FirstAsync(u => u.Id == currentUser.Id);
 
-        var teamIds = AccessScope.GetEffectiveTeamIds(currentUser) ?? [];
-        teamName = teamIds.Count switch
+        effectiveTeamIds = AccessScope.GetEffectiveTeamIds(currentUser) ?? [];
+        teamName = effectiveTeamIds.Count switch
         {
             0 => "Unassigned Team",
-            1 => (await DbContext.Teams.FindAsync(teamIds[0]))?.Name ?? "Unassigned Team",
-            _ => $"{teamIds.Count} teams"
+            1 => (await DbContext.Teams.FindAsync(effectiveTeamIds[0]))?.Name ?? "Unassigned Team",
+            _ => $"{effectiveTeamIds.Count} teams"
         };
     }
+
+    var badges = currentUser is null
+        ? new NavBadgeCounts(0, 0, 0)
+        : await NavBadgeCounts.GetCountsAsync(effectiveTeamIds, Context.RequestAborted);
 
     var roleLabel = currentUser?.Role switch
     {
@@ -42,9 +51,10 @@
     // Grouped nav dropdowns — whether the trigger itself should show as "active" because the
     // current page is one of its children (the individual links inside still get their own
     // .active state too, same as before).
-    var teamGroupActive = activeNav is "AdminTeams" or "AdminTeamSettings" or "AdminUsers" or "AdminEmailTemplates";
-    var vecFeesGroupActive = activeNav is "AdminVecs" or "AdminFees";
-    var reportsGroupActive = activeNav is "AdminAuditLog" or "AdminJobHistory";
+    var applicantsGroupActive = activeNav is "ApplicantStatus";
+    var vesGroupActive = activeNav is "VeRoster";
+    var settingsGroupActive = activeNav is "AdminTeams" or "AdminTeamSettings" or "AdminUsers" or "AdminEmailTemplates"
+        or "AdminFees" or "AdminVecs" or "AdminAuditLog" or "AdminJobHistory" or "AdminSystemSettings";
 }
 <!DOCTYPE html>
 <html lang="en">
@@ -61,14 +71,51 @@
         <a class="brand" asp-page="/SessionManager/Index"><span class="dot"></span>VESESSIONMGR</a>
         <nav class="chassis-nav">
             <a asp-page="/SessionManager/Index" class="@(activeNav == "Sessions" ? "active" : "")">Sessions</a>
-            <a asp-page="/SessionManager/VeRoster" class="@(activeNav == "VeRoster" ? "active" : "")">VE Roster</a>
-            <a asp-page="/SessionManager/ApplicantStatus" class="@(activeNav == "ApplicantStatus" ? "active" : "")">Applicant Status</a>
-            <a asp-page="/SessionManager/VecSubmission" class="@(activeNav == "VecSubmission" ? "active" : "")">VEC Submission</a>
-            <a asp-page="/SessionManager/UnmatchedPayments" class="@(activeNav == "UnmatchedPayments" ? "active" : "")">Unmatched Payments</a>
+            @* Applicants/VEs are deliberately dropdowns even at one item today — they're the homes
+               more applicant- and VE-facing pages land in, so the nav doesn't reshuffle later. The
+               Applicants badge sits on the trigger since a badge inside a closed menu is invisible. *@
+            <div class="nav-group">
+                <button type="button" class="kebab @(applicantsGroupActive ? "active" : "")">
+                    Applicants
+                    @if (badges.ApplicantsPendingGrant > 0)
+                    {
+                        <span class="nav-badge">@badges.ApplicantsPendingGrant</span>
+                    }
+                    ▾
+                </button>
+                <div class="menu">
+                    <a class="item @(activeNav == "ApplicantStatus" ? "active" : "")" asp-page="/SessionManager/ApplicantStatus">Applicant Status</a>
+                </div>
+            </div>
+            <div class="nav-group">
+                <button type="button" class="kebab @(vesGroupActive ? "active" : "")">VEs ▾</button>
+                <div class="menu">
+                    <a class="item @(activeNav == "VeRoster" ? "active" : "")" asp-page="/SessionManager/VeRoster">VE Roster</a>
+                </div>
+            </div>
+            <a asp-page="/SessionManager/VecSubmission" class="@(activeNav == "VecSubmission" ? "active" : "")">
+                VEC Submission
+                @if (badges.SessionsPendingVecSubmission > 0)
+                {
+                    <span class="nav-badge">@badges.SessionsPendingVecSubmission</span>
+                }
+            </a>
+            @* Gated to match UnmatchedPayments.cshtml.cs's own [Authorize] — a TeamLead previously
+               saw this link and got a 403 on click. *@
+            @if (currentUser?.Role is not UserRole.TeamLead)
+            {
+                <a asp-page="/SessionManager/UnmatchedPayments" class="@(activeNav == "UnmatchedPayments" ? "active" : "")">
+                    Unmatched Payments
+                    @if (badges.UnresolvedUnmatchedPayments > 0)
+                    {
+                        <span class="nav-badge">@badges.UnresolvedUnmatchedPayments</span>
+                    }
+                </a>
+            }
             @if (currentUser?.Role is UserRole.SystemAdmin or UserRole.TeamAdmin)
             {
                 <div class="nav-group">
-                    <button type="button" class="kebab @(teamGroupActive ? "active" : "")">Team ▾</button>
+                    <button type="button" class="kebab @(settingsGroupActive ? "active" : "")">Settings ▾</button>
                     <div class="menu">
                         @if (currentUser?.Role is UserRole.SystemAdmin)
                         {
@@ -77,29 +124,22 @@
                         <a class="item @(activeNav == "AdminTeamSettings" ? "active" : "")" asp-page="/Admin/TeamSettings">Team Settings</a>
                         <a class="item @(activeNav == "AdminUsers" ? "active" : "")" asp-page="/Admin/Users">Users</a>
                         <a class="item @(activeNav == "AdminEmailTemplates" ? "active" : "")" asp-page="/Admin/EmailTemplates">Email Templates</a>
-                    </div>
-                </div>
-                <div class="nav-group">
-                    <button type="button" class="kebab @(vecFeesGroupActive ? "active" : "")">VEC &amp; Fees ▾</button>
-                    <div class="menu">
+                        <hr>
                         <a class="item @(activeNav == "AdminFees" ? "active" : "")" asp-page="/Admin/FeeConfigurations">Fees</a>
                         @if (currentUser?.Role is UserRole.SystemAdmin)
                         {
                             <a class="item @(activeNav == "AdminVecs" ? "active" : "")" asp-page="/Admin/Vecs">VECs</a>
                         }
-                    </div>
-                </div>
-                <div class="nav-group">
-                    <button type="button" class="kebab @(reportsGroupActive ? "active" : "")">Reports ▾</button>
-                    <div class="menu">
+                        <hr>
                         <a class="item @(activeNav == "AdminAuditLog" ? "active" : "")" asp-page="/Admin/AuditLog">Audit Log</a>
                         <a class="item @(activeNav == "AdminJobHistory" ? "active" : "")" asp-page="/Admin/JobRunHistory">Job History</a>
+                        @if (currentUser?.Role is UserRole.SystemAdmin)
+                        {
+                            <hr>
+                            <a class="item @(activeNav == "AdminSystemSettings" ? "active" : "")" asp-page="/Admin/SystemSettings">System Settings</a>
+                        }
                     </div>
                 </div>
-            }
-            @if (currentUser?.Role is UserRole.SystemAdmin)
-            {
-                <a asp-page="/Admin/SystemSettings" class="@(activeNav == "AdminSystemSettings" ? "active" : "")">System Settings</a>
             }
         </nav>
         <div class="who">

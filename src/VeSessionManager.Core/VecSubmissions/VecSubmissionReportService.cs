@@ -1,6 +1,4 @@
-using Microsoft.EntityFrameworkCore;
-using VeSessionManager.Core.Data;
-using VeSessionManager.Core.Entities;
+using VeSessionManager.Core.Navigation;
 
 namespace VeSessionManager.Core.VecSubmissions;
 
@@ -10,16 +8,15 @@ namespace VeSessionManager.Core.VecSubmissions;
 /// complete state (Granted, Failed, or NotTested — the same terminal set SessionIngestionService
 /// already treats as "done," meaning there's something concrete to submit) but the session's own
 /// VecSubmissionStatus is still NotSubmitted. Cancelled sessions never count — nothing to submit
-/// for a session that never happened. No UI yet (Phase 9); a future admin dashboard calls this
-/// directly.
+/// for a session that never happened.
+///
+/// The predicate itself now lives in NavBadgeCountService, since the app nav shows this same number
+/// as a badge (just across every team the user can see rather than one) — keeping one definition
+/// means the badge and this page's own count can never drift apart. This stays as the per-team
+/// entry point the VEC Submission page already calls.
 /// </summary>
-public class VecSubmissionReportService(AppDbContext dbContext)
+public class VecSubmissionReportService(NavBadgeCountService navBadgeCountService)
 {
-    public async Task<int> GetPendingSubmissionCountAsync(int teamId, CancellationToken cancellationToken) =>
-        await dbContext.Sessions
-            .Where(s => s.TeamId == teamId
-                && s.Status == SessionStatus.Active
-                && s.VecSubmissionStatus == VecSubmissionStatus.NotSubmitted
-                && s.Candidates.Any(c => CandidateApplicationStatusExtensions.TerminalStatuses.Contains(c.ApplicationStatus)))
-            .CountAsync(cancellationToken);
+    public Task<int> GetPendingSubmissionCountAsync(int teamId, CancellationToken cancellationToken) =>
+        navBadgeCountService.CountSessionsPendingVecSubmissionAsync([teamId], cancellationToken);
 }
