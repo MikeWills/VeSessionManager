@@ -77,6 +77,13 @@ would be pure duplication — and goes straight to `CHANGELOG.md` instead. Non-p
 redesigns, hardening passes) start here and move to `CHANGELOG.md` once the section is at/over the
 cap and a newer entry needs to be added; oldest goes first.
 
+- **FCC weekly snapshot is days stale — catch-up must sweep the daily files (2026-07-30).** See
+  `docs/fcc-uls-watcher.md`'s "The weekly snapshot is not a rolling backstop". The AM.dat fix below
+  recovered 11 candidates and left 10 that I wrongly reported as legitimately pending (2 hand-checked,
+  the rest assumed). FCC's weekly `complete` zip stamps its own creation date and arrived 4-5 days
+  stale, while `RunDailyAsync` reads only yesterday+today — Monday's/Tuesday's files were read by
+  neither. New `RunAllDailyFilesAsync` sweeps Mon-Sat, `FccWeeklyCatchupJob` now runs it alongside the
+  snapshot, plus a `--run-fcc-all-dailies` switch. Recovered 4 more; remaining 6 verified individually.
 - **FCC upgrade detection via AM.dat + Last Action Date, and on-demand watcher runs (2026-07-30).**
   See `docs/fcc-uls-watcher.md`'s "Confirming a class upgrade" section. The Grant-Date guard added
   earlier the same day made class upgrades *permanently* undetectable (Grant Date never advances on
@@ -192,11 +199,6 @@ cap and a newer entry needs to be added; oldest goes first.
   a Session ID column to the session list (#35) and converted the VE Roster page's team-pill/plain
   date inputs to the same dropdown pattern as the session list (#38), reusing `IndexModel.DateRangePresets`
   directly rather than duplicating it.
-- **Per-team ExamTools host override (issue #18, 2026-07-28).** `docs/examtools-api.md`'s "Per-team
-  host override" section — nullable `Team.ExamToolsBaseUrl` override column (not an
-  `Team.ExamToolsEnvironment` enum) so a team can point at a different ExamTools host than the
-  deployment's global `ExamTools:BaseUrl` default; `ExamToolsCredentials.For(team, ...)` is the one
-  place the override-falls-back-to-global logic lives.
 Everything through Phase 0-10's initial build (ExamTools ingestion, Zoom/Discord, Square, email
 notifications, FCC ULS watcher, payment reminders, VE tracking, VEC submission tracker, admin
 auth/config/candidate-actions, PII purge) plus the public privacy page has aged out to
@@ -323,6 +325,7 @@ To pick up updates: `/plugin marketplace update claude-tools`
 - **Square webhook subscriptions are separate per Sandbox/Production, each with its own signature key** — an existing subscription registered under one mode receives zero delivery attempts for events in the other (not a 401, no attempt at all), and reusing one mode's `WebhookSignatureKey` against the other mode's subscription makes every delivery fail signature verification (401) even though the URL/event config is otherwise correct. Found live 2026-07-25 testing Team 2 (MARC)'s payment flow — the "Ve Session Manager" subscription had been created under Production while all local testing used Sandbox credentials/payment links. Fix: add (or move) the subscription under the correct mode's tab in the Square dashboard, then set `Team.SquareWebhookSignatureKey` to *that* subscription's own signature key, not the other mode's. See `docs/square-payments.md`.
 - **`Web` and `Worker` must register Data Protection with the exact same application name and key-ring path, or one process's writes silently become unreadable by the other.** `Team`'s credential columns (ExamTools/Zoom/Square/SMTP secrets) are encrypted at rest via `EncryptedStringConverter` (2026-07-30) — both `Program.cs` files call `AddDataProtection().SetApplicationName("VeSessionManager").PersistKeysToFileSystem(...)` with the same hardcoded app name and the same `DataProtection:KeyRingPath` config value. A drift here doesn't throw — `EncryptedStringConverter`'s legacy-plaintext fallback (needed for the migration path) means a value encrypted under a different key just looks like it was never migrated. See `docs/credential-encryption.md`. Also: **if the key-ring directory is ever lost, every encrypted credential becomes permanently unrecoverable** — it must be backed up with the same discipline as the DB file itself (see `docs/deployment.md`).
 - **A POST form on a filtered list page needs BOTH an explicit `action=` and `asp-antiforgery="true"` — each half fixes a bug the other half causes.** `asp-page-handler` builds the form action from the route only and **drops the query string**, so posting an action from a filtered/paged list silently redirects back to the unfiltered first page (found on the Sessions row-action menu, 2026-07-30). The fix is an explicit `action="@Model.BuildActionUrl("Handler")"`. But `FormTagHelper` only auto-emits the antiforgery token when *it* generated the action — with an explicit `action=` the token disappears, and every POST then 400s in the antiforgery middleware **before reaching the app, logging nothing server-side** (the symptom is a browser error page with a completely silent log, which reads like the request never happened). `asp-antiforgery="true"` restores it. Any future list page with row-level POST actions needs both, plus a `BuildActionUrl`-style helper so the redirect target keeps the same filter state.
+- **FCC's weekly `complete/*.zip` "snapshot" can be days stale on arrival — it is not a rolling backstop, despite the name.** It's regenerated roughly weekly and stamps its own creation date inside the zip (`counts` entry, first line): the copy fetched Thu 2026-07-30 read `File Creation Date: Sun Jul 26` with no data newer than 07/25. Combined with `RunDailyAsync` only reading yesterday+today, anything FCC acted on in between sits in **no file either path reads** — four real upgrade candidates stayed pending with the answer sitting in `l_am_mon.zip`/`l_am_tue.zip`. Any "catch-up"/recovery path must sweep the day-name files (`FccUlsWatcherService.RunAllDailyFilesAsync`, Mon-Sat — there is no Sunday file), not just fetch the weekly snapshot. Related: a day file isn't regenerated until FCC next publishes it, so on a Thursday the `thu`/`fri`/`sat` files still hold *last* week's data — a sweep covers "whatever FCC currently has," not a clean trailing week.
 - (Environment-specific quirks and gotchas go here as they're discovered — e.g. API quirks, IIS behavior, network/DMZ restrictions, auth issues)
 
 ## Definition of Done

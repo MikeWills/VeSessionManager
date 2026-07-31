@@ -10,4 +10,20 @@ namespace VeSessionManager.Core.FccUls;
 public static class FccUlsSchedule
 {
     public static readonly TimeZoneInfo EasternTimeZone = TimeZoneInfo.FindSystemTimeZoneById("America/New_York");
+
+    /// <summary>
+    /// The weekdays FCC actually publishes a day-name transaction file for. Files appear Tue-Sat
+    /// covering Mon-Fri activity, so there is no <c>*_sun.zip</c> — requesting one is a guaranteed
+    /// wasted round-trip. Used by FccUlsWatcherService.RunAllDailyFilesAsync to sweep the trailing
+    /// week; ordered Mon-Sat so a sweep applies transactions oldest-first.
+    /// </summary>
+    public static readonly IReadOnlyList<DayOfWeek> PublishedDays =
+    [
+        DayOfWeek.Monday,
+        DayOfWeek.Tuesday,
+        DayOfWeek.Wednesday,
+        DayOfWeek.Thursday,
+        DayOfWeek.Friday,
+        DayOfWeek.Saturday
+    ];
 }

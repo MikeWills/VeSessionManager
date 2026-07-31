@@ -209,6 +209,28 @@ until its columns are set via direct DB edit (no admin UI yet):
   holds current state for every active license regardless of grant date, whereas a daily file only
   carries one day's transactions and can never recover a prior week's candidate.
 
+- [x] ~~**FCC upgrade recovery missed 4 candidates — the weekly snapshot arrives days stale**~~
+  (found 2026-07-30 by the user spotting still-pending FRNs that were in fact issued, fixed same
+  day). See `docs/fcc-uls-watcher.md`'s "The weekly snapshot is not a rolling backstop". Immediate
+  follow-on to the AM.dat upgrade fix above: that pass recovered 11 and left 10 pending, which I
+  reported as "legitimately pending" after hand-checking only 2 of the 10 and generalizing. Four had
+  actually been upgraded days earlier.
+
+  Root cause was file coverage, not matching. FCC's weekly `complete/l_amat.zip` stamps its own
+  creation date inside the zip — the copy fetched Thursday read `Sun Jul 26`, nothing newer than
+  07/25 — while `RunDailyAsync` reads only yesterday+today. Monday's and Tuesday's files fell in
+  between and were read by neither. New `RunAllDailyFilesAsync` sweeps Mon-Sat (no Sunday file
+  exists); `FccWeeklyCatchupJob` now runs it alongside the snapshot, and `--run-fcc-all-dailies`
+  is the fast manual path (~8s / tens of KB, vs ~5min / 199MB).
+
+  Recovered 4 more (pending 10 -> 6). The remaining 6 were then verified individually against all
+  seven files rather than assumed: five appear only in the stale weekly snapshot still holding their
+  pre-exam class, one has no FCC license record at all. Their sessions were Jul 27-30 and the newest
+  published file is Wednesday's, so there is genuinely nothing to find yet.
+
+  An existing test asserted the weekly catch-up must *not* call daily endpoints — that assertion
+  encoded the broken premise, so it was narrowed with a comment rather than deleted.
+
 - [x] ~~**Per-row action menu on the Sessions list**~~ (requested 2026-07-30, built same day). Direct
   follow-on to the VEC Submission removal above — once that worklist became a Sessions filter, every
   action still required opening each session's Detail page, so a filtered list of 8 pending sessions

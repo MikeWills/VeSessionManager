@@ -148,11 +148,45 @@ weekly catch-up pass, with the invariant "no granted candidate has a grant date 
 session" holding across all 48 granted rows afterward. It also still correctly refused two candidates
 FCC hadn't processed — one whose class was still the old one, and one with no license record at all.
 
-**Recovering historical candidates uses the weekly file, not the daily one.** The weekly complete
-snapshot holds current state for every active license regardless of when it was granted; a daily file
-only carries that one day's transactions and so can never recover a candidate from a previous week.
-Run it on demand with `dotnet run --project src/VeSessionManager.Worker -- --run-fcc-weekly`
-(`--run-fcc-daily` also exists). Both exit without starting the normal jobs, and both are idempotent.
+Run on demand with `dotnet run --project src/VeSessionManager.Worker -- --run-fcc-weekly`
+(`--run-fcc-daily` and `--run-fcc-all-dailies` also exist). All exit without starting the normal
+jobs, and all are idempotent. **Reach for `--run-fcc-all-dailies` first** — see below for why.
+
+## The weekly snapshot is not a rolling backstop (found 2026-07-30, hours after the above)
+
+The upgrade fix above recovered 11 candidates from the weekly snapshot and left 10 pending, which
+looked like "FCC simply hasn't acted yet." Two of the ten were spot-checked by hand, genuinely
+hadn't been processed, and the rest were assumed to match. **That assumption was wrong** — four of
+them had been upgraded days earlier.
+
+The cause is a property of FCC's own publishing, not of this app's matching:
+
+- The weekly `complete/l_amat.zip` is **regenerated roughly weekly and stamps its own creation date
+  inside the zip** (`counts` entry, first line). The copy fetched Thursday 2026-07-30 read
+  `File Creation Date: Sun Jul 26` and contained no data newer than `07/25` — already 4-5 days stale
+  on arrival. Its name says "complete," which invites reading it as current. It is not.
+- `RunDailyAsync` reads only **yesterday + today**'s day-name files.
+- Everything in between — here, `l_am_mon.zip` (Tue 07-28) and `l_am_tue.zip` (Wed 07-29) — is in
+  **no file either path reads**, and stays invisible until the next weekly snapshot is cut.
+
+Three real upgrades sat pending with the correct data in those two files the whole time.
+
+`RunAllDailyFilesAsync` closes the gap by sweeping every published day file (Mon-Sat; there is no
+Sunday file — FCC publishes Tue-Sat covering Mon-Fri). `FccWeeklyCatchupJob` now runs it *alongside*
+the snapshot, which is what makes that job a genuine backstop rather than a re-scan of data the daily
+job already had. The snapshot still earns its place: it carries every active license regardless of
+grant date, so it is the only way to recover a candidate whose day-name file has since been
+overwritten by the following week's.
+
+Cost is negligible — each day file is tens of KB against the snapshot's ~199 MB, and a full sweep
+runs in ~8 seconds versus ~5 minutes.
+
+**Caveat worth knowing when reading sweep output:** a day file is not regenerated until FCC next
+publishes it, so on a Thursday the `thu`/`fri`/`sat` files still hold *last* week's transactions. A
+sweep therefore covers "whatever FCC currently has" rather than a clean trailing seven days — on
+2026-07-30 that was Jul 23-29. Harmless (stale rows can't satisfy the session-date guard, and the
+scan only ever touches non-terminal candidates), but it means the sweep is something to run
+repeatedly, not once.
 
 What actually needed fixing was downstream: `PiiPurgeService.PurgeGrantedCandidatesAsync`'s
 retention Trigger A anchored purely on `LicenseGrantDateUtc` — for an upgrade/repeat candidate, that
