@@ -344,4 +344,83 @@ public class UserManagementServiceTests
         var audit = await dbContext.AuditLogs.SingleAsync();
         Assert.Equal("UserReactivated", audit.Action);
     }
+
+    // ---- Call sign (2026-07-30) ----
+    // Stored upper-invariant to match VolunteerExaminer.CallSign's existing convention, so the two
+    // are comparable; blank clears rather than storing "" so "no call sign" has one representation.
+
+    [Theory]
+    [InlineData("wx0mik", "WX0MIK")]
+    [InlineData("  ke9caq  ", "KE9CAQ")]
+    [InlineData("N2SPG", "N2SPG")]
+    public async Task SetCallSignAsync_NormalizesToUpperInvariantAndTrims(string input, string expected)
+    {
+        await using var dbContext = CreateContext();
+        var userManager = CreateUserManager(dbContext);
+        var target = new User { UserName = "t@example.com", Email = "t@example.com", Name = "Target", Role = UserRole.SessionManager };
+        await userManager.CreateAsync(target, ValidPassword);
+
+        var result = await CreateService(dbContext, userManager).SetCallSignAsync(target.Id, input, actingUserId: 1, CancellationToken.None);
+
+        Assert.Equal(UserActionResult.Success, result);
+        Assert.Equal(expected, (await userManager.FindByIdAsync(target.Id.ToString()))!.CallSign);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task SetCallSignAsync_BlankInput_ClearsToNull_NotEmptyString(string? input)
+    {
+        await using var dbContext = CreateContext();
+        var userManager = CreateUserManager(dbContext);
+        var target = new User { UserName = "t@example.com", Email = "t@example.com", Name = "Target", Role = UserRole.SessionManager, CallSign = "WX0MIK" };
+        await userManager.CreateAsync(target, ValidPassword);
+
+        var result = await CreateService(dbContext, userManager).SetCallSignAsync(target.Id, input, actingUserId: 1, CancellationToken.None);
+
+        Assert.Equal(UserActionResult.Success, result);
+        Assert.Null((await userManager.FindByIdAsync(target.Id.ToString()))!.CallSign);
+    }
+
+    [Fact]
+    public async Task SetCallSignAsync_WritesAudit()
+    {
+        await using var dbContext = CreateContext();
+        var userManager = CreateUserManager(dbContext);
+        var target = new User { UserName = "t@example.com", Email = "t@example.com", Name = "Target", Role = UserRole.SessionManager };
+        await userManager.CreateAsync(target, ValidPassword);
+
+        await CreateService(dbContext, userManager).SetCallSignAsync(target.Id, "wx0mik", actingUserId: 1, CancellationToken.None);
+
+        var audit = await dbContext.AuditLogs.SingleAsync();
+        Assert.Equal("UserCallSignChanged", audit.Action);
+        Assert.Contains("WX0MIK", audit.Details);
+    }
+
+    [Fact]
+    public async Task SetCallSignAsync_UnknownUser_ReturnsNotFound()
+    {
+        await using var dbContext = CreateContext();
+        var userManager = CreateUserManager(dbContext);
+
+        var result = await CreateService(dbContext, userManager).SetCallSignAsync(9999, "WX0MIK", actingUserId: 1, CancellationToken.None);
+
+        Assert.Equal(UserActionResult.NotFound, result);
+    }
+
+    [Fact]
+    public async Task CreateAsync_WithCallSign_StoresItNormalized()
+    {
+        await using var dbContext = CreateContext();
+        var userManager = CreateUserManager(dbContext);
+        var actingUser = new User { UserName = "sysadmin@example.com", Email = "sysadmin@example.com", Name = "Sys Admin", Role = UserRole.SystemAdmin };
+        await userManager.CreateAsync(actingUser, ValidPassword);
+
+        var (result, created) = await CreateService(dbContext, userManager).CreateAsync(
+            "new@example.com", "New User", UserRole.SessionManager, ValidPassword, actingUser.Id, CancellationToken.None, callSign: "wx0mik");
+
+        Assert.Equal(UserActionResult.Success, result);
+        Assert.Equal("WX0MIK", created!.CallSign);
+    }
 }

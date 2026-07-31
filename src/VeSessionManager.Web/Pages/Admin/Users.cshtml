@@ -18,15 +18,24 @@
     }
 </div>
 
+@* Same team-picker component as the session list. "All teams" is kept — this page already
+   supported an unfiltered view, it was just drawn as pills. *@
 @if (Model.IsSystemAdmin)
 {
-    <div class="filters" style="margin-bottom:16px;">
-        <a class="filter-pill @(Model.TeamId is null ? "active" : "")" asp-page="./Users">All teams</a>
-        @foreach (var team in Model.AvailableTeams)
-        {
-            <a class="filter-pill @(team.Id == Model.TeamId ? "active" : "")" asp-page="./Users" asp-route-teamId="@team.Id">@team.Name</a>
-        }
-    </div>
+    <form method="get" id="userFilters" class="filters" style="margin-bottom:16px; align-items:flex-start;">
+        <div class="filter-dropdown">
+            <button type="button" class="kebab @(Model.TeamId is not null ? "active" : "")">Team: @Model.TeamSummaryLabel ▾</button>
+            <div class="menu">
+                <label class="item"><input type="radio" name="teamId" value="" @(Model.TeamId is null ? "checked" : "") /> All teams</label>
+                @foreach (var team in Model.AvailableTeams)
+                {
+                    <label class="item"><input type="radio" name="teamId" value="@team.Id" @(team.Id == Model.TeamId ? "checked" : "") /> @team.Name</label>
+                }
+                <hr />
+                <button type="submit" class="item">Apply</button>
+            </div>
+        </div>
+    </form>
 }
 
 @if (!Model.IsSystemAdmin && Model.TeamId is null)
@@ -39,6 +48,7 @@ else
         <thead>
             <tr>
                 <th>Name</th>
+                <th>Call sign</th>
                 <th>Email</th>
                 <th>Role</th>
                 <th>Team</th>
@@ -50,12 +60,13 @@ else
         <tbody>
             @if (Model.Users.Count == 0)
             {
-                <tr><td colspan="7">No users yet.</td></tr>
+                <tr><td colspan="8">No users yet.</td></tr>
             }
             @foreach (var u in Model.Users)
             {
                 <tr>
                     <td class="session-title">@u.Name</td>
+                    <td class="mono">@(u.CallSign ?? "—")</td>
                     <td class="mono">@u.Email</td>
                     <td>@u.Role</td>
                     <td>@(string.IsNullOrEmpty(u.TeamNames) ? "—" : u.TeamNames)</td>
@@ -73,6 +84,7 @@ else
                     <td class="row-actions">
                         <button type="button" class="kebab" aria-label="Actions">⋮</button>
                         <div class="menu">
+                            <button type="button" class="item" data-open-modal="callSignModal-@u.Id">Set call sign</button>
                             <button type="button" class="item" data-open-modal="roleModal-@u.Id">Change role</button>
                             @if (u.Role is UserRole.TeamAdmin or UserRole.SessionManager)
                             {
@@ -110,6 +122,7 @@ else
             <form method="post" asp-page-handler="Create">
                 <div class="field"><label for="createUserEmail">Email</label><input id="createUserEmail" name="email" type="email" required /></div>
                 <div class="field"><label for="createUserName">Name</label><input id="createUserName" name="name" required /></div>
+                <div class="field"><label for="createUserCallSign">Call sign</label><input id="createUserCallSign" name="callSign" placeholder="Optional" /></div>
                 <div class="field">
                     <label for="createUserRole">Role</label>
                     <select id="createUserRole" name="role">
@@ -131,6 +144,24 @@ else
 
     @foreach (var u in Model.Users)
     {
+        <div class="modal-backdrop" id="callSignModal-@u.Id">
+            <div class="modal">
+                <h3>Set call sign — @u.Name</h3>
+                <form method="post" asp-page-handler="SetCallSign">
+                    <input type="hidden" name="targetUserId" value="@u.Id" />
+                    <div class="field">
+                        <label for="callSign-@u.Id">Call sign</label>
+                        <input id="callSign-@u.Id" name="callSign" value="@u.CallSign" placeholder="Optional" />
+                    </div>
+                    <p class="session-sub">Stored in upper case. Leave blank to clear it.</p>
+                    <div class="modal-actions">
+                        <button type="button" class="btn-secondary btn-sm" data-close-modal>Cancel</button>
+                        <button type="submit" class="btn-primary btn-sm">Save</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
         <div class="modal-backdrop" id="roleModal-@u.Id">
             <div class="modal">
                 <h3>Change role — @u.Name</h3>

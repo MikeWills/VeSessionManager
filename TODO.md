@@ -313,6 +313,57 @@ until its columns are set via direct DB edit (no admin UI yet):
 
 ## Feature requests (not yet triaged)
 
+- [x] ~~**Every team selector uses the session list's dropdown**~~ (requested 2026-07-30, done same
+  day). The last four pages still on the old pills / `<select onchange>` were converted:
+
+  | Page | Was | Now |
+  |---|---|---|
+  | VE Roster | `<select onchange=submit>` + disabled "Select a team…" | Dropdown **+ All teams**, Team column |
+  | Admin → Users | pills incl. an "All teams" pill | Dropdown **+ All teams** |
+  | Admin → Team Settings | pills, one per team | Dropdown, **no** All teams |
+  | Admin → Email Templates | pills, one per team | Dropdown, **no** All teams |
+
+  "All teams" is deliberately absent from the two admin config pages — each edits *one* team's
+  configuration, so a merged view has no meaning; their trigger reads "Select a team…" until one is
+  picked, matching the existing "Pick a team above" prompt instead of contradicting it.
+
+  VE Roster needed real work rather than markup: `VolunteerExaminerReportService.GetSessionCountsAsync`
+  took a single `int teamId` and now takes the same `IReadOnlyList<int>?` set (null = every team). A
+  `VolunteerExaminer` is itself team-scoped, so a merged run yields **one row per VE-per-team** rather
+  than silently combining the same person across two teams — hence the new Team column, and a test
+  pinning exactly that (same callsign in two teams stays two rows). Converting it also retires the
+  `<select>` placeholder hack CLAUDE.md warns about: that disabled "Select a team…" option existed
+  only because a null TeamId used to mean "show nothing". Radio buttons have no equivalent trap.
+
+- [x] ~~**User accounts carry a call sign**~~ (requested 2026-07-30, done same day). New nullable
+  `User.CallSign` (migration `UserCallSign`, single additive column with a working `Down`), surfaced
+  on Admin → Users as a column, a New User field, and a "Set call sign" row action.
+
+  Stored upper-invariant and trimmed, with blank clearing to null rather than `""` — matching
+  `VolunteerExaminer.CallSign`'s existing convention so the two are comparable, and so "no call sign"
+  has one representation. Normalization lives in one private helper shared by create and update.
+
+  **Deliberately not a foreign key to `VolunteerExaminer`:** a VE row is team-scoped and synced from
+  ExamTools, whereas a User is a login that may span several teams or none, so the same person can
+  legitimately be one User and several VE rows. Linking the two is a separate question from recording
+  the call sign — parked, not decided.
+
+- [ ] **Team Settings: mark "Zoom user ID" as optional** (asked 2026-07-30 — "I didn't need it for
+  my Zoom Account"). `Pages/Admin/TeamSettings.cshtml`. The field sits in a row with Account ID /
+  Client ID / Client secret, all of which *are* required, and its only hint that it's optional is a
+  faint `me` placeholder — so it reads as something the admin forgot to fill in.
+
+  It selects which Zoom user the meetings are created under (substituted into
+  `/v2/users/{userId}/meetings`, and the same user's list is what `ListMeetingsAsync` queries for
+  cleanup/duplicate detection). `SessionEventSchedulingService` already falls back to
+  `team.ZoomUserId ?? "me"`, and `"me"` is Zoom's alias for whoever owns the Server-to-Server OAuth
+  app — always correct on a single-license account. It only matters for a multi-user Zoom org where
+  sessions should belong to someone other than the credential owner.
+
+  Fix is a one-line caption under the Zoom row, in the same style the breakout-rooms field already
+  has: "Leave blank to use the account that owns the API credentials — only needed if your Zoom
+  organisation has multiple users and sessions should be hosted by a specific one."
+
 - [x] ~~**Nav menu was cluttered again — regroup it**~~ (requested 2026-07-30, built same day).
   A SystemAdmin saw **9 top-level items** (5 flat links + 3 dropdowns + a flat System Settings), and
   the flat ones were an incoherent mix: the home base, two daily worklists, a periodic report

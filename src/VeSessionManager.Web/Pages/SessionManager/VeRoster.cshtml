@@ -14,18 +14,23 @@
 </div>
 
 <form method="get" id="veRosterFilters" class="filters" style="margin-bottom:20px; align-items:flex-start;">
+    @* Same team-picker component as the session list. Replaces a <select onchange=submit> that had
+       to carry a disabled "Select a team…" placeholder because a null TeamId used to mean "no
+       context, show nothing" — it now means "all teams merged", so the placeholder is gone. *@
     @if (Model.AvailableTeams.Count > 1)
     {
-        <select name="teamId" class="filter-select" onchange="document.getElementById('veRosterFilters').submit()">
-            @if (Model.TeamId is null)
-            {
-                <option value="" selected disabled>Select a team…</option>
-            }
-            @foreach (var team in Model.AvailableTeams)
-            {
-                <option value="@team.Id" selected="@(team.Id == Model.TeamId)">@team.Name</option>
-            }
-        </select>
+        <div class="filter-dropdown">
+            <button type="button" class="kebab @(Model.TeamId is not null ? "active" : "")">Team: @Model.TeamSummaryLabel ▾</button>
+            <div class="menu">
+                <label class="item"><input type="radio" name="teamId" value="" @(Model.TeamId is null ? "checked" : "") /> All teams</label>
+                @foreach (var team in Model.AvailableTeams)
+                {
+                    <label class="item"><input type="radio" name="teamId" value="@team.Id" @(team.Id == Model.TeamId ? "checked" : "") /> @team.Name</label>
+                }
+                <hr />
+                <button type="submit" class="item">Apply</button>
+            </div>
+        </div>
     }
 
     <div class="filter-dropdown">
@@ -55,7 +60,7 @@
 
 @if (!Model.HasTeamContext)
 {
-    <p>No team context for this account — VE reports are per-team.</p>
+    <p>This account isn't assigned to any team yet, so there is nothing to show.</p>
 }
 else
 {
@@ -64,19 +69,27 @@ else
             <tr>
                 <th>Call sign</th>
                 <th>Name</th>
+                @if (Model.AvailableTeams.Count > 1)
+                {
+                    <th>Team</th>
+                }
                 <th>Sessions worked</th>
             </tr>
         </thead>
         <tbody>
             @if (Model.Counts.Count == 0)
             {
-                <tr><td colspan="3">No VE session records in this range.</td></tr>
+                <tr><td colspan="@(Model.AvailableTeams.Count > 1 ? 4 : 3)">No VE session records in this range.</td></tr>
             }
             @foreach (var count in Model.Counts)
             {
                 <tr>
                     <td class="mono">@(count.CallSign ?? "—")</td>
                     <td>@count.Name</td>
+                    @if (Model.AvailableTeams.Count > 1)
+                    {
+                        <td>@count.TeamName</td>
+                    }
                     <td class="count">@count.SessionCount</td>
                 </tr>
             }

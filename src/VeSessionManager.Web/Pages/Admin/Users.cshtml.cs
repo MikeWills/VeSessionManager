@@ -25,6 +25,9 @@ public class UsersModel(AppDbContext dbContext, UserManager<User> userManager, A
     public int? TeamId { get; set; }
 
     public bool IsSystemAdmin { get; private set; }
+
+    /// <summary>Label for the team-picker trigger, same shape as the session list's.</summary>
+    public string TeamSummaryLabel { get; private set; } = "All teams";
     public int CurrentUserId { get; private set; }
     public IReadOnlyList<(int Id, string Name)> AvailableTeams { get; private set; } = [];
     public IReadOnlyList<UserRow> Users { get; private set; } = [];
@@ -50,6 +53,9 @@ public class UsersModel(AppDbContext dbContext, UserManager<User> userManager, A
 
         var effectiveTeamId = adminAccessScope.TryResolveManageableTeamId(user, TeamId);
         TeamId = effectiveTeamId;
+        TeamSummaryLabel = TeamId is not null
+            ? AvailableTeams.FirstOrDefault(t => t.Id == TeamId).Name ?? "All teams"
+            : "All teams";
 
         var query = dbContext.Users.Include(u => u.UserTeams).ThenInclude(ut => ut.Team).Include(u => u.ManagedByUser).AsQueryable();
         if (!IsSystemAdmin)
@@ -67,7 +73,7 @@ public class UsersModel(AppDbContext dbContext, UserManager<User> userManager, A
 
         var users = await query.OrderBy(u => u.Name).ToListAsync();
         Users = users.Select(u => new UserRow(
-            u.Id, u.Email ?? "", u.Name, u.Role,
+            u.Id, u.Email ?? "", u.Name, u.CallSign, u.Role,
             string.Join(", ", u.UserTeams.Select(ut => ut.Team.Name).OrderBy(n => n)),
             u.UserTeams.Select(ut => ut.TeamId).ToList(),
             IsActive(u), u.ManagedByUser?.Name)).ToList();
@@ -80,7 +86,7 @@ public class UsersModel(AppDbContext dbContext, UserManager<User> userManager, A
         return Page();
     }
 
-    public async Task<IActionResult> OnPostCreateAsync(string email, string name, UserRole role, string password)
+    public async Task<IActionResult> OnPostCreateAsync(string email, string name, UserRole role, string password, string? callSign)
     {
         var user = await LoadCurrentUserAsync();
         if (user is null || !adminAccessScope.CanAssignRole(user, role))
@@ -88,13 +94,24 @@ public class UsersModel(AppDbContext dbContext, UserManager<User> userManager, A
             return Forbid();
         }
 
-        var (result, _) = await userManagementService.CreateAsync(email, name, role, password, user.Id, CancellationToken.None);
+        var (result, _) = await userManagementService.CreateAsync(email, name, role, password, user.Id, CancellationToken.None, callSign);
         TempData[result == UserActionResult.Success ? "StatusMessage" : "ErrorMessage"] = result switch
         {
             UserActionResult.Success => $"User '{email}' created — assign a team below to give them access.",
             UserActionResult.DuplicateEmail => $"A user with email '{email}' already exists.",
             _ => "Could not create user — check the password meets the minimum requirements."
         };
+        return RedirectToPage(new { teamId = TeamId });
+    }
+
+    public async Task<IActionResult> OnPostSetCallSignAsync(int targetUserId, string? callSign)
+    {
+        var auth = await AuthorizeManageAsync(targetUserId);
+        if (auth is null) return Forbid();
+
+        var result = await userManagementService.SetCallSignAsync(targetUserId, callSign, auth.Value.ActingUser.Id, CancellationToken.None);
+        TempData[result == UserActionResult.Success ? "StatusMessage" : "ErrorMessage"] =
+            result == UserActionResult.Success ? "Call sign updated." : "Could not update call sign.";
         return RedirectToPage(new { teamId = TeamId });
     }
 
@@ -211,5 +228,5 @@ public class UsersModel(AppDbContext dbContext, UserManager<User> userManager, A
         return (actingUser, targetUser);
     }
 
-    public record UserRow(int Id, string Email, string Name, UserRole Role, string TeamNames, IReadOnlyList<int> TeamIds, bool IsActive, string? ManagerName);
+    public record UserRow(int Id, string Email, string Name, string? CallSign, UserRole Role, string TeamNames, IReadOnlyList<int> TeamIds, bool IsActive, string? ManagerName);
 }

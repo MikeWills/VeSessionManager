@@ -77,6 +77,16 @@ would be pure duplication — and goes straight to `CHANGELOG.md` instead. Non-p
 redesigns, hardening passes) start here and move to `CHANGELOG.md` once the section is at/over the
 cap and a newer entry needs to be added; oldest goes first.
 
+- **Team selectors unified + `User.CallSign` (2026-07-30).** No linked doc — see TODO.md. The last
+  four pages on the old pills/`<select>` pickers (VE Roster, Admin Users/Team Settings/Email
+  Templates) now use the session list's dropdown. "All teams" is present where a merged view means
+  something and omitted where it doesn't — the two admin config pages edit one team's settings, so
+  their trigger reads "Select a team…" instead. `VolunteerExaminerReportService.GetSessionCountsAsync`
+  widened from a single teamId to the same `IReadOnlyList<int>?` set convention (null = every team);
+  a VE is team-scoped, so a merged run yields one row per VE-per-team, never a silent cross-team
+  merge. Separately: new nullable `User.CallSign` (migration `UserCallSign`), stored upper-invariant
+  like `VolunteerExaminer.CallSign`, editable on Admin → Users. Deliberately not an FK to
+  VolunteerExaminer — see the property's own comment.
 - **Applicant Status / Unmatched Payments: days-pending anchor, 5/10-day colouring, Sessions-style
   team filter (2026-07-30).** No linked doc — see TODO.md. Days pending now counts only from
   `ApplicationDateEnteredUtc` (VEC processing time isn't FCC's clock; shows an em dash until FCC has
@@ -192,15 +202,6 @@ cap and a newer entry needs to be added; oldest goes first.
   "Recently issued" section (`Granted` in the last 7 days) so a Session Manager can confirm a
   specific person's license/upgrade actually came through. No new backing fields — built entirely
   on `InitialLicenseClass`/`NewLicenseClass` from the license-class tracking work below.
-- **License class tracking + exam-result backfill (2026-07-29).** `docs/exam-result-license-class.md`
-  — new `Candidate.InitialLicenseClass`/`NewLicenseClass`, derived purely from which exam elements
-  ExamTools reports graded+passed this sitting (no FCC `AM.dat` fetch needed — a VE session never
-  re-administers an element already credited). Shown on the CandidateDetail page. `ExamResultSyncService`'s
-  scan now also re-includes already-`Tested`, non-`Failed` candidates missing the new fields, so every
-  current/past/future candidate gets backfilled once via the usual idempotent-field pattern, not a
-  one-off script. Also confirmed (no change needed): a passed candidate already gets a distinct
-  "done testing" signal via `Tested=true` shown separately from `ApplicationStatus`, which
-  deliberately stays `Received` until the FCC watcher later confirms `Granted`.
 Everything through Phase 0-10's initial build (ExamTools ingestion, Zoom/Discord, Square, email
 notifications, FCC ULS watcher, payment reminders, VE tracking, VEC submission tracker, admin
 auth/config/candidate-actions, PII purge) plus the public privacy page has aged out to

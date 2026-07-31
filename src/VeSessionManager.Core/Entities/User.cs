@@ -12,6 +12,21 @@ namespace VeSessionManager.Core.Entities;
 public class User : IdentityUser<int>
 {
     public required string Name { get; set; }
+
+    /// <summary>
+    /// The account holder's amateur call sign (requested 2026-07-30). Nullable — every existing
+    /// account predates this field, and a Session Manager isn't required to be licensed for the app
+    /// to work.
+    ///
+    /// <para>Stored upper-invariant, matching <see cref="VolunteerExaminer.CallSign"/>'s existing
+    /// convention — normalize on write (see UserManagementService) so the two are comparable. This is
+    /// deliberately *not* a foreign key to VolunteerExaminer: a VE row is team-scoped and synced from
+    /// ExamTools, whereas a User is a login that may belong to several teams or none, so the same
+    /// person can legitimately be one User and several VE rows. Matching them up is a separate
+    /// question from recording the call sign here.</para>
+    /// </summary>
+    public string? CallSign { get; set; }
+
     public UserRole Role { get; set; }
 
     /// <summary>

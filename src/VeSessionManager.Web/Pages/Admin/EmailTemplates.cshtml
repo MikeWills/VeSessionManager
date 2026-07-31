@@ -15,12 +15,22 @@
 
 @if (Model.IsSystemAdmin)
 {
-    <div class="filters" style="margin-bottom:16px;">
-        @foreach (var team in Model.AvailableTeams)
-        {
-            <a class="filter-pill @(team.Id == Model.TeamId ? "active" : "")" asp-page="./EmailTemplates" asp-route-teamId="@team.Id">@team.Name</a>
-        }
-    </div>
+    @* Same team-picker component as the session list, deliberately WITHOUT an "All teams" option:
+       this page edits one team's configuration, so a merged view has no meaning. The trigger reads
+       "Select a team…" until one is chosen, matching the prompt below. *@
+    <form method="get" id="teamFilter" class="filters" style="margin-bottom:16px; align-items:flex-start;">
+        <div class="filter-dropdown">
+            <button type="button" class="kebab @(Model.TeamId is not null ? "active" : "")">Team: @Model.TeamSummaryLabel ▾</button>
+            <div class="menu">
+                @foreach (var team in Model.AvailableTeams)
+                {
+                    <label class="item"><input type="radio" name="teamId" value="@team.Id" @(team.Id == Model.TeamId ? "checked" : "") /> @team.Name</label>
+                }
+                <hr />
+                <button type="submit" class="item">Apply</button>
+            </div>
+        </div>
+    </form>
 }
 
 @if (Model.TeamId is null)
