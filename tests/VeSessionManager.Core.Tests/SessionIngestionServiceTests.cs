@@ -545,6 +545,115 @@ public class SessionIngestionServiceTests
     }
 
     [Fact]
+    public async Task ApplicantGoneFromFeed_IsMarkedWithdrawn_WithPiiClearedAndPaymentsKept()
+    {
+        // Issue #70: a candidate who cancels simply stops appearing in the applicant export. Lands
+        // in the same state CandidateActionService.DeleteAsync produces, so the UI/PII purge/reporting
+        // can't tell the manual and automatic routes apart.
+        await using var dbContext = CreateContext();
+        await SeedVecAndFeeConfigAsync(dbContext);
+        var team = await SeedTeamAsync(dbContext);
+        var client = new FakeExamToolsClient();
+        client.SessionsFor(team.Id).Add(PendingSession(applicantCount: 2));
+        client.ApplicantsFor(team.Id)["session-1"] =
+            [Applicant(id: "stays"), Applicant(id: "cancels", first: "Dana", last: "Vale", email: "dana@example.com", frn: "0087654321")];
+        await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+        Assert.Equal(2, dbContext.Candidates.Count());
+
+        // Give the leaver a payment, to prove money is left alone.
+        var leaver = dbContext.Candidates.Single(c => c.ExamToolsApplicantId == "cancels");
+        dbContext.Payments.Add(new Payment
+        {
+            CandidateId = leaver.Id,
+            Amount = 15m,
+            Status = PaymentStatus.Unpaid,
+            Reason = PaymentReason.InitialExam,
+            PaymentLinkUrl = "https://squareup.com/pay/abc",
+            CreatedUtc = Now
+        });
+        await dbContext.SaveChangesAsync();
+
+        client.SessionsFor(team.Id)[0].ApplicantCount = 1;
+        client.ApplicantsFor(team.Id)["session-1"] = [Applicant(id: "stays")];
+        var result = await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+
+        Assert.Equal(1, result.CandidatesWithdrawn);
+        var withdrawn = dbContext.Candidates.Single(c => c.ExamToolsApplicantId == "cancels");
+        Assert.Equal(CandidateApplicationStatus.NotTested, withdrawn.ApplicationStatus);
+        Assert.Null(withdrawn.Name);
+        Assert.Null(withdrawn.Email);
+        Assert.NotNull(withdrawn.PiiPurgedUtc);
+        Assert.Null(withdrawn.ResultMarkedByUserId); // no human made this call
+
+        // The payment row survives — only the live checkout link is nulled with the rest of the PII.
+        var payment = dbContext.Payments.Single(p => p.CandidateId == withdrawn.Id);
+        Assert.Equal(15m, payment.Amount);
+        Assert.Equal(PaymentStatus.Unpaid, payment.Status);
+        Assert.Null(payment.PaymentLinkUrl);
+
+        // The candidate who stayed is untouched.
+        var kept = dbContext.Candidates.Single(c => c.ExamToolsApplicantId == "stays");
+        Assert.NotEqual(CandidateApplicationStatus.NotTested, kept.ApplicationStatus);
+        Assert.NotNull(kept.Name);
+
+        // Idempotent: already NotTested, so a second poll withdraws nobody again.
+        var repoll = await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+        Assert.Equal(0, repoll.CandidatesWithdrawn);
+    }
+
+    [Fact]
+    public async Task ApplicantExportDisagreeingWithTheFeedCount_WithdrawsNobody()
+    {
+        // The guard that matters most. An empty or truncated-but-successful export must never be
+        // read as "everyone withdrew" — that is the one way this feature could wipe a live roster,
+        // and clearing PII is not reversible. Two independent fields (the session feed's own
+        // applicantCount and the export itself) have to agree before anything is withdrawn.
+        await using var dbContext = CreateContext();
+        await SeedVecAndFeeConfigAsync(dbContext);
+        var team = await SeedTeamAsync(dbContext);
+        var client = new FakeExamToolsClient();
+        client.SessionsFor(team.Id).Add(PendingSession(applicantCount: 2));
+        client.ApplicantsFor(team.Id)["session-1"] = [Applicant(id: "a"), Applicant(id: "b")];
+        await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+        Assert.Equal(2, dbContext.Candidates.Count());
+
+        // ExamTools still says 2, but the export comes back empty — a bad response, not a mass exodus.
+        client.ApplicantsFor(team.Id)["session-1"] = [];
+        var result = await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+
+        Assert.Equal(0, result.CandidatesWithdrawn);
+        Assert.Equal(2, dbContext.Candidates.Count(c => c.ApplicationStatus != CandidateApplicationStatus.NotTested));
+        Assert.All(dbContext.Candidates.ToList(), c => Assert.NotNull(c.Name));
+    }
+
+    [Fact]
+    public async Task TestedCandidateGoneFromFeed_IsNeverWithdrawn()
+    {
+        // Same refusal DeleteAsync makes: someone who actually sat the exam is not a withdrawal,
+        // whatever the feed says afterwards.
+        await using var dbContext = CreateContext();
+        await SeedVecAndFeeConfigAsync(dbContext);
+        var team = await SeedTeamAsync(dbContext);
+        var client = new FakeExamToolsClient();
+        client.SessionsFor(team.Id).Add(PendingSession(applicantCount: 1));
+        client.ApplicantsFor(team.Id)["session-1"] = [Applicant(id: "tested-already")];
+        await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+
+        var candidate = dbContext.Candidates.Single();
+        candidate.Tested = true;
+        await dbContext.SaveChangesAsync();
+
+        client.SessionsFor(team.Id)[0].ApplicantCount = 0;
+        client.ApplicantsFor(team.Id)["session-1"] = [];
+        var result = await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+
+        Assert.Equal(0, result.CandidatesWithdrawn);
+        var untouched = dbContext.Candidates.Single();
+        Assert.NotEqual(CandidateApplicationStatus.NotTested, untouched.ApplicationStatus);
+        Assert.NotNull(untouched.Name);
+    }
+
+    [Fact]
     public async Task ExamToolsReportingSessionDone_RecordsExamToolsClosedUtc_ButNotTestingCompletedUtc()
     {
         await using var dbContext = CreateContext();

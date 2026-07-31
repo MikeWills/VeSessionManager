@@ -76,7 +76,13 @@ public class SessionIngestionService(
         // Scoped to this team — otherwise another team's still-active sessions (never in this
         // team's own remoteIds, since ExamTools' feed is per-team) would look "disappeared" below
         // and get wrongly marked Cancelled.
-        var localSessions = await dbContext.Sessions.Include(s => s.Candidates).Where(s => s.TeamId == team.Id).ToListAsync(cancellationToken);
+        // Payments are eager-loaded because CandidatePiiFields.Clear (used by the auto-withdrawal
+        // below) nulls a candidate's live Square checkout link too — with Payments unloaded it would
+        // silently clear only the Candidate half and leave a payable link alive.
+        var localSessions = await dbContext.Sessions
+            .Include(s => s.Candidates).ThenInclude(c => c.Payments)
+            .Where(s => s.TeamId == team.Id)
+            .ToListAsync(cancellationToken);
         var localByExternalId = localSessions.ToDictionary(s => s.ExamToolsSessionId);
 
         // Captured *before* this run stamps any new closes. "Poll while the session is open"
@@ -179,7 +185,7 @@ public class SessionIngestionService(
             }
 
             var applicants = await examToolsClient.GetSessionApplicantsAsync(credentials, remote.Id, cancellationToken);
-            SyncCandidates(local, applicants, result);
+            SyncCandidates(local, applicants, remote.ApplicantCount, now, result);
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);
@@ -281,7 +287,7 @@ public class SessionIngestionService(
             local.ExamToolsSessionId, local.ScheduledStartUtc, remote.Date);
     }
 
-    private void SyncCandidates(Session local, IReadOnlyList<ExamToolsApplicant> applicants, IngestionResult result)
+    private void SyncCandidates(Session local, IReadOnlyList<ExamToolsApplicant> applicants, int? remoteApplicantCount, DateTime now, IngestionResult result)
     {
         foreach (var applicant in applicants)
         {
@@ -353,7 +359,65 @@ public class SessionIngestionService(
                     applicant.Id, local.ExamToolsSessionId);
             }
         }
-        // Applicants that disappear upstream are intentionally left alone: withdrawal/no-show is a
-        // manual Session Manager action (Phase 9's delete flow), not something the poller infers.
+        WithdrawMissingCandidates(local, applicants, remoteApplicantCount, now, result);
+    }
+
+    /// <summary>
+    /// Issue #70: a candidate who cancels in ExamTools simply stops appearing in that session's
+    /// applicant export. Previously this was ignored entirely — withdrawal was a manual Session
+    /// Manager action — so a cancelled candidate stayed on the roster indefinitely.
+    ///
+    /// Lands the candidate in exactly the state CandidateActionService.DeleteAsync produces
+    /// (ApplicationStatus = NotTested, PII cleared immediately, row kept for stats) so the UI, the
+    /// PII purge and reporting can't tell the two routes apart. The audit entry passes a null user
+    /// id, which is how a system action is recorded everywhere else.
+    ///
+    /// **Payments are deliberately untouched** — a withdrawn candidate may legitimately have paid,
+    /// and what happens to that money is a human decision (FlagRefundRequestedAsync exists for it).
+    /// The one exception is the live Square checkout *link*, which CandidatePiiFields.Clear nulls
+    /// along with the PII; the Payment row, its amount and its status all survive.
+    ///
+    /// Absence is a dangerous signal to act on — inferring "gone from the feed means it's over" at
+    /// *session* level is what caused issue #68, and here the consequence is worse because clearing
+    /// PII cannot be undone. Hence the count cross-check below: two independent fields have to agree
+    /// that this really is the session's full roster before anything is withdrawn.
+    /// </summary>
+    private void WithdrawMissingCandidates(Session local, IReadOnlyList<ExamToolsApplicant> applicants, int? remoteApplicantCount, DateTime now, IngestionResult result)
+    {
+        // The session feed's own applicantCount and the applicant export are separate fields from
+        // separate endpoints. Requiring them to agree means a truncated, partial or empty-but-
+        // successful export can't be mistaken for "everyone withdrew" — the single most plausible
+        // way this feature could silently wipe a live roster.
+        if (remoteApplicantCount is null || remoteApplicantCount != applicants.Count)
+        {
+            logger.LogWarning(
+                "Skipping withdrawal detection for session {ExamToolsSessionId}: ExamTools reported {ReportedCount} applicant(s) but the export returned {ReturnedCount} — not treating the difference as withdrawals",
+                local.ExamToolsSessionId, remoteApplicantCount, applicants.Count);
+            return;
+        }
+
+        var remoteApplicantIds = applicants.Select(a => a.Id).ToHashSet();
+        var missing = local.Candidates
+            .Where(c => c.ExamToolsApplicantId is not null            // never came from the feed
+                        && !remoteApplicantIds.Contains(c.ExamToolsApplicantId)
+                        && !c.Tested                                  // same refusal DeleteAsync makes
+                        && !c.ApplicationStatus.IsTerminal()          // already settled (incl. a previous withdrawal)
+                        && c.PiiPurgedUtc is null)
+            .ToList();
+
+        foreach (var candidate in missing)
+        {
+            candidate.ApplicationStatus = CandidateApplicationStatus.NotTested;
+            CandidatePiiFields.Clear(candidate, now);
+            candidate.ResultMarkedUtc = now;
+            // ResultMarkedByUserId deliberately left null — no human made this call.
+
+            dbContext.AddAuditLog(null, "CandidateWithdrawnFromFeed", nameof(Candidate), candidate.Id,
+                $"Candidate {candidate.Id} no longer in ExamTools' applicant list for session {local.ExamToolsSessionId} — marked NotTested (withdrew) and PII cleared. Payments left for manual handling.",
+                now);
+            result.CandidatesWithdrawn++;
+            logger.LogInformation("Candidate {CandidateId} withdrew from session {ExamToolsSessionId} (gone from ExamTools' applicant list) — marked NotTested, PII cleared, {PaymentCount} payment(s) left untouched",
+                candidate.Id, local.ExamToolsSessionId, candidate.Payments.Count);
+        }
     }
 }
