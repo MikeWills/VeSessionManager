@@ -8,6 +8,86 @@ that window, or immediately if it's phase-numbered work already summarized in "C
 design rationale for any entry still lives in its linked `/docs/*.md` file, not here or in
 CLAUDE.md — this file, like CLAUDE.md's Change Log, is pointers only.
 
+- **FCC ULS *application* deep link — investigated to a conclusion, closed as not buildable
+  (2026-07-31).** See the comment in `Web/FccUlsLinks.cs` and `docs/uls-watcher.md`. Three independent
+  blockers, any one of them sufficient: FCC's Application Search results page is **session-scoped**
+  (`results.jsp?applSearchKey=applSearchKey2026…`), so there is no stable URL to build *even with full
+  access*; `wireless2.fcc.gov/UlsApp/ApplicationSearch/*` returns Akamai 403 to this operator including
+  from other VPN exits; and an application record's own Unique System Identifier — the plausible key —
+  **isn't exposed by the ULS lookup API at all**, only `uls_filenumber`, which is stored on `Candidate`
+  for paste-in reference. The *licence* link (`UlsSearch/license.jsp?licKey=`) is unaffected and
+  verified working. Don't reopen this without a new fact; the previous framing ("just observe a working
+  URL once") was wrong, because blocker 1 means no such durable URL exists.
+- **Zoom/Discord cleanup stopped repeating an `[ERR]` every tick (2026-07-29, commit `b6cbfc0`).** No
+  linked doc. A cancelled session with a `ZoomMeetingId` on a team whose Zoom credentials were never
+  set threw `InvalidOperationException` on every poll forever (12 times in one day locally) — against
+  this app's own "one quiet log line, never a repeating ERROR" pattern.
+  `CleanupZoomAndDiscordAsync` now returns `fullyCleanedUp: false` for the unconfigured case, the run
+  counts it as `SessionsAwaitingIntegrationConfig`, and `LogUnconfiguredCleanups` emits one aggregate
+  line per run. **`ZoomMeetingId` is deliberately left set** so teardown retries automatically the
+  moment credentials are added — the same optional-integration gate used everywhere else.
+- **Standalone VEC Submission page removed — folded into the Sessions filter (2026-07-30).** No linked
+  doc. The page listed *every* active session for a team rather than actionable ones (for HRCC, 40 rows
+  of which 8 were actionable), so its header count never matched its own table. Replaced by a "Pending
+  VEC submission" option in the Sessions Status filter — deliberately a different axis from the other
+  four checkboxes, living in the same group because the group already ORs its members. **Its predicate
+  must stay identical to `NavBadgeCountService.CountSessionsPendingVecSubmissionAsync`**, which backs
+  the nav badge; there's a comment on both sides saying so. Removed `VecSubmission.cshtml(.cs)` and
+  `VecSubmissionReportService`; **kept `VecSubmissionService`** (session Detail still calls
+  `MarkSubmittedAsync`), and its 6 predicate tests were retargeted onto `NavBadgeCountService` rather
+  than deleted.
+- **Per-row action menu on the Sessions list (2026-07-30).** No linked doc. Direct follow-on to the VEC
+  Submission removal above — a filtered list of 8 pending sessions otherwise meant 8 round-trips into
+  Detail. Adds a kebab column (Mark submitted / Mark completed / Clear reschedule flag / Delete behind
+  a confirmation modal). The `SessionRow.Can*` flags only decide what's worth rendering; every POST
+  handler re-resolves the user and re-checks authorization server-side. The `asp-page-handler`
+  query-string/antiforgery trap found building this is in CLAUDE.md's Known Constraints.
+- **Nav regrouped by domain object + pending-count badges (2026-07-30).** No linked doc. A SystemAdmin
+  saw 9 top-level items; regrouped to 6 (`Sessions | Applicants ▾ | VEs ▾ | VEC Submission | Unmatched
+  Payments | Settings ▾`). **`Applicants ▾`/`VEs ▾` deliberately hold one page each today** — they're
+  structural homes for planned pages, established now so the nav doesn't reshuffle under users later;
+  don't "fix" them back to flat links. Badges are backed by new `NavBadgeCountService`
+  (`Core/Navigation/`), whose `teamIds` parameter follows the `GetEffectiveTeamIds` convention (null =
+  every team, empty = none) — inverting it would silently show a SystemAdmin an all-zero nav, so
+  there's a dedicated test. Fixed alongside: a TeamLead saw an Unmatched Payments link that 403'd, the
+  one nav link whose visibility didn't match its page's own roles.
+- **Applicant Status: FCC Red Light / BQQ holds and fee status (2026-07-30, PR #53).** The actionable
+  case is an application still Red Light *after* payment — every application sits Red Light while the
+  $35 fee is unpaid, so that alone is not a signal. The data lives in `HS.dat` (History), not the
+  `EN.dat`/`CO.dat`/`AD.dat` records first tried: `RDLOFF`/`RDLCOM` and `BQOFF`/`BQCOM` as OFF/COM
+  toggles keyed by Unique System Identifier, walked in file order (Log Date is day-granularity only).
+  Same file also yielded payment status via `FVPOFF`/`FVPCNF`/`FVPCOM`. **Historical as of 2026-07-31**
+  — the bulk-file subsystem this parsed was replaced by the ULS lookup API; `FccHoldReason`/
+  `FccPaymentStatus` remain but are no longer refreshed from `HS.dat`.
+- **Session delete for TeamAdmin/SystemAdmin (2026-07-29).** No linked doc. `SessionActionService.DeleteAsync`
+  removes Payments → Candidates → SessionVolunteerExaminers → Session in one transaction and FK-safe
+  order, writes the `AuditLog` entry first, and **blocks** if any payment is still referenced by an
+  unresolved `UnmatchedSquarePayment`. Gated on `AdminAccessScope.CanManageTeam`, not the regular
+  `CanEdit`, because it's destructive and hard to reverse. Not established either way: whether
+  re-ingestion recreates the session if it's still in ExamTools' feed.
+- **Home page styling + in-app logout (2026-07-22).** No linked doc. `Pages/Index.cshtml` was still the
+  scaffold-default Bootstrap page; now uses `_PublicLayout` and redirects an already-signed-in visitor
+  to their role landing page instead of a dead end. Found while verifying that: `_AppLayout` — the
+  layout every authenticated page uses — never included `_LoginPartial`, so the only working logout
+  control in the entire app was on the vestigial `/Error` page. Added a `.user-menu` dropdown with a
+  POST logout form.
+- **`claude-review` workflow tool permissions (2026-07-22).** No linked doc. The review action errored
+  out on any real-sized PR (46 permission denials on PR #6) because the sandboxed run had no explicit
+  tool permissions — an infra gap, not findings. Fixed with `claude_args: --allowedTools` for
+  `dotnet build`/`test`/`restore` and `git diff`/`log`/`show`. `build-and-test`, the real gate, was
+  never affected.
+- **Zoom meeting templates — closed as a dead end (2026-07-28/29).** No linked doc.
+  `POST /meetings`'s `template_id` only accepts **Admin**-type templates; the diagnostic script
+  (`scripts/check-zoom-meeting-templates.py`), re-run against real per-team credentials once the
+  `meeting:read:list_templates` scopes were added, found exactly one template and it's personal-type.
+  That met the item's own stated exit condition, so no template-picker UI was built. Revisit only if a
+  future Zoom plan enables Admin templates.
+- **Apple Sign-In — decided against (2026-07-22).** `docs/admin-auth.md`. Not worth the $99/year
+  Developer account; username/password + Google + Microsoft is the final sign-in set.
+- **Password policy reviewed (2026-07-28).** No linked doc. `RequiredLength` 10 → 12 per NIST 800-63B
+  (length beats composition rules); `RequireDigit`/`RequireLowercase`/`RequireUppercase` left at
+  Identity's `true` defaults as extra friction since these are admin/VE accounts, not public
+  self-service. `RequireNonAlphanumeric` stays `false`.
 - **Applicant Status page (2026-07-29).** `docs/exam-result-license-class.md`'s "Applicant Status
   page" section — new team-wide `Pages/SessionManager/ApplicantStatus.cshtml(.cs)`: a "Pending FCC
   grant" worklist (passed but not yet `Granted`, drops a candidate the instant they are) plus a
