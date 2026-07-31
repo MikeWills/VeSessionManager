@@ -75,16 +75,32 @@
     }
 </form>
 
+@* Sort headers are server-rendered links, not app.js's client-side sorter (note there's no
+   `data-sortable` on this table): this list pages server-side, so reordering just the rows on
+   screen would look like — but not be — a sort of the whole result set. Each href is the next
+   state in the ascending → descending → unsorted cycle; the ▲/▼ arrow is driven by aria-sort, the
+   same CSS the client-sorted tables use. *@
 <table>
     <thead>
         <tr>
-            <th>Session</th>
-            <th>Session ID</th>
-            <th>Team</th>
-            <th>VEC</th>
-            <th>Candidates</th>
-            <th>Status</th>
-            <th>VEC submission</th>
+            @{
+                var sortColumns = new (string Key, string Label)[]
+                {
+                    ("date", "Session"),
+                    ("extid", "Session ID"),
+                    ("team", "Team"),
+                    ("vec", "VEC"),
+                    ("candidates", "Candidates"),
+                    ("status", "Status"),
+                    ("vecsubmission", "VEC submission")
+                };
+            }
+            @foreach (var column in sortColumns)
+            {
+                <th class="sortable" aria-sort="@Model.SortAria(column.Key)">
+                    <a href="@Model.BuildSortUrl(column.Key)">@column.Label<span class="sort-arrow" aria-hidden="true"></span></a>
+                </th>
+            }
             <th></th>
             <th></th>
         </tr>

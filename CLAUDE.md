@@ -77,6 +77,16 @@ would be pure duplication — and goes straight to `CHANGELOG.md` instead. Non-p
 redesigns, hardening passes) start here and move to `CHANGELOG.md` once the section is at/over the
 cap and a newer entry needs to be added; oldest goes first.
 
+- **Click-to-sort columns on every table (2026-07-31).** See `docs/table-sorting.md`. Ascending →
+  descending → back to the server's order; a second column replaces the first; the choice is
+  remembered per page. Two mechanisms behind one appearance: a shared vanilla-JS sorter in `app.js`
+  for every table that renders its full set (opt in with `data-sortable="key"`, remembered in
+  `localStorage`), and real `sort`/`dir` query parameters on the **Sessions list only**, because it
+  pages server-side and reordering just the rows on screen would look like — but not be — a sort of
+  the whole result set (remembered in the existing `vsm_session_filters` cookie, now 6 fields).
+  **Rule for any new table: pages server-side ⇒ sort server-side; otherwise `data-sortable`.** Cells
+  sort on `data-sort-value` when present — mandatory for dates (`"MMM d, yyyy"` sorts Apr before Mar),
+  which is why several row records grew a `...SortValue` member beside their formatted `...Line`.
 - **ULS watcher replaces the FCC bulk-file parser (2026-07-31).** See `docs/uls-watcher.md`;
   `docs/fcc-uls-watcher.md` is retained as history because the matching rules survived the rewrite
   and their incident rationale lives there. `FccUlsClient`/`FccUlsRecordParser`/`FccUlsSchedule`/
@@ -216,12 +226,6 @@ cap and a newer entry needs to be added; oldest goes first.
   credential columns (ExamTools/Zoom/Square/SMTP secrets) are now encrypted at rest via
   `EncryptedStringConverter`, with `TeamSecretsMigrationService`/`--migrate-team-secrets` as the
   (idempotent, safe-to-rerun) upgrade path for existing plaintext data.
-- **Applicant Status page (2026-07-29).** `docs/exam-result-license-class.md`'s "Applicant Status
-  page" section — new team-wide `Pages/SessionManager/ApplicantStatus.cshtml(.cs)`: a "Pending FCC
-  grant" worklist (passed but not yet `Granted`, drops a candidate the instant they are) plus a
-  "Recently issued" section (`Granted` in the last 7 days) so a Session Manager can confirm a
-  specific person's license/upgrade actually came through. No new backing fields — built entirely
-  on `InitialLicenseClass`/`NewLicenseClass` from the license-class tracking work below.
 Everything through Phase 0-10's initial build (ExamTools ingestion, Zoom/Discord, Square, email
 notifications, FCC ULS watcher, payment reminders, VE tracking, VEC submission tracker, admin
 auth/config/candidate-actions, PII purge) plus the public privacy page has aged out to

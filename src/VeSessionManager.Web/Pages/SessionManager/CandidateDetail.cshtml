@@ -96,14 +96,15 @@
     </div>
 </div>
 
-<table>
+<table data-sortable="candidate-payments">
     <thead>
         <tr>
             <th>Reason</th>
             <th>Amount</th>
             <th>Status</th>
             <th>Paid</th>
-            <th>Payment link</th>
+            @* Just an "Open link ↗" anchor or an em dash — nothing meaningful to order by. *@
+            <th data-sort="none">Payment link</th>
             <th></th>
         </tr>
     </thead>
@@ -117,7 +118,9 @@
             <tr>
                 <td>@payment.ReasonLabel</td>
                 <td class="mono">@payment.AmountLine</td>
-                <td>
+                @* Explicit sort value — the cell also carries refund/mismatch/expiry tags, which
+                   aren't part of what the Status column means. *@
+                <td data-sort-value="@payment.ChipLabel">
                     <span class="chip @payment.ChipClass">@payment.ChipLabel</span>
                     @if (payment.RefundRequested)
                     {
@@ -136,7 +139,7 @@
                         <span class="mono" style="font-size:.85em;color:var(--ink-soft)">Square order completed</span>
                     }
                 </td>
-                <td class="mono">@(payment.PaidDateLine ?? "—")</td>
+                <td class="mono" data-sort-value="@payment.PaidDateSortValue">@(payment.PaidDateLine ?? "—")</td>
                 <td>
                     @if (payment.PaymentLinkUrl is not null)
                     {
@@ -192,7 +195,7 @@ else
             <h2>Other sessions with this FRN</h2>
         </div>
     </div>
-    <table>
+    <table data-sortable="other-attempts">
         <thead>
             <tr>
                 <th>Name</th>
@@ -205,7 +208,7 @@ else
             {
                 <tr>
                     <td>@other.Name</td>
-                    <td class="mono"><a asp-page="./CandidateDetail" asp-route-id="@other.CandidateId">@other.SessionDateLine</a></td>
+                    <td class="mono" data-sort-value="@other.SessionDateSortValue"><a asp-page="./CandidateDetail" asp-route-id="@other.CandidateId">@other.SessionDateLine</a></td>
                     <td>@other.StatusLabel</td>
                 </tr>
             }

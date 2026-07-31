@@ -145,6 +145,7 @@ public class ApplicantStatusModel(
             c.Name ?? "—",
             c.Frn ?? "—",
             EasternTimeFormatter.Format(c.Session.ScheduledStartUtc, "MMM d, yyyy"),
+            c.Session.ScheduledStartUtc.ToString("o", CultureInfo.InvariantCulture),
             LicenseClassFormatter.FormatTransition(c.InitialLicenseClass, c.NewLicenseClass) ?? "—",
             FccStatusLabel(c),
             FccFeeLabel(c),
@@ -219,15 +220,20 @@ public class ApplicantStatusModel(
             TeamNameFor(c),
             c.Name ?? "—",
             EasternTimeFormatter.Format(c.Session.ScheduledStartUtc, "MMM d, yyyy"),
+            c.Session.ScheduledStartUtc.ToString("o", CultureInfo.InvariantCulture),
             c.CallSign ?? "—",
             LicenseClassFormatter.FormatTransition(c.InitialLicenseClass, c.NewLicenseClass) ?? "—",
             // Date-only FCC field (see ToPendingRow's anchor comment / EasternTimeFormatter's own
             // doc remarks) — not run through EasternTimeFormatter, same reasoning as
             // CandidateDetail.cshtml.cs's LicenseGrantDateLine.
             c.LicenseGrantDateUtc!.Value.ToString("MMM d, yyyy", CultureInfo.InvariantCulture),
+            c.LicenseGrantDateUtc!.Value.ToString("o", CultureInfo.InvariantCulture),
             FccUlsLinks.License(c.FccUlsLicenseKey));
 
-    public record PendingRow(int CandidateId, int SessionId, string TeamName, string Name, string Frn, string SessionDateLine, string LicenseClassLine, string StatusLabel, string FeeLabel, int? DaysPending, string DaysPendingCssClass, string? LicenseUrl);
+    // The ...SortValue members carry the raw date behind each formatted *Line, for the table's
+    // click-to-sort headers (see app.js). "MMM d, yyyy" sorts alphabetically as text — Apr before
+    // Mar — so a date column has to sort on something round-trippable instead of what it displays.
+    public record PendingRow(int CandidateId, int SessionId, string TeamName, string Name, string Frn, string SessionDateLine, string SessionDateSortValue, string LicenseClassLine, string StatusLabel, string FeeLabel, int? DaysPending, string DaysPendingCssClass, string? LicenseUrl);
 
-    public record RecentlyIssuedRow(int CandidateId, int SessionId, string TeamName, string Name, string SessionDateLine, string CallSign, string LicenseClassLine, string GrantDateLine, string? LicenseUrl);
+    public record RecentlyIssuedRow(int CandidateId, int SessionId, string TeamName, string Name, string SessionDateLine, string SessionDateSortValue, string CallSign, string LicenseClassLine, string GrantDateLine, string GrantDateSortValue, string? LicenseUrl);
 }

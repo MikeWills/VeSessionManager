@@ -47,7 +47,7 @@ else
 {
     <p class="session-sub">Square payments that arrived but couldn't be matched to a candidate automatically — usually a payment taken through a separate online payment page rather than one of this app's own generated links. Pick the right candidate below to mark their outstanding payment paid.</p>
 
-    <table>
+    <table data-sortable="unmatched-payments">
         <thead>
             <tr>
                 <th>Received</th>
@@ -58,7 +58,8 @@ else
                 <th>Amount</th>
                 <th>Buyer email</th>
                 <th>Square order</th>
-                <th>Match to candidate</th>
+                @* The match column is a per-row <select>+button, not a value — nothing to order by. *@
+                <th data-sort="none">Match to candidate</th>
             </tr>
         </thead>
         <tbody>
@@ -69,7 +70,7 @@ else
             @foreach (var payment in Model.UnmatchedPayments)
             {
                 <tr>
-                    <td>@payment.ReceivedLine</td>
+                    <td data-sort-value="@payment.ReceivedSortValue">@payment.ReceivedLine</td>
                     @if (Model.AvailableTeams.Count > 1)
                     {
                         <td>@payment.TeamName</td>

@@ -14,7 +14,7 @@
     <button type="button" class="btn-primary" data-open-modal="createTeamModal">+ New Team</button>
 </div>
 
-<table>
+<table data-sortable="teams">
     <thead>
         <tr>
             <th>ID</th>
@@ -33,7 +33,7 @@
             <tr>
                 <td class="count">@team.Id</td>
                 <td class="session-title">@team.Name</td>
-                <td>@EasternTimeFormatter.Format(team.CreatedUtc, "MMM d, yyyy")</td>
+                <td data-sort-value="@team.CreatedUtc.ToString("o")">@EasternTimeFormatter.Format(team.CreatedUtc, "MMM d, yyyy")</td>
                 <td class="row-actions">
                     <a class="view-link" asp-page="./TeamSettings" asp-route-teamId="@team.Id">Manage settings →</a>
                 </td>

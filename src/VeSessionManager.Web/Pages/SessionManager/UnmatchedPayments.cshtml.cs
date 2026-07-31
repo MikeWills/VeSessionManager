@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -83,6 +84,7 @@ public class UnmatchedPaymentsModel(
         UnmatchedPayments = unmatched.Select(u => new UnmatchedPaymentRow(
             u.Id,
             EasternTimeFormatter.Format(u.ReceivedUtc, "MMM d, yyyy"),
+            u.ReceivedUtc.ToString("o", CultureInfo.InvariantCulture),
             u.AmountUsd,
             u.BuyerEmailAddress,
             u.SquareOrderId,
@@ -163,7 +165,8 @@ public class UnmatchedPaymentsModel(
         return RedirectToPage(new { teamId = unmatched.TeamId });
     }
 
-    public record UnmatchedPaymentRow(int Id, string ReceivedLine, decimal AmountUsd, string? BuyerEmailAddress, string SquareOrderId, int TeamId, string TeamName);
+    /// <summary>ReceivedSortValue carries the raw timestamp behind ReceivedLine for the table's click-to-sort header (see app.js) — "MMM d, yyyy" sorts alphabetically as text, putting Apr before Mar.</summary>
+    public record UnmatchedPaymentRow(int Id, string ReceivedLine, string ReceivedSortValue, decimal AmountUsd, string? BuyerEmailAddress, string SquareOrderId, int TeamId, string TeamName);
     /// <summary>TeamId is load-bearing, not decorative: with "All teams" the page lists payments and candidates from several teams at once, and the view uses it to offer only same-team candidates for a given payment. OnPostMatchAsync re-checks it server-side regardless.</summary>
     public record MatchableCandidate(int Id, string Name, string SessionDateLine, decimal AmountOwed, int TeamId);
 }

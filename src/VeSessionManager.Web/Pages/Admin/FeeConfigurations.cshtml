@@ -30,7 +30,7 @@ else
         }
     </div>
 
-    <table>
+    <table data-sortable="fee-configurations">
         <thead>
             <tr>
                 <th>Effective</th>
@@ -50,7 +50,7 @@ else
             @foreach (var fc in Model.FeeConfigurations)
             {
                 <tr>
-                    <td>@fc.EffectiveDate.ToString("MMM d, yyyy")</td>
+                    <td data-sort-value="@fc.EffectiveDate.ToString("yyyy-MM-dd")">@fc.EffectiveDate.ToString("MMM d, yyyy")</td>
                     <td>
                         @if (fc.FeeCollectionEnabled)
                         {

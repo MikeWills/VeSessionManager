@@ -313,6 +313,19 @@ until its columns are set via direct DB edit (no admin UI yet):
 
 ## Feature requests (not yet triaged)
 
+- [ ] **Stats page — VEC testing volume and applicants (requested 2026-07-31).** Mike: *"a stats page,
+  both of VEC's testing and applicants — I can detail more later."* **Requirements deliberately not
+  guessed at; wait for that detail before building.** Open questions to ask when it comes up: which
+  metrics (sessions run, candidates tested, pass/fail rate, new licences vs. upgrades, fee revenue?);
+  what time granularity and range control (monthly? per-VEC-year? the same date-range dropdown the
+  Sessions/VE Roster pages use?); whether "VEC" means a breakdown *by* VEC (the shared reference table)
+  or a per-team roll-up that a team reports *to* its VEC; whether it's charts or tables. Note there's
+  no charting library in this stack today and CLAUDE.md requires asking before adding one — a plain
+  table may be the right first cut. Existing groundwork to reuse: `VolunteerExaminerReportService`
+  (already does grouped counts with the null-means-every-team scoping convention), Applicant Status'
+  license-class transition data (`InitialLicenseClass`/`NewLicenseClass`), and the session-list team
+  dropdown component.
+
 - [x] ~~**Backfill license grants from ExamTools' ULS API for candidates the FCC files left pending**~~
   — **superseded and shipped 2026-07-31 as a full replacement, not a backfill.** Mike's follow-on
   decision: *"The more I think about it, the more I just want to use the ET API... I like the more

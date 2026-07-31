@@ -87,6 +87,15 @@ namespace VeSessionManager.Web.Pages.SessionManager;
 /// filter, every row now also gets a `row-past` CSS class once Session.HasEnded(now) — a light
 /// background tint (see app.css) so a mixed list (this preset, or no date filter at all) makes it
 /// obvious at a glance which sessions already happened without needing to read every date.
+///
+/// Column sorting (2026-07-31): every other table in the app sorts client-side in app.js, but this
+/// list pages server-side — reordering only the ten rows currently on screen would look like a sort
+/// of the whole result set and silently isn't one. So Sort/SortDirection are real query parameters
+/// applied to the EF query before Skip/Take (see ApplySort), and the headers render as links whose
+/// href is the next state in the click cycle (BuildSortUrl: ascending → descending → back to the
+/// default ordering). Sorting resets to page 1, since the row that was on page 3 is somewhere else
+/// entirely once the order changes. The choice rides along in the existing filter cookie, so it
+/// survives a bare navigation back to this page exactly like Status/TeamId/PageSize already do.
 /// </summary>
 [Authorize(Roles = "SystemAdmin,TeamAdmin,SessionManager,TeamLead")]
 public class IndexModel(
@@ -112,6 +121,10 @@ public class IndexModel(
     // ticking only this one yields exactly the "still owes paperwork" worklist. Added 2026-07-30 when
     // the standalone VEC Submission page was removed as redundant — see TODO.md.
     private static readonly string[] KnownStatuses = ["Active", "RescheduleFlagged", "Completed", "Cancelled", "PendingVecSubmission"];
+
+    /// <summary>Sortable columns, keyed by the value that travels in the query string. Anything not
+    /// in here is ignored, so a hand-edited `sort=` can't reach an arbitrary expression.</summary>
+    internal static readonly string[] SortableColumns = ["date", "extid", "team", "vec", "candidates", "status", "vecsubmission"];
     internal static readonly int[] AllowedPageSizes = [10, 25, 50, 100];
     private const int DefaultPageSize = 10;
     private const string UpcomingDateRangeKey = "Upcoming";
@@ -157,6 +170,14 @@ public class IndexModel(
     [BindProperty(SupportsGet = true)]
     public DateOnly? DateTo { get; set; }
 
+    /// <summary>One of SortableColumns, or "" for the default date ordering.</summary>
+    [BindProperty(SupportsGet = true, Name = "sort")]
+    public string Sort { get; set; } = "";
+
+    /// <summary>"asc" or "desc" — ignored unless Sort names a column.</summary>
+    [BindProperty(SupportsGet = true, Name = "dir")]
+    public string SortDirection { get; set; } = "asc";
+
     /// <summary>Hidden marker on the filter form — present only when the form was actually submitted, so an empty Status list can be told apart from "no query string was sent at all."</summary>
     [BindProperty(SupportsGet = true)]
     public bool Applied { get; set; }
@@ -177,20 +198,26 @@ public class IndexModel(
         // PageSize (int) on this same page, which correctly keep their defaults. Normalize before any
         // DateRangePresets lookup, since Dictionary.ContainsKey/TryGetValue throw on a null key.
         DateRange ??= "";
+        Sort ??= "";
+        SortDirection ??= "asc";
 
         if (Applied)
         {
             PageSize = AllowedPageSizes.Contains(PageSize) ? PageSize : DefaultPageSize;
             DateRange = IsKnownDateRange(DateRange) ? DateRange : "";
-            SaveFilterCookie(Status, TeamId, PageSize, DateRange);
+            Sort = SortableColumns.Contains(Sort) ? Sort : "";
+            SortDirection = SortDirection == "desc" ? "desc" : "asc";
+            SaveFilterCookie(Status, TeamId, PageSize, DateRange, Sort, SortDirection);
         }
         else
         {
-            var (cookieStatus, cookieTeamId, cookiePageSize, cookieDateRange) = ReadFilterCookie();
-            Status = cookieStatus ?? [];
-            TeamId = cookieTeamId;
-            PageSize = cookiePageSize ?? DefaultPageSize;
-            DateRange = cookieDateRange ?? Last7PlusUpcomingDateRangeKey;
+            var cookie = ReadFilterCookie();
+            Status = cookie.Status ?? [];
+            TeamId = cookie.TeamId;
+            PageSize = cookie.PageSize ?? DefaultPageSize;
+            DateRange = cookie.DateRange ?? Last7PlusUpcomingDateRangeKey;
+            Sort = cookie.Sort ?? "";
+            SortDirection = cookie.SortDirection ?? "asc";
             PageNumber = 1;
         }
 
@@ -264,9 +291,7 @@ public class IndexModel(
         // *soonest* session, so they keep the default ascending sort instead of flipping.
         var isForwardLookingPreset = (DateRange == UpcomingDateRangeKey || DateRange == Last7PlusUpcomingDateRangeKey)
             && DateFrom is null && DateTo is null;
-        query = (dateFromUtc is not null || dateToUtc is not null) && !isForwardLookingPreset
-            ? query.OrderByDescending(s => s.ScheduledStartUtc)
-            : query.OrderBy(s => s.ScheduledStartUtc);
+        query = ApplySort(query, (dateFromUtc is not null || dateToUtc is not null) && !isForwardLookingPreset);
 
         TotalCount = await query.CountAsync();
         TotalPages = Math.Max(1, (int)Math.Ceiling(TotalCount / (double)PageSize));
@@ -275,6 +300,75 @@ public class IndexModel(
         var sessions = await query.Skip((PageNumber - 1) * PageSize).Take(PageSize).ToListAsync();
         Sessions = sessions.Select(s => ToRow(s, now, user)).ToList();
     }
+
+    /// <summary>
+    /// Applies the user's chosen column sort, falling back to the date ordering the list has always
+    /// used when no column is chosen. Applied to the IQueryable before Skip/Take, so it orders the
+    /// whole filtered result set rather than just the page on screen.
+    ///
+    /// Status/VEC submission sort on a CASE that reproduces the chip label ToRow renders, not on the
+    /// underlying columns — those two cells each collapse several fields (Status, the reschedule
+    /// flag, TestingCompletedUtc) into one label, and sorting by anything other than what the user
+    /// can read in the cell would look broken.
+    /// </summary>
+    private IQueryable<Session> ApplySort(IQueryable<Session> query, bool defaultsToNewestFirst)
+    {
+        if (!SortableColumns.Contains(Sort))
+        {
+            // A look-back date filter's whole point is finding a *recent* session fast — oldest-first
+            // would still bury it on a late page, so flip to newest-first whenever one is active. The
+            // "Upcoming" and "Last 7 + Upcoming" presets are the opposite: their whole point is the
+            // *soonest* session, so they keep the default ascending sort instead of flipping.
+            return defaultsToNewestFirst
+                ? query.OrderByDescending(s => s.ScheduledStartUtc)
+                : query.OrderBy(s => s.ScheduledStartUtc);
+        }
+
+        var descending = SortDirection == "desc";
+
+        IOrderedQueryable<Session> Order<TKey>(System.Linq.Expressions.Expression<Func<Session, TKey>> key) =>
+            descending ? query.OrderByDescending(key) : query.OrderBy(key);
+
+        var ordered = Sort switch
+        {
+            "extid" => Order(s => s.ExtId),
+            "team" => Order(s => s.Team.Name),
+            "vec" => Order(s => s.Vec.Name),
+            "candidates" => Order(s => s.Candidates.Count),
+            "status" => Order(s =>
+                s.Status == SessionStatus.Cancelled ? "Cancelled"
+                : s.RescheduleFlaggedForReview ? "Reschedule flagged"
+                : s.TestingCompletedUtc != null ? "Completed"
+                : "Active"),
+            "vecsubmission" => Order(s =>
+                s.Status == SessionStatus.Cancelled ? "—"
+                : s.VecSubmissionStatus == VecSubmissionStatus.Submitted ? "Submitted"
+                : "Not submitted"),
+            _ => Order(s => s.ScheduledStartUtc)
+        };
+
+        // Deterministic tiebreak — without one, equal keys (every session sharing a team, say) can
+        // come back in a different order on each request, so paging through them silently repeats
+        // and skips rows.
+        return ordered.ThenBy(s => s.Id);
+    }
+
+    /// <summary>
+    /// Href for a sortable column header: the next state in the ascending → descending → unsorted
+    /// cycle. Always returns to page 1 — the row that was on page 3 is somewhere else entirely once
+    /// the ordering changes.
+    /// </summary>
+    public string BuildSortUrl(string column)
+    {
+        var (nextSort, nextDirection) = Sort != column ? (column, "asc")
+            : SortDirection == "asc" ? (column, "desc")
+            : ("", "asc");
+        return BuildPageUrl(1, sortOverride: nextSort, sortDirectionOverride: nextDirection);
+    }
+
+    /// <summary>The `aria-sort` value for a column header — also what app.css keys the ▲/▼ arrow off, so the server-sorted list looks identical to the client-sorted tables elsewhere.</summary>
+    public string SortAria(string column) =>
+        Sort != column ? "none" : SortDirection == "desc" ? "descending" : "ascending";
 
     // ---- Row actions (requested 2026-07-30: bring the session-level actions to the list so routine
     // work doesn't require clicking into each session). Each is a thin wrapper over the same Core
@@ -370,7 +464,7 @@ public class IndexModel(
     public string BuildActionUrl(string handler) => $"{BuildPageUrl(PageNumber)}&handler={Uri.EscapeDataString(handler)}";
 
     /// <summary>Builds a Prev/Next/page-size link preserving every current filter — asp-route-* tag helpers can't represent Status's multiple values, so this constructs the query string directly.</summary>
-    public string BuildPageUrl(int page, int? pageSizeOverride = null)
+    public string BuildPageUrl(int page, int? pageSizeOverride = null, string? sortOverride = null, string? sortDirectionOverride = null)
     {
         var qs = new List<string> { "applied=true" };
         qs.AddRange(Status.Select(s => $"status={Uri.EscapeDataString(s)}"));
@@ -391,6 +485,13 @@ public class IndexModel(
         if (DateTo is not null)
         {
             qs.Add($"dateTo={DateTo:yyyy-MM-dd}");
+        }
+
+        var sort = sortOverride ?? Sort;
+        if (!string.IsNullOrEmpty(sort))
+        {
+            qs.Add($"sort={Uri.EscapeDataString(sort)}");
+            qs.Add($"dir={Uri.EscapeDataString(sortDirectionOverride ?? SortDirection)}");
         }
         return "/SessionManager/Index?" + string.Join("&", qs);
     }
@@ -433,24 +534,29 @@ public class IndexModel(
         _ => status
     };
 
-    private (List<string>? Status, int? TeamId, int? PageSize, string? DateRange) ReadFilterCookie()
+    /// <summary>Every field is validated on the way back out, and a cookie written before the sort
+    /// fields existed simply has fewer parts — so an older (or hand-edited) cookie degrades to the
+    /// defaults rather than being trusted.</summary>
+    private (List<string>? Status, int? TeamId, int? PageSize, string? DateRange, string? Sort, string? SortDirection) ReadFilterCookie()
     {
         if (!Request.Cookies.TryGetValue(FilterCookieName, out var raw) || string.IsNullOrWhiteSpace(raw))
         {
-            return (null, null, null, null);
+            return (null, null, null, null, null, null);
         }
 
-        var parts = raw.Split('|', 4);
+        var parts = raw.Split('|', 6);
         var status = parts[0].Length == 0 ? [] : parts[0].Split(',').Where(s => KnownStatuses.Contains(s)).ToList();
         int? teamId = parts.Length > 1 && int.TryParse(parts[1], out var id) ? id : null;
         int? pageSize = parts.Length > 2 && int.TryParse(parts[2], out var size) && AllowedPageSizes.Contains(size) ? size : null;
         string? dateRange = parts.Length > 3 && IsKnownDateRange(parts[3]) ? parts[3] : null;
-        return (status, teamId, pageSize, dateRange);
+        string? sort = parts.Length > 4 && SortableColumns.Contains(parts[4]) ? parts[4] : null;
+        string? sortDirection = parts.Length > 5 && parts[5] == "desc" ? "desc" : null;
+        return (status, teamId, pageSize, dateRange, sort, sortDirection);
     }
 
-    private void SaveFilterCookie(List<string> status, int? teamId, int pageSize, string dateRange)
+    private void SaveFilterCookie(List<string> status, int? teamId, int pageSize, string dateRange, string sort, string sortDirection)
     {
-        var value = $"{string.Join(",", status)}|{teamId}|{pageSize}|{dateRange}";
+        var value = $"{string.Join(",", status)}|{teamId}|{pageSize}|{dateRange}|{sort}|{sortDirection}";
         Response.Cookies.Append(FilterCookieName, value, new CookieOptions
         {
             Expires = DateTimeOffset.UtcNow.AddYears(1),
