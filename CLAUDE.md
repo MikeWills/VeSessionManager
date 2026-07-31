@@ -77,6 +77,16 @@ would be pure duplication — and goes straight to `CHANGELOG.md` instead. Non-p
 redesigns, hardening passes) start here and move to `CHANGELOG.md` once the section is at/over the
 cap and a newer entry needs to be added; oldest goes first.
 
+- **FCC upgrade detection via AM.dat + Last Action Date, and on-demand watcher runs (2026-07-30).**
+  See `docs/fcc-uls-watcher.md`'s "Confirming a class upgrade" section. The Grant-Date guard added
+  earlier the same day made class upgrades *permanently* undetectable (Grant Date never advances on
+  an upgrade), leaving 20 real candidates stuck — oldest 19 days. Fixed by reading `AM.dat` (operator
+  class, present in every archive, never opened before) and pairing it with `HD`'s Last Action Date,
+  which *does* advance: an upgrade grants only when both the class matches `NewLicenseClass` and the
+  last action is on/after the session. 11 candidates recovered in one weekly pass. Also adds
+  `--run-fcc-daily`/`--run-fcc-weekly` Worker switches (same shape as `--migrate-team-secrets`),
+  replacing the previous "temporarily rewrite `FccDailyWatcherStartHourEt`, restart, put it back"
+  dance for forcing a run.
 - **Session list "Last 7 + Upcoming" filter + past-row shading + quieter EF logging (2026-07-30).**
   No linked doc. `IndexModel` gets a second forward-looking date-range preset alongside the existing
   `Upcoming` one — `ScheduledStartUtc` from 7 days ago through the unbounded future in one filter,
@@ -119,11 +129,8 @@ cap and a newer entry needs to be added; oldest goes first.
   `Session.ScheduledStartUtc`, same rule already used for application-file matches; new
   `FccUlsWatcherService.RunForDayAsync(DayOfWeek, ...)` lets a specific missed daily file be
   reprocessed on demand (used to recover this incident's data without waiting on a fresh weekly
-  snapshot). No fix yet for the underlying limitation this guard trades off — an upgrade candidate
-  now simply stays Unmatched/Received indefinitely, since this app never fetches FCC's AM.dat
-  operator-class field and FCC's Grant Date is documented not to change on a class upgrade at all
-  (see `Candidate.LicenseGrantPredatesSession`'s own comment) — there is currently no positive
-  signal available to confirm an upgrade went through. (3) Also added an FRN column to Applicant
+  snapshot). The limitation this guard traded off — upgrades becoming permanently undetectable —
+  **was fixed later the same day, see the AM.dat entry at the top of this Change Log.** (3) Also added an FRN column to Applicant
   Status's "Pending FCC grant" table for manual copy-paste into FCC's ULS search while (1)/(2) were
   being investigated.
 - **Team-picker `<select>` first-click bug + SystemAdmin single-team default + FCC license link
@@ -190,8 +197,6 @@ cap and a newer entry needs to be added; oldest goes first.
   `Team.ExamToolsEnvironment` enum) so a team can point at a different ExamTools host than the
   deployment's global `ExamTools:BaseUrl` default; `ExamToolsCredentials.For(team, ...)` is the one
   place the override-falls-back-to-global logic lives.
-- **Payment reminders retest-gating fix (2026-07-22).** `docs/payment-reminders.md`'s "Retest
-  payments" section — a same-session retest fee previously never got a reminder or expiration.
 Everything through Phase 0-10's initial build (ExamTools ingestion, Zoom/Discord, Square, email
 notifications, FCC ULS watcher, payment reminders, VE tracking, VEC submission tracker, admin
 auth/config/candidate-actions, PII purge) plus the public privacy page has aged out to
@@ -317,6 +322,7 @@ To pick up updates: `/plugin marketplace update claude-tools`
 - **Not every job here can safely reuse the "24h `PeriodicTimer` from Worker start, extra ticks are free" idiom** — that reasoning (used by `DayBeforeReminderJob`/`PaymentReminderJob`/`PiiPurgeJob`/`FccWeeklyCatchupJob`) assumes a missed tick is harmless because idempotent tracking catches it up next time. It breaks when the *data itself* — not just the job's own state — is only available in a narrow, non-retryable window, as with FCC's day-name files (see the same-day-retry entry above). Before adding a new job on this idiom, check whether the thing it polls has that same "one-shot window" property.
 - **Square webhook subscriptions are separate per Sandbox/Production, each with its own signature key** — an existing subscription registered under one mode receives zero delivery attempts for events in the other (not a 401, no attempt at all), and reusing one mode's `WebhookSignatureKey` against the other mode's subscription makes every delivery fail signature verification (401) even though the URL/event config is otherwise correct. Found live 2026-07-25 testing Team 2 (MARC)'s payment flow — the "Ve Session Manager" subscription had been created under Production while all local testing used Sandbox credentials/payment links. Fix: add (or move) the subscription under the correct mode's tab in the Square dashboard, then set `Team.SquareWebhookSignatureKey` to *that* subscription's own signature key, not the other mode's. See `docs/square-payments.md`.
 - **`Web` and `Worker` must register Data Protection with the exact same application name and key-ring path, or one process's writes silently become unreadable by the other.** `Team`'s credential columns (ExamTools/Zoom/Square/SMTP secrets) are encrypted at rest via `EncryptedStringConverter` (2026-07-30) — both `Program.cs` files call `AddDataProtection().SetApplicationName("VeSessionManager").PersistKeysToFileSystem(...)` with the same hardcoded app name and the same `DataProtection:KeyRingPath` config value. A drift here doesn't throw — `EncryptedStringConverter`'s legacy-plaintext fallback (needed for the migration path) means a value encrypted under a different key just looks like it was never migrated. See `docs/credential-encryption.md`. Also: **if the key-ring directory is ever lost, every encrypted credential becomes permanently unrecoverable** — it must be backed up with the same discipline as the DB file itself (see `docs/deployment.md`).
+- **A POST form on a filtered list page needs BOTH an explicit `action=` and `asp-antiforgery="true"` — each half fixes a bug the other half causes.** `asp-page-handler` builds the form action from the route only and **drops the query string**, so posting an action from a filtered/paged list silently redirects back to the unfiltered first page (found on the Sessions row-action menu, 2026-07-30). The fix is an explicit `action="@Model.BuildActionUrl("Handler")"`. But `FormTagHelper` only auto-emits the antiforgery token when *it* generated the action — with an explicit `action=` the token disappears, and every POST then 400s in the antiforgery middleware **before reaching the app, logging nothing server-side** (the symptom is a browser error page with a completely silent log, which reads like the request never happened). `asp-antiforgery="true"` restores it. Any future list page with row-level POST actions needs both, plus a `BuildActionUrl`-style helper so the redirect target keeps the same filter state.
 - (Environment-specific quirks and gotchas go here as they're discovered — e.g. API quirks, IIS behavior, network/DMZ restrictions, auth issues)
 
 ## Definition of Done

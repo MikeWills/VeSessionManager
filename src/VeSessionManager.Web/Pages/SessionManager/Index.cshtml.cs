@@ -7,6 +7,8 @@ using Microsoft.EntityFrameworkCore;
 using VeSessionManager.Core.Authorization;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Entities;
+using VeSessionManager.Core.Sessions;
+using VeSessionManager.Core.VecSubmissions;
 
 namespace VeSessionManager.Web.Pages.SessionManager;
 
@@ -87,7 +89,14 @@ namespace VeSessionManager.Web.Pages.SessionManager;
 /// obvious at a glance which sessions already happened without needing to read every date.
 /// </summary>
 [Authorize(Roles = "SystemAdmin,TeamAdmin,SessionManager,TeamLead")]
-public class IndexModel(AppDbContext dbContext, UserManager<User> userManager, SessionAccessScope accessScope, TimeProvider timeProvider) : PageModel
+public class IndexModel(
+    AppDbContext dbContext,
+    UserManager<User> userManager,
+    SessionAccessScope accessScope,
+    AdminAccessScope adminAccessScope,
+    SessionActionService sessionActionService,
+    VecSubmissionService vecSubmissionService,
+    TimeProvider timeProvider) : PageModel
 {
     private const string FilterCookieName = "vsm_session_filters";
 
@@ -96,7 +105,13 @@ public class IndexModel(AppDbContext dbContext, UserManager<User> userManager, S
     // of the old Upcoming/NeedsReview/Past set, which didn't correspond to anything in the table.
     // "Upcoming" was a time-window concept, not a lifecycle status, so it moved to the Date range
     // filter instead (DateRange == "Upcoming", handled alongside DateRangePresets below).
-    private static readonly string[] KnownStatuses = ["Active", "RescheduleFlagged", "Completed", "Cancelled"];
+    // PendingVecSubmission is deliberately a different axis from the other four: those are mutually
+    // exclusive lifecycle states mirroring the Status column, while this one cuts across them (a
+    // Completed session may or may not still owe VEC paperwork — that's the separate VEC Submission
+    // column). It lives in the same checkbox group because the group already ORs its members, so
+    // ticking only this one yields exactly the "still owes paperwork" worklist. Added 2026-07-30 when
+    // the standalone VEC Submission page was removed as redundant — see TODO.md.
+    private static readonly string[] KnownStatuses = ["Active", "RescheduleFlagged", "Completed", "Cancelled", "PendingVecSubmission"];
     internal static readonly int[] AllowedPageSizes = [10, 25, 50, 100];
     private const int DefaultPageSize = 10;
     private const string UpcomingDateRangeKey = "Upcoming";
@@ -217,13 +232,20 @@ public class IndexModel(AppDbContext dbContext, UserManager<User> userManager, S
         var wantRescheduleFlagged = Status.Contains("RescheduleFlagged");
         var wantCompleted = Status.Contains("Completed");
         var wantCancelled = Status.Contains("Cancelled");
-        if (wantActive || wantRescheduleFlagged || wantCompleted || wantCancelled)
+        var wantPendingVecSubmission = Status.Contains("PendingVecSubmission");
+        if (wantActive || wantRescheduleFlagged || wantCompleted || wantCancelled || wantPendingVecSubmission)
         {
             query = query.Where(s =>
                 (wantActive && s.Status == SessionStatus.Active && !s.RescheduleFlaggedForReview && s.TestingCompletedUtc == null)
                 || (wantRescheduleFlagged && s.Status == SessionStatus.Active && s.RescheduleFlaggedForReview)
                 || (wantCompleted && s.Status == SessionStatus.Active && !s.RescheduleFlaggedForReview && s.TestingCompletedUtc != null)
-                || (wantCancelled && s.Status == SessionStatus.Cancelled));
+                || (wantCancelled && s.Status == SessionStatus.Cancelled)
+                // Must stay identical to NavBadgeCountService.CountSessionsPendingVecSubmissionAsync,
+                // which backs the nav badge — the filtered list and the badge count are the same thing.
+                || (wantPendingVecSubmission
+                    && s.Status == SessionStatus.Active
+                    && s.VecSubmissionStatus == VecSubmissionStatus.NotSubmitted
+                    && s.Candidates.Any(c => CandidateApplicationStatusExtensions.TerminalStatuses.Contains(c.ApplicationStatus))));
         }
 
         var (dateFromUtc, dateToUtc) = ResolveDateRange(now);
@@ -251,8 +273,101 @@ public class IndexModel(AppDbContext dbContext, UserManager<User> userManager, S
         PageNumber = Math.Min(PageNumber, TotalPages);
 
         var sessions = await query.Skip((PageNumber - 1) * PageSize).Take(PageSize).ToListAsync();
-        Sessions = sessions.Select(s => ToRow(s, now)).ToList();
+        Sessions = sessions.Select(s => ToRow(s, now, user)).ToList();
     }
+
+    // ---- Row actions (requested 2026-07-30: bring the session-level actions to the list so routine
+    // work doesn't require clicking into each session). Each is a thin wrapper over the same Core
+    // service the Detail page's equivalent button calls — no business logic lives here — and each
+    // re-resolves the session and re-checks authorization server-side rather than trusting the
+    // posted id or the fact that the UI rendered the control.
+
+    public async Task<IActionResult> OnPostMarkSubmittedAsync(int sessionId)
+    {
+        var auth = await AuthorizeSessionAsync(sessionId);
+        if (auth is null) return Forbid();
+
+        var result = await vecSubmissionService.MarkSubmittedAsync(sessionId, auth.Value.User.Id, CancellationToken.None);
+        SetStatus(result == VecSubmissionMarkResult.Marked,
+            "Session marked submitted to VEC.", "Session is already marked submitted.");
+        return RedirectToCurrentView();
+    }
+
+    public async Task<IActionResult> OnPostMarkCompletedAsync(int sessionId)
+    {
+        var auth = await AuthorizeSessionAsync(sessionId);
+        if (auth is null) return Forbid();
+
+        var result = await sessionActionService.MarkCompletedAsync(sessionId, auth.Value.User.Id, CancellationToken.None);
+        SetStatus(result.Result == SessionActionResult.Success,
+            $"Session marked completed — {result.CandidatesTested} candidate(s) tested, {result.FelonyDisclosureEmailsSent} disclosure email(s) sent.",
+            "Could not mark session completed.");
+        return RedirectToCurrentView();
+    }
+
+    public async Task<IActionResult> OnPostClearFlagAsync(int sessionId)
+    {
+        var auth = await AuthorizeSessionAsync(sessionId);
+        if (auth is null) return Forbid();
+
+        var result = await sessionActionService.ClearRescheduleFlagAsync(sessionId, auth.Value.User.Id, CancellationToken.None);
+        SetStatus(result == SessionActionResult.Success, "Reschedule flag cleared.", "Could not clear reschedule flag.");
+        return RedirectToCurrentView();
+    }
+
+    /// <summary>TeamAdmin/SystemAdmin only — gated on AdminAccessScope.CanManageTeam, deliberately not SessionAccessScope.CanEdit, matching Detail.cshtml.cs's own delete handler.</summary>
+    public async Task<IActionResult> OnPostDeleteSessionAsync(int sessionId)
+    {
+        var user = await userManager.GetUserWithManagerAsync(dbContext, User);
+        if (user is null) return Forbid();
+
+        var session = await dbContext.Sessions.FirstOrDefaultAsync(s => s.Id == sessionId);
+        if (session is null) return NotFound();
+        if (!adminAccessScope.CanManageTeam(user, session.TeamId)) return Forbid();
+
+        var result = await sessionActionService.DeleteAsync(sessionId, user.Id, CancellationToken.None);
+        if (result.Result == SessionActionResult.Success)
+        {
+            TempData["StatusMessage"] = $"Session deleted — {result.CandidatesRemoved} candidate(s), {result.PaymentsRemoved} payment(s), and {result.VeAssignmentsRemoved} VE roster assignment(s) removed with it.";
+        }
+        else
+        {
+            TempData["ErrorMessage"] = result.Result switch
+            {
+                SessionActionResult.Blocked =>
+                    "Could not delete session — one of its payments is still referenced by an unmatched Square payment record. Resolve that first.",
+                _ => "Could not delete session."
+            };
+        }
+        return RedirectToCurrentView();
+    }
+
+    /// <summary>Re-resolves the session from its posted id and confirms the acting user may edit *that* session — the list spans teams, so a rendered control is never sufficient proof of rights.</summary>
+    private async Task<(User User, Session Session)?> AuthorizeSessionAsync(int sessionId)
+    {
+        var user = await userManager.GetUserWithManagerAsync(dbContext, User);
+        if (user is null)
+        {
+            return null;
+        }
+
+        var session = await dbContext.Sessions.FirstOrDefaultAsync(s => s.Id == sessionId);
+        return session is null || !accessScope.CanEdit(user, session) ? null : (user, session);
+    }
+
+    private void SetStatus(bool success, string successMessage, string errorMessage) =>
+        TempData[success ? "StatusMessage" : "ErrorMessage"] = success ? successMessage : errorMessage;
+
+    /// <summary>Returns to the exact filtered/paged view the action was launched from — BuildPageUrl already encodes every filter, including Status's multiple values.</summary>
+    private IActionResult RedirectToCurrentView() => Redirect(BuildPageUrl(PageNumber));
+
+    /// <summary>
+    /// Form action for a row action, carrying the current filter/page state in the query string.
+    /// Necessary because `asp-page-handler` builds its action from the route alone and silently drops
+    /// the query string — without this the filter properties bind empty on POST and the redirect
+    /// afterwards lands on an unfiltered list, losing whatever view the action was launched from.
+    /// </summary>
+    public string BuildActionUrl(string handler) => $"{BuildPageUrl(PageNumber)}&handler={Uri.EscapeDataString(handler)}";
 
     /// <summary>Builds a Prev/Next/page-size link preserving every current filter — asp-route-* tag helpers can't represent Status's multiple values, so this constructs the query string directly.</summary>
     public string BuildPageUrl(int page, int? pageSizeOverride = null)
@@ -314,6 +429,7 @@ public class IndexModel(AppDbContext dbContext, UserManager<User> userManager, S
         "RescheduleFlagged" => "Reschedule flagged",
         "Completed" => "Completed",
         "Cancelled" => "Cancelled",
+        "PendingVecSubmission" => "Pending VEC submission",
         _ => status
     };
 
@@ -350,7 +466,7 @@ public class IndexModel(AppDbContext dbContext, UserManager<User> userManager, S
         });
     }
 
-    private static SessionRow ToRow(Session s, DateTime now)
+    private SessionRow ToRow(Session s, DateTime now, User user)
     {
         // ExtId gets its own column (issue #35 — "know whose session is whose"), not repeated in
         // the sub-line the way it used to be.
@@ -377,6 +493,16 @@ public class IndexModel(AppDbContext dbContext, UserManager<User> userManager, S
             : s.VecSubmissionStatus == VecSubmissionStatus.Submitted ? ("chip-green", "Submitted")
             : ("chip-neutral", "Not submitted");
 
+        // Same availability rules the session Detail page applies to the same actions, so a control
+        // never appears here that would be absent (or 403) there. Cancelled sessions expose nothing
+        // but Delete — there's nothing left to complete or submit for a session that never ran.
+        var canEdit = accessScope.CanEdit(user, s);
+        var notCancelled = s.Status != SessionStatus.Cancelled;
+        var canMarkSubmitted = canEdit && notCancelled && s.VecSubmissionStatus == VecSubmissionStatus.NotSubmitted;
+        var canMarkCompleted = canEdit && notCancelled && s.TestingCompletedUtc is null;
+        var canClearFlag = canEdit && s.RescheduleFlaggedForReview;
+        var canDelete = adminAccessScope.CanManageTeam(user, s.TeamId);
+
         return new SessionRow(
             s.Id,
             s.ExtId ?? "—",
@@ -388,9 +514,19 @@ public class IndexModel(AppDbContext dbContext, UserManager<User> userManager, S
             s.RescheduleFlaggedForReview,
             statusClass, statusLabel,
             vecClass, vecLabel,
-            s.HasEnded(now));
+            s.HasEnded(now),
+            canMarkSubmitted,
+            canMarkCompleted,
+            canClearFlag,
+            canDelete,
+            canMarkSubmitted || canMarkCompleted || canClearFlag || canDelete);
     }
 
+    /// <summary>
+    /// Can* flags are resolved per row, not per page — the list can span teams, and a user's rights
+    /// differ by team (SessionAccessScope.CanEdit for the routine actions, AdminAccessScope.CanManageTeam
+    /// for Delete). They only hide controls; every POST handler re-checks the same rules server-side.
+    /// </summary>
     public record SessionRow(
         int Id,
         string ExtId,
@@ -404,5 +540,10 @@ public class IndexModel(AppDbContext dbContext, UserManager<User> userManager, S
         string StatusChipLabel,
         string VecSubmissionChipClass,
         string VecSubmissionChipLabel,
-        bool IsPast);
+        bool IsPast,
+        bool CanMarkSubmitted,
+        bool CanMarkCompleted,
+        bool CanClearFlag,
+        bool CanDelete,
+        bool HasAnyAction);
 }

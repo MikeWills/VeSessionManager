@@ -1,5 +1,6 @@
 @page
 @model VeSessionManager.Web.Pages.SessionManager.UnmatchedPaymentsModel
+@using VeSessionManager.Core.Navigation
 @{
     ViewData["Title"] = "Unmatched Payments";
     ViewData["ActiveNav"] = "UnmatchedPayments";
@@ -18,7 +19,10 @@
     <div class="filters" style="margin-bottom:16px;">
         @foreach (var team in Model.AvailableTeams)
         {
-            <a class="filter-pill @(team.Id == Model.TeamId ? "active" : "")" asp-page="./UnmatchedPayments" asp-route-teamId="@team.Id">@team.Name</a>
+            @* Zero still renders — see the equivalent comment in ApplicantStatus.cshtml. *@
+            <a class="filter-pill @(team.Id == Model.TeamId ? "active" : "")" asp-page="./UnmatchedPayments" asp-route-teamId="@team.Id">
+                @team.Name<span class="pill-count @(Model.UnmatchedCountsByTeam.CountFor(team.Id) == 0 ? "zero" : "")">@Model.UnmatchedCountsByTeam.CountFor(team.Id)</span>
+            </a>
         }
     </div>
 }

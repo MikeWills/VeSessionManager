@@ -67,7 +67,6 @@ builder.Services.AddScoped<EmailTemplateRenderer>();
 builder.Services.AddScoped<CandidateNotificationService>();
 
 builder.Services.AddScoped<VecSubmissionService>();
-builder.Services.AddScoped<VecSubmissionReportService>();
 builder.Services.AddScoped<VolunteerExaminerReportService>();
 
 // Pending-work counts shown as badges on the app nav (_AppLayout.cshtml); also the single source of

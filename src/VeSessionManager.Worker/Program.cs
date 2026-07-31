@@ -91,11 +91,9 @@ builder.Services.AddScoped<PaymentReminderService>();
 // Phase 8: no job/worker involvement — a manual, user-triggered action + a dashboard query, both
 // called directly by Phase 9's (not yet built) admin UI. Registered now so they're ready for it.
 builder.Services.AddScoped<VecSubmissionService>();
-// VecSubmissionReportService delegates its pending-count predicate to NavBadgeCountService (which
-// the Web project also uses for the nav badges), so that has to be registered here too even though
-// the Worker itself renders no nav.
+// Registered here as well as in Web so the Core service graph resolves identically in both hosts,
+// even though the Worker renders no nav of its own.
 builder.Services.AddScoped<NavBadgeCountService>();
-builder.Services.AddScoped<VecSubmissionReportService>();
 
 // Phase 10: also used by VeSessionManager.Web's Admin/SystemSettings page to edit the same row.
 builder.Services.AddScoped<SystemSettingsService>();
@@ -131,6 +129,39 @@ using (var scope = host.Services.CreateScope())
         var migrationService = scope.ServiceProvider.GetRequiredService<TeamSecretsMigrationService>();
         await migrationService.MigrateAsync(CancellationToken.None);
         migrationLogger.LogInformation("Team secrets migration complete — exiting without starting the normal Worker jobs.");
+        return;
+    }
+
+    // Human-triggered FCC watcher runs (2026-07-30). Same exit-immediately shape as the flag above.
+    // Added because forcing a watcher run previously meant temporarily rewriting
+    // SystemSettings.FccDailyWatcherStartHourEt to move the slot guard, restarting the Worker, then
+    // putting the setting back — needed both to recover the upgrade-detection backlog and any time
+    // FCC publishes late. Both runs are idempotent (the watcher only ever touches non-terminal
+    // candidates), so re-running is always safe. --run-fcc-weekly is the one to reach for when
+    // recovering historical candidates: the weekly "complete" snapshot holds the current state of
+    // every active license regardless of when it was granted, whereas a daily file only carries that
+    // one day's transactions and so can never recover a candidate from a previous week.
+    var fccDaily = args.Contains("--run-fcc-daily");
+    var fccWeekly = args.Contains("--run-fcc-weekly");
+    if (fccDaily || fccWeekly)
+    {
+        var fccLogger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+        var watcher = scope.ServiceProvider.GetRequiredService<FccUlsWatcherService>();
+        var jobRunHistoryLogger = scope.ServiceProvider.GetRequiredService<JobRunHistoryLogger>();
+
+        if (fccWeekly)
+        {
+            fccLogger.LogInformation("Running FCC weekly catch-up on demand (--run-fcc-weekly)...");
+            await jobRunHistoryLogger.RunAsync("FccWeeklyCatchup", watcher.RunWeeklyCatchupAsync, null, CancellationToken.None);
+        }
+
+        if (fccDaily)
+        {
+            fccLogger.LogInformation("Running FCC daily watcher on demand (--run-fcc-daily)...");
+            await jobRunHistoryLogger.RunAsync("FccDailyWatcher", watcher.RunDailyAsync, null, CancellationToken.None);
+        }
+
+        fccLogger.LogInformation("On-demand FCC run complete — exiting without starting the normal Worker jobs.");
         return;
     }
 

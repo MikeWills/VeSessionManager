@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using VeSessionManager.Core.Authorization;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Entities;
+using VeSessionManager.Core.Navigation;
 using VeSessionManager.Core.Payments;
 
 namespace VeSessionManager.Web.Pages.SessionManager;
@@ -25,6 +26,7 @@ public class UnmatchedPaymentsModel(
     AppDbContext dbContext,
     UserManager<User> userManager,
     SessionAccessScope accessScope,
+    NavBadgeCountService badgeCounts,
     SquarePaymentMatchingService matchingService) : PageModel
 {
     [BindProperty(SupportsGet = true)]
@@ -32,6 +34,13 @@ public class UnmatchedPaymentsModel(
 
     public bool HasTeamContext { get; private set; }
     public IReadOnlyList<(int Id, string Name)> AvailableTeams { get; private set; } = [];
+
+    /// <summary>
+    /// Unresolved-payment count per team, for the team picker — same predicate as the table below
+    /// (both come from NavBadgeCountService), so a pill's number always equals the row count you get
+    /// after clicking it.
+    /// </summary>
+    public IReadOnlyDictionary<int, int> UnmatchedCountsByTeam { get; private set; } = new Dictionary<int, int>();
     public IReadOnlyList<UnmatchedPaymentRow> UnmatchedPayments { get; private set; } = [];
     public IReadOnlyList<MatchableCandidate> MatchableCandidates { get; private set; } = [];
 
@@ -40,6 +49,13 @@ public class UnmatchedPaymentsModel(
         var user = await userManager.GetUserWithManagerAsync(dbContext, User) ?? throw new InvalidOperationException("No authenticated user for an [Authorize]d page.");
 
         AvailableTeams = await accessScope.GetAvailableTeamsAsync(dbContext, user);
+
+        // Only worth querying when a picker will actually render (see the Count > 1 guard in the view).
+        if (AvailableTeams.Count > 1)
+        {
+            UnmatchedCountsByTeam = await badgeCounts.GetUnresolvedUnmatchedPaymentsByTeamAsync(
+                [.. AvailableTeams.Select(t => t.Id)], HttpContext.RequestAborted);
+        }
 
         var teamId = accessScope.TryResolveViewableTeamId(user, TeamId, AvailableTeams);
         TeamId = teamId;
@@ -108,7 +124,9 @@ public class UnmatchedPaymentsModel(
             SquareManualMatchResult.NoOutstandingPayment => "That candidate has no outstanding unpaid payment to match against.",
             _ => "Could not match — payment not found."
         };
-        return RedirectToPage();
+        // See VecSubmission's OnPostMarkSubmittedAsync — a bare RedirectToPage() drops the teamId
+        // query string and strands a multi-team user on the empty "no team context" page.
+        return RedirectToPage(new { teamId = unmatched.TeamId });
     }
 
     public record UnmatchedPaymentRow(int Id, string ReceivedLine, decimal AmountUsd, string? BuyerEmailAddress, string SquareOrderId);

@@ -83,8 +83,12 @@ public class Candidate
     /// the FCC's Grant Date predates Session.ScheduledStartUtc, so the Granted match reflects a
     /// pre-existing license (a repeat test or class upgrade), not a new grant from this session.
     /// Confirmed live 2026-07-28 against real ULS data that FCC's Grant Date does not change on a
-    /// class upgrade, so this is a reliable signal even without parsing AM.dat's operator-class
-    /// field (never fetched by this app — see docs/fcc-uls-watcher.md). Requires Session loaded.
+    /// class upgrade, so this is a reliable signal independently of AM.dat's operator-class field
+    /// (which the watcher does now read, as of 2026-07-30, to confirm upgrades — see
+    /// docs/fcc-uls-watcher.md's "Confirming a class upgrade"). Note this stays meaningful on the
+    /// upgrade path only for candidates granted before that change: FccUlsWatcherService now stores
+    /// Last Action Date (the upgrade date) rather than the original Grant Date for a confirmed
+    /// upgrade, so a newly-granted upgrade will not report true here. Requires Session loaded.
     /// </summary>
     public bool LicenseGrantPredatesSession() =>
         LicenseGrantDateUtc is { } grantedUtc && grantedUtc.Date < Session.ScheduledStartUtc.Date;

@@ -68,7 +68,8 @@ public class FccUlsWatcherServiceTests
     /// record's Last Action Date to be on/after the session date — pass sessionStartUtc to control that explicitly.</summary>
     private static async Task<Candidate> SeedCandidateAsync(
         AppDbContext dbContext, string? frn, CandidateApplicationStatus status = CandidateApplicationStatus.Unmatched,
-        DateTime? sessionStartUtc = null)
+        DateTime? sessionStartUtc = null,
+        LicenseClass? initialLicenseClass = null, LicenseClass? newLicenseClass = null)
     {
         var vec = new Vec { Name = "ARRL" };
         var user = new User { Name = "System", Email = "system@localhost", Role = UserRole.SystemAdmin };
@@ -98,6 +99,8 @@ public class FccUlsWatcherServiceTests
             Name = "Roana Glory",
             Frn = frn,
             ApplicationStatus = status,
+            InitialLicenseClass = initialLicenseClass,
+            NewLicenseClass = newLicenseClass,
             DateRegisteredUtc = Now
         };
         dbContext.Candidates.Add(candidate);
@@ -241,7 +244,7 @@ public class FccUlsWatcherServiceTests
         var grantDate = new DateTime(2026, 7, 19, 0, 0, 0, DateTimeKind.Utc);
         var client = new FakeFccUlsClient
         {
-            DailyLicenses = [new FccUlsLicenseRecord("100", "0001234567", "K0BFR", "A", grantDate)]
+            DailyLicenses = [new FccUlsLicenseRecord("100", "0001234567", "K0BFR", "A", grantDate, grantDate)]
         };
 
         var result = await CreateService(dbContext, client).RunDailyAsync(CancellationToken.None);
@@ -269,7 +272,7 @@ public class FccUlsWatcherServiceTests
         var priorGrantDate = new DateTime(2024, 8, 21, 0, 0, 0, DateTimeKind.Utc);
         var client = new FakeFccUlsClient
         {
-            DailyLicenses = [new FccUlsLicenseRecord("100", "0001234567", "K0BFR", "A", priorGrantDate)]
+            DailyLicenses = [new FccUlsLicenseRecord("100", "0001234567", "K0BFR", "A", priorGrantDate, priorGrantDate)]
         };
 
         var result = await CreateService(dbContext, client).RunDailyAsync(CancellationToken.None);
@@ -282,6 +285,134 @@ public class FccUlsWatcherServiceTests
         Assert.Null(updated.FccUlsLicenseKey);
     }
 
+    // ---- Upgrade confirmation via AM.dat operator class + Last Action Date (2026-07-30) ----
+    // Real-data shape these are modeled on: a General->Extra upgrade taken 2026-07-19 still reported
+    // a Grant Date of 2021-04-30 (FCC pins Grant Date to the original license) but a Last Action Date
+    // of 2026-07-21. Grant Date alone can therefore never confirm an upgrade — see
+    // FccUlsWatcherService.ProcessLicensesAsync.
+
+    [Fact]
+    public async Task UpgradeCandidate_OperatorClassMatchesAndLastActionAfterSession_BecomesGranted()
+    {
+        await using var dbContext = CreateContext();
+        var sessionStart = new DateTime(2026, 7, 19, 18, 0, 0, DateTimeKind.Utc);
+        var candidate = await SeedCandidateAsync(
+            dbContext, frn: "0001234567", status: CandidateApplicationStatus.Received, sessionStartUtc: sessionStart,
+            initialLicenseClass: LicenseClass.General, newLicenseClass: LicenseClass.Extra);
+        var originalGrant = new DateTime(2021, 4, 30, 0, 0, 0, DateTimeKind.Utc);
+        var upgradeAction = new DateTime(2026, 7, 21, 0, 0, 0, DateTimeKind.Utc);
+        var client = new FakeFccUlsClient
+        {
+            DailyLicenses = [new FccUlsLicenseRecord("100", "0001234567", "N2LQH", "A", originalGrant, upgradeAction, LicenseClass.Extra)]
+        };
+
+        var result = await CreateService(dbContext, client).RunDailyAsync(CancellationToken.None);
+
+        Assert.Equal(1, result.CandidatesMarkedGranted);
+        var updated = await dbContext.Candidates.SingleAsync(c => c.Id == candidate.Id);
+        Assert.Equal(CandidateApplicationStatus.Granted, updated.ApplicationStatus);
+        Assert.Equal("N2LQH", updated.CallSign);
+        // The upgrade date, NOT the 2021 original grant — otherwise the UI reads "licensed 2021".
+        Assert.Equal(upgradeAction, updated.LicenseGrantDateUtc);
+    }
+
+    [Fact]
+    public async Task UpgradeCandidate_FccStillReportsOldClass_StaysPending()
+    {
+        // Katelynn Schneider's real shape: tested Technician->General on 2026-07-30, but FCC hadn't
+        // processed it — still class T, with grant/last-action both predating the session. Must be
+        // rejected on BOTH the class and the date, so neither check is load-bearing alone.
+        await using var dbContext = CreateContext();
+        var sessionStart = new DateTime(2026, 7, 30, 18, 0, 0, DateTimeKind.Utc);
+        var candidate = await SeedCandidateAsync(
+            dbContext, frn: "0001234567", status: CandidateApplicationStatus.Received, sessionStartUtc: sessionStart,
+            initialLicenseClass: LicenseClass.Technician, newLicenseClass: LicenseClass.General);
+        var priorDate = new DateTime(2026, 7, 10, 0, 0, 0, DateTimeKind.Utc);
+        var client = new FakeFccUlsClient
+        {
+            DailyLicenses = [new FccUlsLicenseRecord("100", "0001234567", "KR4NQF", "A", priorDate, priorDate, LicenseClass.Technician)]
+        };
+
+        var result = await CreateService(dbContext, client).RunDailyAsync(CancellationToken.None);
+
+        Assert.Equal(0, result.CandidatesMarkedGranted);
+        var updated = await dbContext.Candidates.SingleAsync(c => c.Id == candidate.Id);
+        Assert.Equal(CandidateApplicationStatus.Received, updated.ApplicationStatus);
+        Assert.Null(updated.CallSign);
+    }
+
+    [Fact]
+    public async Task UpgradeCandidate_ClassMatchesButLastActionPredatesSession_StaysPending()
+    {
+        // The class check alone is not enough: someone who ALREADY held Extra walking in would match
+        // on class forever. Only the date proves this sitting caused it.
+        await using var dbContext = CreateContext();
+        var sessionStart = new DateTime(2026, 7, 30, 18, 0, 0, DateTimeKind.Utc);
+        var candidate = await SeedCandidateAsync(
+            dbContext, frn: "0001234567", status: CandidateApplicationStatus.Received, sessionStartUtc: sessionStart,
+            initialLicenseClass: LicenseClass.General, newLicenseClass: LicenseClass.Extra);
+        var staleDate = new DateTime(2026, 6, 1, 0, 0, 0, DateTimeKind.Utc);
+        var client = new FakeFccUlsClient
+        {
+            DailyLicenses = [new FccUlsLicenseRecord("100", "0001234567", "N2LQH", "A", staleDate, staleDate, LicenseClass.Extra)]
+        };
+
+        var result = await CreateService(dbContext, client).RunDailyAsync(CancellationToken.None);
+
+        Assert.Equal(0, result.CandidatesMarkedGranted);
+        Assert.Equal(CandidateApplicationStatus.Received, (await dbContext.Candidates.SingleAsync(c => c.Id == candidate.Id)).ApplicationStatus);
+    }
+
+    [Fact]
+    public async Task UpgradeCandidate_NoOperatorClassAvailable_StaysPending()
+    {
+        // An archive without AM.dat yields OperatorClass None — must fall back to the old
+        // stays-pending behavior rather than matching on the date alone.
+        await using var dbContext = CreateContext();
+        var sessionStart = new DateTime(2026, 7, 19, 18, 0, 0, DateTimeKind.Utc);
+        var candidate = await SeedCandidateAsync(
+            dbContext, frn: "0001234567", status: CandidateApplicationStatus.Received, sessionStartUtc: sessionStart,
+            initialLicenseClass: LicenseClass.General, newLicenseClass: LicenseClass.Extra);
+        var client = new FakeFccUlsClient
+        {
+            DailyLicenses =
+            [
+                new FccUlsLicenseRecord("100", "0001234567", "N2LQH", "A",
+                    new DateTime(2021, 4, 30, 0, 0, 0, DateTimeKind.Utc),
+                    new DateTime(2026, 7, 21, 0, 0, 0, DateTimeKind.Utc))
+            ]
+        };
+
+        var result = await CreateService(dbContext, client).RunDailyAsync(CancellationToken.None);
+
+        Assert.Equal(0, result.CandidatesMarkedGranted);
+        Assert.Equal(CandidateApplicationStatus.Received, (await dbContext.Candidates.SingleAsync(c => c.Id == candidate.Id)).ApplicationStatus);
+    }
+
+    [Fact]
+    public async Task NewLicenseCandidate_GrantDateOnOrAfterSession_StillGrantedWithGrantDate()
+    {
+        // Regression guard: the upgrade work must not change the first-time-licensee path, which
+        // keeps using Grant Date (not Last Action Date) for LicenseGrantDateUtc.
+        await using var dbContext = CreateContext();
+        var sessionStart = new DateTime(2026, 7, 19, 18, 0, 0, DateTimeKind.Utc);
+        var candidate = await SeedCandidateAsync(
+            dbContext, frn: "0001234567", status: CandidateApplicationStatus.Received, sessionStartUtc: sessionStart,
+            initialLicenseClass: LicenseClass.None, newLicenseClass: LicenseClass.Technician);
+        var grantDate = new DateTime(2026, 7, 22, 0, 0, 0, DateTimeKind.Utc);
+        var client = new FakeFccUlsClient
+        {
+            DailyLicenses = [new FccUlsLicenseRecord("100", "0001234567", "KF0NEW", "A", grantDate, grantDate, LicenseClass.Technician)]
+        };
+
+        var result = await CreateService(dbContext, client).RunDailyAsync(CancellationToken.None);
+
+        Assert.Equal(1, result.CandidatesMarkedGranted);
+        var updated = await dbContext.Candidates.SingleAsync(c => c.Id == candidate.Id);
+        Assert.Equal(CandidateApplicationStatus.Granted, updated.ApplicationStatus);
+        Assert.Equal(grantDate, updated.LicenseGrantDateUtc);
+    }
+
     [Fact]
     public async Task UnmatchedCandidate_FrnInActiveLicenseFile_ShortCircuitsStraightToGranted()
     {
@@ -289,7 +420,7 @@ public class FccUlsWatcherServiceTests
         var candidate = await SeedCandidateAsync(dbContext, frn: "0001234567"); // still Unmatched
         var client = new FakeFccUlsClient
         {
-            DailyLicenses = [new FccUlsLicenseRecord("100", "0001234567", "K0BFR", "A", Now)]
+            DailyLicenses = [new FccUlsLicenseRecord("100", "0001234567", "K0BFR", "A", Now, Now)]
         };
 
         var result = await CreateService(dbContext, client).RunDailyAsync(CancellationToken.None);
@@ -307,7 +438,7 @@ public class FccUlsWatcherServiceTests
         var client = new FakeFccUlsClient
         {
             DailyApplications = [new FccUlsApplicationRecord("100", "0001234567", Now)],
-            DailyLicenses = [new FccUlsLicenseRecord("100", "0001234567", "K0BFR", "A", Now)]
+            DailyLicenses = [new FccUlsLicenseRecord("100", "0001234567", "K0BFR", "A", Now, Now)]
         };
 
         var result = await CreateService(dbContext, client).RunDailyAsync(CancellationToken.None);
@@ -325,7 +456,7 @@ public class FccUlsWatcherServiceTests
         await SeedCandidateAsync(dbContext, frn: "0001234567");
         var client = new FakeFccUlsClient
         {
-            DailyLicenses = [new FccUlsLicenseRecord("100", "0001234567", "K0BFR", "C", Now)]
+            DailyLicenses = [new FccUlsLicenseRecord("100", "0001234567", "K0BFR", "C", Now, Now)]
         };
 
         var result = await CreateService(dbContext, client).RunDailyAsync(CancellationToken.None);
@@ -348,7 +479,7 @@ public class FccUlsWatcherServiceTests
         var client = new FakeFccUlsClient
         {
             DailyApplications = [new FccUlsApplicationRecord("100", "0001234567", Now)],
-            DailyLicenses = [new FccUlsLicenseRecord("100", "0001234567", "K0NEW", "A", Now)]
+            DailyLicenses = [new FccUlsLicenseRecord("100", "0001234567", "K0NEW", "A", Now, Now)]
         };
 
         var result = await CreateService(dbContext, client).RunDailyAsync(CancellationToken.None);

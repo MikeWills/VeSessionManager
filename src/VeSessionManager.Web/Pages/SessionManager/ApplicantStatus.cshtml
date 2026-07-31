@@ -1,5 +1,6 @@
 @page
 @model VeSessionManager.Web.Pages.SessionManager.ApplicantStatusModel
+@using VeSessionManager.Core.Navigation
 @{
     ViewData["Title"] = "Applicant Status";
     ViewData["ActiveNav"] = "ApplicantStatus";
@@ -18,7 +19,12 @@
     <div class="filters" style="margin-bottom:16px;">
         @foreach (var team in Model.AvailableTeams)
         {
-            <a class="filter-pill @(team.Id == Model.TeamId ? "active" : "")" asp-page="./ApplicantStatus" asp-route-teamId="@team.Id">@team.Name</a>
+            @* Count is rendered even at zero (unlike the nav badge, which hides) — the point of the
+               picker is comparing teams at a glance, and "0" is the useful answer for "do I need to
+               look here?". .pill-count.zero mutes it so a busy team still stands out. *@
+            <a class="filter-pill @(team.Id == Model.TeamId ? "active" : "")" asp-page="./ApplicantStatus" asp-route-teamId="@team.Id">
+                @team.Name<span class="pill-count @(Model.PendingCountsByTeam.CountFor(team.Id) == 0 ? "zero" : "")">@Model.PendingCountsByTeam.CountFor(team.Id)</span>
+            </a>
         }
     </div>
 }

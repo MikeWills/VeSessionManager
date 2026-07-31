@@ -27,6 +27,13 @@ public static class FccUlsRecordParser
     private const int EnUsiField = 2;
     private const int EnFrnField = 23;
 
+    // AM (Amateur) positions confirmed against a real downloaded l_am_thu.zip on 2026-07-30, same
+    // "verify, don't trust the PDF" rule as EN above. Field 17 (previous operator class) isn't read
+    // — the current class alone answers "did they end up with what they tested for," and reading the
+    // previous one would only re-derive what Candidate.InitialLicenseClass already knows.
+    private const int AmUsiField = 2;
+    private const int AmOperatorClassField = 6;
+
     private const int HsUsiField = 2;
     private const int HsCodeField = 6;
 
@@ -141,9 +148,21 @@ public static class FccUlsRecordParser
         return result;
     }
 
-    public static IReadOnlyList<FccUlsLicenseRecord> ParseLicenses(string hdContent, string enContent)
+    /// <summary>
+    /// amContent is optional — without it every record comes back with OperatorClass None, which
+    /// simply means no upgrade can be confirmed (the pre-2026-07-30 behavior).
+    ///
+    /// <para>A row missing Last Action Date falls back to Grant Date rather than being dropped.
+    /// Dropping would have been the tidier rule but it silently *removes* license rows that the
+    /// pre-upgrade-detection parser accepted, regressing the first-time-licensee path this change is
+    /// supposed to leave untouched. With the fallback, such a row behaves exactly as it did before:
+    /// matchable as a new license via Grant Date, never confirmable as an upgrade (Grant Date
+    /// predates the session by definition in that case).</para>
+    /// </summary>
+    public static IReadOnlyList<FccUlsLicenseRecord> ParseLicenses(string hdContent, string enContent, string? amContent = null)
     {
         var frnByUsi = ParseFrnByUsi(enContent);
+        var operatorClassByUsi = ParseOperatorClassByUsi(amContent);
         var results = new List<FccUlsLicenseRecord>();
 
         foreach (var row in ParseRows(hdContent, "HD"))
@@ -162,10 +181,54 @@ public static class FccUlsRecordParser
                 continue;
             }
 
-            results.Add(new FccUlsLicenseRecord(usi, frn, callSign, licenseStatus, grantDate.Value));
+            var lastActionDate = ParseDate(Field(row, HdLastActionDateField)) ?? grantDate.Value;
+
+            results.Add(new FccUlsLicenseRecord(
+                usi, frn, callSign, licenseStatus, grantDate.Value, lastActionDate,
+                operatorClassByUsi.GetValueOrDefault(usi, LicenseClass.None)));
         }
 
         return results;
+    }
+
+    /// <summary>
+    /// USI → operator class from AM.dat. Legacy classes deliberately map to None rather than getting
+    /// their own enum members: no one can earn Novice or Advanced today, so they can only ever appear
+    /// as a class someone walked in *with*. Mapping them to None means they never equal a candidate's
+    /// NewLicenseClass and so can never confirm an upgrade — the safe direction. (An Advanced holder
+    /// who upgrades to Extra still works: their post-exam class is "E".)
+    /// </summary>
+    internal static Dictionary<string, LicenseClass> ParseOperatorClassByUsi(string? amContent)
+    {
+        var result = new Dictionary<string, LicenseClass>();
+        if (string.IsNullOrWhiteSpace(amContent))
+        {
+            return result;
+        }
+
+        foreach (var row in ParseRows(amContent, "AM"))
+        {
+            var usi = Field(row, AmUsiField);
+            if (usi is null)
+            {
+                continue;
+            }
+
+            var operatorClass = Field(row, AmOperatorClassField) switch
+            {
+                "T" => LicenseClass.Technician,
+                "G" => LicenseClass.General,
+                "E" => LicenseClass.Extra,
+                _ => LicenseClass.None
+            };
+
+            if (operatorClass != LicenseClass.None)
+            {
+                result[usi] = operatorClass;
+            }
+        }
+
+        return result;
     }
 
     private static Dictionary<string, string> ParseFrnByUsi(string enContent)

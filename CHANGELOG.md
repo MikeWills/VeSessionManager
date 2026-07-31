@@ -8,6 +8,9 @@ that window, or immediately if it's phase-numbered work already summarized in "C
 design rationale for any entry still lives in its linked `/docs/*.md` file, not here or in
 CLAUDE.md — this file, like CLAUDE.md's Change Log, is pointers only.
 
+- **Payment reminders retest-gating fix (2026-07-22).** `docs/payment-reminders.md`'s "Retest
+  payments" section — a same-session retest fee previously never got a reminder or expiration.
+
 - **Youth rate payment confirmation (2026-07-27).** `docs/youth-payment-confirmation.md` — a
   self-service, honor-system public page (`/youth-confirm/{token}`) that switches a candidate's
   standard-rate Square payment link to the session's configured youth rate, replacing reliance on

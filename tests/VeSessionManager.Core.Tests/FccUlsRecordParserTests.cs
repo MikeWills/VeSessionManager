@@ -24,6 +24,17 @@ public class FccUlsRecordParserTests
         return string.Join('|', fields);
     }
 
+    /// <summary>AM.dat (Amateur) — positions confirmed against a real l_am_thu.zip on 2026-07-30: USI at index 1, operator class at 5, previous operator class at 15/16.</summary>
+    private static string BuildAmRow(string usi, string? operatorClass = null)
+    {
+        var fields = new string[18];
+        Array.Fill(fields, string.Empty);
+        fields[0] = "AM";
+        fields[1] = usi;
+        if (operatorClass is not null) fields[5] = operatorClass;
+        return string.Join('|', fields);
+    }
+
     private static string BuildEnRow(string usi, string? frn = null)
     {
         var fields = new string[23];
@@ -282,5 +293,77 @@ public class FccUlsRecordParserTests
         var result = FccUlsRecordParser.ParseLicenses(hd, en);
 
         Assert.Empty(result);
+    }
+
+    // ---- AM.dat operator-class join (2026-07-30) ----
+
+    [Theory]
+    [InlineData("T", LicenseClass.Technician)]
+    [InlineData("G", LicenseClass.General)]
+    [InlineData("E", LicenseClass.Extra)]
+    public void ParseLicenses_JoinsOperatorClassFromAm(string code, LicenseClass expected)
+    {
+        var hd = BuildHdRow("100", callSign: "K0BFR", licenseStatus: "A", grantDate: "01/18/2017", lastActionDate: "07/21/2026");
+        var en = BuildEnRow("100", frn: "0001234567");
+        var am = BuildAmRow("100", code);
+
+        var record = Assert.Single(FccUlsRecordParser.ParseLicenses(hd, en, am));
+
+        Assert.Equal(expected, record.OperatorClass);
+    }
+
+    [Theory]
+    [InlineData("A")] // Advanced — closed to new issues since 2000
+    [InlineData("N")] // Novice — likewise
+    [InlineData("")]
+    public void ParseLicenses_LegacyOrBlankOperatorClass_MapsToNone(string code)
+    {
+        // Deliberate: these can only ever be a class someone walked in WITH, so mapping them to None
+        // means they can never equal a candidate's NewLicenseClass and never confirm an upgrade.
+        var hd = BuildHdRow("100", callSign: "K0BFR", licenseStatus: "A", grantDate: "01/18/2017");
+        var en = BuildEnRow("100", frn: "0001234567");
+        var am = BuildAmRow("100", code);
+
+        var record = Assert.Single(FccUlsRecordParser.ParseLicenses(hd, en, am));
+
+        Assert.Equal(LicenseClass.None, record.OperatorClass);
+    }
+
+    [Fact]
+    public void ParseLicenses_NoAmContent_YieldsOperatorClassNone_ButStillParses()
+    {
+        var hd = BuildHdRow("100", callSign: "K0BFR", licenseStatus: "A", grantDate: "01/18/2017");
+        var en = BuildEnRow("100", frn: "0001234567");
+
+        var record = Assert.Single(FccUlsRecordParser.ParseLicenses(hd, en, amContent: null));
+
+        Assert.Equal(LicenseClass.None, record.OperatorClass);
+        Assert.Equal("K0BFR", record.CallSign);
+    }
+
+    [Fact]
+    public void ParseLicenses_CapturesLastActionDate_SeparatelyFromGrantDate()
+    {
+        // The upgrade case: FCC pins Grant Date to the original license and advances only Last Action.
+        var hd = BuildHdRow("100", callSign: "N2LQH", licenseStatus: "A", grantDate: "04/30/2021", lastActionDate: "07/21/2026");
+        var en = BuildEnRow("100", frn: "0001234567");
+
+        var record = Assert.Single(FccUlsRecordParser.ParseLicenses(hd, en));
+
+        Assert.Equal(new DateTime(2021, 4, 30, 0, 0, 0, DateTimeKind.Utc), record.GrantDateUtc);
+        Assert.Equal(new DateTime(2026, 7, 21, 0, 0, 0, DateTimeKind.Utc), record.LastActionDateUtc);
+    }
+
+    [Fact]
+    public void ParseLicenses_MissingLastActionDate_FallsBackToGrantDate_RatherThanDroppingTheRow()
+    {
+        // Regression guard: dropping such a row would remove license records the pre-upgrade parser
+        // accepted, breaking the first-time-licensee path this change must leave untouched.
+        var hd = BuildHdRow("100", callSign: "K0BFR", licenseStatus: "A", grantDate: "01/18/2017");
+        var en = BuildEnRow("100", frn: "0001234567");
+
+        var record = Assert.Single(FccUlsRecordParser.ParseLicenses(hd, en));
+
+        Assert.Equal(record.GrantDateUtc, record.LastActionDateUtc);
     }
 }

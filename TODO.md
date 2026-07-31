@@ -161,6 +161,74 @@ until its columns are set via direct DB edit (no admin UI yet):
 
 - [x] ~~**Remove "Move candidate to a different session" — redundant with ExamTools**~~ (reported 2026-07-21, removed 2026-07-21). Same reasoning as the walk-in item above: moving a candidate between sessions is already handled in ExamTools itself, so a move made there is already reflected the next time `SessionIngestionService` polls. Removed `CandidateActionService.MoveAsync`/`CandidateMoveResult`, its `OnPostMoveAsync` handler, the `CanMove`/`MoveTargetSessions` UI plumbing and modal/menu-item in `Pages/SessionManager/Detail.cshtml(.cs)`, its test coverage in `CandidateActionServiceTests`, and the corresponding spec.md Session Manager bullet-list entry.
 
+- [x] ~~**Remove the standalone VEC Submission page — redundant with the Sessions list**~~ (reported
+  2026-07-30, removed same day). Same class of redundancy as the two ExamTools items above, but
+  internal: the page listed *every* active session for a team, not just actionable ones — for HRCC
+  that meant **40 rows of which only 8 were actionable** (16 future sessions that can't have anything
+  to submit yet, 16 already submitted). Its header count (8) didn't match its own table (40), which
+  is what made it feel broken. Everything it offered already existed elsewhere: the Sessions list has
+  a VEC Submission column, session Detail has the Mark-submitted action, and the nav badge (added
+  earlier the same day) surfaces the pending count.
+
+  Replaced by a **"Pending VEC submission" option in the Sessions page's Status filter**
+  (`Index.cshtml(.cs)`). It's deliberately a different axis from the other four checkboxes — those
+  are mutually exclusive lifecycle states mirroring the Status column, this one cuts across them —
+  but it lives in the same group because the group already ORs its members, so ticking only it yields
+  exactly the worklist. Its predicate **must stay identical to
+  `NavBadgeCountService.CountSessionsPendingVecSubmissionAsync`**, which backs the nav badge; there's
+  a comment on both sides saying so. Verified live: filter returns 8 of 8, matching the badge.
+
+  Removed `Pages/SessionManager/VecSubmission.cshtml(.cs)`, `VecSubmissionReportService` (only that
+  page used it), and their DI registrations. **Kept `VecSubmissionService`** — session Detail still
+  uses `MarkSubmittedAsync`. Its 6 predicate tests weren't deleted but retargeted onto
+  `NavBadgeCountService` as `PendingVecSubmissionCountTests`, so the cancelled-session/non-terminal/
+  mixed/team-scoping coverage survives. The pending-count badge moved onto the Sessions nav link with
+  a `title` explaining what it counts. Also fixed on the way out (and still live in
+  `UnmatchedPayments`): a bare `RedirectToPage()` after Mark-submitted dropped the `?teamId=` query
+  string, stranding a multi-team user on the empty "no team context" page after every action.
+
+- [x] ~~**FCC class upgrades never confirmed — 20 candidates stuck pending**~~ (found 2026-07-30,
+  fixed same day). Full design in `docs/fcc-uls-watcher.md`'s "Confirming a class upgrade". The
+  Grant-Date guard added earlier that day correctly killed false-positive grants but made upgrades
+  *permanently* undetectable, since FCC pins Grant Date to the original license and never advances it
+  on an upgrade — 20 of 21 pending candidates were upgrades, the oldest stuck 19 days. Two verified
+  facts made it solvable: `AM.dat` (in every archive, previously never opened) carries the current
+  operator class, and `HD`'s **Last Action Date does** advance on an upgrade. An upgrade now grants
+  only when the class FCC reports equals `NewLicenseClass` **and** last action is on/after the
+  session — both halves load-bearing, since class alone re-confirms someone who already held it and
+  date alone matches any unrelated admin action.
+
+  Recovered **11 candidates** in one `--run-fcc-weekly` pass; the remaining 10 are legitimately
+  pending (sessions from 07-25 on, where FCC genuinely hasn't acted — spot-checked two by hand
+  against the raw ULS snapshot). Post-run invariant held: zero granted candidates with a grant date
+  predating their session, zero missing a call sign.
+
+  Also landed: `--run-fcc-daily` / `--run-fcc-weekly` Worker switches, replacing the
+  "temporarily rewrite `FccDailyWatcherStartHourEt` → restart → put it back" dance previously needed
+  to force a run. **Use `--run-fcc-weekly` for historical recovery** — the weekly complete snapshot
+  holds current state for every active license regardless of grant date, whereas a daily file only
+  carries one day's transactions and can never recover a prior week's candidate.
+
+- [x] ~~**Per-row action menu on the Sessions list**~~ (requested 2026-07-30, built same day). Direct
+  follow-on to the VEC Submission removal above — once that worklist became a Sessions filter, every
+  action still required opening each session's Detail page, so a filtered list of 8 pending sessions
+  meant 8 round-trips. `Index.cshtml(.cs)` now renders a kebab `⋮` column reusing the same
+  `.kebab`/`.menu` component the Detail page's candidate roster uses: **Mark submitted to VEC**,
+  **Mark session completed**, **Clear reschedule flag**, and (below a rule) **Delete session** behind
+  a per-row confirmation modal stating the candidate/payment/VE-roster rows it cascades to.
+
+  Two things worth remembering:
+  - The `SessionRow.Can*` flags only decide *what's worth rendering*; each of the four POST handlers
+    independently re-resolves the user and re-checks `AdminAccessScope`/`SessionAccessScope`
+    server-side. A hidden menu item is not an authorization control.
+  - **`asp-page-handler` builds the form action from the route alone and drops the query string**, so
+    every action silently reset the list back to unfiltered. Fixed with `BuildActionUrl(handler)`
+    (`BuildPageUrl(PageNumber)` + `&handler=…`) and a matching `RedirectToCurrentView()`. But an
+    explicit `action=` attribute also makes `FormTagHelper` stop emitting the antiforgery token —
+    every POST then 400s before reaching the app, with **nothing logged server-side**. Both forms of
+    this bite together: any form here needs `action="@Model.BuildActionUrl(…)"` *and* an explicit
+    `asp-antiforgery="true"`.
+
 - [x] ~~**TeamLead has no real view yet**~~ (found during Phase 9d's self-audit against 9a-9c, 2026-07-21; fixed 2026-07-22). Added `TeamLead` to `[Authorize]` on `Pages/SessionManager/Index.cshtml.cs`/`Detail.cshtml.cs`/`VeRoster.cshtml.cs`/`VecSubmission.cshtml.cs`, added a new `SessionAccessScope.CanView` (view-only, unlike `CanEdit` doesn't carve out TeamLead) to gate page *display* separately from the existing `CanEdit` write-gate, and hid every write control (buttons/forms/kebab menu/modals) in `Detail.cshtml`/`VecSubmission.cshtml` behind a `CanEdit` flag exposed from the page model. `RoleLandingPages` now sends TeamLead to `/SessionManager/Index` like every other role; the `Pages/TeamLead/Index.cshtml` placeholder was removed. **Found and fixed a second, previously-latent bug in the same change:** `SessionAccessScope.GetEffectiveTeamId`'s TeamLead branch needs `User.ManagedByUser` eager-loaded, but `UserManager.GetUserAsync(ClaimsPrincipal)` (used everywhere) never loads it — since no page had ever exercised the TeamLead path before, this had never been caught; a TeamLead would have signed in successfully and silently seen zero sessions. Fixed with a new `CurrentUserLoader.GetUserWithManagerAsync` extension (`Web/CurrentUserLoader.cs`) that all four pages now use instead of the bare `userManager.GetUserAsync`. Live-verified in a real browser: `teamlead@example.com` lands on Sessions, sees only their assigned team's sessions/roster/submission status with zero write controls anywhere; `sessionmanager@example.com` confirmed unaffected (full edit access still present) as a regression check.
 
 - [x] ~~**No real fix yet for youth-rate underpayments getting auto-matched**~~ (found during a security review of the Square unmatched-payment-matching feature, 2026-07-21/22; built 2026-07-27, see `docs/youth-payment-confirmation.md`). Built as designed below, with two changes from the researched plan: the COPPA checkbox was simplified out entirely (just plain informational text/link now, no checkbox, nothing submitted or stored — not even a timestamp) and `Candidate.CoppaFormConfirmedUtc` was never added. A candidate now gets a second, youth-specific link in the registration confirmation email; confirming self-identifies them as a youth, deletes their standard-rate Square link, generates a new one at `FeeConfiguration.YouthExamFeeAmount`, and redirects straight to the new checkout. **Still an accepted risk, not fixed by this:** the separate Square-hosted checkout page (the other, unrelated path a candidate could use to underpay) was not retired — `AmountMismatchFlaggedUtc` remains the backstop for that path, per the original design note.
