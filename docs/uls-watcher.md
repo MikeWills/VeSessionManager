@@ -23,7 +23,8 @@ unauthenticated, in one call — including the two fields that made upgrade dete
 **The accuracy trade-off was accepted deliberately** (Mike, 2026-07-31): this tracking is
 informational, not operational. *"We aren't out here tracking the FCC and putting in tickets if there
 are issues. That's the VECs job."* The source of truth remains FCC's own Application Search and ULS,
-consulted manually — which is why Applicant Status links out to them.
+consulted manually. Applicant Status links out to the ULS licence record; the application side is
+not linkable — see "No application deep link" below.
 
 The failure-domain objection (adding a dependency on ExamTools) was raised and correctly dismissed:
 ExamTools is already the hard dependency for ingestion, and **if ExamTools is down there is no
