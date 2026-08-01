@@ -96,8 +96,14 @@ cap and a newer entry needs to be added; oldest goes first.
   precede the scheduled end) or `TestingCompletedUtc` or `HasEnded` (the backstop for pre-2026-07-31
   sessions carrying neither stamp). The roster half is not redundant: a session appearing and closing
   inside one polling interval would otherwise lose its roster permanently; empty rosters keep
-  retrying so a failed sync self-heals. Migration `HistoricalImportRequests` is one new table, clean
-  `DROP TABLE` down-path.
+  retrying so a failed sync self-heals. **Same bug class then fixed in `ExamResultSyncService`
+  (issue #81):** bounded to `ResultSyncWindow` (14 days), anchored on `ScheduledStartUtc` and **not**
+  `ExamToolsClosedUtc` — the import stamps the close field at *import* time, so anchoring there would
+  preserve the very burst the bound exists to stop. `ManualCandidateRefreshService` gained the
+  exam-result step it had always been missing (its own doc comment claimed otherwise) as the
+  on-demand escape hatch for a session graded later than the window; that also required registering
+  `ExamResultSyncService` in the **Web** project's DI for the first time. Migration
+  `HistoricalImportRequests` is one new table, clean `DROP TABLE` down-path.
 - **Admin → Team Maintenance: team-level "Refresh now" + ingestion schedule + Worker-health banner
   (2026-07-31).** See `docs/team-maintenance.md` (issues #77/#73). New TeamAdmin/SystemAdmin page,
   operations to Team Settings' configuration. Closes the gap where `ManualCandidateRefreshService`'s

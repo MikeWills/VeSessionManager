@@ -11,6 +11,7 @@ using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Discord;
 using VeSessionManager.Core.Email;
 using VeSessionManager.Core.Entities;
+using VeSessionManager.Core.ExamResults;
 using VeSessionManager.Core.ExamTools;
 using VeSessionManager.Core.Ingestion;
 using VeSessionManager.Core.Jobs;
@@ -86,6 +87,10 @@ builder.Services.Configure<DiscordOptions>(builder.Configuration.GetSection(Disc
 builder.Services.AddSingleton<IDiscordEventClient, DiscordEventClient>();
 builder.Services.AddScoped<SessionEventSchedulingService>();
 builder.Services.AddScoped<JobRunHistoryLogger>();
+// Resolved by ManualCandidateRefreshService since issue #81 — the manual pipeline now runs the
+// exam-result step too, which is the escape hatch for a session graded after
+// ExamResultSyncService.ResultSyncWindow has passed.
+builder.Services.AddScoped<ExamResultSyncService>();
 builder.Services.AddScoped<ManualCandidateRefreshService>();
 
 // Issues #77/#73: Admin → Team Maintenance (team-level "Refresh now" + ingestion schedule
