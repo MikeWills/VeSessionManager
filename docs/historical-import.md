@@ -155,16 +155,33 @@ the same range resumes rather than duplicating.
 ## Companion fix: VE roster sync no longer re-polls finished sessions
 
 Not in issue #67, but a blocker for it. `VolunteerExaminerSyncService` synced **every Active session**
-for a team, every tick — and a `Session`'s status stays `Active` forever unless a human marks it
-completed. So every session a team had ever ingested was re-polled, one API call each, hourly,
-permanently. Tolerable while ingestion only reached ~30 days back; importing a year would have turned
-it into a standing six-figure-a-month cost against ExamTools' servers.
+for a team, every tick. So every session a team had ever ingested was re-polled, one API call each,
+hourly, permanently. Tolerable while ingestion only reached ~30 days back; importing a year would
+have turned it into a standing six-figure-a-month cost against ExamTools' servers.
 
-A session that has ended **and already has a roster** is now skipped. VEs are assigned before or
-during a session, never after it. An ended session with an *empty* roster keeps being retried, so a
-sync that failed at the time still self-heals rather than being silently written off
-(`FinishedSessionWithARoster_IsNotRePolledForever` /
-`FinishedSessionWithNoRoster_IsStillRetried`).
+**`Session.Status` is not the "is this session over" signal, and reading it as one is the whole
+bug.** `Status` stays `Active` forever unless a human clicks Mark completed. The UI has read
+ExamTools-closed sessions as "Completed" since issue #71 — but that label is *derived*
+(`TestingCompletedUtc ?? ExamToolsClosedUtc`), never written back to `Status`. This query was the one
+place in the app where a finished session still looked open, which is exactly why the behaviour was
+easy to believe already fixed. It had not changed since Phase 7 (`de3288f`).
+
+A session is now skipped when it's done **and** already has a roster. Three ways to be done:
+
+| Signal | Meaning |
+|---|---|
+| `ExamToolsClosedUtc` | ExamTools says it's closed — the authoritative signal, and it can arrive *before* the scheduled end time |
+| `TestingCompletedUtc` | A Session Manager marked it completed |
+| `HasEnded` | Backstop for sessions that carry neither stamp and never will: those ingested before `ExamToolsClosedUtc` existed, and any session ExamTools drops without reporting "done" |
+
+**The roster check is not redundant.** VEs are assigned before or during a session, never after, so a
+finished session *with* VEs recorded really is finished. But a session that appears and closes inside
+a single polling interval would otherwise be skipped before its roster was ever fetched — losing it
+permanently. An empty roster keeps being retried, so a sync that failed at the time self-heals.
+
+Tests: `SessionExamToolsHasClosed_IsNotRePolled_EvenBeforeItsScheduledEnd`,
+`SessionAManagerMarkedCompleted_IsNotRePolled`, `FinishedSessionWithARoster_IsNotRePolledForever`
+(the no-stamp backstop), `FinishedSessionWithNoRoster_IsStillRetried`.
 
 ## Schema
 

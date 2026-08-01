@@ -305,12 +305,50 @@ public class VolunteerExaminerSyncServiceTests
     }
 
     [Fact]
+    public async Task SessionExamToolsHasClosed_IsNotRePolled_EvenBeforeItsScheduledEnd()
+    {
+        // ExamTools reporting the session closed is the authoritative "nothing more to pull" signal
+        // — it is what the UI has meant by "Completed" since issue #71, and it can arrive before the
+        // scheduled end time, which is why this doesn't rely on HasEnded alone.
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        var session = await SeedSessionAsync(dbContext, team);
+        var client = new FakeExamToolsClient();
+        client.SetRoster(team.Id, session.ExamToolsSessionId, new ExamToolsVe { Call = "N2SPG", Name = "Test VE" });
+        await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+        Assert.Single(client.RosterFetches);
+
+        session.ExamToolsClosedUtc = Now;
+        await dbContext.SaveChangesAsync();
+
+        // Still well before ScheduledStartUtc, so HasEnded is false — only the closed stamp applies.
+        await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+
+        Assert.Single(client.RosterFetches);
+    }
+
+    [Fact]
+    public async Task SessionAManagerMarkedCompleted_IsNotRePolled()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        var session = await SeedSessionAsync(dbContext, team);
+        var client = new FakeExamToolsClient();
+        client.SetRoster(team.Id, session.ExamToolsSessionId, new ExamToolsVe { Call = "N2SPG", Name = "Test VE" });
+        await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+
+        session.TestingCompletedUtc = Now;
+        await dbContext.SaveChangesAsync();
+        await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+
+        Assert.Single(client.RosterFetches);
+    }
+
+    [Fact]
     public async Task FinishedSessionWithARoster_IsNotRePolledForever()
     {
-        // A Session's Status stays Active unless a human marks it completed, so "sync every Active
-        // session" re-polled every session a team had ever ingested, one API call each, every tick,
-        // permanently. Tolerable at ~30 days of history; the historical import (issue #67) can add a
-        // year in one go, which would make it a standing cost against someone else's servers.
+        // The backstop case: sessions ingested before ExamToolsClosedUtc existed carry neither
+        // stamp and never will, so HasEnded is the only thing that can retire them.
         await using var dbContext = CreateContext();
         var team = await SeedTeamAsync(dbContext);
         var session = await SeedSessionAsync(dbContext, team);

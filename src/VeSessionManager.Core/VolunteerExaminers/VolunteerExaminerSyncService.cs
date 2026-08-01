@@ -48,17 +48,30 @@ public class VolunteerExaminerSyncService(
             .Where(s => s.TeamId == team.Id && s.Status == SessionStatus.Active)
             .ToListAsync(cancellationToken);
 
-        // A session's Status stays Active forever unless a human marks it completed, so "every
-        // Active session" grew without bound: every session a team had ever ingested was re-polled,
-        // one API call each, every tick, permanently. Tolerable while ingestion only reached ~30
-        // days back; the historical import (issue #67) can add a year of sessions in one go, which
-        // would have made that a standing six-figure-a-month cost against someone else's servers.
+        // Session.Status is NOT the "is this session over" signal, and reading it as one is why this
+        // query grew without bound: Status stays Active forever unless a human clicks Mark
+        // completed, so every session a team had ever ingested was re-polled, one API call each,
+        // every tick, permanently. The UI has read ExamTools-closed sessions as "Completed" since
+        // issue #71 — but that label is *derived* (TestingCompletedUtc ?? ExamToolsClosedUtc), which
+        // makes this the one place a finished session still looked open. Tolerable while ingestion
+        // reached ~30 days back; the historical import (issue #67) can add a year in one go.
         //
-        // A session that has ended and already has a roster is finished — VEs are assigned before or
-        // during a session, never after it. An ended session with an *empty* roster keeps being
-        // retried, so a sync that failed at the time still self-heals rather than being written off.
+        // Three ways a session is done, and the roster check is what makes skipping safe:
+        //   ExamToolsClosedUtc  — ExamTools says the session is closed. The authoritative signal.
+        //   TestingCompletedUtc — a Session Manager marked it completed.
+        //   HasEnded            — the backstop for sessions that will never carry either stamp:
+        //                         those ingested before ExamToolsClosedUtc existed, and any session
+        //                         ExamTools drops without ever reporting "done".
+        //
+        // The roster check is not redundant. VEs are assigned before or during a session, never
+        // after, so a finished session *with* VEs recorded really is finished — but a session that
+        // appears and closes inside a single polling interval would otherwise be skipped before its
+        // roster was ever fetched, losing it permanently. An empty roster keeps being retried, so a
+        // sync that failed at the time self-heals instead of being silently written off.
         var now = timeProvider.GetUtcNow().UtcDateTime;
-        var settled = sessions.RemoveAll(s => s.HasEnded(now) && s.SessionVolunteerExaminers.Count > 0);
+        var settled = sessions.RemoveAll(s =>
+            (s.ExamToolsClosedUtc is not null || s.TestingCompletedUtc is not null || s.HasEnded(now))
+            && s.SessionVolunteerExaminers.Count > 0);
         if (settled > 0)
         {
             logger.LogInformation("VE roster sync for team {TeamId} ({TeamName}): skipped {SettledCount} finished session(s) that already have a roster", team.Id, team.Name, settled);
