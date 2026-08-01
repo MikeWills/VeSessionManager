@@ -553,6 +553,60 @@ public class SessionIngestionServiceTests
     }
 
     [Fact]
+    public async Task InProgressSession_IsIngested_AndItsCandidatesSync()
+    {
+        // ExamTools' "go" state renders as "In progress" on its own session list (confirmed on the
+        // dev site 2026-07-31). Mike: "it can be in go status and we get a new candidate" — so a
+        // session first seen mid-session must still be ingestable, or that candidate is invisible
+        // for the whole session. Previously "go" fell through ShouldIngestNewSession's unknown-state
+        // case and the session was never created at all.
+        await using var dbContext = CreateContext();
+        await SeedVecAndFeeConfigAsync(dbContext);
+        var team = await SeedTeamAsync(dbContext);
+        var client = new FakeExamToolsClient();
+        var inProgress = PendingSession(id: "live-session", date: Now.AddMinutes(-20), applicantCount: 1);
+        inProgress.State = "go";
+        client.SessionsFor(team.Id).Add(inProgress);
+        client.ApplicantsFor(team.Id)["live-session"] = [Applicant(id: "walked-in")];
+
+        var result = await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+
+        Assert.Equal(1, result.SessionsAdded);
+        Assert.Equal(1, result.CandidatesAdded);
+        var session = Assert.Single(dbContext.Sessions);
+        Assert.Equal("live-session", session.ExamToolsSessionId);
+        Assert.Equal(SessionStatus.Active, session.Status);
+        // "go" is not "done" — an in-progress session must not be stamped closed.
+        Assert.Null(session.ExamToolsClosedUtc);
+
+        // A candidate registering after the session has started is picked up on the next poll.
+        client.ApplicantsFor(team.Id)["live-session"] = [Applicant(id: "walked-in"), Applicant(id: "late-arrival")];
+        client.SessionsFor(team.Id)[0].ApplicantCount = 2;
+        var second = await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+        Assert.Equal(1, second.CandidatesAdded);
+        Assert.Equal(2, dbContext.Candidates.Count());
+    }
+
+    [Fact]
+    public async Task StaleInProgressSession_IsNotIngested()
+    {
+        // The dev feed carries a session stuck "In progress" since 2024 — as undesirable to ingest
+        // as any other zombie, so "go" gets the same NewSessionPastGrace bound as "pend".
+        await using var dbContext = CreateContext();
+        await SeedVecAndFeeConfigAsync(dbContext);
+        var team = await SeedTeamAsync(dbContext);
+        var client = new FakeExamToolsClient();
+        var stale = PendingSession(id: "stuck-in-progress", date: Now.AddYears(-2));
+        stale.State = "go";
+        client.SessionsFor(team.Id).Add(stale);
+
+        var result = await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+
+        Assert.Equal(0, result.SessionsAdded);
+        Assert.Empty(dbContext.Sessions);
+    }
+
+    [Fact]
     public async Task OneSessionFailingCandidateSync_DoesNotStopTheOtherSessions()
     {
         // Found live 2026-07-31: a single session ExamTools answered with 404 threw out of the

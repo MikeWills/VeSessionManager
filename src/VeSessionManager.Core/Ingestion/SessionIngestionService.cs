@@ -22,6 +22,19 @@ public class SessionIngestionService(
     private const string PendingState = "pend";
     private const string DoneState = "done";
 
+    /// <summary>
+    /// ExamTools' "In progress" state — the session is running right now (confirmed against the
+    /// dev site's own session list, 2026-07-31, where this renders as a blue "In progress" row).
+    /// First-ingestable exactly like "pend": a session can gain a new candidate while it is
+    /// underway, and before this was recognised a session first seen in this state fell through
+    /// ShouldIngestNewSession's final "unknown state" case and became invisible — along with every
+    /// candidate on it — until it eventually closed.
+    /// </summary>
+    private const string InProgressState = "go";
+
+    /// <summary>Every session state this app knows how to act on. Anything else is logged once per run rather than silently dropped — see LogUnknownSessionStates.</summary>
+    private static readonly string[] KnownStates = [PendingState, InProgressState, DoneState];
+
     /// <summary>Fallback when ExamTools reports no duration (or 0) for a session's sessionDef.</summary>
     private const int DefaultDurationMinutes = 60;
 
@@ -132,6 +145,8 @@ public class SessionIngestionService(
             // before this tool existed, or too stale to be worth backfilling — not ingested.
         }
 
+        LogUnknownSessionStates(team, remoteSessions);
+
         // Cancellation: ExamTools has no cancelled flag; a known, still-open session vanishing
         // from the feed by id *is* the cancellation signal (confirmed against real API responses).
         // Two guards, both added for issue #68, and deliberately not one:
@@ -207,8 +222,37 @@ public class SessionIngestionService(
         return result;
     }
 
+    /// <summary>
+    /// A state this app doesn't recognise means ExamTools has a lifecycle step we don't model, and
+    /// every session in it is silently invisible. That is exactly how "go" (In progress) went
+    /// unnoticed until 2026-07-31 — it was dropped by a bare `else` with no log line at all. One
+    /// aggregate line per run, not per session, so an unmodelled state announces itself the first
+    /// time it appears instead of being found by reading raw API output.
+    /// </summary>
+    private void LogUnknownSessionStates(Team team, List<ExamToolsSession> remoteSessions)
+    {
+        var unknown = remoteSessions
+            .Where(s => !KnownStates.Contains(s.State))
+            .GroupBy(s => s.State ?? "(null)")
+            .Select(g => $"{g.Key} x{g.Count()}")
+            .ToList();
+        if (unknown.Count == 0)
+        {
+            return;
+        }
+
+        logger.LogWarning("ExamTools returned session state(s) this app does not recognise for team {TeamId} ({TeamName}): {UnknownStates} — those sessions were not ingested. Known states are {KnownStates}.",
+            team.Id, team.Name, string.Join(", ", unknown), string.Join("/", KnownStates));
+    }
+
+    /// <summary>
+    /// "go" (In progress) is treated exactly like "pend": a session can pick up a new candidate
+    /// while it is underway, so one first seen mid-session must still be ingestable. The same
+    /// NewSessionPastGrace bound applies — the dev feed carries a session stuck "In progress" since
+    /// 2024, which is as undesirable to ingest as any other zombie.
+    /// </summary>
     private static bool ShouldIngestNewSession(ExamToolsSession remote, DateTime now) =>
-        (remote.State == PendingState && remote.Date >= now - NewSessionPastGrace)
+        ((remote.State == PendingState || remote.State == InProgressState) && remote.Date >= now - NewSessionPastGrace)
         || (remote.State == DoneState && remote.Date >= now - CompletedSessionBackfillWindow);
 
     private async Task<Session?> TryCreateSessionAsync(
