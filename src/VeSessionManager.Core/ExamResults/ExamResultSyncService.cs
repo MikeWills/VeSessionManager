@@ -53,6 +53,15 @@ public class ExamResultSyncService(
     IOptions<ExamToolsOptions> examToolsOptions,
     ILogger<ExamResultSyncService> logger)
 {
+    /// <summary>
+    /// How long after a session's scheduled start its candidates keep being checked for graded
+    /// results (issue #81). Generous — results are normally entered the same day or the next — but
+    /// finite, which is the point: without a bound this scan grows forever. A session graded later
+    /// than this can still be pulled in on demand, because ManualCandidateRefreshService runs this
+    /// service and the "Refresh now" button on Admin → Team Maintenance runs that.
+    /// </summary>
+    public static readonly TimeSpan ResultSyncWindow = TimeSpan.FromDays(14);
+
     public async Task<ExamResultSyncResult> RunAsync(Team team, CancellationToken cancellationToken)
     {
         var result = new ExamResultSyncResult();
@@ -66,9 +75,26 @@ public class ExamResultSyncService(
         var credentials = ExamToolsCredentials.For(team, examToolsOptions.Value.BaseUrl);
         var now = timeProvider.GetUtcNow().UtcDateTime;
 
+        // Issue #81. `Status` only ever leaves Active on *cancellation* — it is never set to
+        // Completed (see CLAUDE.md's Known Constraints) — so "Active and already started" means
+        // every session this team has ever run, with no upper bound. The per-candidate gate below
+        // keeps a fully-resolved session free, but any candidate that never resolves (a no-show
+        // whose ExamTools record carries no result data is the common case) was polled once per
+        // tick, forever. The historical import made that materially worse: imported candidates
+        // arrive Tested=false, so a year of history is a burst of one call each, plus a permanent
+        // residue for every one that never resolves.
+        //
+        // Bounded by how long ago the session RAN. Exam results are entered during or shortly after
+        // a session; one that ran months ago will not start producing new results because we asked
+        // again. Anchored on ScheduledStartUtc and not on ExamToolsClosedUtc deliberately — the
+        // historical import stamps the close field at *import* time, so anchoring there would keep
+        // freshly-imported March sessions eligible for the full window and preserve the burst this
+        // exists to stop.
+        var cutoff = now - ResultSyncWindow;
         var sessions = await dbContext.Sessions
             .Include(s => s.Candidates)
-            .Where(s => s.TeamId == team.Id && s.Status == SessionStatus.Active && s.ScheduledStartUtc <= now)
+            .Where(s => s.TeamId == team.Id && s.Status == SessionStatus.Active
+                        && s.ScheduledStartUtc <= now && s.ScheduledStartUtc >= cutoff)
             .ToListAsync(cancellationToken);
 
         foreach (var session in sessions)

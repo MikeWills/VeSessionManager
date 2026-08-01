@@ -1,4 +1,5 @@
 using VeSessionManager.Core.Entities;
+using VeSessionManager.Core.ExamResults;
 using VeSessionManager.Core.Jobs;
 using VeSessionManager.Core.Notifications;
 using VeSessionManager.Core.Payments;
@@ -9,7 +10,7 @@ namespace VeSessionManager.Core.Ingestion;
 
 /// <summary>
 /// User-triggered equivalent of SessionIngestionJob's per-team pipeline (ingestion, VE roster sync,
-/// Zoom/Discord scheduling, Square payment links, confirmation emails, same order, same reasoning —
+/// exam result sync, Zoom/Discord scheduling, Square payment links, confirmation emails, same order, same reasoning —
 /// see the Worker job's own doc comment) — run on demand for one Team from the "Refresh candidates"
 /// button on the session detail page (Pages/SessionManager/Detail.cshtml.cs), instead of waiting for
 /// SessionIngestionJob's own tick. Added when the job's imminent-session "surge" polling was removed
@@ -23,6 +24,7 @@ namespace VeSessionManager.Core.Ingestion;
 public class ManualCandidateRefreshService(
     SessionIngestionService ingestionService,
     VolunteerExaminerSyncService veRosterSyncService,
+    ExamResultSyncService examResultSyncService,
     SessionEventSchedulingService schedulingService,
     PaymentGenerationService paymentGenerationService,
     CandidateNotificationService notificationService,
@@ -40,6 +42,17 @@ public class ManualCandidateRefreshService(
         await jobRunHistoryLogger.RunAsync(
             "ManualVeRosterSync",
             ct => veRosterSyncService.RunAsync(team, ct),
+            team.Id,
+            cancellationToken);
+
+        // Was missing entirely until issue #81, despite this class's own doc comment claiming to
+        // mirror SessionIngestionJob's pipeline — which has run this step since 2026-07-28. Now
+        // load-bearing rather than merely consistent: ExamResultSyncService stopped scanning
+        // sessions older than its window, so this is the only way to pull in a session graded later
+        // than that.
+        await jobRunHistoryLogger.RunAsync(
+            "ManualExamResultSync",
+            ct => examResultSyncService.RunAsync(team, ct),
             team.Id,
             cancellationToken);
 

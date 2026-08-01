@@ -183,6 +183,39 @@ Tests: `SessionExamToolsHasClosed_IsNotRePolled_EvenBeforeItsScheduledEnd`,
 `SessionAManagerMarkedCompleted_IsNotRePolled`, `FinishedSessionWithARoster_IsNotRePolledForever`
 (the no-stamp backstop), `FinishedSessionWithNoRoster_IsStillRetried`.
 
+## Companion fix 2: exam result sync is bounded by a time window
+
+Issue #81 — same bug class as the VE roster one above, same root cause (`Status == Active` meaning
+"not cancelled", not "not finished"), found by auditing the other callers.
+
+`ExamResultSyncService` scanned every Active session whose start had passed. Its per-candidate gate
+(`!c.Tested || c.NewLicenseClass is null`, excluding terminal statuses) meant a fully-resolved
+session cost nothing — but **any candidate that never resolves was one `GetApplicantDetailAsync` per
+tick, forever.** A no-show whose ExamTools record carries no result data is the common case, and
+nothing ever moves it to a terminal status.
+
+The import makes it sharper: imported candidates arrive `Tested = false`, so a year of history is a
+one-time burst of one call each on the next tick, plus a permanent residue for every one that never
+resolves.
+
+Now bounded by `ExamResultSyncService.ResultSyncWindow` (14 days). Results are normally entered the
+same day or the next; a session that ran months ago will not start producing new results because we
+asked again.
+
+**Anchored on `ScheduledStartUtc`, not `ExamToolsClosedUtc`.** The import stamps the close field at
+*import* time, so anchoring there would leave a freshly-imported March session eligible for the full
+window and preserve the very burst the bound exists to stop
+(`RecentlyImportedButLongPastSession_IsNotPolled_DespiteAFreshClosedStamp`).
+
+### The escape hatch this needed
+
+A window means a session graded later than 14 days would never sync. `ManualCandidateRefreshService`
+now runs `ExamResultSyncService` as a `ManualExamResultSync` step — it had been **missing entirely**,
+despite that class's doc comment claiming to mirror `SessionIngestionJob`'s pipeline, which has run
+this step since 2026-07-28. So "Refresh now" (and the per-session Refresh candidates button) is the
+on-demand path. This also required registering `ExamResultSyncService` in the **Web** project's DI,
+where it had never been needed before.
+
 ## Schema
 
 Migration `HistoricalImportRequests` — one new table, no changes to existing columns, so the

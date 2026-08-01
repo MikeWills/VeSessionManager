@@ -414,4 +414,60 @@ public class ExamResultSyncServiceTests
 
         Assert.Empty(client.DetailFetches);
     }
+
+    [Fact]
+    public async Task SessionOlderThanTheResultSyncWindow_IsNotPolledAtAll()
+    {
+        // Issue #81. Status only ever leaves Active on cancellation, so "Active and already
+        // started" meant every session the team had ever run — and any candidate that never
+        // resolves (a no-show whose ExamTools record carries no result data) was one API call per
+        // tick, forever. The historical import made it worse: imported candidates arrive
+        // Tested=false, so a year of history is a burst plus a permanent residue.
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        var session = await SeedSessionAsync(dbContext, team,
+            scheduledStartUtc: Now - ExamResultSyncService.ResultSyncWindow - TimeSpan.FromDays(1));
+        await SeedCandidateAsync(dbContext, session);
+        var client = new FakeExamToolsClient();
+
+        await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+
+        Assert.Empty(client.DetailFetches);
+    }
+
+    [Fact]
+    public async Task SessionInsideTheResultSyncWindow_IsStillPolled()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        var session = await SeedSessionAsync(dbContext, team,
+            scheduledStartUtc: Now - ExamResultSyncService.ResultSyncWindow + TimeSpan.FromDays(1));
+        await SeedCandidateAsync(dbContext, session);
+        var client = new FakeExamToolsClient();
+
+        await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+
+        Assert.Single(client.DetailFetches);
+    }
+
+    [Fact]
+    public async Task RecentlyImportedButLongPastSession_IsNotPolled_DespiteAFreshClosedStamp()
+    {
+        // The window is anchored on when the session RAN, not on ExamToolsClosedUtc, precisely
+        // because the historical import stamps that field at import time. Anchoring on the close
+        // stamp would leave a freshly-imported March session eligible for the full window and
+        // preserve the burst this bound exists to stop.
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        var session = await SeedSessionAsync(dbContext, team,
+            scheduledStartUtc: Now.AddMonths(-5));
+        session.ExamToolsClosedUtc = Now; // just imported
+        await dbContext.SaveChangesAsync();
+        await SeedCandidateAsync(dbContext, session);
+        var client = new FakeExamToolsClient();
+
+        await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+
+        Assert.Empty(client.DetailFetches);
+    }
 }
