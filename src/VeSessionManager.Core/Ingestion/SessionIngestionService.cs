@@ -65,6 +65,87 @@ public class SessionIngestionService(
     /// </summary>
     private static readonly TimeSpan CompletedSessionBackfillWindow = TimeSpan.FromDays(7);
 
+    /// <summary>
+    /// Issue #67 part 2: imports completed sessions over an explicit date range, for the one-off
+    /// historical import (see HistoricalImportService and docs/historical-import.md). Bypasses
+    /// CompletedSessionBackfillWindow — that window governs the *continuous* sweep, and the whole
+    /// point here is a deliberate operator-chosen range that the sweep should never cover.
+    ///
+    /// **This deliberately does not reuse RunAsync, and must not be "simplified" into it.** RunAsync
+    /// treats a known, still-open session's absence from the feed as a cancellation. This feed is
+    /// filtered to one date range, so every session outside that range is absent by construction —
+    /// running the cancellation pass here would mark a team's entire live schedule Cancelled. For
+    /// the same reason there is no reschedule handling and no ExtId backfill: this method only ever
+    /// *creates* sessions that are missing, and touches nothing that already exists.
+    ///
+    /// Candidates are synced only for sessions this call actually creates. An already-imported
+    /// session is skipped whole, which makes re-running a range cheap and — more importantly — keeps
+    /// WithdrawMissingCandidates away from historical rosters, where a short or empty export from a
+    /// long-finished session would clear real candidates' PII irreversibly.
+    /// </summary>
+    public async Task<IngestionResult> ImportHistoricalRangeAsync(
+        Team team, DateOnly startDate, DateOnly endDate, CancellationToken cancellationToken)
+    {
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+        var result = new IngestionResult();
+
+        if (!team.IsExamToolsConfigured)
+        {
+            logger.LogInformation("Team {TeamId} ({TeamName}) has no ExamTools credentials configured — skipping historical import", team.Id, team.Name);
+            return result;
+        }
+
+        var credentials = ExamToolsCredentials.For(team, examToolsOptions.Value.BaseUrl);
+        var remoteSessions = await examToolsClient.GetTeamClosedSessionsAsync(credentials, startDate, endDate, cancellationToken);
+
+        var existingIds = await dbContext.Sessions
+            .Where(s => s.TeamId == team.Id)
+            .Select(s => s.ExamToolsSessionId)
+            .ToListAsync(cancellationToken);
+        var existing = existingIds.ToHashSet();
+
+        foreach (var remote in remoteSessions)
+        {
+            if (existing.Contains(remote.Id))
+            {
+                continue;
+            }
+
+            var created = await TryCreateSessionAsync(remote, team, now, result, cancellationToken);
+            if (created is null)
+            {
+                continue;
+            }
+
+            // Stamped immediately: this session is already closed upstream (it came from the closed
+            // feed), and without the stamp the routine sweep's cancellation heuristic has only
+            // HasEnded to fall back on. Costs nothing here and keeps the imported rows in the same
+            // shape the continuous path eventually produces.
+            created.ExamToolsClosedUtc = now;
+            existing.Add(remote.Id);
+
+            // Isolated per session, same reasoning as the routine candidate loop: one session
+            // ExamTools can't serve must not abort an import of a hundred others.
+            try
+            {
+                var applicants = await examToolsClient.GetSessionApplicantsAsync(credentials, remote.Id, cancellationToken);
+                SyncCandidates(created, applicants, remote.ApplicantCount, now, result);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                result.SessionsFailedCandidateSync++;
+                logger.LogError(ex, "Historical import: candidate sync failed for session {ExamToolsSessionId} (team {TeamId}) — the session row is kept, the rest of the import continues",
+                    remote.Id, team.Id);
+            }
+
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+
+        logger.LogInformation("Historical import {StartDate}..{EndDate} finished for team {TeamId} ({TeamName}): {Result}",
+            startDate, endDate, team.Id, team.Name, result);
+        return result;
+    }
+
     public async Task<IngestionResult> RunAsync(Team team, CancellationToken cancellationToken)
     {
         var now = timeProvider.GetUtcNow().UtcDateTime;

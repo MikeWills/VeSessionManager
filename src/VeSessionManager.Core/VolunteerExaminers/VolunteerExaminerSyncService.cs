@@ -20,6 +20,7 @@ public class VolunteerExaminerSyncService(
     AppDbContext dbContext,
     IExamToolsClient examToolsClient,
     IOptions<ExamToolsOptions> examToolsOptions,
+    TimeProvider timeProvider,
     ILogger<VolunteerExaminerSyncService> logger)
 {
     public async Task<VeRosterSyncResult> RunAsync(Team team, CancellationToken cancellationToken)
@@ -46,6 +47,22 @@ public class VolunteerExaminerSyncService(
             .Include(s => s.SessionVolunteerExaminers).ThenInclude(sve => sve.VolunteerExaminer)
             .Where(s => s.TeamId == team.Id && s.Status == SessionStatus.Active)
             .ToListAsync(cancellationToken);
+
+        // A session's Status stays Active forever unless a human marks it completed, so "every
+        // Active session" grew without bound: every session a team had ever ingested was re-polled,
+        // one API call each, every tick, permanently. Tolerable while ingestion only reached ~30
+        // days back; the historical import (issue #67) can add a year of sessions in one go, which
+        // would have made that a standing six-figure-a-month cost against someone else's servers.
+        //
+        // A session that has ended and already has a roster is finished — VEs are assigned before or
+        // during a session, never after it. An ended session with an *empty* roster keeps being
+        // retried, so a sync that failed at the time still self-heals rather than being written off.
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+        var settled = sessions.RemoveAll(s => s.HasEnded(now) && s.SessionVolunteerExaminers.Count > 0);
+        if (settled > 0)
+        {
+            logger.LogInformation("VE roster sync for team {TeamId} ({TeamName}): skipped {SettledCount} finished session(s) that already have a roster", team.Id, team.Name, settled);
+        }
 
         // Each session isolated and saved independently — same reasoning as every other scan-based
         // service's per-item try/catch + save: one session's ExamTools call throwing must not skip

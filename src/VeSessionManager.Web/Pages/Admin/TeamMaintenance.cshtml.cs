@@ -33,7 +33,8 @@ public class TeamMaintenanceModel(
     AdminAccessScope adminAccessScope,
     IngestionStatusService ingestionStatusService,
     TeamRefreshThrottle refreshThrottle,
-    ManualCandidateRefreshService manualRefreshService) : PageModel
+    ManualCandidateRefreshService manualRefreshService,
+    HistoricalImportService historicalImportService) : PageModel
 {
     [BindProperty(SupportsGet = true)]
     public int? TeamId { get; set; }
@@ -52,6 +53,16 @@ public class TeamMaintenanceModel(
 
     /// <summary>Non-null when a refresh ran too recently; the view disables the button and says how long to wait.</summary>
     public int? RefreshBlockedForSeconds { get; private set; }
+
+    /// <summary>This team's import history, newest first — the in-flight one (if any) is the first row.</summary>
+    public IReadOnlyList<HistoricalImportRequest> ImportRequests { get; private set; } = [];
+
+    /// <summary>True while a Pending/Running import exists for this team, which is what blocks queueing another.</summary>
+    public bool ImportInFlight => ImportRequests.Any(r => r.Status is HistoricalImportStatus.Pending or HistoricalImportStatus.Running);
+
+    /// <summary>Defaults for the import form: January 1 of the current year through yesterday — the motivating case from issue #67 ("a full year for the stats page").</summary>
+    public DateOnly DefaultImportStart { get; private set; }
+    public DateOnly DefaultImportEnd { get; private set; }
 
     public async Task<IActionResult> OnGetAsync()
     {
@@ -82,7 +93,38 @@ public class TeamMaintenanceModel(
         Report = await ingestionStatusService.GetAsync([Team.Id], CancellationToken.None);
         Status = Report.Teams.FirstOrDefault();
         RefreshBlockedForSeconds = await refreshThrottle.SecondsUntilAllowedAsync(Team.Id, CancellationToken.None);
+
+        ImportRequests = await dbContext.HistoricalImportRequests
+            .Where(r => r.TeamId == Team.Id)
+            .OrderByDescending(r => r.RequestedUtc)
+            .Take(10)
+            .ToListAsync();
+
+        var today = DateOnly.FromDateTime(Report.NowUtc);
+        DefaultImportStart = new DateOnly(today.Year, 1, 1);
+        DefaultImportEnd = today.AddDays(-1);
         return Page();
+    }
+
+    public async Task<IActionResult> OnPostQueueImportAsync(DateOnly startDate, DateOnly endDate)
+    {
+        var auth = await AuthorizeAsync();
+        if (auth is null) return Forbid();
+
+        var team = auth.Value.Team;
+        var result = await historicalImportService.QueueAsync(
+            team.Id, startDate, endDate, auth.Value.User.Id, CancellationToken.None);
+
+        TempData[result == HistoricalImportQueueResult.Queued ? "StatusMessage" : "ErrorMessage"] = result switch
+        {
+            HistoricalImportQueueResult.Queued =>
+                $"Import queued for {team.Name}, {startDate:MMM d, yyyy} to {endDate:MMM d, yyyy}. The Worker picks it up within a minute — progress appears below.",
+            HistoricalImportQueueResult.AlreadyRunning =>
+                "This team already has an import queued or running — wait for it to finish before starting another.",
+            _ => "That date range isn't valid: the end date must be on or after the start date, and the start date can't be in the future."
+        };
+
+        return RedirectToPage(new { teamId = team.Id });
     }
 
     /// <summary>

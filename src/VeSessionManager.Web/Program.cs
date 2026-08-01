@@ -96,6 +96,8 @@ builder.Services.AddScoped<ManualCandidateRefreshService>();
 builder.Services.AddScoped<IngestionScheduleService>();
 builder.Services.AddScoped<IngestionStatusService>();
 builder.Services.AddScoped<TeamRefreshThrottle>();
+// Web only ever QUEUES an import (HistoricalImportService.QueueAsync) — the Worker runs it.
+builder.Services.AddScoped<HistoricalImportService>();
 builder.Services.AddSingleton<IngestionHealthCache>();
 
 // Phase 9b: the actual UI-triggered wiring for every Session Manager action — see

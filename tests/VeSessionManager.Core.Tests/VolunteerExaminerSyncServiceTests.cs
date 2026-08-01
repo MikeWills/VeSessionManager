@@ -101,8 +101,13 @@ public class VolunteerExaminerSyncServiceTests
         return session;
     }
 
+    private sealed class FixedTimeProvider(DateTime utcNow) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => new(utcNow, TimeSpan.Zero);
+    }
+
     private static VolunteerExaminerSyncService CreateService(AppDbContext dbContext, FakeExamToolsClient client) =>
-        new(dbContext, client, Options.Create(new ExamToolsOptions()), NullLogger<VolunteerExaminerSyncService>.Instance);
+        new(dbContext, client, Options.Create(new ExamToolsOptions()), new FixedTimeProvider(Now), NullLogger<VolunteerExaminerSyncService>.Instance);
 
     [Fact]
     public async Task NewVe_IsCreated_AndLinkedToSession()
@@ -297,5 +302,55 @@ public class VolunteerExaminerSyncServiceTests
         Assert.Equal(0, result.LinksRemoved);
         Assert.Single(dbContext.VolunteerExaminers);
         Assert.Single(dbContext.SessionVolunteerExaminers);
+    }
+
+    [Fact]
+    public async Task FinishedSessionWithARoster_IsNotRePolledForever()
+    {
+        // A Session's Status stays Active unless a human marks it completed, so "sync every Active
+        // session" re-polled every session a team had ever ingested, one API call each, every tick,
+        // permanently. Tolerable at ~30 days of history; the historical import (issue #67) can add a
+        // year in one go, which would make it a standing cost against someone else's servers.
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        var session = await SeedSessionAsync(dbContext, team);
+        var client = new FakeExamToolsClient();
+        client.SetRoster(team.Id, session.ExamToolsSessionId, new ExamToolsVe { Call = "N2SPG", Name = "Test VE" });
+
+        // First sync happens while the session is still in the future, and stores the roster.
+        await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+        Assert.Single(client.RosterFetches);
+
+        // Long after the session has ended, it is never fetched again.
+        var afterSession = new FixedTimeProvider(session.ScheduledStartUtc.AddDays(30));
+        var laterService = new VolunteerExaminerSyncService(
+            dbContext, client, Options.Create(new ExamToolsOptions()), afterSession,
+            NullLogger<VolunteerExaminerSyncService>.Instance);
+        await laterService.RunAsync(team, CancellationToken.None);
+
+        Assert.Single(client.RosterFetches);
+    }
+
+    [Fact]
+    public async Task FinishedSessionWithNoRoster_IsStillRetried()
+    {
+        // The other half: skipping keys on "ended AND already has a roster", so a sync that failed
+        // at the time still self-heals rather than being permanently written off. VEs are assigned
+        // before or during a session, so an ended session with VEs recorded really is finished — an
+        // ended session with none is unfinished business.
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        var session = await SeedSessionAsync(dbContext, team);
+        var client = new FakeExamToolsClient();
+        client.SetRoster(team.Id, session.ExamToolsSessionId, new ExamToolsVe { Call = "N2SPG", Name = "Test VE" });
+
+        var afterSession = new FixedTimeProvider(session.ScheduledStartUtc.AddDays(30));
+        var service = new VolunteerExaminerSyncService(
+            dbContext, client, Options.Create(new ExamToolsOptions()), afterSession,
+            NullLogger<VolunteerExaminerSyncService>.Instance);
+        var result = await service.RunAsync(team, CancellationToken.None);
+
+        Assert.Single(client.RosterFetches);
+        Assert.Equal(1, result.LinksAdded);
     }
 }

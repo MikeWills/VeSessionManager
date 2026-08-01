@@ -64,3 +64,110 @@ what is already stored. No behavioural consequence beyond that.
 - `KnownButNotYetClosedSession_IsStillReadFromTheClosedFeed` — the guard rail described above.
 - `DoneSessionWithinBackfillWindow_IsIngested` / `AlreadyEndedSession_DisappearingFromFeed_...` moved
   their fixture dates inside the new 7-day bound.
+
+## Part 2 — the one-time historical import
+
+An admin picks a start and end date on Admin → Team Maintenance; the system does a single pass and
+ingests what it finds. The motivating case: it's August, the routine sweep now reaches back a week,
+and a full year of history is wanted so the stats page (#63) has something to work with.
+
+### Queued for the Worker, not run in the web request
+
+`HistoricalImportRequest` is a request row. Web writes it `Pending`; `HistoricalImportJob` in the
+Worker picks it up on its next tick (default 60s) and processes it. Web and Worker are separate
+processes sharing one SQLite file, and this shape buys three things: the admin isn't held on a
+spinner through a year of API calls; a browser navigation or an app recycle can't abandon a
+half-finished import; and ExamTools polling stays owned by the one process that already owns it,
+rather than two hammering it concurrently.
+
+Progress lives on the row (`ChunksCompleted` / `ChunksTotal`, plus running session/candidate counts),
+saved after **every chunk** — the same "save immediately after each item" rule every scan-based job
+here follows, so a crash mid-import never loses the record of what already landed. The page reads
+those counters directly; the per-chunk `JobRunHistory` rows exist for the ops dashboard, not for the
+progress readout.
+
+`HistoricalImportJob` peeks with a cheap `HasPendingAsync` before logging anything. Writing a
+`JobRunHistory` row for every empty queue check would bury the dashboard under a row a minute and
+destroy the "silence means nothing happened" property the other jobs rely on.
+
+This is the one genuinely **event-driven** job in the app — everything else is scan-based — because
+the event (an admin asked for a specific range) carries information no amount of scanning could
+reconstruct. The idempotency guarantee is unchanged: `Status` is both the "needs action" filter and
+the double-processing guard.
+
+### Chunking and bounds
+
+One **calendar month** per `GetTeamClosedSessionsAsync` call, with a 2-second pause between chunks.
+Calendar months rather than 30-day blocks so boundaries match how anyone would describe the range in
+a log line or a progress readout. A year in one request is a heavy unbounded ask of someone else's
+servers and gives no progress signal; a month is comfortably within what the closed feed already
+serves on every routine tick.
+
+**No cap on how far back a range may reach.** The chunking and the pause are what protect ExamTools,
+not an arbitrary limit on what an operator may ask for. The only range rejections are incoherent
+ones: end before start, or a start in the future (which could only ever return nothing).
+
+**One import at a time per team.** Two concurrent imports would interleave writes to the same
+sessions and double the load for no benefit. Ingestion is idempotent so the *result* would still be
+correct — but the throttling intent would be lost.
+
+### What it does NOT do
+
+**Sessions, candidates and VE roster only.** No Square payment links, no Zoom/Discord events, no
+emails.
+
+`SessionEventSchedulingService` and `CandidateNotificationService` both check `Session.HasEnded`, so
+most of that would be suppressed anyway — but relying on those guards as the *sole* defence for a
+year of backdated data is the wrong posture. Generating live checkout links for sessions that
+finished in March, or emailing "you're registered!" to someone who tested and passed months ago, is
+the most embarrassing failure mode available here. So those steps are never invoked at all, and the
+`HasEnded` guards stay as the backstop they were designed to be. (Issue #22 deliberately left
+payment-link generation and VE sync running for backfilled sessions when the window was 30 days;
+re-confirmed for a *year*, payments are now out and VE sync stays in.)
+
+VE roster sync runs **once after all chunks**, not per chunk — it reconciles every Active session for
+the team in a single pass, so running it per chunk would repeat the same work N times.
+
+### `ImportHistoricalRangeAsync` is not `RunAsync`, and must not become it
+
+The import path is a separate method on `SessionIngestionService`, and collapsing the two would be a
+serious bug:
+
+- **`RunAsync` cancels sessions that vanish from the feed.** The import's feed is filtered to one
+  date range, so *every session outside that range is absent by construction*. Running the
+  cancellation pass there would mark a team's entire live schedule `Cancelled`.
+  `ImportNeverCancelsSessionsOutsideTheImportedRange` is the regression test.
+- **No reschedule handling and no `ExtId` backfill.** The import only ever *creates* sessions that
+  are missing and touches nothing that already exists. A historical feed disagreeing about a stored
+  session's time is not a reschedule to act on months later.
+- **Candidates sync only for sessions the import actually creates.** An already-imported session is
+  skipped whole. That makes re-running a range cheap, and — more importantly — keeps
+  `WithdrawMissingCandidates` away from historical rosters, where a short or empty export from a
+  long-finished session would irreversibly clear real candidates' PII.
+
+Imported sessions are stamped `ExamToolsClosedUtc` immediately (they came from the closed feed, so
+they are closed by definition), which puts them in the same shape the continuous path eventually
+produces and keeps the routine sweep's cancellation heuristic away from them.
+
+A failed chunk marks the request `Failed` and keeps everything earlier chunks imported; re-queueing
+the same range resumes rather than duplicating.
+
+## Companion fix: VE roster sync no longer re-polls finished sessions
+
+Not in issue #67, but a blocker for it. `VolunteerExaminerSyncService` synced **every Active session**
+for a team, every tick — and a `Session`'s status stays `Active` forever unless a human marks it
+completed. So every session a team had ever ingested was re-polled, one API call each, hourly,
+permanently. Tolerable while ingestion only reached ~30 days back; importing a year would have turned
+it into a standing six-figure-a-month cost against ExamTools' servers.
+
+A session that has ended **and already has a roster** is now skipped. VEs are assigned before or
+during a session, never after it. An ended session with an *empty* roster keeps being retried, so a
+sync that failed at the time still self-heals rather than being silently written off
+(`FinishedSessionWithARoster_IsNotRePolledForever` /
+`FinishedSessionWithNoRoster_IsStillRetried`).
+
+## Schema
+
+Migration `HistoricalImportRequests` — one new table, no changes to existing columns, so the
+down-migration is a clean `DROP TABLE` with no data-loss path for pre-existing data.
+

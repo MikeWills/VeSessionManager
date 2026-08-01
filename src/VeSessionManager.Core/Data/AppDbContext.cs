@@ -40,6 +40,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options, IDataProtectio
     public DbSet<SystemSettings> SystemSettings => Set<SystemSettings>();
     public DbSet<UnmatchedSquarePayment> UnmatchedSquarePayments => Set<UnmatchedSquarePayment>();
     public DbSet<UserTeam> UserTeams => Set<UserTeam>();
+    public DbSet<HistoricalImportRequest> HistoricalImportRequests => Set<HistoricalImportRequest>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -118,6 +119,15 @@ public class AppDbContext(DbContextOptions<AppDbContext> options, IDataProtectio
             b.HasKey(ut => new { ut.UserId, ut.TeamId });
             b.HasOne(ut => ut.User).WithMany(u => u.UserTeams).HasForeignKey(ut => ut.UserId).OnDelete(DeleteBehavior.Restrict);
             b.HasOne(ut => ut.Team).WithMany(t => t.UserTeams).HasForeignKey(ut => ut.TeamId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<HistoricalImportRequest>(b =>
+        {
+            b.HasOne(r => r.Team).WithMany().HasForeignKey(r => r.TeamId).OnDelete(DeleteBehavior.Restrict);
+            b.HasOne(r => r.RequestedByUser).WithMany().HasForeignKey(r => r.RequestedByUserId).OnDelete(DeleteBehavior.Restrict);
+            // The Worker's only query is "oldest Pending", and the page's is "this team's requests".
+            b.HasIndex(r => new { r.Status, r.RequestedUtc });
+            b.HasIndex(r => r.TeamId);
         });
 
         modelBuilder.Entity<EmailTemplate>(b =>

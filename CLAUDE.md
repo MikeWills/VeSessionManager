@@ -77,6 +77,24 @@ would be pure duplication — and goes straight to `CHANGELOG.md` instead. Non-p
 redesigns, hardening passes) start here and move to `CHANGELOG.md` once the section is at/over the
 cap and a newer entry needs to be added; oldest goes first.
 
+- **One-time historical session import + VE-roster re-poll fix (2026-07-31).** See
+  `docs/historical-import.md` (issue #67 part 2). Admin picks a date range on Team Maintenance; a
+  `HistoricalImportRequest` row is queued and the Worker's new `HistoricalImportJob` walks it **one
+  calendar month per ExamTools call** with a 2s pause, saving progress counters after every chunk.
+  Queued-for-the-Worker rather than run inline because Web and Worker are separate processes — no
+  spinner, no half-import lost to an app recycle, no two processes polling ExamTools at once. Scope
+  is **sessions + candidates + VE roster only** — no payment links, no Zoom/Discord, no emails; the
+  `HasEnded` guards stay a backstop rather than the sole defence for a year of backdated data.
+  **`SessionIngestionService.ImportHistoricalRangeAsync` must never be collapsed into `RunAsync`:**
+  RunAsync cancels sessions absent from the feed, and a date-ranged feed excludes a team's entire
+  live schedule by construction. It also skips reschedule/`ExtId` handling and only syncs candidates
+  for sessions it creates, keeping `WithdrawMissingCandidates` away from historical rosters where a
+  short export would irreversibly clear PII. **Companion fix, needed before any of this was safe:**
+  `VolunteerExaminerSyncService` re-polled *every* Active session every tick forever (a Session stays
+  Active until a human marks it completed), so importing a year would have added ~100 permanent
+  hourly API calls — it now skips sessions that have ended **and** already have a roster (empty ones
+  still retry, so a failed sync self-heals). Migration `HistoricalImportRequests` is one new table,
+  clean `DROP TABLE` down-path.
 - **Admin → Team Maintenance: team-level "Refresh now" + ingestion schedule + Worker-health banner
   (2026-07-31).** See `docs/team-maintenance.md` (issues #77/#73). New TeamAdmin/SystemAdmin page,
   operations to Team Settings' configuration. Closes the gap where `ManualCandidateRefreshService`'s
@@ -194,28 +212,6 @@ cap and a newer entry needs to be added; oldest goes first.
   heading. Existing sessions backfill lazily (same idiom as the license-class backfill) — no
   one-off migration script — `SessionIngestionService` fills in a null `ExtId` the next time that
   session is still in the feed, and never overwrites once set.
-- **FCC ULS watcher reliability: weekly-catchup retry, upgrade-exam false-positive guard, FRN
-  column (2026-07-30).** No linked doc — see `docs/fcc-uls-watcher.md` for the underlying job
-  design this builds on. Found live investigating a real HRCC discrepancy (Applicant Status showed
-  48 pending vs. an expected ~2): (1) `FccWeeklyCatchupJob` only ever attempted its once-a-week
-  scan with **no retry on failure** — a single `403 Forbidden` from `data.fcc.gov` (confirmed
-  transient; the identical request succeeds on retry) left the entire safety net dark for a full
-  week. Fixed with the same "has this week's slot already succeeded?" catch-up idiom
-  `FccDailyWatcherJob` already uses, retried every `intervalHours` tick until success. Manually
-  triggering it live recovered HRCC's backlog from 40 Unmatched/8 Received down to 3
-  Unmatched/50 Granted. (2) Separately, and more seriously: `FccUlsWatcherService.ProcessLicensesAsync`
-  had no guard against a candidate's FRN already having an *old, unrelated* Active license record —
-  exactly the "upgrade exam" case the class's own doc comment had flagged as deferred. Three real
-  same-day upgrade candidates (testing General→Extra, Technician→General) were incorrectly marked
-  `Granted` off license grants from weeks-to-years earlier, before FCC had done anything with
-  today's actual exam. Fixed by gating the match on the license record's Grant Date being on/after
-  `Session.ScheduledStartUtc`, same rule already used for application-file matches; new
-  `FccUlsWatcherService.RunForDayAsync(DayOfWeek, ...)` lets a specific missed daily file be
-  reprocessed on demand (used to recover this incident's data without waiting on a fresh weekly
-  snapshot). The limitation this guard traded off — upgrades becoming permanently undetectable —
-  **was fixed later the same day, see the AM.dat entry at the top of this Change Log.** (3) Also added an FRN column to Applicant
-  Status's "Pending FCC grant" table for manual copy-paste into FCC's ULS search while (1)/(2) were
-  being investigated.
 Everything through Phase 0-10's initial build (ExamTools ingestion, Zoom/Discord, Square, email
 notifications, FCC ULS watcher, payment reminders, VE tracking, VEC submission tracker, admin
 auth/config/candidate-actions, PII purge) plus the public privacy page has aged out to
