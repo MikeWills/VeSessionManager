@@ -27,7 +27,11 @@ feature.
 
 ## Email/SMTP (Phase 4) — not yet live-verified
 
-**No team has SMTP configured yet**, so nothing in this app has ever sent a real email.
+**No team has SMTP configured yet**, so nothing in this app has ever sent a real email. As of
+2026-08-01 that now also blocks **password reset**, which sends from the new deployment-wide
+Admin -> System Settings -> System Email sender (see `docs/password-reset.md`) rather than a team's
+SMTP. Until that is filled in, the forgot-password page tells the user reset isn't set up. Verifying
+one real reset end to end with a throwaway account is the first thing to do once any SMTP works.
 
 - [ ] Get Mailgun's domain-specific SMTP username/password (Mailgun dashboard → Sending → Domain
   settings → SMTP credentials) — see `docs/email-notifications.md`

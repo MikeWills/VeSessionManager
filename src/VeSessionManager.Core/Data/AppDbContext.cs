@@ -155,6 +155,12 @@ public class AppDbContext(DbContextOptions<AppDbContext> options, IDataProtectio
         modelBuilder.Entity<SystemSettings>(b =>
         {
             b.HasOne(s => s.UpdatedByUser).WithMany().HasForeignKey(s => s.UpdatedByUserId).OnDelete(DeleteBehavior.Restrict);
+            // Encrypted like Team's credential columns, under the same protector purpose so there is
+            // one key path to back up rather than two. IsSystemEmailConfigured is a computed
+            // property with no setter, so EF ignores it without being told to.
+            b.Property(s => s.SystemSmtpPassword)
+                .HasConversion(new EncryptedStringConverter(
+                    dataProtectionProvider.CreateProtector(EncryptedStringConverter.TeamCredentialsPurpose)));
         });
 
         // Phase 9c adds real Team/Vec create screens for the first time — enforce name

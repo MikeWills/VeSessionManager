@@ -64,3 +64,60 @@
         </div>
     </form>
 </div>
+
+<div class="session-panel" style="display:block; margin-top:24px;">
+    <div class="section-head">
+        <h2>System Email</h2>
+        @if (Model.IsSystemEmailConfigured)
+        {
+            <span class="chip chip-green">Configured</span>
+        }
+        else
+        {
+            <span class="chip chip-neutral">Not configured</span>
+        }
+    </div>
+    <p class="session-sub">
+        The deployment-wide sender for email addressed to <em>app users</em> rather than candidates —
+        today that means password reset links. Candidate email (confirmations, reminders, payment
+        notices) is unaffected and still sends from each team's own SMTP settings. A password reset
+        can't be sent at all until this is filled in, because a system administrator may not belong to
+        any team. Test mode, above, redirects these emails too.
+    </p>
+    <form method="post" asp-page-handler="SystemEmail">
+        <div class="field" style="max-width:400px;">
+            <label for="systemSmtpHost">SMTP host</label>
+            <input id="systemSmtpHost" name="systemSmtpHost" value="@Model.SystemSmtpHost" placeholder="smtp.mailgun.org" />
+        </div>
+        <div class="field" style="max-width:200px;">
+            <label for="systemSmtpPort">Port</label>
+            <input id="systemSmtpPort" name="systemSmtpPort" type="number" min="1" max="65535" value="@Model.SystemSmtpPort" placeholder="587" />
+        </div>
+        <div class="field" style="max-width:400px;">
+            <label for="systemSmtpUsername">Username</label>
+            <input id="systemSmtpUsername" name="systemSmtpUsername" value="@Model.SystemSmtpUsername" autocomplete="off" />
+        </div>
+        <div class="field" style="max-width:400px;">
+            <label for="systemSmtpPassword">Password</label>
+            @* Never rendered back — an empty box means "keep the stored secret". *@
+            <input id="systemSmtpPassword" name="systemSmtpPassword" type="password" autocomplete="new-password"
+                   placeholder="@(Model.SystemSmtpPasswordIsSet ? "Stored — leave blank to keep" : "")" />
+        </div>
+        <div class="field" style="max-width:400px; flex-direction:row; align-items:center; gap:8px;">
+            <input id="systemSmtpUseStartTls" name="systemSmtpUseStartTls" type="checkbox" value="true" checked="@Model.SystemSmtpUseStartTls" style="width:auto;" />
+            <input name="systemSmtpUseStartTls" type="hidden" value="false" />
+            <label for="systemSmtpUseStartTls" style="margin:0;">Use StartTLS</label>
+        </div>
+        <div class="field" style="max-width:400px;">
+            <label for="systemSmtpFromAddress">From address</label>
+            <input id="systemSmtpFromAddress" name="systemSmtpFromAddress" type="email" value="@Model.SystemSmtpFromAddress" placeholder="Defaults to the username" />
+        </div>
+        <div class="field" style="max-width:400px;">
+            <label for="systemSmtpFromDisplayName">From display name</label>
+            <input id="systemSmtpFromDisplayName" name="systemSmtpFromDisplayName" value="@Model.SystemSmtpFromDisplayName" placeholder="VE Session Manager" />
+        </div>
+        <div class="panel-actions" style="align-items:flex-start; margin-top:20px;">
+            <button type="submit" class="btn-primary">Save email settings</button>
+        </div>
+    </form>
+</div>

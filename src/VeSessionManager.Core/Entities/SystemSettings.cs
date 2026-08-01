@@ -44,6 +44,36 @@ public class SystemSettings
     /// <summary>Required whenever TestModeEnabled is true (enforced by SystemSettingsService.UpdateAsync) — every redirected email lands here.</summary>
     public string? TestModeOverrideEmail { get; set; }
 
+    // ---- Deployment-wide ("system") SMTP, added 2026-08-01 for password reset ----
+    // Every other email in this app is candidate-facing and sends from the Team that owns the
+    // session, via Team.ToEmailCredentials(). A password reset is not team-scoped: it's addressed to
+    // an app *user*, and a SystemAdmin may belong to no team at all, so there is no team credential
+    // to reach for. These fields are that missing sender. Per-team SMTP is untouched and still owns
+    // all candidate mail. See docs/password-reset.md.
+
+    public string? SystemSmtpHost { get; set; }
+    public int? SystemSmtpPort { get; set; }
+    public string? SystemSmtpUsername { get; set; }
+
+    /// <summary>Encrypted at rest via EncryptedStringConverter, same as Team's credential columns.</summary>
+    public string? SystemSmtpPassword { get; set; }
+
+    public bool? SystemSmtpUseStartTls { get; set; }
+
+    /// <summary>Envelope From for system mail. Falls back to SystemSmtpUsername when unset.</summary>
+    public string? SystemSmtpFromAddress { get; set; }
+
+    public string? SystemSmtpFromDisplayName { get; set; }
+
+    /// <summary>
+    /// "An admin actually finished setup", not "a hostname is present" — the same distinction the
+    /// SmtpUsername gotcha in CLAUDE.md's Known Constraints exists for. Password reset is gated on
+    /// this: with no system sender configured, the forgot-password page says so plainly instead of
+    /// throwing a MailKit authentication error on every attempt.
+    /// </summary>
+    public bool IsSystemEmailConfigured =>
+        !string.IsNullOrWhiteSpace(SystemSmtpHost) && !string.IsNullOrWhiteSpace(SystemSmtpUsername);
+
     public int? UpdatedByUserId { get; set; }
     public User? UpdatedByUser { get; set; }
     public DateTime? UpdatedUtc { get; set; }

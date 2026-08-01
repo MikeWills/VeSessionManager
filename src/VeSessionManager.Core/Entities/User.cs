@@ -27,6 +27,13 @@ public class User : IdentityUser<int>
     /// </summary>
     public string? CallSign { get; set; }
 
+    /// <summary>
+    /// When this user last asked for a password reset email, used purely to throttle repeats (see
+    /// PasswordResetService.RequestThrottle). Stamped before the send so a failing SMTP server can't
+    /// be turned into a mail-bombing loop; cleared on a successful reset. Null = never requested.
+    /// </summary>
+    public DateTime? LastPasswordResetRequestedUtc { get; set; }
+
     public UserRole Role { get; set; }
 
     /// <summary>
