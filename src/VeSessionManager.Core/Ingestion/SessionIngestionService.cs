@@ -84,7 +84,7 @@ public class SessionIngestionService(
     /// long-finished session would clear real candidates' PII irreversibly.
     /// </summary>
     public async Task<IngestionResult> ImportHistoricalRangeAsync(
-        Team team, DateOnly startDate, DateOnly endDate, CancellationToken cancellationToken)
+        Team team, DateOnly startDate, DateOnly endDate, int requestedByUserId, CancellationToken cancellationToken)
     {
         var now = timeProvider.GetUtcNow().UtcDateTime;
         var result = new IngestionResult();
@@ -108,6 +108,12 @@ public class SessionIngestionService(
         {
             if (existing.Contains(remote.Id))
             {
+                // Already stored, so there is nothing to create — but still reconcile the VEC
+                // submission flag. That is deliberately NOT inside the create branch: a range
+                // imported before this behaviour existed would otherwise stay NotSubmitted forever,
+                // since re-running an import skips every session it already has. Re-running the
+                // range is the supported way to fix such a backlog.
+                await MarkHistoricalSessionSubmittedAsync(remote.Id, team, requestedByUserId, now, result, cancellationToken);
                 continue;
             }
 
@@ -123,6 +129,11 @@ public class SessionIngestionService(
             // shape the continuous path eventually produces.
             created.ExamToolsClosedUtc = now;
             existing.Add(remote.Id);
+
+            // A historical session's VEC paperwork was filed outside this app, months ago — leaving
+            // it NotSubmitted would drop the whole imported range into the submission tracker as if
+            // it were outstanding work, one manual click each to clear.
+            MarkVecSubmitted(created, requestedByUserId, now, result);
 
             // Isolated per session, same reasoning as the routine candidate loop: one session
             // ExamTools can't serve must not abort an import of a hundred others.
@@ -144,6 +155,49 @@ public class SessionIngestionService(
         logger.LogInformation("Historical import {StartDate}..{EndDate} finished for team {TeamId} ({TeamName}): {Result}",
             startDate, endDate, team.Id, team.Name, result);
         return result;
+    }
+
+    /// <summary>
+    /// Loads an already-stored session by its ExamTools id and marks it submitted-to-VEC. Separate
+    /// from the create path only because that one already has the entity in hand.
+    /// </summary>
+    private async Task MarkHistoricalSessionSubmittedAsync(
+        string examToolsSessionId, Team team, int requestedByUserId, DateTime now, IngestionResult result, CancellationToken cancellationToken)
+    {
+        var session = await dbContext.Sessions
+            .FirstOrDefaultAsync(s => s.TeamId == team.Id && s.ExamToolsSessionId == examToolsSessionId, cancellationToken);
+        if (session is null || !MarkVecSubmitted(session, requestedByUserId, now, result))
+        {
+            return;
+        }
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Marks one session submitted-to-VEC, mirroring VecSubmissionService.MarkSubmittedAsync's rule
+    /// that an already-Submitted session is left completely alone — re-running an import must never
+    /// reassign credit for a submission a real Session Manager recorded, or overwrite its date.
+    /// Returns whether anything changed. Does not save; the caller batches that.
+    /// </summary>
+    private bool MarkVecSubmitted(Session session, int requestedByUserId, DateTime now, IngestionResult result)
+    {
+        if (session.VecSubmissionStatus == VecSubmissionStatus.Submitted)
+        {
+            return false;
+        }
+
+        session.VecSubmissionStatus = VecSubmissionStatus.Submitted;
+        session.VecSubmittedDate = now;
+        session.VecSubmittedByUserId = requestedByUserId;
+
+        // Audited like the manual action, but with wording that makes the provenance obvious — a
+        // reader must be able to tell "the import assumed this" from "a person confirmed this".
+        dbContext.AddAuditLog(requestedByUserId, "VecSubmissionMarked", nameof(Session), session.Id,
+            $"Session {session.ExamToolsSessionId} auto-marked as submitted to the VEC by historical import (predates tracking in this app).", now);
+
+        result.SessionsMarkedVecSubmitted++;
+        return true;
     }
 
     public async Task<IngestionResult> RunAsync(Team team, CancellationToken cancellationToken)
@@ -364,11 +418,16 @@ public class SessionIngestionService(
     private async Task<Session?> TryCreateSessionAsync(
         ExamToolsSession remote, Team team, DateTime now, IngestionResult result, CancellationToken cancellationToken)
     {
+        // Match on Vec.ExamToolsCode, falling back to Name when it's null — ExamTools' code is not
+        // always the org's name (GLAARG reports "lagroup"), and matching Name alone silently skipped
+        // every session of any such VEC forever. Coalesce is spelled out here rather than using
+        // Vec.MatchCode so EF Core can translate it to SQL.
         var vecCode = remote.Vec.ToLowerInvariant();
-        var vec = await dbContext.Vecs.FirstOrDefaultAsync(v => v.Name.ToLower() == vecCode, cancellationToken);
+        var vec = await dbContext.Vecs.FirstOrDefaultAsync(
+            v => (v.ExamToolsCode ?? v.Name).ToLower() == vecCode, cancellationToken);
         if (vec is null)
         {
-            logger.LogWarning("Skipping new session {ExamToolsSessionId}: no Vec named '{VecCode}' exists yet — add it and the session will ingest on the next poll",
+            logger.LogWarning("Skipping new session {ExamToolsSessionId}: no Vec matches ExamTools code '{VecCode}' — add a VEC with that ExamTools code (Admin → VECs) and the session will ingest on the next poll",
                 remote.Id, remote.Vec);
             result.SessionsSkippedNoConfig++;
             return null;

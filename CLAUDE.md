@@ -77,6 +77,26 @@ would be pure duplication — and goes straight to `CHANGELOG.md` instead. Non-p
 redesigns, hardening passes) start here and move to `CHANGELOG.md` once the section is at/over the
 cap and a newer entry needs to be added; oldest goes first.
 
+- **VE Roster restricted to admin roles (2026-08-01).** See `docs/admin-auth.md`. SessionManager and
+  TeamLead dropped from `VeRoster.cshtml.cs`'s `[Authorize]` — the page is a full VE contact roster
+  *and* a per-VE session-count leaderboard, and a visible count-per-person invites comparison between
+  volunteers. Session Detail's per-session VE chips are deliberately untouched (operational context
+  for the session being run, not a roster). **The `[Authorize]` attribute and the `_AppLayout.cshtml`
+  nav gate must change together** — the attribute enforces, the nav gate only avoids a link that
+  403s; same rule Unmatched Payments already follows.
+- **VEC matching moves from `Vec.Name` to `Vec.ExamToolsCode` (2026-08-01).** See
+  `docs/vec-examtools-code.md`. Ingestion matched ExamTools' per-session `vec` code against the VEC's
+  *name*, which worked only because ARRL reports `"arrl"` — GLAARG reports **`lagroup`**, so a
+  correctly-named "GLAARG" row would have skipped every one of its sessions forever, with nothing but
+  one `[WRN]` line per poll to show for it (found by reading the live Worker log, not by any alert).
+  New nullable `Vec.ExamToolsCode`; null means "same as the name," so existing rows are untouched and
+  the common case stays blank. Ingestion matches `(v.ExamToolsCode ?? v.Name).ToLower()` — spelled
+  out in the query, not via the new `Vec.MatchCode` helper, so EF can translate it. Duplicate
+  detection is against that same coalesce (a code colliding with another VEC's *name* is rejected
+  too, `VecActionResult.DuplicateExamToolsCode`). Migration `VecExamToolsCode` is one nullable column
+  + `IX_Vecs_ExamToolsCode`, clean down-path. Codes confirmed live: `arrl`, `lagroup`, `sandarc` —
+  read from `GET /api/teams/team`'s `teamDoc.vecs` (the only place they're exposed; it lists the
+  calling VE's own teams, so it is not a global VEC directory).
 - **One-time historical session import + VE-roster re-poll fix (2026-07-31).** See
   `docs/historical-import.md` (issue #67 part 2). Admin picks a date range on Team Maintenance; a
   `HistoricalImportRequest` row is queued and the Worker's new `HistoricalImportJob` walks it **one
@@ -103,7 +123,14 @@ cap and a newer entry needs to be added; oldest goes first.
   exam-result step it had always been missing (its own doc comment claimed otherwise) as the
   on-demand escape hatch for a session graded later than the window; that also required registering
   `ExamResultSyncService` in the **Web** project's DI for the first time. Migration
-  `HistoricalImportRequests` is one new table, clean `DROP TABLE` down-path.
+  `HistoricalImportRequests` is one new table, clean `DROP TABLE` down-path. **Follow-up
+  (2026-08-01):** imported sessions are now marked **Submitted to the VEC** — they defaulted to
+  `NotSubmitted`, which dumped six months of backdated sessions into the submission tracker as
+  outstanding work, one manual Detail-page click each. The marking sits **outside** the create branch
+  on purpose (an import skips sessions it already has, so re-running a range is the supported way to
+  clear a pre-existing backlog); an already-Submitted session keeps its original date/user; and
+  `RunAsync` never does this — only the historical path may assume paperwork was filed. Note the
+  assumption: importing a range that overlaps genuinely unsubmitted sessions marks them submitted too.
 - **Admin → Team Maintenance: team-level "Refresh now" + ingestion schedule + Worker-health banner
   (2026-07-31).** See `docs/team-maintenance.md` (issues #77/#73). New TeamAdmin/SystemAdmin page,
   operations to Team Settings' configuration. Closes the gap where `ManualCandidateRefreshService`'s
@@ -210,17 +237,6 @@ cap and a newer entry needs to be added; oldest goes first.
   full per-query SQL text at `Information` was dominating both projects' logs (one file alone hit
   2.5MB/day) and burying the actual "Starting job"/"Finished job" business-logic lines underneath;
   `Web` already had the equivalent `Microsoft.AspNetCore` override, `Worker` never did.
-- **Session.ExtId + breadcrumb rework (2026-07-30).** No linked doc. `Session.ExamToolsSessionId`
-  (a raw Mongo id) turned out to be meaningless to a user for "which session is this" purposes —
-  new `Session.ExtId` maps `sessionDef.extId` instead, ExamTools' own short lead-VE-callsign code
-  (e.g. `"KM6Z - W5CBW"`, `"AD2GX"`), verified byte-for-byte against real HRCC sessions to be the
-  exact parenthetical text ExamTools' own calendar UI shows next to the team name. Already present
-  on the cheap team-list endpoint (`GetTeamSessionsAsync`) — no extra per-session API call needed.
-  Replaces the session list's "Session ID" column and, combined with `Session.Title` via new
-  `SessionBreadcrumbFormatter`, the Detail/CandidateDetail breadcrumbs, page title, and delete-modal
-  heading. Existing sessions backfill lazily (same idiom as the license-class backfill) — no
-  one-off migration script — `SessionIngestionService` fills in a null `ExtId` the next time that
-  session is still in the feed, and never overwrites once set.
 Everything through Phase 0-10's initial build (ExamTools ingestion, Zoom/Discord, Square, email
 notifications, FCC ULS watcher, payment reminders, VE tracking, VEC submission tracker, admin
 auth/config/candidate-actions, PII purge) plus the public privacy page has aged out to
@@ -348,6 +364,16 @@ To pick up updates: `/plugin marketplace update claude-tools`
 - **A POST form on a filtered list page needs BOTH an explicit `action=` and `asp-antiforgery="true"` — each half fixes a bug the other half causes.** `asp-page-handler` builds the form action from the route only and **drops the query string**, so posting an action from a filtered/paged list silently redirects back to the unfiltered first page (found on the Sessions row-action menu, 2026-07-30). The fix is an explicit `action="@Model.BuildActionUrl("Handler")"`. But `FormTagHelper` only auto-emits the antiforgery token when *it* generated the action — with an explicit `action=` the token disappears, and every POST then 400s in the antiforgery middleware **before reaching the app, logging nothing server-side** (the symptom is a browser error page with a completely silent log, which reads like the request never happened). `asp-antiforgery="true"` restores it. Any future list page with row-level POST actions needs both, plus a `BuildActionUrl`-style helper so the redirect target keeps the same filter state.
 - **`wireless2.fcc.gov` (ULS's own web UI) returns Akamai "Access Denied" (HTTP 403) to automated requests, and has done so for at least one manual browser attempt too.** This is why `FccUlsLinks` ships the *licence* deep link (`UlsSearch/license.jsp?licKey=…`, whose shape is verified — ExamTools links to exactly it) but deliberately **not** an application deep link: the `applView.jsp?applID=…` shape has never been confirmed against a working response, and an unverified link would send a Session Manager to a dead page. `exam.tools`' own ULS mirror is unaffected and is what the app actually calls.
 - **The FCC bulk-file constraints are historical as of 2026-07-31** — the weekly-snapshot staleness, the day-name publication schedule, the Sunday-file-is-empty trap, and the `AM.dat`/Grant-Date upgrade behaviour all described a subsystem this app no longer runs. They are preserved in `docs/fcc-uls-watcher.md` (marked as removed) because the *matching rules* they justify are still enforced in `UlsWatcherService`. The one that still bites day-to-day: **FCC's Grant Date does NOT advance on a class upgrade — the effective/last-action date does**, so any "did this exam produce a result?" check written against grant date is correct for a first-time licensee and permanently false for an upgrade. Confirming an upgrade needs the operator class matching `NewLicenseClass` **and** the effective date on/after the session; neither alone is sufficient. See `docs/uls-watcher.md`.
+- **An "exclude this row" predicate written as `x.Id != someNullableInt` matches NOTHING when the
+  value is null, and the InMemory provider won't reproduce it.** SQL `Id <> NULL` is NULL, not true,
+  so a uniqueness check shaped `AnyAsync(v => v.Id != excludingId && ...)` returns zero rows on the
+  create path (where there's no row to exclude) and waves every duplicate through — while EF
+  InMemory evaluates the same expression as plain LINQ, where `Id != null` is true, so the tests pass.
+  Take `int` and pass `0` (never a real key) instead of `int?`. Found writing
+  `VecManagementService.MatchCodeIsTakenAsync` (2026-08-01). The general lesson: **provider-dependent
+  behaviour — SQL null semantics, whether a query translates at all, whether a unique index tolerates
+  repeated NULLs — cannot be verified on EF InMemory.** `VecExamToolsCodeSqliteTests` is the pattern
+  for pinning those against a real `DataSource=:memory:` SQLite context.
 - **`Session.Status == Active` does NOT mean "this session hasn't happened yet" — it means "not
   cancelled."** `Status` only ever leaves `Active` on cancellation; it is never set to Completed.
   "Completed" in the UI is *derived* at render time from `TestingCompletedUtc ?? ExamToolsClosedUtc`

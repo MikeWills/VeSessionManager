@@ -182,7 +182,14 @@ public class AppDbContext(DbContextOptions<AppDbContext> options, IDataProtectio
             b.Property(t => t.SquareWebhookSignatureKey).HasConversion(encryptedString);
             b.Property(t => t.SmtpPassword).HasConversion(encryptedString);
         });
-        modelBuilder.Entity<Vec>(b => b.HasIndex(v => v.Name).IsUnique());
+        modelBuilder.Entity<Vec>(b =>
+        {
+            b.HasIndex(v => v.Name).IsUnique();
+            // Two VECs claiming the same ExamTools code would make ingestion's match ambiguous.
+            // SQLite treats NULLs as distinct in a unique index, so the many rows that leave this
+            // null (code == name) don't collide with each other.
+            b.HasIndex(v => v.ExamToolsCode).IsUnique();
+        });
 
         modelBuilder.Entity<UnmatchedSquarePayment>(b =>
         {

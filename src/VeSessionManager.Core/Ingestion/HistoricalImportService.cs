@@ -113,7 +113,7 @@ public class HistoricalImportService(
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                var result = await ingestionService.ImportHistoricalRangeAsync(request.Team, chunkStart, chunkEnd, cancellationToken);
+                var result = await ingestionService.ImportHistoricalRangeAsync(request.Team, chunkStart, chunkEnd, request.RequestedByUserId, cancellationToken);
 
                 // Counters saved after every chunk, not at the end — the page's progress is read
                 // from this row, and a crash mid-import must not lose the record of what already
@@ -124,8 +124,8 @@ public class HistoricalImportService(
                 request.CandidatesImported += result.CandidatesAdded;
                 await dbContext.SaveChangesAsync(cancellationToken);
 
-                logger.LogInformation("Historical import {RequestId}: chunk {Done}/{Total} ({ChunkStart}..{ChunkEnd}) added {Sessions} session(s), {Candidates} candidate(s)",
-                    request.Id, request.ChunksCompleted, request.ChunksTotal, chunkStart, chunkEnd, result.SessionsAdded, result.CandidatesAdded);
+                logger.LogInformation("Historical import {RequestId}: chunk {Done}/{Total} ({ChunkStart}..{ChunkEnd}) added {Sessions} session(s), {Candidates} candidate(s), marked {VecSubmitted} submitted to VEC",
+                    request.Id, request.ChunksCompleted, request.ChunksTotal, chunkStart, chunkEnd, result.SessionsAdded, result.CandidatesAdded, result.SessionsMarkedVecSubmitted);
 
                 await Task.Delay(ChunkPause, timeProvider, cancellationToken);
             }

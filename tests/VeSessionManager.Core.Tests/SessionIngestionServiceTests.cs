@@ -340,6 +340,169 @@ public class SessionIngestionServiceTests
         Assert.Equal(0, result.SessionsCancelled);
     }
 
+    // ---- Historical import: VEC submission ----
+
+    private const int ImportingUserId = 1;
+
+    /// <summary>
+    /// A historical session's VEC paperwork was filed months ago, outside this app — importing a
+    /// range must not drop it into the submission tracker as outstanding work.
+    /// </summary>
+    [Fact]
+    public async Task HistoricalImport_MarksCreatedSessionsSubmittedToVec()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        await SeedVecAndFeeConfigAsync(dbContext);
+        var client = new FakeExamToolsClient();
+        var done = PendingSession(id: "old-1");
+        done.State = "done";
+        client.ClosedSessionsFor(team.Id).Add(done);
+
+        var result = await CreateService(dbContext, client).ImportHistoricalRangeAsync(
+            team, new DateOnly(2026, 1, 1), new DateOnly(2026, 1, 31), ImportingUserId, CancellationToken.None);
+
+        Assert.Equal(1, result.SessionsMarkedVecSubmitted);
+        var session = dbContext.Sessions.Single();
+        Assert.Equal(VecSubmissionStatus.Submitted, session.VecSubmissionStatus);
+        Assert.Equal(ImportingUserId, session.VecSubmittedByUserId);
+        Assert.Equal(Now, session.VecSubmittedDate);
+        Assert.Contains(dbContext.AuditLogs, a => a.Action == "VecSubmissionMarked" && a.EntityId == session.Id);
+    }
+
+    /// <summary>
+    /// The backlog case: a range imported before this behaviour existed is already stored, and an
+    /// import skips sessions it already has — so the marking must happen outside the create branch,
+    /// or re-running the range would fix nothing.
+    /// </summary>
+    [Fact]
+    public async Task HistoricalImport_MarksAlreadyImportedSessions_OnARerun()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        await SeedVecAndFeeConfigAsync(dbContext);
+        var client = new FakeExamToolsClient();
+        var done = PendingSession(id: "old-1");
+        done.State = "done";
+        client.ClosedSessionsFor(team.Id).Add(done);
+
+        var range = (Start: new DateOnly(2026, 1, 1), End: new DateOnly(2026, 1, 31));
+        await CreateService(dbContext, client).ImportHistoricalRangeAsync(team, range.Start, range.End, ImportingUserId, CancellationToken.None);
+
+        // Simulate the pre-fix state: the session exists but was never marked.
+        var stored = dbContext.Sessions.Single();
+        stored.VecSubmissionStatus = VecSubmissionStatus.NotSubmitted;
+        stored.VecSubmittedDate = null;
+        stored.VecSubmittedByUserId = null;
+        await dbContext.SaveChangesAsync();
+
+        var rerun = await CreateService(dbContext, client).ImportHistoricalRangeAsync(
+            team, range.Start, range.End, ImportingUserId, CancellationToken.None);
+
+        Assert.Equal(0, rerun.SessionsAdded); // nothing re-created
+        Assert.Equal(1, rerun.SessionsMarkedVecSubmitted);
+        Assert.Equal(VecSubmissionStatus.Submitted, dbContext.Sessions.Single().VecSubmissionStatus);
+    }
+
+    /// <summary>
+    /// Mirrors VecSubmissionService's rule: an already-Submitted session keeps its original date and
+    /// the user who recorded it. A re-run must never reassign credit for a real submission.
+    /// </summary>
+    [Fact]
+    public async Task HistoricalImport_LeavesAnAlreadySubmittedSessionUntouched()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        await SeedVecAndFeeConfigAsync(dbContext);
+        var client = new FakeExamToolsClient();
+        var done = PendingSession(id: "old-1");
+        done.State = "done";
+        client.ClosedSessionsFor(team.Id).Add(done);
+
+        var range = (Start: new DateOnly(2026, 1, 1), End: new DateOnly(2026, 1, 31));
+        await CreateService(dbContext, client).ImportHistoricalRangeAsync(team, range.Start, range.End, ImportingUserId, CancellationToken.None);
+
+        var originalDate = new DateTime(2026, 2, 2, 9, 0, 0, DateTimeKind.Utc);
+        var stored = dbContext.Sessions.Single();
+        stored.VecSubmittedDate = originalDate;
+        stored.VecSubmittedByUserId = 99; // a real Session Manager recorded this
+        await dbContext.SaveChangesAsync();
+
+        var rerun = await CreateService(dbContext, client).ImportHistoricalRangeAsync(
+            team, range.Start, range.End, ImportingUserId, CancellationToken.None);
+
+        Assert.Equal(0, rerun.SessionsMarkedVecSubmitted);
+        var after = dbContext.Sessions.Single();
+        Assert.Equal(originalDate, after.VecSubmittedDate);
+        Assert.Equal(99, after.VecSubmittedByUserId);
+    }
+
+    /// <summary>The routine poll must NOT pre-mark anything — only the historical import may assume this.</summary>
+    [Fact]
+    public async Task RoutineIngestion_DoesNotMarkSessionsSubmittedToVec()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        await SeedVecAndFeeConfigAsync(dbContext);
+        var client = new FakeExamToolsClient();
+        client.SessionsFor(team.Id).Add(PendingSession());
+
+        var result = await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+
+        Assert.Equal(0, result.SessionsMarkedVecSubmitted);
+        Assert.Equal(VecSubmissionStatus.NotSubmitted, dbContext.Sessions.Single().VecSubmissionStatus);
+    }
+
+    /// <summary>
+    /// GLAARG's ExamTools code is "lagroup", not its name — a VEC row named for the org must still
+    /// match, or every one of its sessions is skipped forever with only a log warning to show for it.
+    /// </summary>
+    [Fact]
+    public async Task NewSession_VecMatchedByExamToolsCode_NotName_IsIngested()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        var vec = new Vec { Name = "GLAARG", ExamToolsCode = "lagroup" };
+        var user = new User { Name = "System", Email = "system@localhost", Role = UserRole.SystemAdmin };
+        dbContext.FeeConfigurations.Add(new FeeConfiguration
+        {
+            Vec = vec,
+            EffectiveDate = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+            FeeCollectionEnabled = true,
+            ExamFeeAmount = 15m,
+            CreatedByUser = user,
+            CreatedUtc = Now
+        });
+        await dbContext.SaveChangesAsync();
+
+        var client = new FakeExamToolsClient();
+        var remote = PendingSession();
+        remote.Vec = "lagroup";
+        client.SessionsFor(team.Id).Add(remote);
+
+        var result = await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+
+        Assert.Equal(1, result.SessionsAdded);
+        Assert.Equal(0, result.SessionsSkippedNoConfig);
+        Assert.Equal(vec.Id, dbContext.Sessions.Single().VecId);
+    }
+
+    /// <summary>A VEC whose code is null still matches on its name — the pre-ExamToolsCode behaviour.</summary>
+    [Fact]
+    public async Task NewSession_VecWithNoExamToolsCode_StillMatchesOnName()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        await SeedVecAndFeeConfigAsync(dbContext); // "ARRL", ExamToolsCode null
+        var client = new FakeExamToolsClient();
+        client.SessionsFor(team.Id).Add(PendingSession()); // reports "arrl"
+
+        var result = await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+
+        Assert.Equal(1, result.SessionsAdded);
+        Assert.Equal(0, result.SessionsSkippedNoConfig);
+    }
+
     [Fact]
     public async Task NewSession_WithoutFeeConfiguration_IsSkippedAndIngestsOnceConfigExists()
     {

@@ -152,6 +152,36 @@ produces and keeps the routine sweep's cancellation heuristic away from them.
 A failed chunk marks the request `Failed` and keeps everything earlier chunks imported; re-queueing
 the same range resumes rather than duplicating.
 
+### Imported sessions are marked submitted to the VEC (2026-08-01)
+
+Sessions arrived with `VecSubmissionStatus` at its default, `NotSubmitted`. That is wrong for
+backdated data: the VEC paperwork for a session six months ago was filed at the time, outside this
+app. Importing half a year therefore dumped the entire range into the submission tracker as though
+it were outstanding work — with `VecSubmissionService.MarkSubmittedAsync` being a per-session action
+off the Detail page, that's one manual click each. Reported the day after the first real import.
+
+The import now marks each session in the range Submitted, credited to the
+`HistoricalImportRequest.RequestedByUserId` admin, with an audit entry worded to make the provenance
+obvious: *"auto-marked … by historical import (predates tracking in this app)"*. A reader must be
+able to tell an assumption from a Session Manager's confirmation.
+
+Three rules this follows, each with a test:
+
+- **Marking happens outside the create branch.** An import skips a session it already has, so if the
+  marking only ran on creation, a range imported before this existed would stay `NotSubmitted`
+  forever and re-running would fix nothing. Re-running the range is the supported way to clear such
+  a backlog — which is exactly how the first six months of real imported data got fixed.
+- **An already-`Submitted` session is left completely alone** — original date and user preserved,
+  mirroring `MarkSubmittedAsync`'s own rule. A re-run must never reassign credit for a submission a
+  person actually recorded.
+- **The routine poll never does this.** Only the historical path may assume paperwork was filed;
+  a session ingested normally is genuinely outstanding until someone says otherwise.
+
+The assumption is worth stating plainly: **the import asserts that everything in the range was
+already submitted.** For a genuinely historical range that is true by construction. Import a range
+that overlaps recent, not-yet-submitted sessions and you will mark them submitted when they aren't —
+keep the end date behind your real submission backlog.
+
 ## Companion fix: VE roster sync no longer re-polls finished sessions
 
 Not in issue #67, but a blocker for it. `VolunteerExaminerSyncService` synced **every Active session**

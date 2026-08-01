@@ -33,8 +33,16 @@ namespace VeSessionManager.Web.Pages.SessionManager;
 /// at all on the real prod host (alpha.exam.tools), confirmed live 2026-07-29 against real HRCC
 /// data. See ExamToolsFullExport.ResolveVes() for the fix — every real HRCC session had zero VEs
 /// synced until that shipped, nothing wrong with this page's query logic.
+///
+/// **Restricted to admin roles (2026-08-01).** SessionManager and TeamLead were dropped: this page
+/// is both a full contact roster for a team's VEs and a per-VE session-count leaderboard, and a
+/// visible count-per-person invites comparison between volunteers that no one asked for. The
+/// per-session VE chips on the session Detail page are deliberately NOT covered by this — those are
+/// the VEs actually serving that one session, which a Session Manager running it needs to see.
+/// Keep the nav gate in _AppLayout.cshtml in step with this attribute; a role that can't load the
+/// page must not be shown a link that 403s.
 /// </summary>
-[Authorize(Roles = "SystemAdmin,TeamAdmin,SessionManager,TeamLead")]
+[Authorize(Roles = "SystemAdmin,TeamAdmin")]
 public class VeRosterModel(AppDbContext dbContext, UserManager<User> userManager, SessionAccessScope accessScope, VolunteerExaminerReportService reportService, TimeProvider timeProvider) : PageModel
 {
     [BindProperty(SupportsGet = true)]
