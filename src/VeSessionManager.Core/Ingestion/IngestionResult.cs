@@ -14,8 +14,11 @@ public class IngestionResult
     public int CandidatesAdded { get; set; }
     public int CandidatesUpdated { get; set; }
 
+    /// <summary>Candidates auto-marked NotTested this run because they left ExamTools' applicant list — see WithdrawMissingCandidates.</summary>
+    public int CandidatesWithdrawn { get; set; }
+
     public override string ToString() =>
         $"sessions: +{SessionsAdded} rescheduled {SessionsRescheduled} flagged {SessionsFlaggedForReview} " +
         $"cancelled {SessionsCancelled} closed(ExamTools) {SessionsClosedByExamTools} skipped(no config) {SessionsSkippedNoConfig}; " +
-        $"candidates: +{CandidatesAdded} updated {CandidatesUpdated}";
+        $"candidates: +{CandidatesAdded} updated {CandidatesUpdated} withdrew {CandidatesWithdrawn}";
 }
