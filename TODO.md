@@ -98,7 +98,11 @@ None currently open.
 should be filed, so they can be tracked, labelled, and closed by a PR. Listed here only as pointers:
 
 - [ ] [#63 — Stats page: VEC testing volume and applicants](https://github.com/MikeWills/VeSessionManager/issues/63)
-  — requirements not yet decided; awaiting detail before any design work.
+  — **v1 design sketch added 2026-08-01** (see the issue comment), parked rather than started. Key
+  constraint: **aggregate-only, no per-VE session counts** — the VE Roster page was restricted to
+  admin roles the same day precisely because it exposes a per-person leaderboard, and keeping stats
+  aggregate is what allows the page to stay visible to non-admin roles. Three questions still open
+  (charting library, exact audience, per-VEC breakdown).
 - [ ] [#64 — Per-team, per-integration enable/disable switches](https://github.com/MikeWills/VeSessionManager/issues/64)
   — **design complete**, all six open questions resolved 2026-07-31; ready to build. The issue carries
   the full decision record, including the "unconfigured ≠ disabled" problem that is the hard part.

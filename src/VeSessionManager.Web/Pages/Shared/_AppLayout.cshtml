@@ -97,12 +97,18 @@
                     <a class="item @(activeNav == "ApplicantStatus" ? "active" : "")" asp-page="/SessionManager/ApplicantStatus">Applicant Status</a>
                 </div>
             </div>
-            <div class="nav-group">
-                <button type="button" class="kebab @(vesGroupActive ? "active" : "")">VEs ▾</button>
-                <div class="menu">
-                    <a class="item @(activeNav == "VeRoster" ? "active" : "")" asp-page="/SessionManager/VeRoster">VE Roster</a>
+            @* Gated to match VeRoster.cshtml.cs's own [Authorize] — the roster is a full VE contact
+               list plus a per-VE session-count leaderboard, restricted to admin roles (2026-08-01).
+               Same rule as UnmatchedPayments below: never render a link the user's role will 403 on. *@
+            @if (currentUser?.Role is UserRole.SystemAdmin or UserRole.TeamAdmin)
+            {
+                <div class="nav-group">
+                    <button type="button" class="kebab @(vesGroupActive ? "active" : "")">VEs ▾</button>
+                    <div class="menu">
+                        <a class="item @(activeNav == "VeRoster" ? "active" : "")" asp-page="/SessionManager/VeRoster">VE Roster</a>
+                    </div>
                 </div>
-            </div>
+            }
             @* Gated to match UnmatchedPayments.cshtml.cs's own [Authorize] — a TeamLead previously
                saw this link and got a 403 on click. *@
             @if (currentUser?.Role is not UserRole.TeamLead)

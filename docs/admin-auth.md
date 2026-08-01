@@ -213,3 +213,32 @@ Known Constraints, since it's easy to reintroduce in a brand-new page.
 Live-verified in a real browser: `teamlead@example.com` lands on Sessions, sees only their assigned
 team's data with no write controls anywhere on Sessions/Detail/VE Roster/VEC Submission;
 `sessionmanager@example.com` re-checked as a regression test and still has full edit access.
+
+**Superseded in part (2026-08-01):** VE Roster is no longer one of the pages TeamLead (or
+SessionManager) can reach — see below.
+
+## VE Roster restricted to admin roles (2026-08-01)
+
+`Pages/SessionManager/VeRoster.cshtml.cs` went from
+`[Authorize(Roles = "SystemAdmin,TeamAdmin,SessionManager,TeamLead")]` to
+**`[Authorize(Roles = "SystemAdmin,TeamAdmin")]`**.
+
+The page is two sensitive things at once: a full contact roster for a team's volunteer examiners,
+and a per-VE **session-count leaderboard**. The count half is the sharper edge — a visible
+sessions-served number next to each person's name invites comparison between volunteers that nobody
+asked for, and there's no way to serve that report to a general audience without it reading as a
+ranking.
+
+Scope, deliberately:
+
+- **Session Detail's VE chips are unchanged.** Those show the VEs actually serving that one session
+  — operational context a Session Manager running it needs, not a roster and not a count.
+- **The nav gate in `_AppLayout.cshtml` moved in step with the attribute.** The whole "VEs ▾" group
+  is now wrapped in a `SystemAdmin or TeamAdmin` check, following the same rule already applied to
+  Unmatched Payments: never render a link whose target the user's role will 403 on. The attribute is
+  the actual enforcement — the nav gate only stops the dead link — so **both must be changed
+  together**, and the page's own XML doc says so at the point someone would edit it.
+
+Nothing else surfaces the roster or the counts: `VolunteerExaminerReportService.GetSessionCountsAsync`
+has exactly one caller (this page), and `VolunteerExaminerRosterService`'s only Web consumer is the
+session Detail page.

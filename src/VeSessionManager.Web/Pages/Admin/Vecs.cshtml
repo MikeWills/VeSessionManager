@@ -18,6 +18,7 @@
     <thead>
         <tr>
             <th>Name</th>
+            <th>ExamTools code</th>
             <th>Youth program</th>
             <th>Notes</th>
             <th></th>
@@ -26,12 +27,22 @@
     <tbody>
         @if (Model.Vecs.Count == 0)
         {
-            <tr><td colspan="4">No VECs yet.</td></tr>
+            <tr><td colspan="5">No VECs yet.</td></tr>
         }
         @foreach (var vec in Model.Vecs)
         {
             <tr>
                 <td class="session-title">@vec.Name</td>
+                <td>
+                    @if (vec.ExamToolsCode is null)
+                    {
+                        <span class="chip chip-neutral">Same as name</span>
+                    }
+                    else
+                    {
+                        <code>@vec.ExamToolsCode</code>
+                    }
+                </td>
                 <td>
                     @if (vec.SupportsYouthProgram)
                     {
@@ -60,6 +71,11 @@
         <form method="post" asp-page-handler="Create">
             <div class="field"><label for="createVecName">Name</label><input id="createVecName" name="name" required /></div>
             <div class="field">
+                <label for="createVecExamToolsCode">ExamTools code</label>
+                <input id="createVecExamToolsCode" name="examToolsCode" placeholder="Leave blank if the same as the name" />
+                <p class="session-sub">ExamTools' own <code>vec</code> value for this VEC's sessions, if it differs from the name — GLAARG reports <code>lagroup</code>. Sessions are matched on this, so a mismatch means they never ingest.</p>
+            </div>
+            <div class="field">
                 <label><input type="checkbox" name="supportsYouthProgram" value="true" style="width:auto; display:inline-block;" /> Supports youth program</label>
             </div>
             <div class="field"><label for="createVecNotes">Notes</label><textarea id="createVecNotes" name="notes" rows="2"></textarea></div>
@@ -79,6 +95,11 @@
             <form method="post" asp-page-handler="Update">
                 <input type="hidden" name="vecId" value="@vec.Id" />
                 <div class="field"><label for="editVecName-@vec.Id">Name</label><input id="editVecName-@vec.Id" name="name" value="@vec.Name" required /></div>
+                <div class="field">
+                    <label for="editVecExamToolsCode-@vec.Id">ExamTools code</label>
+                    <input id="editVecExamToolsCode-@vec.Id" name="examToolsCode" value="@vec.ExamToolsCode" placeholder="Leave blank if the same as the name" />
+                    <p class="session-sub">ExamTools' own <code>vec</code> value for this VEC's sessions, if it differs from the name — GLAARG reports <code>lagroup</code>. Sessions are matched on this, so a mismatch means they never ingest.</p>
+                </div>
                 <div class="field">
                     <label><input type="checkbox" name="supportsYouthProgram" value="true" checked="@vec.SupportsYouthProgram" style="width:auto; display:inline-block;" /> Supports youth program</label>
                 </div>

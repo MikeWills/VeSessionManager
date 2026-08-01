@@ -11,14 +11,20 @@ namespace VeSessionManager.Core.Admin;
 /// </summary>
 public class VecManagementService(AppDbContext dbContext, TimeProvider timeProvider)
 {
-    public async Task<(VecActionResult Result, Vec? Vec)> CreateAsync(string name, bool supportsYouthProgram, string? notes, int userId, CancellationToken cancellationToken)
+    public async Task<(VecActionResult Result, Vec? Vec)> CreateAsync(string name, string? examToolsCode, bool supportsYouthProgram, string? notes, int userId, CancellationToken cancellationToken)
     {
         if (await dbContext.Vecs.AnyAsync(v => v.Name == name, cancellationToken))
         {
             return (VecActionResult.DuplicateName, null);
         }
 
-        var vec = new Vec { Name = name, SupportsYouthProgram = supportsYouthProgram, Notes = notes };
+        examToolsCode = NormalizeCode(examToolsCode, name);
+        if (await MatchCodeIsTakenAsync(examToolsCode ?? name, excludingVecId: 0, cancellationToken))
+        {
+            return (VecActionResult.DuplicateExamToolsCode, null);
+        }
+
+        var vec = new Vec { Name = name, ExamToolsCode = examToolsCode, SupportsYouthProgram = supportsYouthProgram, Notes = notes };
         dbContext.Vecs.Add(vec);
         await dbContext.SaveChangesAsync(cancellationToken); // assigns vec.Id, needed for the audit entry below
 
@@ -28,7 +34,7 @@ public class VecManagementService(AppDbContext dbContext, TimeProvider timeProvi
         return (VecActionResult.Success, vec);
     }
 
-    public async Task<VecActionResult> UpdateAsync(int vecId, string name, bool supportsYouthProgram, string? notes, int userId, CancellationToken cancellationToken)
+    public async Task<VecActionResult> UpdateAsync(int vecId, string name, string? examToolsCode, bool supportsYouthProgram, string? notes, int userId, CancellationToken cancellationToken)
     {
         var vec = await dbContext.Vecs.FirstOrDefaultAsync(v => v.Id == vecId, cancellationToken);
         if (vec is null)
@@ -41,7 +47,14 @@ public class VecManagementService(AppDbContext dbContext, TimeProvider timeProvi
             return VecActionResult.DuplicateName;
         }
 
+        examToolsCode = NormalizeCode(examToolsCode, name);
+        if (await MatchCodeIsTakenAsync(examToolsCode ?? name, excludingVecId: vecId, cancellationToken))
+        {
+            return VecActionResult.DuplicateExamToolsCode;
+        }
+
         vec.Name = name;
+        vec.ExamToolsCode = examToolsCode;
         vec.SupportsYouthProgram = supportsYouthProgram;
         vec.Notes = notes;
 
@@ -52,6 +65,39 @@ public class VecManagementService(AppDbContext dbContext, TimeProvider timeProvi
         return VecActionResult.Success;
     }
 
+    /// <summary>
+    /// Blank means "same as the name" and is stored as null, so an admin who leaves the field empty
+    /// gets the pre-ExamToolsCode behaviour. A code typed to exactly match the name is also stored
+    /// as null rather than duplicating it — otherwise a later rename would silently strand the code
+    /// on the old spelling.
+    /// </summary>
+    private static string? NormalizeCode(string? examToolsCode, string name)
+    {
+        var trimmed = examToolsCode?.Trim();
+        return string.IsNullOrEmpty(trimmed) || string.Equals(trimmed, name, StringComparison.OrdinalIgnoreCase)
+            ? null
+            : trimmed;
+    }
+
+    /// <summary>
+    /// Ingestion matches on <c>ExamToolsCode ?? Name</c>, so a clash has to be checked against that
+    /// same coalesce — a new VEC coded "lagroup" must be rejected if some other VEC is *named*
+    /// "lagroup", not just if another one is coded that way.
+    /// </summary>
+    /// <remarks>
+    /// <paramref name="excludingVecId"/> is 0 (never a real key) rather than a nullable int on
+    /// purpose: <c>v.Id != null</c> translates to SQL <c>Id &lt;&gt; NULL</c>, which is NULL, so the
+    /// create path would match zero rows and wave every duplicate through — and the InMemory
+    /// provider used by the tests would not reproduce it.
+    /// </remarks>
+    private async Task<bool> MatchCodeIsTakenAsync(string matchCode, int excludingVecId, CancellationToken cancellationToken)
+    {
+        var lowered = matchCode.ToLowerInvariant();
+        return await dbContext.Vecs.AnyAsync(
+            v => v.Id != excludingVecId && (v.ExamToolsCode ?? v.Name).ToLower() == lowered,
+            cancellationToken);
+    }
+
     private void AddAudit(int userId, string action, int entityId, string details, DateTime now) =>
         dbContext.AddAuditLog(userId, action, nameof(Vec), entityId, details, now);
 }
@@ -60,5 +106,6 @@ public enum VecActionResult
 {
     Success,
     NotFound,
-    DuplicateName
+    DuplicateName,
+    DuplicateExamToolsCode
 }
