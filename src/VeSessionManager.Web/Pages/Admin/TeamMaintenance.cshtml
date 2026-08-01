@@ -159,7 +159,11 @@ else
         @if (Model.ImportRequests.Count > 0)
         {
             <div class="section-head" style="margin-top:28px;"><h2>Recent imports</h2></div>
-            <table>
+            @* This table renders its full set (the last 10), so it opts into the shared vanilla-JS
+               sorter rather than sorting server-side — see docs/table-sorting.md's rule. Every
+               non-text column carries data-sort-value: the formatted dates would otherwise sort
+               alphabetically ("Apr" before "Mar"), and "3 / 12 month(s)" would sort as text. *@
+            <table data-sortable="historical-imports">
                 <thead>
                     <tr>
                         <th>Range</th>
@@ -173,7 +177,7 @@ else
                     @foreach (var request in Model.ImportRequests)
                     {
                         <tr>
-                            <td>@request.StartDate.ToString("MMM d, yyyy") – @request.EndDate.ToString("MMM d, yyyy")</td>
+                            <td data-sort-value="@request.StartDate.ToString("o")">@request.StartDate.ToString("MMM d, yyyy") – @request.EndDate.ToString("MMM d, yyyy")</td>
                             <td>
                                 <span class="chip @(request.Status switch {
                                     HistoricalImportStatus.Completed => "chip-green",
@@ -185,9 +189,11 @@ else
                                     <div class="session-sub">@request.ErrorMessage</div>
                                 }
                             </td>
-                            <td>@request.ChunksCompleted / @request.ChunksTotal month(s)</td>
-                            <td>@request.SessionsImported session(s), @request.CandidatesImported candidate(s)</td>
-                            <td>@EasternTimeFormatter.Format(request.RequestedUtc, "MMM d, h:mm tt")</td>
+                            @* A bare number so the sorter's numeric path takes it — the visible text
+                               ("3 / 12 month(s)") would fall through to a string compare. *@
+                            <td data-sort-value="@request.ChunksCompleted">@request.ChunksCompleted / @request.ChunksTotal month(s)</td>
+                            <td data-sort-value="@request.SessionsImported">@request.SessionsImported session(s), @request.CandidatesImported candidate(s)</td>
+                            <td data-sort-value="@request.RequestedUtc.ToString("o")">@EasternTimeFormatter.Format(request.RequestedUtc, "MMM d, h:mm tt")</td>
                         </tr>
                     }
                 </tbody>
