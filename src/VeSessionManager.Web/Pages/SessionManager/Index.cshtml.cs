@@ -263,9 +263,13 @@ public class IndexModel(
         if (wantActive || wantRescheduleFlagged || wantCompleted || wantCancelled || wantPendingVecSubmission)
         {
             query = query.Where(s =>
-                (wantActive && s.Status == SessionStatus.Active && !s.RescheduleFlaggedForReview && s.TestingCompletedUtc == null)
+                // "Completed" means finished by either route — a Session Manager marking it, or
+                // ExamTools closing it (2026-07-31). Before ExamToolsClosedUtc existed only the
+                // manual route set anything, so every past session nobody had marked stayed
+                // "Active" forever. Deliberately not a fifth status: closed is closed.
+                (wantActive && s.Status == SessionStatus.Active && !s.RescheduleFlaggedForReview && s.TestingCompletedUtc == null && s.ExamToolsClosedUtc == null)
                 || (wantRescheduleFlagged && s.Status == SessionStatus.Active && s.RescheduleFlaggedForReview)
-                || (wantCompleted && s.Status == SessionStatus.Active && !s.RescheduleFlaggedForReview && s.TestingCompletedUtc != null)
+                || (wantCompleted && s.Status == SessionStatus.Active && !s.RescheduleFlaggedForReview && (s.TestingCompletedUtc != null || s.ExamToolsClosedUtc != null))
                 || (wantCancelled && s.Status == SessionStatus.Cancelled)
                 // Must stay identical to NavBadgeCountService.CountSessionsPendingVecSubmissionAsync,
                 // which backs the nav badge — the filtered list and the badge count are the same thing.
@@ -335,10 +339,12 @@ public class IndexModel(
             "team" => Order(s => s.Team.Name),
             "vec" => Order(s => s.Vec.Name),
             "candidates" => Order(s => s.Candidates.Count),
+            // Must stay in step with ToRow's chip and the Status filter above — all three encode
+            // the same four states, and a mismatch between them was a real reported bug once.
             "status" => Order(s =>
                 s.Status == SessionStatus.Cancelled ? "Cancelled"
                 : s.RescheduleFlaggedForReview ? "Reschedule flagged"
-                : s.TestingCompletedUtc != null ? "Completed"
+                : s.TestingCompletedUtc != null || s.ExamToolsClosedUtc != null ? "Completed"
                 : "Active"),
             "vecsubmission" => Order(s =>
                 s.Status == SessionStatus.Cancelled ? "—"
@@ -581,18 +587,19 @@ public class IndexModel(
         {
             subParts.Add("Zoom");
         }
-        if (s.TestingCompletedUtc is not null)
-        {
-            subParts.Add("Completed");
-        }
         if (s.Status == SessionStatus.Cancelled)
         {
             subParts.Add("Cancelled");
         }
 
+        // A session is Completed once it is finished by *either* route: a Session Manager marking it,
+        // or ExamTools closing it (ExamToolsClosedUtc, 2026-07-31). Only the manual route ever set
+        // anything before, so a past session nobody had marked read "Active" indefinitely — which is
+        // what made every old session look live. Deliberately one state, not two: closed is completed.
+        // The Status filter and the "status" sort key encode this same rule; change all three together.
         var (statusClass, statusLabel) = s.Status == SessionStatus.Cancelled ? ("chip-brick", "Cancelled")
             : s.RescheduleFlaggedForReview ? ("chip-amber", "Reschedule flagged")
-            : s.TestingCompletedUtc is not null ? ("chip-neutral", "Completed")
+            : s.TestingCompletedUtc is not null || s.ExamToolsClosedUtc is not null ? ("chip-neutral", "Completed")
             : ("chip-green", "Active");
 
         var (vecClass, vecLabel) = s.Status == SessionStatus.Cancelled ? ("chip-neutral", "—")

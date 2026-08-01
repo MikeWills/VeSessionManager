@@ -387,7 +387,12 @@ public class DetailModel(
             $"${feeSummary.TotalRemitToVec:F2}",
             session.RetainedAmountOverride is not null,
             session.RetainedAmountOverride?.ToString("F2"),
-            session.TestingCompletedUtc is null ? "Not yet completed" : $"Completed {EasternTimeFormatter.Format(session.TestingCompletedUtc.Value, "MMM d, yyyy")}",
+            // Same rule as the session list's Status chip: completed by either route — a Session
+            // Manager marking it, or ExamTools closing it (ExamToolsClosedUtc). Preferring the
+            // manual timestamp keeps the more specific fact when both exist.
+            (session.TestingCompletedUtc ?? session.ExamToolsClosedUtc) is { } completedUtc
+                ? $"Completed {EasternTimeFormatter.Format(completedUtc, "MMM d, yyyy")}"
+                : "Not yet completed",
             session.VecSubmissionStatus == VecSubmissionStatus.Submitted ? "chip-green" : "chip-neutral",
             session.VecSubmissionStatus == VecSubmissionStatus.Submitted ? "Submitted" : "Not submitted",
             session.VecSubmissionStatus == VecSubmissionStatus.Submitted,
