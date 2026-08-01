@@ -48,14 +48,22 @@ public class SessionIngestionService(
 
     /// <summary>
     /// A "done" session was never first-ingested at all before this (issue #22) — teams want to
-    /// start tracking past candidates/VE stats for sessions that already happened. Bounded to ~30
-    /// days back for the same reason NewSessionPastGrace is bounded: the feed returns unfiltered
-    /// full history, and a "done" session from years ago is exactly as undesirable to backfill as a
-    /// zombie "pend" one. SessionEventSchedulingService/CandidateNotificationService separately
-    /// guard against live-scheduling or emailing a session ingested this way once it's already over
+    /// start tracking past candidates/VE stats for sessions that already happened.
+    ///
+    /// Narrowed from 30 days to 7 (issue #67): once a session is completed in ExamTools there is
+    /// nothing further to pull *about the session*, so this window is now purely a **discovery net**
+    /// — it exists to catch a session that completed while the Worker was down, not to keep
+    /// re-reading a month of history on every tick, for every team, forever. Deliberately pulling
+    /// real history (a full year for the stats page) is a one-off operation now, not a continuous
+    /// one: see HistoricalImportService and docs/historical-import.md.
+    ///
+    /// The feed still returns unfiltered full history, so the bound also does what NewSessionPastGrace
+    /// does — a "done" session from years ago is exactly as undesirable to backfill accidentally as a
+    /// zombie "pend" one. SessionEventSchedulingService/CandidateNotificationService separately guard
+    /// against live-scheduling or emailing a session ingested this way once it's already over
     /// (Session.HasEnded) — this window only controls whether the row gets created at all.
     /// </summary>
-    private static readonly TimeSpan CompletedSessionBackfillWindow = TimeSpan.FromDays(30);
+    private static readonly TimeSpan CompletedSessionBackfillWindow = TimeSpan.FromDays(7);
 
     public async Task<IngestionResult> RunAsync(Team team, CancellationToken cancellationToken)
     {
@@ -76,16 +84,7 @@ public class SessionIngestionService(
 
         var remoteSessions = (await examToolsClient.GetTeamSessionsAsync(credentials, cancellationToken)).ToList();
 
-        // GetTeamSessionsAsync never returns a closed ("done") session, confirmed live 2026-07-28 —
-        // closed sessions only exist behind this separate date-range feed. Merge the two, preferring
-        // the pend feed's own copy of a session id if (implausibly) both returned it.
-        var closedSessions = await examToolsClient.GetTeamClosedSessionsAsync(
-            credentials, DateOnly.FromDateTime(now - CompletedSessionBackfillWindow), DateOnly.FromDateTime(now.AddDays(1)), cancellationToken);
-        var pendIds = remoteSessions.Select(r => r.Id).ToHashSet();
-        remoteSessions.AddRange(closedSessions.Where(c => !pendIds.Contains(c.Id)));
-
-        var remoteIds = remoteSessions.Select(r => r.Id).ToHashSet();
-
+        // Loaded before the closed-session merge below, which needs to know what we already have.
         // Scoped to this team — otherwise another team's still-active sessions (never in this
         // team's own remoteIds, since ExamTools' feed is per-team) would look "disappeared" below
         // and get wrongly marked Cancelled.
@@ -97,6 +96,32 @@ public class SessionIngestionService(
             .Where(s => s.TeamId == team.Id)
             .ToListAsync(cancellationToken);
         var localByExternalId = localSessions.ToDictionary(s => s.ExamToolsSessionId);
+
+        // Issue #67: a closed session we have already stored *and already observed closing* has
+        // nothing left to give this feed. The only two things the loop below would still do to it
+        // are ApplyRescheduleRules (meaningless for a session that already happened) and the
+        // one-time ExtId backfill from 2026-07-30 (long since complete), so it is dropped from the
+        // merge entirely rather than re-processed on every tick, for every team, forever.
+        //
+        // The ExamToolsClosedUtc test is what makes this safe, and "already known locally" alone
+        // would NOT be: a session that is locally known but has never been seen closed still needs
+        // this feed for two things that issue #68's fix depends on — the ExamToolsClosedUtc stamp
+        // itself (only "done" sessions carry it, and only this feed returns them), and the final
+        // candidate sync on the run that discovers the close. Dropping those would resurrect the
+        // false-cancellation bug. Already-settled sessions are excluded from remoteIds too, which is
+        // harmless: cancellation detection already ignores anything with a closed stamp.
+        bool IsSettledLocally(ExamToolsSession remote) =>
+            localByExternalId.TryGetValue(remote.Id, out var local) && local.ExamToolsClosedUtc is not null;
+
+        // GetTeamSessionsAsync never returns a closed ("done") session, confirmed live 2026-07-28 —
+        // closed sessions only exist behind this separate date-range feed. Merge the two, preferring
+        // the pend feed's own copy of a session id if (implausibly) both returned it.
+        var closedSessions = await examToolsClient.GetTeamClosedSessionsAsync(
+            credentials, DateOnly.FromDateTime(now - CompletedSessionBackfillWindow), DateOnly.FromDateTime(now.AddDays(1)), cancellationToken);
+        var pendIds = remoteSessions.Select(r => r.Id).ToHashSet();
+        remoteSessions.AddRange(closedSessions.Where(c => !pendIds.Contains(c.Id) && !IsSettledLocally(c)));
+
+        var remoteIds = remoteSessions.Select(r => r.Id).ToHashSet();
 
         // Captured *before* this run stamps any new closes. "Poll while the session is open"
         // has to include the poll that discovers it closed — that run is the last chance to pick up
