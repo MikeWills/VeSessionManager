@@ -199,10 +199,11 @@ public class SessionIngestionServiceTests
         await SeedVecAndFeeConfigAsync(dbContext);
         var team = await SeedTeamAsync(dbContext);
         var client = new FakeExamToolsClient();
-        // Issue #22: teams want to backfill sessions that already completed, up to ~a month back,
-        // to start tracking past candidates/VE stats — a "done" session is now ingestable for the
-        // first time (previously never ingested regardless of date).
-        var done = PendingSession(id: "completed-session", date: Now.AddDays(-15));
+        // Issue #22: teams want to backfill sessions that already completed — a "done" session is
+        // ingestable for the first time (previously never ingested regardless of date). The window
+        // narrowed from 30 days to 7 in issue #67, so this date moved inside the new bound; pulling
+        // real history is HistoricalImportService's job now, not this sweep's.
+        var done = PendingSession(id: "completed-session", date: Now.AddDays(-3));
         done.State = "done";
         client.SessionsFor(team.Id).Add(done);
 
@@ -273,6 +274,70 @@ public class SessionIngestionServiceTests
 
         Assert.Equal(1, result.SessionsAdded);
         Assert.Single(dbContext.Sessions);
+    }
+
+    [Fact]
+    public async Task SettledClosedSession_IsSkippedFromTheClosedFeedOnEveryLaterTick()
+    {
+        // Issue #67: once a session is stored locally AND we have observed ExamTools close it,
+        // re-reading it out of the closed feed does nothing useful — the only remaining effects are
+        // ApplyRescheduleRules (meaningless for a session that already ran) and the long-complete
+        // ExtId backfill. Both are asserted absent here, which is what proves the skip happened.
+        await using var dbContext = CreateContext();
+        await SeedVecAndFeeConfigAsync(dbContext);
+        var team = await SeedTeamAsync(dbContext);
+        var client = new FakeExamToolsClient();
+
+        // Tick 1: ingested while open, with no ExtId yet (the pre-2026-07-30 state the backfill
+        // exists for). Tick 2: observed closing, which sets ExamToolsClosedUtc.
+        client.SessionsFor(team.Id).Add(PendingSession(extId: null));
+        await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+        client.SessionsFor(team.Id).Clear();
+        var done = PendingSession(extId: null);
+        done.State = "done";
+        client.ClosedSessionsFor(team.Id).Add(done);
+        await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+        Assert.NotNull(dbContext.Sessions.Single().ExamToolsClosedUtc);
+
+        // Tick 3: the feed now reports a different date and an ExtId. A settled session ignores both.
+        done.Date = done.Date.AddDays(4);
+        done.SessionDef!.ExtId = "SHOULD-NOT-BACKFILL";
+        var result = await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+
+        Assert.Equal(0, result.SessionsRescheduled);
+        Assert.Equal(0, result.SessionsFlaggedForReview);
+        var session = dbContext.Sessions.Single();
+        Assert.False(session.RescheduleFlaggedForReview);
+        Assert.Null(session.ExtId);
+        // Still not cancelled — dropping it from remoteIds must not read as "disappeared".
+        Assert.Equal(SessionStatus.Active, session.Status);
+        Assert.Equal(0, result.SessionsCancelled);
+    }
+
+    [Fact]
+    public async Task KnownButNotYetClosedSession_IsStillReadFromTheClosedFeed()
+    {
+        // The guard rail on the test above: the skip keys on ExamToolsClosedUtc, NOT on "is this id
+        // already stored locally". A known session that has never been seen closed still needs this
+        // feed to receive its closed stamp at all — and without that stamp, issue #68's false
+        // cancellations come straight back. Simplifying IsSettledLocally to an id check fails here.
+        await using var dbContext = CreateContext();
+        await SeedVecAndFeeConfigAsync(dbContext);
+        var team = await SeedTeamAsync(dbContext);
+        var client = new FakeExamToolsClient();
+        client.SessionsFor(team.Id).Add(PendingSession());
+        await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+        Assert.Null(dbContext.Sessions.Single().ExamToolsClosedUtc);
+
+        client.SessionsFor(team.Id).Clear();
+        var done = PendingSession();
+        done.State = "done";
+        client.ClosedSessionsFor(team.Id).Add(done);
+        var result = await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+
+        Assert.Equal(1, result.SessionsClosedByExamTools);
+        Assert.Equal(Now, dbContext.Sessions.Single().ExamToolsClosedUtc);
+        Assert.Equal(0, result.SessionsCancelled);
     }
 
     [Fact]
@@ -834,7 +899,7 @@ public class SessionIngestionServiceTests
         // ExamToolsClosedUtc — that only happens on a later poll of an already-known session — so
         // this lands in exactly the pre-fix state: already ended, no closed stamp, and never
         // going to get one now that it has aged out.
-        var done = PendingSession(date: Now.AddDays(-20));
+        var done = PendingSession(date: Now.AddDays(-3));
         done.State = "done";
         client.ClosedSessionsFor(team.Id).Add(done);
         await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);

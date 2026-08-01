@@ -8,6 +8,19 @@ that window, or immediately if it's phase-numbered work already summarized in "C
 design rationale for any entry still lives in its linked `/docs/*.md` file, not here or in
 CLAUDE.md — this file, like CLAUDE.md's Change Log, is pointers only.
 
+- **Duplicate-code cleanup + credential encryption + two security fixes (2026-07-30).** No single
+  linked doc — three small, independent items from a full-project code review: (1) `SessionAccessScope.GetAvailableTeamsAsync`
+  replaced 5 copy-pasted team-picker blocks across the SessionManager pages; (2) `LicenseClassFormatter`
+  replaced two independently-drifted license-class-transition formatters (`CandidateDetail`/`ApplicantStatus`);
+  (3) `PerTeamDailyJob` (Worker) replaced the identical 24h-PeriodicTimer-per-team scaffold duplicated
+  across `PaymentReminderJob`/`SquareLinkPurgeJob`/`DayBeforeReminderJob`. Plus: `ExternalLoginCallback`'s
+  email-verification check now fails closed for any unrecognized external provider instead of
+  trusting one by silent omission (Microsoft is explicitly allowlisted, with rationale, not
+  accidentally trusted); the auth cookie now pins `CookieSecurePolicy.Always` outside Development.
+  See `docs/credential-encryption.md` for the fourth, larger item from the same review — `Team`'s
+  credential columns (ExamTools/Zoom/Square/SMTP secrets) are now encrypted at rest via
+  `EncryptedStringConverter`, with `TeamSecretsMigrationService`/`--migrate-team-secrets` as the
+  (idempotent, safe-to-rerun) upgrade path for existing plaintext data.
 - **FCC ULS *application* deep link — investigated to a conclusion, closed as not buildable
   (2026-07-31).** See the comment in `Web/FccUlsLinks.cs` and `docs/uls-watcher.md`. Three independent
   blockers, any one of them sufficient: FCC's Application Search results page is **session-scoped**

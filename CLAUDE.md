@@ -77,6 +77,16 @@ would be pure duplication — and goes straight to `CHANGELOG.md` instead. Non-p
 redesigns, hardening passes) start here and move to `CHANGELOG.md` once the section is at/over the
 cap and a newer entry needs to be added; oldest goes first.
 
+- **Closed-session sweep narrowed to a discovery net (2026-07-31).** See `docs/historical-import.md`
+  (issue #67, part 1). `CompletedSessionBackfillWindow` 30 days → 7, and a closed session that is
+  already stored locally **and** already carries an `ExamToolsClosedUtc` stamp is dropped from the
+  merged feed instead of being re-processed every tick, for every team, forever (its only remaining
+  effects were a meaningless `ApplyRescheduleRules` and the long-complete `ExtId` backfill). **The
+  stamp half of that test is load-bearing:** skipping on "already known locally" alone would starve a
+  not-yet-closed session of both its `ExamToolsClosedUtc` stamp and its final candidate sync, which
+  brings issue #68's false cancellations straight back — `KnownButNotYetClosedSession_IsStillReadFromTheClosedFeed`
+  is the regression test. Pulling real history is now a deliberate one-off (see the historical import)
+  rather than a side effect of the rolling window.
 - **Click-to-sort columns on every table (2026-07-31).** See `docs/table-sorting.md`. Ascending →
   descending → back to the server's order; a second column replaces the first; the choice is
   remembered per page. Two mechanisms behind one appearance: a shared vanilla-JS sorter in `app.js`
@@ -213,19 +223,6 @@ cap and a newer entry needs to be added; oldest goes first.
   requests while investigating, so the URL shape couldn't be verified; see TODO.md's Feature
   requests section for the parked follow-up (the `UniqueSystemIdentifier` this needs is already
   captured in `FccUlsApplicationRecord`, just not persisted to `Candidate` yet).
-- **Duplicate-code cleanup + credential encryption + two security fixes (2026-07-30).** No single
-  linked doc — three small, independent items from a full-project code review: (1) `SessionAccessScope.GetAvailableTeamsAsync`
-  replaced 5 copy-pasted team-picker blocks across the SessionManager pages; (2) `LicenseClassFormatter`
-  replaced two independently-drifted license-class-transition formatters (`CandidateDetail`/`ApplicantStatus`);
-  (3) `PerTeamDailyJob` (Worker) replaced the identical 24h-PeriodicTimer-per-team scaffold duplicated
-  across `PaymentReminderJob`/`SquareLinkPurgeJob`/`DayBeforeReminderJob`. Plus: `ExternalLoginCallback`'s
-  email-verification check now fails closed for any unrecognized external provider instead of
-  trusting one by silent omission (Microsoft is explicitly allowlisted, with rationale, not
-  accidentally trusted); the auth cookie now pins `CookieSecurePolicy.Always` outside Development.
-  See `docs/credential-encryption.md` for the fourth, larger item from the same review — `Team`'s
-  credential columns (ExamTools/Zoom/Square/SMTP secrets) are now encrypted at rest via
-  `EncryptedStringConverter`, with `TeamSecretsMigrationService`/`--migrate-team-secrets` as the
-  (idempotent, safe-to-rerun) upgrade path for existing plaintext data.
 Everything through Phase 0-10's initial build (ExamTools ingestion, Zoom/Discord, Square, email
 notifications, FCC ULS watcher, payment reminders, VE tracking, VEC submission tracker, admin
 auth/config/candidate-actions, PII purge) plus the public privacy page has aged out to
