@@ -28,6 +28,9 @@ public class SessionIngestionServiceTests
         public List<string> ApplicantFetches { get; } = [];
         public List<ExamToolsCredentials> CredentialsUsed { get; } = [];
 
+        /// <summary>Session ids whose applicant fetch should throw, standing in for an ExamTools error on one session.</summary>
+        public HashSet<string> ThrowOnApplicantFetchFor { get; } = [];
+
         public List<ExamToolsSession> SessionsFor(int teamId) =>
             SessionsByTeam.TryGetValue(teamId, out var list) ? list : SessionsByTeam[teamId] = [];
 
@@ -52,6 +55,11 @@ public class SessionIngestionServiceTests
         public Task<IReadOnlyList<ExamToolsApplicant>> GetSessionApplicantsAsync(ExamToolsCredentials credentials, string examToolsSessionId, CancellationToken cancellationToken)
         {
             ApplicantFetches.Add(examToolsSessionId);
+            if (ThrowOnApplicantFetchFor.Contains(examToolsSessionId))
+            {
+                throw new HttpRequestException("Response status code does not indicate success: 404 (Not Found).");
+            }
+
             var applicants = ApplicantsFor(credentials.TeamId);
             return Task.FromResult<IReadOnlyList<ExamToolsApplicant>>(
                 applicants.TryGetValue(examToolsSessionId, out var list) ? list : []);
@@ -542,6 +550,41 @@ public class SessionIngestionServiceTests
 
         Assert.Equal(0, result.SessionsCancelled);
         Assert.Equal(SessionStatus.Active, dbContext.Sessions.Single().Status);
+    }
+
+    [Fact]
+    public async Task OneSessionFailingCandidateSync_DoesNotStopTheOtherSessions()
+    {
+        // Found live 2026-07-31: a single session ExamTools answered with 404 threw out of the
+        // candidate loop, so HRCC's whole pipeline — candidates, VE roster, payments, emails —
+        // stopped for two hours, every tick, with a failed JobRunHistory row as the only symptom.
+        // A session the API can't serve must be skipped, not fatal.
+        await using var dbContext = CreateContext();
+        await SeedVecAndFeeConfigAsync(dbContext);
+        var team = await SeedTeamAsync(dbContext);
+        var client = new FakeExamToolsClient();
+        client.SessionsFor(team.Id).Add(PendingSession(id: "broken-session", applicantCount: 1));
+        client.SessionsFor(team.Id).Add(PendingSession(id: "healthy-session", applicantCount: 1));
+        client.ApplicantsFor(team.Id)["broken-session"] = [Applicant(id: "a")];
+        client.ApplicantsFor(team.Id)["healthy-session"] = [Applicant(id: "b")];
+        await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+        Assert.Equal(2, dbContext.Candidates.Count());
+
+        // ExamTools starts failing on one session only, and a real change lands on the other.
+        client.ThrowOnApplicantFetchFor.Add("broken-session");
+        client.ApplicantsFor(team.Id)["healthy-session"] = [Applicant(id: "b", email: "moved@example.com")];
+
+        var result = await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+
+        // The run completes rather than throwing, and reports the failure instead of hiding it.
+        Assert.Equal(1, result.SessionsFailedCandidateSync);
+        Assert.Equal(1, result.CandidatesUpdated);
+        Assert.Equal("moved@example.com", dbContext.Candidates.Single(c => c.ExamToolsApplicantId == "b").Email);
+
+        // The broken session's candidate is left exactly as it was — not withdrawn, not cleared.
+        var stranded = dbContext.Candidates.Single(c => c.ExamToolsApplicantId == "a");
+        Assert.NotEqual(CandidateApplicationStatus.NotTested, stranded.ApplicationStatus);
+        Assert.NotNull(stranded.Name);
     }
 
     [Fact]
