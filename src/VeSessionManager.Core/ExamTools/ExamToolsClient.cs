@@ -48,8 +48,15 @@ public sealed class ExamToolsClient : IExamToolsClient, IDisposable
 
     public async Task<IReadOnlyList<ExamToolsApplicant>> GetSessionApplicantsAsync(ExamToolsCredentials credentials, string examToolsSessionId, CancellationToken cancellationToken)
     {
+        // 404 means "this session has no applicant export", which ExamTools returns for a session
+        // whose applicants have all cancelled — a legitimate state, not a failure. Found live
+        // 2026-07-31: HRCC's last candidate on one session withdrew, and every subsequent ingestion
+        // for that whole team threw on this call for two hours. Returning empty also lets the
+        // withdrawal detection in SessionIngestionService do its job, which is otherwise impossible
+        // for exactly the case it exists to handle — a session emptying out completely.
         var export = await GetJsonAsync<ExamToolsApplicantExport>(
-            credentials, $"/api/veUser/sessions/{Uri.EscapeDataString(examToolsSessionId)}/export/basic.json", cancellationToken);
+            credentials, $"/api/veUser/sessions/{Uri.EscapeDataString(examToolsSessionId)}/export/basic.json", cancellationToken,
+            treatNotFoundAsEmpty: true);
         return export?.Applicants ?? [];
     }
 
@@ -64,7 +71,11 @@ public sealed class ExamToolsClient : IExamToolsClient, IDisposable
         GetJsonAsync<ExamToolsApplicantDetail>(
             credentials, $"/api/veUser/sessions/{Uri.EscapeDataString(examToolsSessionId)}/applicant/{Uri.EscapeDataString(applicantId)}", cancellationToken);
 
-    private async Task<T?> GetJsonAsync<T>(ExamToolsCredentials credentials, string relativeUrl, CancellationToken cancellationToken)
+    /// <param name="treatNotFoundAsEmpty">
+    /// Return default(T) on a 404 instead of throwing. Only for endpoints where "not found" is a
+    /// legitimate state rather than an error — see GetSessionApplicantsAsync.
+    /// </param>
+    private async Task<T?> GetJsonAsync<T>(ExamToolsCredentials credentials, string relativeUrl, CancellationToken cancellationToken, bool treatNotFoundAsEmpty = false)
     {
         var teamSession = GetOrCreateTeamSession(credentials.TeamId, credentials.BaseUrl);
         await EnsureLoggedInAsync(teamSession, credentials, forceRelogin: false, cancellationToken);
@@ -75,6 +86,12 @@ public sealed class ExamToolsClient : IExamToolsClient, IDisposable
             _logger.LogInformation("ExamTools returned {StatusCode} for team {TeamId} — session cookie likely expired, re-authenticating", (int)response.StatusCode, credentials.TeamId);
             await EnsureLoggedInAsync(teamSession, credentials, forceRelogin: true, cancellationToken);
             response = await teamSession.HttpClient.GetAsync(relativeUrl, cancellationToken);
+        }
+
+        if (treatNotFoundAsEmpty && response.StatusCode == HttpStatusCode.NotFound)
+        {
+            _logger.LogInformation("ExamTools returned 404 for {RelativeUrl} (team {TeamId}) — treating as empty rather than an error", relativeUrl, credentials.TeamId);
+            return default;
         }
 
         response.EnsureSuccessStatusCode();

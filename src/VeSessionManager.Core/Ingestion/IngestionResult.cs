@@ -17,8 +17,12 @@ public class IngestionResult
     /// <summary>Candidates auto-marked NotTested this run because they left ExamTools' applicant list — see WithdrawMissingCandidates.</summary>
     public int CandidatesWithdrawn { get; set; }
 
+    /// <summary>Sessions whose candidate sync threw and was skipped so the rest of the team could continue — non-zero means something is wrong even though the run itself "succeeded".</summary>
+    public int SessionsFailedCandidateSync { get; set; }
+
     public override string ToString() =>
         $"sessions: +{SessionsAdded} rescheduled {SessionsRescheduled} flagged {SessionsFlaggedForReview} " +
         $"cancelled {SessionsCancelled} closed(ExamTools) {SessionsClosedByExamTools} skipped(no config) {SessionsSkippedNoConfig}; " +
-        $"candidates: +{CandidatesAdded} updated {CandidatesUpdated} withdrew {CandidatesWithdrawn}";
+        $"candidates: +{CandidatesAdded} updated {CandidatesUpdated} withdrew {CandidatesWithdrawn} " +
+        $"sessions failed {SessionsFailedCandidateSync}";
 }

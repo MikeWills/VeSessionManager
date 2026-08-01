@@ -184,8 +184,22 @@ public class SessionIngestionService(
                 continue;
             }
 
-            var applicants = await examToolsClient.GetSessionApplicantsAsync(credentials, remote.Id, cancellationToken);
-            SyncCandidates(local, applicants, remote.ApplicantCount, now, result);
+            // Isolated per session. One session ExamTools can't serve must not take the whole team's
+            // ingestion down with it — found live 2026-07-31, when a single 404 stopped HRCC's
+            // candidates, VE roster, payments and emails for two hours, every tick, with the only
+            // symptom a failed JobRunHistory row. Every other session in the feed still syncs, and
+            // the failure is counted so the run summary shows it rather than reading as a clean pass.
+            try
+            {
+                var applicants = await examToolsClient.GetSessionApplicantsAsync(credentials, remote.Id, cancellationToken);
+                SyncCandidates(local, applicants, remote.ApplicantCount, now, result);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                result.SessionsFailedCandidateSync++;
+                logger.LogError(ex, "Candidate sync failed for session {ExamToolsSessionId} (team {TeamId}) — skipping this session, the rest of the team's ingestion continues",
+                    remote.Id, team.Id);
+            }
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);
