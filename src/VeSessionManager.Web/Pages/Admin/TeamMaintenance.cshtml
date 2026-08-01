@@ -1,0 +1,157 @@
+@page
+@using VeSessionManager.Core.Ingestion
+@model VeSessionManager.Web.Pages.Admin.TeamMaintenanceModel
+@{
+    ViewData["Title"] = "Team Maintenance";
+    ViewData["ActiveNav"] = "AdminTeamMaintenance";
+    Layout = "_AppLayout";
+}
+
+<div class="page-head">
+    <div>
+        <p class="eyebrow">Ingestion &amp; data operations</p>
+        <h1>Team Maintenance</h1>
+    </div>
+</div>
+
+@if (Model.IsSystemAdmin)
+{
+    @* Same team-picker as Team Settings, deliberately without "All teams": every action on this
+       page targets exactly one team, so a merged view has nothing to act on. *@
+    <form method="get" id="teamFilter" class="filters" style="margin-bottom:16px; align-items:flex-start;">
+        <div class="filter-dropdown">
+            <button type="button" class="kebab @(Model.TeamId is not null ? "active" : "")">Team: @Model.TeamSummaryLabel ▾</button>
+            <div class="menu">
+                @foreach (var team in Model.AvailableTeams)
+                {
+                    <label class="item"><input type="radio" name="teamId" value="@team.Id" @(team.Id == Model.TeamId ? "checked" : "") /> @team.Name</label>
+                }
+                <hr />
+                <button type="submit" class="item">Apply</button>
+            </div>
+        </div>
+    </form>
+}
+
+@if (Model.Team is null)
+{
+    <p>@(Model.IsSystemAdmin ? "Pick a team above." : "No team assigned to this account.")</p>
+}
+else
+{
+    <div class="session-panel" style="display:block;">
+        <div class="section-head"><h2>Ingestion schedule</h2></div>
+
+        @if (!Model.Team.IsExamToolsConfigured)
+        {
+            <p class="vesm-alert error" style="margin-bottom:16px;">
+                This team has no ExamTools credentials, so it is never polled.
+                <a asp-page="/Admin/TeamSettings" asp-route-teamId="@Model.Team.Id">Set them on Team Settings</a> — the next
+                scheduled poll picks the team up automatically once they're saved.
+            </p>
+        }
+
+        <div class="meta-grid">
+            <div>
+                <p class="eyebrow">Last poll</p>
+                <p>
+                    @if (Model.Status?.LastRunUtc is null)
+                    {
+                        <span class="chip chip-amber">Never</span>
+                    }
+                    else
+                    {
+                        @EasternTimeFormatter.Format(Model.Status.LastRunUtc, "MMM d, h:mm tt")
+                        <span class="session-sub">@Describe(Model.Report!.NowUtc - Model.Status.LastRunUtc.Value) ago</span>
+                    }
+                </p>
+            </div>
+            <div>
+                <p class="eyebrow">Next poll</p>
+                <p>
+                    @if (Model.Status?.IsDueNow == true)
+                    {
+                        <span class="chip chip-green">Due now</span>
+                    }
+                    else if (Model.Status?.NextDueUtc is not null)
+                    {
+                        @EasternTimeFormatter.Format(Model.Status.NextDueUtc, "MMM d, h:mm tt")
+                        <span class="session-sub">in @Describe(Model.Status.NextDueUtc.Value - Model.Report!.NowUtc)</span>
+                    }
+                </p>
+            </div>
+            <div>
+                <p class="eyebrow">Polling interval</p>
+                <p>
+                    every @Model.Report!.IntervalMinutes min
+                    <span class="session-sub">deployment-wide</span>
+                </p>
+            </div>
+        </div>
+
+        @* Both halves of the schedule, stated plainly — this is the bit that took a database query
+           to answer, and the two-independent-timers shape is why. *@
+        <p class="session-sub" style="margin-top:14px;">
+            The Worker checks for due teams every few minutes, but each team is only polled once per
+            interval above. Times shown are Eastern and are correct as of page load.
+        </p>
+
+        @if (Model.Report.NeedsAttention)
+        {
+            <p class="vesm-alert error" style="margin-top:14px; margin-bottom:0;">
+                @(Model.Report.Health == IngestionHealthState.Stale
+                    ? $"No team anywhere in this deployment has been polled in over {(int)Model.Report.StaleAfter.TotalMinutes} minutes — the Worker service is probably not running."
+                    : "No team has ever been polled — check that the Worker service is running.")
+            </p>
+        }
+    </div>
+
+    <div class="session-panel" style="display:block;">
+        <div class="section-head"><h2>Refresh now</h2></div>
+        <p class="session-sub" style="margin-bottom:14px;">
+            Runs this team's whole pipeline immediately — sessions, candidates, VE roster,
+            Zoom/Discord events, payment links and confirmation emails — instead of waiting for the
+            next scheduled poll. It does not delay that poll.
+        </p>
+        <form method="post" asp-page-handler="RefreshNow">
+            <input type="hidden" name="TeamId" value="@Model.TeamId" />
+            <button type="submit" class="btn-primary btn-sm" disabled="@(Model.RefreshBlockedForSeconds is not null || !Model.Team.IsExamToolsConfigured)">
+                Refresh @Model.Team.Name now
+            </button>
+            @if (Model.RefreshBlockedForSeconds is not null)
+            {
+                <span class="session-sub" style="margin-left:10px;">Just ran — available again in @Model.RefreshBlockedForSeconds second(s).</span>
+            }
+        </form>
+    </div>
+}
+
+@functions {
+    // Relative durations are shown *beside* the absolute time, never instead of it: a relative
+    // number silently goes stale on a page left open, which is exactly the situation someone
+    // waiting on a registrant is in.
+    private static string Describe(TimeSpan span)
+    {
+        if (span < TimeSpan.Zero)
+        {
+            span = TimeSpan.Zero;
+        }
+
+        if (span.TotalMinutes < 1)
+        {
+            return "less than a minute";
+        }
+
+        if (span.TotalMinutes < 60)
+        {
+            return $"{(int)span.TotalMinutes} min";
+        }
+
+        if (span.TotalHours < 24)
+        {
+            return $"{(int)span.TotalHours}h {span.Minutes}m";
+        }
+
+        return $"{(int)span.TotalDays}d {span.Hours}h";
+    }
+}
