@@ -1,4 +1,5 @@
 @page
+@using VeSessionManager.Core.Entities
 @using VeSessionManager.Core.Ingestion
 @model VeSessionManager.Web.Pages.Admin.TeamMaintenanceModel
 @{
@@ -123,6 +124,87 @@ else
                 <span class="session-sub" style="margin-left:10px;">Just ran — available again in @Model.RefreshBlockedForSeconds second(s).</span>
             }
         </form>
+    </div>
+
+    <div class="session-panel" style="display:block;">
+        <div class="section-head"><h2>Import past sessions</h2></div>
+        <p class="session-sub" style="margin-bottom:14px;">
+            A one-off pass over a date range, for pulling in history the routine poll doesn't reach
+            (it only looks a week back). Imports sessions, candidates and VE rosters —
+            <b>no payment links, no Zoom or Discord events, and no emails</b> are created for
+            imported sessions. Re-running a range you've already imported is harmless.
+        </p>
+
+        <form method="post" asp-page-handler="QueueImport">
+            <input type="hidden" name="TeamId" value="@Model.TeamId" />
+            <div class="meta-grid">
+                <div class="field" style="max-width:200px;">
+                    <label for="importStart">From</label>
+                    <input id="importStart" name="startDate" type="date" value="@Model.DefaultImportStart.ToString("yyyy-MM-dd")" required />
+                </div>
+                <div class="field" style="max-width:200px;">
+                    <label for="importEnd">To</label>
+                    <input id="importEnd" name="endDate" type="date" value="@Model.DefaultImportEnd.ToString("yyyy-MM-dd")" required />
+                </div>
+            </div>
+            <button type="submit" class="btn-primary btn-sm" style="margin-top:12px;" disabled="@(Model.ImportInFlight || !Model.Team.IsExamToolsConfigured)">
+                Queue import
+            </button>
+            @if (Model.ImportInFlight)
+            {
+                <span class="session-sub" style="margin-left:10px;">An import is already queued or running for this team.</span>
+            }
+        </form>
+
+        @if (Model.ImportRequests.Count > 0)
+        {
+            <div class="section-head" style="margin-top:28px;"><h2>Recent imports</h2></div>
+            @* This table renders its full set (the last 10), so it opts into the shared vanilla-JS
+               sorter rather than sorting server-side — see docs/table-sorting.md's rule. Every
+               non-text column carries data-sort-value: the formatted dates would otherwise sort
+               alphabetically ("Apr" before "Mar"), and "3 / 12 month(s)" would sort as text. *@
+            <table data-sortable="historical-imports">
+                <thead>
+                    <tr>
+                        <th>Range</th>
+                        <th>Status</th>
+                        <th>Progress</th>
+                        <th>Imported</th>
+                        <th>Requested</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var request in Model.ImportRequests)
+                    {
+                        <tr>
+                            <td data-sort-value="@request.StartDate.ToString("o")">@request.StartDate.ToString("MMM d, yyyy") – @request.EndDate.ToString("MMM d, yyyy")</td>
+                            <td>
+                                <span class="chip @(request.Status switch {
+                                    HistoricalImportStatus.Completed => "chip-green",
+                                    HistoricalImportStatus.Failed => "chip-brick",
+                                    HistoricalImportStatus.Running => "chip-amber",
+                                    _ => "chip-neutral" })">@request.Status</span>
+                                @if (request.Status == HistoricalImportStatus.Failed && !string.IsNullOrWhiteSpace(request.ErrorMessage))
+                                {
+                                    <div class="session-sub">@request.ErrorMessage</div>
+                                }
+                            </td>
+                            @* A bare number so the sorter's numeric path takes it — the visible text
+                               ("3 / 12 month(s)") would fall through to a string compare. *@
+                            <td data-sort-value="@request.ChunksCompleted">@request.ChunksCompleted / @request.ChunksTotal month(s)</td>
+                            <td data-sort-value="@request.SessionsImported">@request.SessionsImported session(s), @request.CandidatesImported candidate(s)</td>
+                            <td data-sort-value="@request.RequestedUtc.ToString("o")">@EasternTimeFormatter.Format(request.RequestedUtc, "MMM d, h:mm tt")</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            @if (Model.ImportInFlight)
+            {
+                @* Deliberately a plain reload rather than polling JS: an import is a rare, operator-
+                   initiated action, and the progress counters only advance once per month-chunk. *@
+                <p class="session-sub" style="margin-top:10px;">Progress updates as each month finishes — reload this page to see it advance.</p>
+            }
+        }
     </div>
 }
 

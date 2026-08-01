@@ -77,6 +77,27 @@ would be pure duplication — and goes straight to `CHANGELOG.md` instead. Non-p
 redesigns, hardening passes) start here and move to `CHANGELOG.md` once the section is at/over the
 cap and a newer entry needs to be added; oldest goes first.
 
+- **One-time historical session import + VE-roster re-poll fix (2026-07-31).** See
+  `docs/historical-import.md` (issue #67 part 2). Admin picks a date range on Team Maintenance; a
+  `HistoricalImportRequest` row is queued and the Worker's new `HistoricalImportJob` walks it **one
+  calendar month per ExamTools call** with a 2s pause, saving progress counters after every chunk.
+  Queued-for-the-Worker rather than run inline because Web and Worker are separate processes — no
+  spinner, no half-import lost to an app recycle, no two processes polling ExamTools at once. Scope
+  is **sessions + candidates + VE roster only** — no payment links, no Zoom/Discord, no emails; the
+  `HasEnded` guards stay a backstop rather than the sole defence for a year of backdated data.
+  **`SessionIngestionService.ImportHistoricalRangeAsync` must never be collapsed into `RunAsync`:**
+  RunAsync cancels sessions absent from the feed, and a date-ranged feed excludes a team's entire
+  live schedule by construction. It also skips reschedule/`ExtId` handling and only syncs candidates
+  for sessions it creates, keeping `WithdrawMissingCandidates` away from historical rosters where a
+  short export would irreversibly clear PII. **Companion fix, needed before any of this was safe:**
+  `VolunteerExaminerSyncService` re-polled *every* `Status == Active` session every tick forever, so
+  importing a year would have added ~100 permanent hourly API calls. It now skips a session that is
+  done **and** already has a roster — done meaning `ExamToolsClosedUtc` (authoritative, and can
+  precede the scheduled end) or `TestingCompletedUtc` or `HasEnded` (the backstop for pre-2026-07-31
+  sessions carrying neither stamp). The roster half is not redundant: a session appearing and closing
+  inside one polling interval would otherwise lose its roster permanently; empty rosters keep
+  retrying so a failed sync self-heals. Migration `HistoricalImportRequests` is one new table, clean
+  `DROP TABLE` down-path.
 - **Admin → Team Maintenance: team-level "Refresh now" + ingestion schedule + Worker-health banner
   (2026-07-31).** See `docs/team-maintenance.md` (issues #77/#73). New TeamAdmin/SystemAdmin page,
   operations to Team Settings' configuration. Closes the gap where `ManualCandidateRefreshService`'s
@@ -194,28 +215,6 @@ cap and a newer entry needs to be added; oldest goes first.
   heading. Existing sessions backfill lazily (same idiom as the license-class backfill) — no
   one-off migration script — `SessionIngestionService` fills in a null `ExtId` the next time that
   session is still in the feed, and never overwrites once set.
-- **FCC ULS watcher reliability: weekly-catchup retry, upgrade-exam false-positive guard, FRN
-  column (2026-07-30).** No linked doc — see `docs/fcc-uls-watcher.md` for the underlying job
-  design this builds on. Found live investigating a real HRCC discrepancy (Applicant Status showed
-  48 pending vs. an expected ~2): (1) `FccWeeklyCatchupJob` only ever attempted its once-a-week
-  scan with **no retry on failure** — a single `403 Forbidden` from `data.fcc.gov` (confirmed
-  transient; the identical request succeeds on retry) left the entire safety net dark for a full
-  week. Fixed with the same "has this week's slot already succeeded?" catch-up idiom
-  `FccDailyWatcherJob` already uses, retried every `intervalHours` tick until success. Manually
-  triggering it live recovered HRCC's backlog from 40 Unmatched/8 Received down to 3
-  Unmatched/50 Granted. (2) Separately, and more seriously: `FccUlsWatcherService.ProcessLicensesAsync`
-  had no guard against a candidate's FRN already having an *old, unrelated* Active license record —
-  exactly the "upgrade exam" case the class's own doc comment had flagged as deferred. Three real
-  same-day upgrade candidates (testing General→Extra, Technician→General) were incorrectly marked
-  `Granted` off license grants from weeks-to-years earlier, before FCC had done anything with
-  today's actual exam. Fixed by gating the match on the license record's Grant Date being on/after
-  `Session.ScheduledStartUtc`, same rule already used for application-file matches; new
-  `FccUlsWatcherService.RunForDayAsync(DayOfWeek, ...)` lets a specific missed daily file be
-  reprocessed on demand (used to recover this incident's data without waiting on a fresh weekly
-  snapshot). The limitation this guard traded off — upgrades becoming permanently undetectable —
-  **was fixed later the same day, see the AM.dat entry at the top of this Change Log.** (3) Also added an FRN column to Applicant
-  Status's "Pending FCC grant" table for manual copy-paste into FCC's ULS search while (1)/(2) were
-  being investigated.
 Everything through Phase 0-10's initial build (ExamTools ingestion, Zoom/Discord, Square, email
 notifications, FCC ULS watcher, payment reminders, VE tracking, VEC submission tracker, admin
 auth/config/candidate-actions, PII purge) plus the public privacy page has aged out to
@@ -343,6 +342,16 @@ To pick up updates: `/plugin marketplace update claude-tools`
 - **A POST form on a filtered list page needs BOTH an explicit `action=` and `asp-antiforgery="true"` — each half fixes a bug the other half causes.** `asp-page-handler` builds the form action from the route only and **drops the query string**, so posting an action from a filtered/paged list silently redirects back to the unfiltered first page (found on the Sessions row-action menu, 2026-07-30). The fix is an explicit `action="@Model.BuildActionUrl("Handler")"`. But `FormTagHelper` only auto-emits the antiforgery token when *it* generated the action — with an explicit `action=` the token disappears, and every POST then 400s in the antiforgery middleware **before reaching the app, logging nothing server-side** (the symptom is a browser error page with a completely silent log, which reads like the request never happened). `asp-antiforgery="true"` restores it. Any future list page with row-level POST actions needs both, plus a `BuildActionUrl`-style helper so the redirect target keeps the same filter state.
 - **`wireless2.fcc.gov` (ULS's own web UI) returns Akamai "Access Denied" (HTTP 403) to automated requests, and has done so for at least one manual browser attempt too.** This is why `FccUlsLinks` ships the *licence* deep link (`UlsSearch/license.jsp?licKey=…`, whose shape is verified — ExamTools links to exactly it) but deliberately **not** an application deep link: the `applView.jsp?applID=…` shape has never been confirmed against a working response, and an unverified link would send a Session Manager to a dead page. `exam.tools`' own ULS mirror is unaffected and is what the app actually calls.
 - **The FCC bulk-file constraints are historical as of 2026-07-31** — the weekly-snapshot staleness, the day-name publication schedule, the Sunday-file-is-empty trap, and the `AM.dat`/Grant-Date upgrade behaviour all described a subsystem this app no longer runs. They are preserved in `docs/fcc-uls-watcher.md` (marked as removed) because the *matching rules* they justify are still enforced in `UlsWatcherService`. The one that still bites day-to-day: **FCC's Grant Date does NOT advance on a class upgrade — the effective/last-action date does**, so any "did this exam produce a result?" check written against grant date is correct for a first-time licensee and permanently false for an upgrade. Confirming an upgrade needs the operator class matching `NewLicenseClass` **and** the effective date on/after the session; neither alone is sufficient. See `docs/uls-watcher.md`.
+- **`Session.Status == Active` does NOT mean "this session hasn't happened yet" — it means "not
+  cancelled."** `Status` only ever leaves `Active` on cancellation; it is never set to Completed.
+  "Completed" in the UI is *derived* at render time from `TestingCompletedUtc ?? ExamToolsClosedUtc`
+  (issue #71), and neither field is written back to `Status`. So a query filtered on
+  `Status == SessionStatus.Active` returns **every session the team has ever run**, forever — which
+  is how `VolunteerExaminerSyncService` ended up re-polling a team's entire history hourly for
+  months (found 2026-07-31, see `docs/historical-import.md`). It also makes the bug near-invisible:
+  every screen shows those sessions as Completed, so the code reads as if it already filters them.
+  For "is this session finished?", test `ExamToolsClosedUtc`/`TestingCompletedUtc` (plus `HasEnded`
+  as the backstop for rows predating `ExamToolsClosedUtc`), never `Status`.
 - **`SessionAccessScope` has two team-resolution methods and picking the wrong one silently empties a page.** `ResolveViewableTeamIds(user, selectedTeamId)` returns the team-id *set* to filter by, where **null means every team** (SystemAdmin, unfiltered) — use it for any list that can render several teams merged. `TryResolveViewableTeamId` collapses to a *single* team and returns null for "no team context, show nothing" — only correct for a page that genuinely cannot render without one team chosen. Applicant Status and Unmatched Payments used the latter and so had no "All teams" and bounced to an empty page after every action (fixed 2026-07-30). Related trap in the same area: a guard written as `GetEffectiveTeamIds(user)?.Contains(id) ?? false` is **always false for a SystemAdmin** (that method returns null for them, meaning "all teams"), which is exactly how a SystemAdmin ended up 403ing on every unmatched-payment match.
 - **Browser-verifying any authenticated page needs Mike to log in — Claude will not type the dev
   password into the login form.** Every Session Manager and Admin page is `[Authorize]`d, so a UI

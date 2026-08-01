@@ -53,6 +53,9 @@ builder.Services.AddSingleton<IngestionScheduleService>();
 // client/credentials needed. See docs/examtools-api.md's "Applicant exam results" section.
 builder.Services.AddScoped<ExamResultSyncService>();
 
+// Issue #67 part 2: drains the one-off historical-import queue Admin -> Team Maintenance writes to.
+builder.Services.AddScoped<HistoricalImportService>();
+
 // Phase 7: reuses IExamToolsClient, no new client/credentials needed.
 builder.Services.AddScoped<VolunteerExaminerSyncService>();
 builder.Services.AddScoped<VolunteerExaminerReportService>();
@@ -108,6 +111,7 @@ builder.Services.AddHostedService<UlsWatcherJob>();
 builder.Services.AddHostedService<PaymentReminderJob>();
 builder.Services.AddHostedService<SquareLinkPurgeJob>();
 builder.Services.AddHostedService<PiiPurgeJob>();
+builder.Services.AddHostedService<HistoricalImportJob>();
 
 var host = builder.Build();
 
