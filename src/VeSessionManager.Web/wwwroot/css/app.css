@@ -277,6 +277,7 @@ footer.roster { margin-top: 36px; background: var(--surface); border: 1px solid 
 .auth-card .btn-secondary { width: 100%; margin-bottom: 8px; }
 .auth-card .field-error { color: var(--brick); font-size: 12px; margin-top: -10px; margin-bottom: 14px; }
 .auth-card .auth-error { background: var(--brick-dim); color: var(--chip-brick-text); border-radius: 8px; padding: 10px 14px; font-size: 13px; margin-bottom: 18px; }
+.auth-card .auth-status { background: var(--green-dim); color: var(--chip-green-text); border-radius: 8px; padding: 10px 14px; font-size: 13px; margin-bottom: 18px; }
 .auth-card p { font-size: 13.5px; line-height: 1.6; color: var(--ink-soft); margin: 0; }
 .auth-card .auth-link { display: inline-block; margin-top: 16px; font-size: 13px; }
 

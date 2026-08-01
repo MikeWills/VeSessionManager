@@ -77,6 +77,20 @@ would be pure duplication — and goes straight to `CHANGELOG.md` instead. Non-p
 redesigns, hardening passes) start here and move to `CHANGELOG.md` once the section is at/over the
 cap and a newer entry needs to be added; oldest goes first.
 
+- **Self-service password reset + deployment-wide "system" email sender (2026-08-01).** See
+  `docs/password-reset.md`. There was **no password reset of any kind** — a local-account user who
+  forgot their password was locked out permanently, hand-editing `AspNetUsers` the only recovery
+  (OAuth users unaffected). New `PasswordResetService` + `/Account/ForgotPassword`/`ResetPassword`.
+  **Mail sends from new `SystemSettings.SystemSmtp*` fields, not a Team's** — a reset is addressed to
+  an app *user*, and a SystemAdmin may belong to no team; per-team SMTP still owns all candidate
+  mail. `IsSystemEmailConfigured` requires host **and** username (the `SmtpHost`-default gotcha
+  below). **Non-disclosure is the design constraint:** every request reports `Accepted` — unknown
+  address, deactivated (= locked out; there is no `IsActive` flag), OAuth-only (no password hash, or
+  mailbox access could downgrade an SSO login to a password login), and even an SMTP throw — so the
+  page is never an account-enumeration oracle; only `SystemEmailNotConfigured` is surfaced. Throttle
+  stamped **before** the send so a failing SMTP server can't be driven as a mail-bombing loop.
+  Migration `PasswordResetAndSystemEmail` is nullable adds only. **Never live-verified — no SMTP has
+  ever been configured on any deployment.**
 - **VE Roster restricted to admin roles (2026-08-01).** See `docs/admin-auth.md`. SessionManager and
   TeamLead dropped from `VeRoster.cshtml.cs`'s `[Authorize]` — the page is a full VE contact roster
   *and* a per-VE session-count leaderboard, and a visible count-per-person invites comparison between

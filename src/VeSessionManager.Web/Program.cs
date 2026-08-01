@@ -114,6 +114,9 @@ builder.Services.AddScoped<VolunteerExaminerRosterService>();
 // Phase 9a: stateless, no DB dependency of its own — safe as a singleton.
 builder.Services.AddSingleton<SessionAccessScope>();
 
+// Self-service password reset (2026-08-01). Web only — the Worker has no login surface.
+builder.Services.AddScoped<PasswordResetService>();
+
 // Phase 9c: Admin Config Screens — SystemAdmin/TeamAdmin config surface (Pages/Admin/).
 builder.Services.AddSingleton<AdminAccessScope>();
 builder.Services.AddScoped<TeamSettingsService>();

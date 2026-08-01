@@ -15,4 +15,14 @@ public static class TeamEmailCredentialsExtensions
 {
     public static EmailCredentials ToEmailCredentials(this Team team) =>
         new(team.Id, team.SmtpHost!, team.SmtpPort ?? 587, team.SmtpUsername!, team.SmtpPassword ?? "", team.SmtpUseStartTls ?? true);
+
+    /// <summary>
+    /// The deployment-wide sender used for app-user mail (password reset), as opposed to the
+    /// per-team sender used for candidate mail. Same 587/StartTLS fallbacks, for the same reason.
+    /// TeamId is 0 — EmailCredentials.TeamId is only ever used for log traceability, never as a
+    /// cache key or a lookup, so "no team" is representable without a nullable.
+    /// </summary>
+    public static EmailCredentials ToSystemEmailCredentials(this SystemSettings settings) =>
+        new(0, settings.SystemSmtpHost!, settings.SystemSmtpPort ?? 587, settings.SystemSmtpUsername!,
+            settings.SystemSmtpPassword ?? "", settings.SystemSmtpUseStartTls ?? true);
 }

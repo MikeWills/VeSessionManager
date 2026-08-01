@@ -19,9 +19,29 @@ public class SystemSettingsModel(UserManager<User> userManager, SystemSettingsSe
     public string? TestModeOverrideEmail { get; private set; }
     public DateTime? UpdatedUtc { get; private set; }
 
+    public string? SystemSmtpHost { get; private set; }
+    public int? SystemSmtpPort { get; private set; }
+    public string? SystemSmtpUsername { get; private set; }
+    public bool SystemSmtpUseStartTls { get; private set; }
+    public string? SystemSmtpFromAddress { get; private set; }
+    public string? SystemSmtpFromDisplayName { get; private set; }
+
+    /// <summary>Whether a password is stored, never the password itself — a stored secret is never rendered back to the browser.</summary>
+    public bool SystemSmtpPasswordIsSet { get; private set; }
+
+    public bool IsSystemEmailConfigured { get; private set; }
+
     public async Task OnGetAsync()
     {
         var settings = await systemSettingsService.GetAsync(CancellationToken.None);
+        SystemSmtpHost = settings.SystemSmtpHost;
+        SystemSmtpPort = settings.SystemSmtpPort;
+        SystemSmtpUsername = settings.SystemSmtpUsername;
+        SystemSmtpUseStartTls = settings.SystemSmtpUseStartTls ?? true;
+        SystemSmtpFromAddress = settings.SystemSmtpFromAddress;
+        SystemSmtpFromDisplayName = settings.SystemSmtpFromDisplayName;
+        SystemSmtpPasswordIsSet = !string.IsNullOrWhiteSpace(settings.SystemSmtpPassword);
+        IsSystemEmailConfigured = settings.IsSystemEmailConfigured;
         PiiRetentionWindowDays = settings.PiiRetentionWindowDays;
         UlsWatcherIntervalHours = settings.UlsWatcherIntervalHours;
         UlsWatcherStartHourEt = settings.UlsWatcherStartHourEt;
@@ -49,6 +69,37 @@ public class SystemSettingsModel(UserManager<User> userManager, SystemSettingsSe
             SystemSettingsActionResult.Success => testModeEnabled ? "System settings updated. Test mode is ON — no real emails will be sent." : "System settings updated.",
             SystemSettingsActionResult.TestModeMissingOverrideEmail => "Could not save — an override email address is required to turn test mode on.",
             _ => "Could not save — intervals must be at least 1 minute (session ingestion) or 1 hour (ULS polling), the daily watcher start hour must be 0-23, and retention window (if set) at least 1 day."
+        };
+
+        return RedirectToPage();
+    }
+
+    /// <summary>
+    /// The deployment-wide sender used for password-reset mail. Its own form and handler, separate
+    /// from the settings above — a blank password field means "keep what's stored", so this form
+    /// must not be entangled with the other one's save.
+    /// </summary>
+    public async Task<IActionResult> OnPostSystemEmailAsync(
+        string? systemSmtpHost, int? systemSmtpPort, string? systemSmtpUsername, string? systemSmtpPassword,
+        bool systemSmtpUseStartTls, string? systemSmtpFromAddress, string? systemSmtpFromDisplayName)
+    {
+        var user = await userManager.GetUserAsync(User);
+        if (user is null)
+        {
+            return Forbid();
+        }
+
+        var result = await systemSettingsService.UpdateSystemEmailAsync(
+            systemSmtpHost, systemSmtpPort, systemSmtpUsername,
+            // Blank => null => "leave the stored secret alone". Only a non-empty box changes it.
+            string.IsNullOrWhiteSpace(systemSmtpPassword) ? null : systemSmtpPassword,
+            systemSmtpUseStartTls, systemSmtpFromAddress, systemSmtpFromDisplayName,
+            user.Id, CancellationToken.None);
+
+        TempData[result == SystemSettingsActionResult.Success ? "StatusMessage" : "ErrorMessage"] = result switch
+        {
+            SystemSettingsActionResult.Success => "System email settings updated.",
+            _ => "Could not save — the SMTP port must be between 1 and 65535."
         };
 
         return RedirectToPage();
