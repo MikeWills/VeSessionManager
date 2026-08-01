@@ -77,6 +77,22 @@ would be pure duplication — and goes straight to `CHANGELOG.md` instead. Non-p
 redesigns, hardening passes) start here and move to `CHANGELOG.md` once the section is at/over the
 cap and a newer entry needs to be added; oldest goes first.
 
+- **Admin → Team Maintenance: team-level "Refresh now" + ingestion schedule + Worker-health banner
+  (2026-07-31).** See `docs/team-maintenance.md` (issues #77/#73). New TeamAdmin/SystemAdmin page,
+  operations to Team Settings' configuration. Closes the gap where `ManualCandidateRefreshService`'s
+  **only** trigger was a session Detail page — so a team with no ingested sessions had no way to
+  trigger ingestion at all, and the live workaround was `Team.LastIngestionRunUtc = NULL` by hand.
+  Refresh now reuses the same service unchanged, debounced 60s per team by `TeamRefreshThrottle`
+  (schema-free — it reads the `ManualSessionIngestion` JobRunHistory rows; the per-session button
+  stays unthrottled), and deliberately does **not** write `LastIngestionRunUtc`, so a manual run
+  never delays the scheduled poll. `IngestionStatusService` derives last/next poll from
+  `IngestionScheduleService.IsDue` rather than restating the arithmetic. **Two traps worth knowing:**
+  it reads `SystemSettings` directly because `SystemSettingsService.GetAsync` get-or-creates (a
+  *write*, and this runs on every render — same rule `_TestModeBanner` follows), and the site-wide
+  health banner's `IngestionHealthCache` is a **singleton**, so it resolves the scoped
+  `IngestionStatusService` through a fresh scope instead of injecting it. Health is four states, not
+  a bool (a fresh install must not open on a red alarm), is deployment-wide regardless of which team
+  is being viewed, and fires at **2×** the configured interval — 1× fires during normal operation.
 - **Closed-session sweep narrowed to a discovery net (2026-07-31).** See `docs/historical-import.md`
   (issue #67, part 1). `CompletedSessionBackfillWindow` 30 days → 7, and a closed session that is
   already stored locally **and** already carries an `ExamToolsClosedUtc` stamp is dropped from the
@@ -200,29 +216,6 @@ cap and a newer entry needs to be added; oldest goes first.
   **was fixed later the same day, see the AM.dat entry at the top of this Change Log.** (3) Also added an FRN column to Applicant
   Status's "Pending FCC grant" table for manual copy-paste into FCC's ULS search while (1)/(2) were
   being investigated.
-- **Team-picker `<select>` first-click bug + SystemAdmin single-team default + FCC license link
-  (2026-07-30).** No linked doc. Bug: `ApplicantStatus`/`VeRoster`'s team `<select onchange>` never
-  set an explicit `selected` option when no team was chosen yet (SystemAdmin's default state), so
-  the browser silently pre-selected the first team in the list while the model still read
-  `TeamId = null` — clicking that same (already-displayed) team didn't fire `onchange` at all until
-  a *different* team was picked first. `ApplicantStatus` now uses the same filter-pill `<a>`
-  pattern as `VecSubmission`/`UnmatchedPayments` (always a real navigation); `VeRoster` (whose
-  `<select>` shares a form with the date-range filter, so pills weren't a drop-in fix) instead gets
-  an explicit "Select a team…" placeholder option so the visible and actual state always match.
-  Also: `SessionAccessScope.TryResolveViewableTeamId` now takes the already-fetched
-  `AvailableTeams` list and defaults SystemAdmin to the sole team when a deployment only has one
-  (previously only non-SystemAdmin roles auto-defaulted — a single-team SystemAdmin had no picker
-  to make a choice with and no default either, a dead end). `AdminAccessScope.TryResolveManageableTeamId`
-  deliberately keeps its own different null-means-"show every team merged" behavior, unchanged.
-  Separately: new `Candidate.FccUlsLicenseKey` (the FCC ULS "Unique System Identifier", set by
-  `FccUlsWatcherService` alongside `CallSign`/`LicenseGrantDateUtc`) powers a "(FCC license ↗)" link
-  next to Call sign on the Candidate Detail page — confirmed live that ExamTools itself links to
-  this exact `wireless2.fcc.gov/UlsApp/UlsSearch/license.jsp?licKey=...` URL shape. The equivalent
-  *pending application* deep link was deliberately **not** built — `wireless2.fcc.gov`'s Application
-  Search pages returned Akamai "Access Denied" for both automated and the user's own manual browser
-  requests while investigating, so the URL shape couldn't be verified; see TODO.md's Feature
-  requests section for the parked follow-up (the `UniqueSystemIdentifier` this needs is already
-  captured in `FccUlsApplicationRecord`, just not persisted to `Candidate` yet).
 Everything through Phase 0-10's initial build (ExamTools ingestion, Zoom/Discord, Square, email
 notifications, FCC ULS watcher, payment reminders, VE tracking, VEC submission tracker, admin
 auth/config/candidate-actions, PII purge) plus the public privacy page has aged out to

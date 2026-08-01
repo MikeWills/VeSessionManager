@@ -75,10 +75,15 @@ public class Team
     public DateTime CreatedUtc { get; set; }
 
     /// <summary>
-    /// Internal bookkeeping only — not a user-facing setting, no admin UI. Tracks when
-    /// SessionIngestionJob's per-team pipeline last actually ran for this team, so it can throttle
-    /// to SystemSettings.SessionIngestionIntervalMinutes outside any session's surge window. See
-    /// IngestionScheduleService.
+    /// Tracks when SessionIngestionJob's per-team pipeline last actually ran for this team, so it
+    /// can throttle to SystemSettings.SessionIngestionIntervalMinutes. See IngestionScheduleService.
+    ///
+    /// Still not an editable setting, but no longer invisible: it is now *displayed* (never written)
+    /// on Admin → Team Maintenance as "last poll / next poll", and the newest value across all teams
+    /// is what the Worker-health banner tests against — see IngestionStatusService. Note that the
+    /// team-level "Refresh now" action deliberately does NOT write this field: a manual run is extra
+    /// work on top of the schedule, not a replacement for it, so it must not delay the next
+    /// scheduled poll.
     /// </summary>
     public DateTime? LastIngestionRunUtc { get; set; }
 

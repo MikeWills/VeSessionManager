@@ -14,6 +14,13 @@ public class SystemSettingsService(AppDbContext dbContext, TimeProvider timeProv
 {
     public const int SingletonId = 1;
 
+    /// <summary>
+    /// The seeded default for SessionIngestionIntervalMinutes, shared so a read-only caller that
+    /// must not trigger GetAsync's get-or-create write (a page render — see IngestionStatusService)
+    /// can fall back to the same number this service would have created, rather than its own guess.
+    /// </summary>
+    public const int DefaultSessionIngestionIntervalMinutes = 60;
+
     public async Task<SystemSettings> GetAsync(CancellationToken cancellationToken)
     {
         var settings = await dbContext.SystemSettings.FirstOrDefaultAsync(s => s.Id == SingletonId, cancellationToken);
@@ -27,7 +34,7 @@ public class SystemSettingsService(AppDbContext dbContext, TimeProvider timeProv
             Id = SingletonId,
             UlsWatcherIntervalHours = 12,
             UlsWatcherStartHourEt = 8,
-            SessionIngestionIntervalMinutes = 60
+            SessionIngestionIntervalMinutes = DefaultSessionIngestionIntervalMinutes
         };
         dbContext.SystemSettings.Add(settings);
         await dbContext.SaveChangesAsync(cancellationToken);

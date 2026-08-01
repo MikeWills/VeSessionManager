@@ -88,6 +88,16 @@ builder.Services.AddScoped<SessionEventSchedulingService>();
 builder.Services.AddScoped<JobRunHistoryLogger>();
 builder.Services.AddScoped<ManualCandidateRefreshService>();
 
+// Issues #77/#73: Admin → Team Maintenance (team-level "Refresh now" + ingestion schedule
+// visibility) and the site-wide Worker-health banner. IngestionScheduleService is the same gate the
+// Worker uses, registered here so the UI's countdown is derived from it rather than restated.
+// IngestionHealthCache is a SINGLETON on purpose (it caches across requests) and therefore resolves
+// IngestionStatusService through a fresh scope rather than by injection — see its own remarks.
+builder.Services.AddScoped<IngestionScheduleService>();
+builder.Services.AddScoped<IngestionStatusService>();
+builder.Services.AddScoped<TeamRefreshThrottle>();
+builder.Services.AddSingleton<IngestionHealthCache>();
+
 // Phase 9b: the actual UI-triggered wiring for every Session Manager action — see
 // Pages/SessionManager/Detail.cshtml.cs.
 builder.Services.AddScoped<CandidateActionService>();

@@ -125,6 +125,7 @@
                             <a class="item @(activeNav == "AdminTeams" ? "active" : "")" asp-page="/Admin/Teams">Teams</a>
                         }
                         <a class="item @(activeNav == "AdminTeamSettings" ? "active" : "")" asp-page="/Admin/TeamSettings">Team Settings</a>
+                        <a class="item @(activeNav == "AdminTeamMaintenance" ? "active" : "")" asp-page="/Admin/TeamMaintenance">Team Maintenance</a>
                         <a class="item @(activeNav == "AdminUsers" ? "active" : "")" asp-page="/Admin/Users">Users</a>
                         <a class="item @(activeNav == "AdminEmailTemplates" ? "active" : "")" asp-page="/Admin/EmailTemplates">Email Templates</a>
                         <hr>
@@ -165,6 +166,9 @@
         </div>
     </header>
     <partial name="_TestModeBanner" />
+    @* Admin-only, and cached — see the partial's own comments. Passed the role rather than
+       re-querying the user the layout has already loaded. *@
+    <partial name="_IngestionHealthBanner" model="currentUser?.Role" />
 
     <main class="@mainClass">
         @if (TempData["StatusMessage"] is string statusMessage)

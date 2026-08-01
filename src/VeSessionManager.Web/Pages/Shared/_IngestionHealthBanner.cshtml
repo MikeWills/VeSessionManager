@@ -1,0 +1,36 @@
+@using VeSessionManager.Core.Entities
+@using VeSessionManager.Core.Ingestion
+@using VeSessionManager.Web
+@model UserRole?
+@inject IngestionHealthCache HealthCache
+@{
+    // Issue #73's more valuable half. The Web app and the Worker are separate processes, and
+    // nothing in the UI revealed whether the Worker was alive — a dead Worker looks exactly like a
+    // quiet week. That gap bit repeatedly during one evening's work (2026-07-31), and matters far
+    // more once the beta server runs unattended with nobody tailing a console.
+    //
+    // Admins only: a Session Manager can't act on this, and it would be pure alarm for them.
+    // Cached (see IngestionHealthCache) because this renders on EVERY page for those users.
+    var report = Model is UserRole.SystemAdmin or UserRole.TeamAdmin
+        ? await HealthCache.GetAsync(Context.RequestAborted)
+        : null;
+}
+@if (report?.NeedsAttention == true)
+{
+    var isStale = report.Health == IngestionHealthState.Stale;
+    var staleMinutes = (int)report.StaleAfter.TotalMinutes;
+    <div style="background:#8e44ad;color:#fff;text-align:center;font-weight:600;font-size:13px;padding:8px 16px;letter-spacing:.02em;">
+        @if (isStale)
+        {
+            <text>
+                INGESTION STALLED — no team has been polled in over @staleMinutes minutes
+                (last @EasternTimeFormatter.Format(report.NewestLastRunUtc, "MMM d, h:mm tt")). The Worker service is probably not running.
+            </text>
+        }
+        else
+        {
+            <text>INGESTION HAS NEVER RUN — no team has ever been polled. Check that the Worker service is running and that team credentials are set.</text>
+        }
+        <a href="/Admin/TeamMaintenance" style="color:#fff; text-decoration:underline; margin-left:8px;">Team Maintenance</a>
+    </div>
+}
