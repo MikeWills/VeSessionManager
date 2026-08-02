@@ -203,16 +203,29 @@ builder.Services.AddRazorPages();
 
 var app = builder.Build();
 
+// One-off bootstrap of the first SystemAdmin on a fresh deployment. Exits immediately instead of
+// starting the web host — same shape as the Worker's --migrate-team-secrets/--run-uls switches.
+// Must come before the normal startup path so it can run on a box where the service isn't up yet.
+if (args.Contains(BootstrapAdminCommand.Switch))
+{
+    return await BootstrapAdminCommand.RunAsync(app.Services, args);
+}
+
 using (var scope = app.Services.CreateScope())
 {
     var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     dbContext.Database.Migrate();
 
+    var startupLogger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+
     if (app.Environment.IsDevelopment())
     {
-        var startupLogger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
         await DevAuthSeeder.SeedAsync(scope.ServiceProvider, startupLogger);
     }
+
+    // Runs in every environment, but its own guard ("can anyone sign in?") means it does nothing
+    // once any password-holding account exists — including the four DevAuthSeeder just created.
+    await BootstrapAdminSeeder.SeedAsync(scope.ServiceProvider, startupLogger);
 }
 
 // Configure the HTTP request pipeline.
@@ -238,3 +251,7 @@ app.MapRazorPages()
 app.MapSquareWebhook();
 
 app.Run();
+
+// Required because the --create-admin branch above returns an exit code, which makes the
+// top-level entry point int-returning.
+return 0;

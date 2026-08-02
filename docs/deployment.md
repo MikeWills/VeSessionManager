@@ -173,6 +173,56 @@ That tag push is what triggers `deploy.yml` — never an ordinary commit to `mai
 
 ---
 
+## First sign-in on a fresh deployment (2026-08-01)
+
+A Production database starts with **no account anyone can sign into**. `DevAuthSeeder` runs only in
+Development, and every route that could create a user is itself `[Authorize]`d — so without one of
+the two mechanisms below, nobody can sign in, and therefore nobody can create the account that would
+let them sign in.
+
+(Note the Worker's `DevDataSeeder` does create a `System` user with `Role = SystemAdmin`, but it has
+no password and exists purely to own audit-trail foreign keys. It is not a way in.)
+
+### Preferred: `--create-admin`
+
+Password comes from the environment, so it never appears in shell history, in `ps` output, or in the
+log:
+
+```bash
+VSM_ADMIN_PASSWORD='choose-something-long'   dotnet /opt/vesessionmanager/web/VeSessionManager.Web.dll --create-admin   --email you@example.org --name "Your Name" [--callsign WX0MIK]
+```
+
+Applies migrations first, so it works on a box where the services have never started. Exits without
+starting the web host. Refuses if that email already exists.
+
+### Fallback: the automatic bootstrap account
+
+If the Web app starts and **no user has a password**, it creates a temporary SystemAdmin
+`setup@vesessionmanager.local` with a **randomly generated password, printed once to the log at
+`Warning`**:
+
+```
+[WRN] No account on this deployment could sign in, so a TEMPORARY SystemAdmin was created.
+    Email:    setup@vesessionmanager.local
+    Password: <generated>
+```
+
+Sign in, create your own account under Admin → Users, then **deactivate the bootstrap account**.
+It keeps working — and that password stays valid — until you do.
+
+Two deliberate choices here:
+
+- **The password is generated per deployment, never a constant.** A fixed default would put identical
+  known credentials on every deployment's internet-facing login page. `DevAuthSeeder.DevPassword` is
+  fine because it is a throwaway dev fixture; this is not.
+- **The guard is "can anyone sign in", not "does a user exist" or "is there a SystemAdmin".** The
+  `System` audit user would satisfy both of the latter while leaving the deployment locked out —
+  the same class of mistake as `DevAuthSeeder`'s original guard (CLAUDE.md, Known Constraints).
+
+The trade-off: this writes a credential to the log, which nothing else in this codebase does. It is
+accepted because a predictable password is worse and the account should live for minutes. Where you
+have shell access anyway, prefer `--create-admin`, which never writes one.
+
 ## systemd Services
 
 Example `/etc/systemd/system/vesessionmanager-worker.service`:
