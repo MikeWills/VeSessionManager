@@ -19,6 +19,7 @@
         <tr>
             <th>Name</th>
             <th>ExamTools code</th>
+            <th>Fees</th>
             <th>Youth program</th>
             <th>Notes</th>
             <th></th>
@@ -27,7 +28,7 @@
     <tbody>
         @if (Model.Vecs.Count == 0)
         {
-            <tr><td colspan="5">No VECs yet.</td></tr>
+            <tr><td colspan="6">No VECs yet.</td></tr>
         }
         @foreach (var vec in Model.Vecs)
         {
@@ -41,6 +42,18 @@
                     else
                     {
                         <code>@vec.ExamToolsCode</code>
+                    }
+                </td>
+                <td>
+                    @if (vec.FeeSummary is null)
+                    {
+                        @* Not cosmetic: with no fee configuration in effect, ingestion skips every
+                           session under this VEC and only says so in the Worker log. *@
+                        <span class="chip chip-brick">No fee config — sessions skipped</span>
+                    }
+                    else
+                    {
+                        <span class="chip chip-neutral">@vec.FeeSummary</span>
                     }
                 </td>
                 <td>
@@ -58,6 +71,7 @@
                     <button type="button" class="kebab" aria-label="Actions">⋮</button>
                     <div class="menu">
                         <button type="button" class="item" data-open-modal="editVecModal-@vec.Id">Edit</button>
+                        <a class="item" asp-page="/Admin/FeeConfigurations" asp-route-vecId="@vec.Id">Fee configurations</a>
                     </div>
                 </td>
             </tr>
