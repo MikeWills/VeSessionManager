@@ -214,6 +214,32 @@ Three things worth knowing about the shape of the fix:
   that data in place rather than mass-delete real rows, which is only safe *because* the link query
   is bounded too. `ExistingUnpaidPaymentOnALongPastSession_GetsNoSquareLink` is the regression test.
 
+## Imported candidates are assumed granted (2026-08-01)
+
+Session-lifecycle rule, decided after the import surfaced the bugs below: **a historical load assumes
+everyone was granted.** There is no reason to keep asking FCC whether a licence from one to four
+years ago was issued — it either happened long ago or never will.
+
+Left non-terminal, those candidates are polled by `UlsWatcherService` (one HTTP call each, twice a
+day, forever) and counted as outstanding on Applicant Status. Marking them `Granted` makes them
+terminal, and terminal is already the universal "stop processing" signal across this codebase.
+
+Two limits on what is asserted:
+
+- **Only the status.** `CallSign` and `LicenseGrantDateUtc` stay null, because they were never
+  verified. Inventing them would put fabricated licence data in a table other screens read.
+- **A candidate the watcher already matched is untouched.** Where `UlsWatcherService` pulled a real
+  call sign from ExamTools' ULS API during an earlier run, that candidate is already terminal and
+  keeps its real data. In the live backfill all 542 affected rows had no call sign, so nothing
+  verified was overwritten.
+
+No per-candidate audit entry: an import writes thousands at once and the audit log is a fixed 200-row
+window with no filtering (issue #86). The aggregate lands in `IngestionResult.CandidatesAssumedGranted`
+and the import's log line instead.
+
+Applied to existing data 2026-08-01: **542 candidates** (536 `Unmatched`, 6 `Received`; HRCC 524,
+MARC 18), backup `vesessionmanager.db.bak-before-assumed-granted-20260801-2230`.
+
 ## Companion fix 5: roster retries give up eventually (2026-08-01)
 
 Companion fix 1 (above) settles a finished session only once it **has** a roster, precisely so a

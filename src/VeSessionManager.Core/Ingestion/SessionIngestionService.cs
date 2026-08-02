@@ -141,6 +141,7 @@ public class SessionIngestionService(
             {
                 var applicants = await examToolsClient.GetSessionApplicantsAsync(credentials, remote.Id, cancellationToken);
                 SyncCandidates(created, applicants, remote.ApplicantCount, now, result);
+                MarkHistoricalCandidatesGranted(created, result);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -155,6 +156,30 @@ public class SessionIngestionService(
         logger.LogInformation("Historical import {StartDate}..{EndDate} finished for team {TeamId} ({TeamName}): {Result}",
             startDate, endDate, team.Id, team.Name, result);
         return result;
+    }
+
+    /// <summary>
+    /// Historical candidates are assumed to have been granted, per the session-lifecycle rule: there
+    /// is no reason to keep asking FCC whether a licence from one to four years ago was issued. Left
+    /// non-terminal they would be polled by UlsWatcherService — one HTTP call per candidate, twice a
+    /// day, forever — and counted as outstanding on the Applicant Status screen.
+    ///
+    /// Deliberately does NOT invent a CallSign or LicenseGrantDateUtc: those stay null because they
+    /// were never verified. Only the status is asserted. Where UlsWatcherService *did* manage to
+    /// match a real licence during an earlier run, that candidate is already terminal and is left
+    /// exactly as it is, call sign and grant date intact.
+    ///
+    /// No per-candidate audit entry, on purpose: an import writes thousands of these at once and the
+    /// audit log is a fixed 200-row window with no filtering (issue #86). The aggregate count is
+    /// reported in the import's own result and log line instead.
+    /// </summary>
+    private static void MarkHistoricalCandidatesGranted(Session session, IngestionResult result)
+    {
+        foreach (var candidate in session.Candidates.Where(c => !c.ApplicationStatus.IsTerminal()))
+        {
+            candidate.ApplicationStatus = CandidateApplicationStatus.Granted;
+            result.CandidatesAssumedGranted++;
+        }
     }
 
     /// <summary>
