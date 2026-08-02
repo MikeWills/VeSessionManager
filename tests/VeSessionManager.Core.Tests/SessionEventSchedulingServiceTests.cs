@@ -232,7 +232,9 @@ public class SessionEventSchedulingServiceTests
         var (vec, feeConfig) = await SeedRefsAsync(dbContext);
         var team = await SeedTeamAsync(dbContext);
         var session = NewSession(vec, feeConfig, team);
-        session.ScheduledStartUtc = Now.AddDays(-15);
+        // Just-ended, so it is still inside the query's recent-session bound and therefore still
+        // *counted* as skipped. A long-past one is covered separately below.
+        session.ScheduledStartUtc = Now.AddHours(-4);
         dbContext.Sessions.Add(session);
         await dbContext.SaveChangesAsync();
 
@@ -246,6 +248,34 @@ public class SessionEventSchedulingServiceTests
         Assert.Empty(discord.CreateCalls);
         var saved = dbContext.Sessions.Single();
         Assert.Null(saved.ZoomDiscordSyncedStartUtc);
+    }
+
+    /// <summary>
+    /// A long-past session isn't merely skipped — it is never loaded. Before the 2026-08-01 bound,
+    /// every backfilled session was fetched, filtered and log-counted on every tick forever (794 for
+    /// one real team), which is what made the Worker log unreadable after the historical import.
+    /// The distinction that matters here is SessionsSkippedPastDue == 0, not just "no calls made".
+    /// </summary>
+    [Fact]
+    public async Task LongPastSession_IsNotEvenConsidered_AndIsNotCountedAsSkipped()
+    {
+        await using var dbContext = CreateContext();
+        var (vec, feeConfig) = await SeedRefsAsync(dbContext);
+        var team = await SeedTeamAsync(dbContext);
+        var session = NewSession(vec, feeConfig, team);
+        session.ScheduledStartUtc = Now.AddDays(-200); // backfilled history
+        dbContext.Sessions.Add(session);
+        await dbContext.SaveChangesAsync();
+
+        var zoom = new FakeZoomClient();
+        var discord = new FakeDiscordEventClient();
+        var result = await CreateService(dbContext, zoom, discord).RunAsync(team, CancellationToken.None);
+
+        Assert.Equal(0, result.SessionsSkippedPastDue);
+        Assert.Equal(0, result.SessionsSynced);
+        Assert.Empty(zoom.CreateCalls);
+        Assert.Empty(discord.CreateCalls);
+        Assert.Null(dbContext.Sessions.Single().ZoomDiscordSyncedStartUtc);
     }
 
     [Fact]

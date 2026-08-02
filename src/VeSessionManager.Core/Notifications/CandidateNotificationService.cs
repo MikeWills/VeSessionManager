@@ -40,6 +40,7 @@ public class CandidateNotificationService(
     {
         var result = new EmailNotificationResult();
         var now = timeProvider.GetUtcNow().UtcDateTime;
+        var recentSessionCutoff = now.AddDays(-1);
 
         var emailSettings = await dbContext.EmailSettings.FirstOrDefaultAsync(e => e.TeamId == team.Id, cancellationToken);
         if (emailSettings is null)
@@ -56,7 +57,13 @@ public class CandidateNotificationService(
                         && c.Email != null
                         && c.RegistrationConfirmationSentUtc == null
                         && c.Session.TeamId == team.Id
-                        && c.Session.Status == SessionStatus.Active)
+                        && c.Session.Status == SessionStatus.Active
+                        // Query-side coarse bound so a year of backfilled sessions doesn't get
+                        // loaded, filtered and log-counted on every tick, forever — the numbers only
+                        // ever grow, and the lines drowned out real ones (~1991 for one team). A
+                        // session starting more than a day ago has certainly ended (durations are
+                        // hours), so this never hides one the precise HasEnded check below needs.
+                        && c.Session.ScheduledStartUtc >= recentSessionCutoff)
             .ToListAsync(cancellationToken);
 
         // A candidate on a session ingested via the completed-session backfill window (see

@@ -40,12 +40,18 @@ public class PaymentGenerationService(
         var result = new PaymentGenerationResult();
         var now = timeProvider.GetUtcNow().UtcDateTime;
 
+        // Status == Active means "not cancelled", NOT "not finished" (CLAUDE.md) — on its own it
+        // matched every session the team has ever run, so the historical import's year of backfilled
+        // candidates all queued up for payment. See PaymentEligibilityWindow.
+        var paymentCutoff = PaymentEligibilityWindow.CutoffUtc(now);
+
         var candidatesNeedingPayment = await dbContext.Candidates
             .Include(c => c.Session).ThenInclude(s => s.FeeConfiguration)
             .Include(c => c.Session).ThenInclude(s => s.Vec)
             .Where(c => c.PiiPurgedUtc == null
                         && c.Session.TeamId == team.Id
                         && c.Session.Status == SessionStatus.Active
+                        && c.Session.ScheduledStartUtc >= paymentCutoff
                         && !c.Payments.Any(p => p.Reason == PaymentReason.InitialExam))
             .ToListAsync(cancellationToken);
 
@@ -74,9 +80,17 @@ public class PaymentGenerationService(
             await dbContext.SaveChangesAsync(cancellationToken);
         }
 
+        // Bounded by the same window as creation above, and this is the half that matters most: the
+        // ~1710 Unpaid payments the unbounded version already created for backfilled historical
+        // candidates are still in the table, and without this bound the first poll after Square
+        // credentials are set would mint a real payment link for every one of them.
         var paymentsNeedingLink = await dbContext.Payments
             .Include(p => p.Candidate).ThenInclude(c => c.Session)
-            .Where(p => p.Status == PaymentStatus.Unpaid && p.PaymentLinkUrl == null && p.SquareLinkPurgedUtc == null && p.Candidate.Session.TeamId == team.Id)
+            .Where(p => p.Status == PaymentStatus.Unpaid
+                        && p.PaymentLinkUrl == null
+                        && p.SquareLinkPurgedUtc == null
+                        && p.Candidate.Session.TeamId == team.Id
+                        && p.Candidate.Session.ScheduledStartUtc >= paymentCutoff)
             .ToListAsync(cancellationToken);
 
         if (paymentsNeedingLink.Count > 0 && !team.IsSquareConfigured)
