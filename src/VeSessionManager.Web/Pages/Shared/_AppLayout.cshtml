@@ -172,7 +172,6 @@
         </div>
     </header>
     <partial name="_TestModeBanner" />
-    <partial name="_SetupAccountBanner" />
     @* Admin-only, and cached — see the partial's own comments. Passed the role rather than
        re-querying the user the layout has already loaded. *@
     <partial name="_IngestionHealthBanner" model="currentUser?.Role" />
