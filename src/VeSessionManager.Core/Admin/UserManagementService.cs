@@ -16,9 +16,6 @@ namespace VeSessionManager.Core.Admin;
 /// </summary>
 public class UserManagementService(UserManager<User> userManager, AppDbContext dbContext, TimeProvider timeProvider)
 {
-    /// <summary>Mirrors BootstrapAdminSeeder.Email — kept here so Core doesn't take a dependency on the Web project.</summary>
-    public const string BootstrapAdminEmail = "setup@vesessionmanager.local";
-
     /// <summary>A brand-new user starts with zero team memberships — team assignment is now a
     /// separate action (SetTeamsAsync), same as role assignment already was, since a user can belong
     /// to more than one team (issue #19).</summary>
@@ -49,42 +46,7 @@ public class UserManagementService(UserManager<User> userManager, AppDbContext d
         AddAudit(actingUserId, "UserCreated", user.Id, $"User '{email}' created with role {role}.", now);
         await dbContext.SaveChangesAsync(cancellationToken);
 
-        if (role == UserRole.SystemAdmin)
-        {
-            await RetireBootstrapAccountAsync(actingUserId, now, cancellationToken);
-        }
-
         return (UserActionResult.Success, user);
-    }
-
-    /// <summary>
-    /// The temporary bootstrap SystemAdmin exists only so someone can sign into a fresh deployment
-    /// (see BootstrapAdminSeeder). The moment a real SystemAdmin exists it has no purpose, and every
-    /// minute it stays enabled is a standing exposure — so retiring it is automatic rather than a
-    /// step someone has to remember.
-    ///
-    /// Deactivation is the same mechanism DeactivateAsync uses (indefinite lockout + a security-stamp
-    /// bump, which revokes any cookie already issued), but deliberately bypasses that method's
-    /// CannotDeactivateSelf guard: the operator doing this is *almost always signed in as the
-    /// bootstrap account itself*, since that is the only account that could have reached the create
-    /// screen. Being signed out immediately afterwards is the intended outcome — they sign back in as
-    /// the real account they just made.
-    /// </summary>
-    private async Task RetireBootstrapAccountAsync(int actingUserId, DateTime now, CancellationToken cancellationToken)
-    {
-        var bootstrap = await userManager.FindByEmailAsync(BootstrapAdminEmail);
-        if (bootstrap is null || await userManager.IsLockedOutAsync(bootstrap))
-        {
-            return;
-        }
-
-        await userManager.SetLockoutEnabledAsync(bootstrap, true);
-        await userManager.SetLockoutEndDateAsync(bootstrap, DateTimeOffset.MaxValue);
-        await userManager.UpdateSecurityStampAsync(bootstrap);
-
-        AddAudit(actingUserId, "UserDeactivated", bootstrap.Id,
-            $"Temporary bootstrap account {BootstrapAdminEmail} automatically deactivated because a real SystemAdmin was created.", now);
-        await dbContext.SaveChangesAsync(cancellationToken);
     }
 
     public async Task<UserActionResult> SetRoleAsync(int targetUserId, UserRole newRole, int actingUserId, CancellationToken cancellationToken)

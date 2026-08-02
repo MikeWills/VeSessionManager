@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using VeSessionManager.Core.Data;
@@ -40,17 +41,14 @@ public static class BootstrapAdminCommand
         var email = ArgumentValue(args, "--email");
         var name = ArgumentValue(args, "--name");
         var callSign = ArgumentValue(args, "--callsign");
-        var password = Environment.GetEnvironmentVariable(PasswordEnvironmentVariable);
+        var suppliedPassword = Environment.GetEnvironmentVariable(PasswordEnvironmentVariable);
+        var generated = string.IsNullOrWhiteSpace(suppliedPassword);
+        var password = generated ? GeneratePassword() : suppliedPassword!;
 
         if (string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(name))
         {
-            Console.Error.WriteLine($"Usage: {PasswordEnvironmentVariable}='...' dotnet VeSessionManager.Web.dll {Switch} --email <email> --name <name> [--callsign <call>]");
-            return 1;
-        }
-
-        if (string.IsNullOrWhiteSpace(password))
-        {
-            Console.Error.WriteLine($"{PasswordEnvironmentVariable} is not set. Set it in the environment rather than passing the password as an argument, so it stays out of shell history and `ps` output.");
+            Console.Error.WriteLine($"Usage: dotnet VeSessionManager.Web.dll {Switch} --email <email> --name <name> [--callsign <call>]");
+            Console.Error.WriteLine($"       A password is generated and printed. Set {PasswordEnvironmentVariable} to choose your own.");
             return 1;
         }
 
@@ -98,10 +96,43 @@ public static class BootstrapAdminCommand
             $"Bootstrap SystemAdmin {user.Id} created via {Switch}.", DateTime.UtcNow);
         await dbContext.SaveChangesAsync();
 
-        var existingAdmins = await dbContext.Users.CountAsync(u => u.Role == UserRole.SystemAdmin);
-        Console.WriteLine($"Created SystemAdmin '{name}' <{email}>. This deployment now has {existingAdmins} SystemAdmin account(s).");
-        Console.WriteLine("Sign in at /Account/Login, then create any further users through Admin -> Users.");
+        Console.WriteLine($"Created SystemAdmin '{name}' <{email}>.");
+        if (generated)
+        {
+            // Printed once, to this terminal only. Nothing writes it anywhere else, so if it is lost
+            // the recovery is to create another administrator with this same switch.
+            Console.WriteLine();
+            Console.WriteLine($"  Password: {password}");
+            Console.WriteLine();
+            Console.WriteLine("  Shown once and stored only as a hash — save it now. If you lose it, run this");
+            Console.WriteLine("  command again with a different email to create another administrator.");
+        }
+
+        Console.WriteLine("Sign in at /Account/Login, then add any further users under Admin -> Users.");
         return 0;
+    }
+
+    /// <summary>
+    /// Satisfies Program.cs's Identity policy (12+ characters, and Identity's default
+    /// digit/upper/lower requirements) by construction rather than by chance, then shuffles so the
+    /// character classes are not in a fixed order. Non-alphanumerics are left out on purpose, and
+    /// so are 0/O/1/l/I: this gets copied out of a terminal by hand at the one moment the operator
+    /// has no other way in, and shell quoting or a misread glyph is an unrecoverable-feeling failure.
+    /// </summary>
+    private static string GeneratePassword()
+    {
+        const string Lower = "abcdefghijkmnopqrstuvwxyz";
+        const string Upper = "ABCDEFGHJKLMNPQRSTUVWXYZ";
+        const string Digits = "23456789";
+
+        var characters = new List<char>
+        {
+            RandomNumberGenerator.GetString(Lower, 1)[0],
+            RandomNumberGenerator.GetString(Upper, 1)[0],
+            RandomNumberGenerator.GetString(Digits, 1)[0]
+        };
+        characters.AddRange(RandomNumberGenerator.GetString(Lower + Upper + Digits, 21));
+        return new string([.. characters.OrderBy(_ => RandomNumberGenerator.GetInt32(int.MaxValue))]);
     }
 
     private static string? ArgumentValue(string[] args, string flag)

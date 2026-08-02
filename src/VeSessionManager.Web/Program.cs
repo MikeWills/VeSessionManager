@@ -223,9 +223,19 @@ using (var scope = app.Services.CreateScope())
         await DevAuthSeeder.SeedAsync(scope.ServiceProvider, startupLogger);
     }
 
-    // Runs in every environment, but its own guard ("can anyone sign in?") means it does nothing
-    // once any password-holding account exists — including the four DevAuthSeeder just created.
-    await BootstrapAdminSeeder.SeedAsync(scope.ServiceProvider, startupLogger);
+    // No account is seeded on a fresh deployment — the first administrator is created explicitly
+    // with --create-admin, so this app never ships a shared credential that works before setup.
+    // The trade-off is that starting the app first leaves a login page nobody can get past, with no
+    // explanation, so say so loudly. Guard is "can anyone sign in", not "does a user exist": the
+    // Worker's DevDataSeeder creates a passwordless "System" user to own audit-trail foreign keys.
+    if (!await scope.ServiceProvider.GetRequiredService<AppDbContext>().Users.AnyAsync(u => u.PasswordHash != null))
+    {
+        startupLogger.LogWarning(
+            "No account on this deployment can sign in yet. Create the first administrator with: dotnet " +
+            "VeSessionManager.Web.dll {Switch} --email <email> --name <name>. A password is generated and " +
+            "printed; set {EnvironmentVariable} first to choose your own.",
+            BootstrapAdminCommand.Switch, BootstrapAdminCommand.PasswordEnvironmentVariable);
+    }
 }
 
 // Configure the HTTP request pipeline.

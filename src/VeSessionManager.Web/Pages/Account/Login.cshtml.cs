@@ -3,11 +3,13 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
+using Microsoft.EntityFrameworkCore;
+using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Entities;
 
 namespace VeSessionManager.Web.Pages.Account;
 
-public class LoginModel(SignInManager<User> signInManager, UserManager<User> userManager) : PageModel
+public class LoginModel(SignInManager<User> signInManager, UserManager<User> userManager, AppDbContext dbContext) : PageModel
 {
     [BindProperty]
     public InputModel Input { get; set; } = new();
@@ -15,6 +17,15 @@ public class LoginModel(SignInManager<User> signInManager, UserManager<User> use
     public IList<AuthenticationScheme> ExternalLogins { get; set; } = [];
 
     public string? ErrorMessage { get; set; }
+
+    /// <summary>
+    /// True when this deployment has no account anyone could sign in as. Without saying so here, a
+    /// fresh install just rejects every credential with "Invalid username or password", which reads
+    /// as a forgotten password rather than as "setup was never finished". Checks PasswordHash rather
+    /// than a row count: the Worker's DevDataSeeder creates a passwordless "System" user to own
+    /// audit-trail foreign keys.
+    /// </summary>
+    public bool NoAccountsExist { get; private set; }
 
     public class InputModel
     {
@@ -29,6 +40,7 @@ public class LoginModel(SignInManager<User> signInManager, UserManager<User> use
     public async Task OnGetAsync()
     {
         ExternalLogins = (await signInManager.GetExternalAuthenticationSchemesAsync()).ToList();
+        NoAccountsExist = !await dbContext.Users.AnyAsync(u => u.PasswordHash != null);
     }
 
     public async Task<IActionResult> OnPostAsync()

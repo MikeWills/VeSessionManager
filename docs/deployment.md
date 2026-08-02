@@ -176,50 +176,31 @@ That tag push is what triggers `deploy.yml` — never an ordinary commit to `mai
 ## First sign-in on a fresh deployment (2026-08-01)
 
 A Production database starts with **no account anyone can sign into**. `DevAuthSeeder` runs only in
-Development, and every route that could create a user is itself `[Authorize]`d — so without one of
-the two mechanisms below, nobody can sign in, and therefore nobody can create the account that would
-let them sign in.
+Development, and every route that could create a user is itself `[Authorize]`d — so without the
+command below, nobody can sign in, and therefore nobody can create the account that would let them.
 
-(Note the Worker's `DevDataSeeder` does create a `System` user with `Role = SystemAdmin`, but it has
-no password and exists purely to own audit-trail foreign keys. It is not a way in.)
-
-### Preferred: `--create-admin`
-
-Password comes from the environment, so it never appears in shell history, in `ps` output, or in the
-log:
+(The Worker's `DevDataSeeder` does create a `System` user with `Role = SystemAdmin`, but it has no
+password and exists purely to own audit-trail foreign keys. It is not a way in — which is also why
+the "is anyone able to sign in?" check is written against `PasswordHash != null` rather than against
+the role or a row count.)
 
 ```bash
-VSM_ADMIN_PASSWORD='choose-something-long'   dotnet /opt/vesessionmanager/web/VeSessionManager.Web.dll --create-admin   --email you@example.org --name "Your Name" [--callsign WX0MIK]
+dotnet /opt/vesessionmanager/web/VeSessionManager.Web.dll --create-admin   --email you@example.org --name "Your Name" [--callsign WX0MIK]
 ```
 
-Applies migrations first, so it works on a box where the services have never started. Exits without
-starting the web host. Refuses if that email already exists.
+Applies migrations first, so it works on a box where the services have never started. Prints a
+generated password once to stdout, then exits without starting the web host. Refuses if that email
+already exists.
 
-### Fallback: the documented setup account
+To supply the password instead — scripted provisioning, or a password you have already chosen — set
+`VSM_ADMIN_PASSWORD` in the environment. Never pass it as an argument: arguments are visible in shell
+history and to anyone who can run `ps`.
 
-If the Web app starts and **no user has a password**, it creates
-`setup@vesessionmanager.local` with the fixed password documented in the README. Sign in, create a
-real administrator under Admin → Users, and the setup account **deactivates itself** at that moment.
-A banner sits across every page while you are signed in as it.
-
-Deliberate decisions here, so they are not relitigated later:
-
-- **Fixed and published rather than generated.** A generated password is one more thing to hunt for
-  in a log at the moment someone is trying to get started. The accepted exposure is that the
-  published credentials work from first start until a real administrator exists — on a fresh box, an
-  empty system with no teams, credentials or candidate data in it. Finish setup before exposing the
-  site publicly. `--create-admin` above avoids the shared account entirely and is the right choice
-  for anything internet-facing.
-- **Retired automatically, not by hand.** `UserManagementService.CreateAsync` deactivates it as soon
-  as a real SystemAdmin is created (indefinite lockout plus a security-stamp bump, so the session it
-  is being used from is revoked too — you sign back in as the account you just made). This
-  deliberately bypasses `DeactivateAsync`'s CannotDeactivateSelf guard, because the operator *is*
-  signed in as the setup account at that moment.
-- **The guard is "can anyone sign in", not "does a user exist" or "is there a SystemAdmin".** The
-  `System` audit user would satisfy both of the latter while leaving the deployment locked out —
-  the same class of mistake as `DevAuthSeeder`'s original guard (CLAUDE.md, Known Constraints).
-- **The password is not written to the log.** It is in the README; repeating it in a log file would
-  add exposure without adding information.
+**Nothing is seeded automatically.** An earlier design created a setup account with credentials
+published in the README; that was reverted (2026-08-01) because it meant a documented username and
+password worked on every deployment from first start until setup was finished. The cost of the
+current design is that starting the app before running the command leaves a login page nobody can get
+past — so startup logs a `Warning` naming the exact command, and the login page says the same thing.
 
 ## systemd Services
 

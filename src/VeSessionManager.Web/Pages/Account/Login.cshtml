@@ -14,6 +14,16 @@
             <div class="auth-status">@statusMessage</div>
         }
 
+        @if (Model.NoAccountsExist)
+        {
+            <div class="auth-error">
+                No administrator account exists on this deployment yet, so no sign-in can succeed.
+                Create one on the server with
+                <code>dotnet VeSessionManager.Web.dll --create-admin --email you@example.org --name "Your Name"</code>
+                — it prints a generated password once.
+            </div>
+        }
+
         @if (Model.ErrorMessage is not null)
         {
             <div class="auth-error">@Model.ErrorMessage</div>

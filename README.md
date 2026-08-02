@@ -42,33 +42,30 @@ dotnet ef migrations add <Name> --project src/VeSessionManager.Core
 
 ## First sign-in on a new deployment
 
-A brand-new database has no account anyone can sign into — `DevAuthSeeder`'s test users only exist in
-Development. So on first start, if **no account has a password**, the app creates a setup
-administrator:
+A brand-new database has **no account anyone can sign into** — `DevAuthSeeder`'s test users only
+exist in Development, and every page that could create a user requires you to already be signed in.
+Nothing is seeded automatically, on purpose: this app never ships a credential that works before you
+have set it up.
 
-| | |
-|---|---|
-| Email | `setup@vesessionmanager.local` |
-| Password | `Setup-Password1` |
-
-**Sign in with it, then immediately create your own administrator under Admin → Users.** The setup
-account is **deactivated automatically** the moment a real SystemAdmin exists — it is not a cleanup
-step you have to remember — and a banner sits across every page until you do it.
-
-> **These credentials are public.** They work on any deployment from first start until you create a
-> real administrator. On a fresh box that means an empty system with no teams, credentials or
-> candidate data in it — but finish setup before exposing the site to the internet, and don't leave a
-> deployment sitting at this stage.
-
-For an internet-facing deployment, skip the shared account entirely and create the first
-administrator from the command line — the password comes from the environment, so it never lands in
-shell history or a log:
+Create the first administrator from the command line:
 
 ```bash
-VSM_ADMIN_PASSWORD='choose-something-long'   dotnet VeSessionManager.Web.dll --create-admin   --email you@example.org --name "Your Name" [--callsign WX0MIK]
+dotnet VeSessionManager.Web.dll --create-admin --email you@example.org --name "Your Name" [--callsign WX0MIK]
 ```
 
-Because that leaves a password-holding account in place, the setup account is never created at all.
+It applies migrations first (so it works before the services have ever started), prints a generated
+password **once**, and exits without starting the web host. Save that password — it is stored only as
+a hash. If you lose it, run the command again with a different email to create another administrator.
+
+To choose the password yourself — for scripted or repeatable provisioning — set it in the
+environment rather than passing it as an argument, so it stays out of shell history and `ps` output:
+
+```bash
+VSM_ADMIN_PASSWORD='choose-something-long'   dotnet VeSessionManager.Web.dll --create-admin --email you@example.org --name "Your Name"
+```
+
+If you start the app before doing this, the login page will reject every credential — there is
+nothing to sign in as. The startup log says so explicitly and repeats the command.
 
 ### Also worth doing before real sessions run
 
