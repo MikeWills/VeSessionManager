@@ -195,33 +195,31 @@ VSM_ADMIN_PASSWORD='choose-something-long'   dotnet /opt/vesessionmanager/web/Ve
 Applies migrations first, so it works on a box where the services have never started. Exits without
 starting the web host. Refuses if that email already exists.
 
-### Fallback: the automatic bootstrap account
+### Fallback: the documented setup account
 
-If the Web app starts and **no user has a password**, it creates a temporary SystemAdmin
-`setup@vesessionmanager.local` with a **randomly generated password, printed once to the log at
-`Warning`**:
+If the Web app starts and **no user has a password**, it creates
+`setup@vesessionmanager.local` with the fixed password documented in the README. Sign in, create a
+real administrator under Admin → Users, and the setup account **deactivates itself** at that moment.
+A banner sits across every page while you are signed in as it.
 
-```
-[WRN] No account on this deployment could sign in, so a TEMPORARY SystemAdmin was created.
-    Email:    setup@vesessionmanager.local
-    Password: <generated>
-```
+Deliberate decisions here, so they are not relitigated later:
 
-Sign in, create your own account under Admin → Users, then **deactivate the bootstrap account**.
-It keeps working — and that password stays valid — until you do.
-
-Two deliberate choices here:
-
-- **The password is generated per deployment, never a constant.** A fixed default would put identical
-  known credentials on every deployment's internet-facing login page. `DevAuthSeeder.DevPassword` is
-  fine because it is a throwaway dev fixture; this is not.
+- **Fixed and published rather than generated.** A generated password is one more thing to hunt for
+  in a log at the moment someone is trying to get started. The accepted exposure is that the
+  published credentials work from first start until a real administrator exists — on a fresh box, an
+  empty system with no teams, credentials or candidate data in it. Finish setup before exposing the
+  site publicly. `--create-admin` above avoids the shared account entirely and is the right choice
+  for anything internet-facing.
+- **Retired automatically, not by hand.** `UserManagementService.CreateAsync` deactivates it as soon
+  as a real SystemAdmin is created (indefinite lockout plus a security-stamp bump, so the session it
+  is being used from is revoked too — you sign back in as the account you just made). This
+  deliberately bypasses `DeactivateAsync`'s CannotDeactivateSelf guard, because the operator *is*
+  signed in as the setup account at that moment.
 - **The guard is "can anyone sign in", not "does a user exist" or "is there a SystemAdmin".** The
   `System` audit user would satisfy both of the latter while leaving the deployment locked out —
   the same class of mistake as `DevAuthSeeder`'s original guard (CLAUDE.md, Known Constraints).
-
-The trade-off: this writes a credential to the log, which nothing else in this codebase does. It is
-accepted because a predictable password is worse and the account should live for minutes. Where you
-have shell access anyway, prefer `--create-admin`, which never writes one.
+- **The password is not written to the log.** It is in the README; repeating it in a log file would
+  add exposure without adding information.
 
 ## systemd Services
 

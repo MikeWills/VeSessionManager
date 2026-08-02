@@ -1,32 +1,44 @@
-using System.Security.Cryptography;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using VeSessionManager.Core.Admin;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Entities;
 
 namespace VeSessionManager.Web;
 
 /// <summary>
-/// Creates a temporary SystemAdmin on a deployment where **nobody can sign in at all**, so a fresh
-/// server is usable without hand-editing the database. Intended to be disabled the moment a real
-/// account exists — Admin → Users → Deactivate.
+/// Creates the setup SystemAdmin on a deployment where **nobody can sign in at all**, so a fresh
+/// server is usable without hand-editing the database or reading a password out of a log.
 ///
-/// **The password is randomly generated per deployment and printed once.** It is deliberately not a
-/// constant: a fixed default (the shape `DevAuthSeeder.DevPassword` uses, which is fine for a
-/// throwaway dev fixture published in the README) would mean every deployment of this app shipped
-/// with the same known credentials on an internet-facing login page. That is the classic
-/// default-credential vulnerability, and it is worth the small inconvenience to avoid.
+/// **The credentials are fixed and documented in the README** — a deliberate product decision
+/// (2026-08-01). A generated password is one more thing to hunt for at exactly the moment someone is
+/// trying to get started.
 ///
-/// **Trade-off worth knowing:** the generated password is written to the log, which is the one place
-/// this codebase otherwise never puts a credential. That is accepted here because the alternative —
-/// an account with a predictable password — is worse, and because the account is expected to live
-/// for minutes. `BootstrapAdminCommand` (`--create-admin`) is the stricter option and takes its
-/// password from the environment, so it never touches the log at all; prefer it where the operator
-/// has shell access anyway. See docs/deployment.md.
+/// The exposure this accepts, recorded so it is not rediscovered later as a surprise: between a
+/// deployment first starting and a real SystemAdmin being created, **the published credentials
+/// work**. On a fresh box that means taking over an empty system — no teams, no integration
+/// credentials, no ingested candidates, so there is nothing in it to read. Finishing setup closes
+/// the window, and the banner on every page pushes you to do exactly that.
+///
+/// Two things stop the window becoming permanent:
+///  - It only ever exists **while no account has a password**. A deployment set up with
+///    <see cref="BootstrapAdminCommand"/> (`--create-admin`) never creates this account at all.
+///  - It is **retired automatically** — <c>UserManagementService.CreateAsync</c> deactivates it the
+///    moment a real SystemAdmin is created, so it is not a cleanup step anyone has to remember.
+///
+/// `--create-admin` is still the stricter option (password from the environment, no shared-credential
+/// account ever created) and is preferable for anything internet-facing. See docs/deployment.md.
 /// </summary>
 public static class BootstrapAdminSeeder
 {
-    public const string Email = "setup@vesessionmanager.local";
+    /// <summary>Must stay in step with UserManagementService.BootstrapAdminEmail, which is what retires this account automatically.</summary>
+    public const string Email = UserManagementService.BootstrapAdminEmail;
+
+    /// <summary>
+    /// Documented in the README. Satisfies Program.cs's Identity policy (12+ characters, digit,
+    /// upper, lower). Changing it breaks the published setup instructions.
+    /// </summary>
+    public const string Password = "Setup-Password1";
 
     public static async Task SeedAsync(IServiceProvider services, ILogger logger)
     {
@@ -43,7 +55,6 @@ public static class BootstrapAdminSeeder
             return;
         }
 
-        var password = GeneratePassword();
         var user = new User
         {
             Name = "Setup Administrator",
@@ -53,48 +64,25 @@ public static class BootstrapAdminSeeder
             EmailConfirmed = true
         };
 
-        var result = await userManager.CreateAsync(user, password);
+        var result = await userManager.CreateAsync(user, Password);
         if (!result.Succeeded)
         {
-            logger.LogError("Could not create the bootstrap SystemAdmin: {Errors}", string.Join("; ", result.Errors.Select(e => e.Description)));
+            logger.LogError("Could not create the setup SystemAdmin: {Errors}", string.Join("; ", result.Errors.Select(e => e.Description)));
             return;
         }
 
         dbContext.AddAuditLog(user.Id, "UserCreated", nameof(User), user.Id,
-            "Temporary bootstrap SystemAdmin created automatically because no account could sign in.", DateTime.UtcNow);
+            "Setup SystemAdmin created automatically because no account could sign in.", DateTime.UtcNow);
         await dbContext.SaveChangesAsync();
 
-        // Warning, not Information: this is a standing security exposure until someone acts on it,
-        // and it must not be lost in a busy log.
+        // Warning, not Information: published credentials are live from here until a real SystemAdmin
+        // exists, and that must not be lost in a busy log. The password itself is deliberately not
+        // logged — it is in the README, so repeating it here would add exposure without adding
+        // information.
         logger.LogWarning(
-            "No account on this deployment could sign in, so a TEMPORARY SystemAdmin was created.\n" +
-            "    Email:    {Email}\n" +
-            "    Password: {Password}\n" +
-            "  Sign in, create your own account under Admin -> Users, then DEACTIVATE this one. " +
-            "It keeps working — and this password stays valid — until you do.",
-            Email, password);
-    }
-
-    /// <summary>
-    /// Satisfies Program.cs's Identity policy (12+ chars, and Identity's default digit/upper/lower
-    /// requirements) by construction rather than by chance, then shuffles so the character classes
-    /// aren't in a predictable order. Non-alphanumerics are omitted on purpose — the password gets
-    /// copied out of a terminal, and quoting rules are an easy way to lose someone at the one step
-    /// where they cannot recover by themselves.
-    /// </summary>
-    private static string GeneratePassword()
-    {
-        const string Lower = "abcdefghijkmnopqrstuvwxyz";  // no l
-        const string Upper = "ABCDEFGHJKLMNPQRSTUVWXYZ";   // no I, O
-        const string Digits = "23456789";                  // no 0, 1
-
-        var characters = new List<char>
-        {
-            RandomNumberGenerator.GetString(Lower, 1)[0],
-            RandomNumberGenerator.GetString(Upper, 1)[0],
-            RandomNumberGenerator.GetString(Digits, 1)[0]
-        };
-        characters.AddRange(RandomNumberGenerator.GetString(Lower + Upper + Digits, 21));
-        return new string([.. characters.OrderBy(_ => RandomNumberGenerator.GetInt32(int.MaxValue))]);
+            "No account on this deployment could sign in, so the setup account {Email} was created with " +
+            "the documented default password (see README). It is deactivated automatically as soon as you " +
+            "create a real SystemAdmin under Admin -> Users — do that first.",
+            Email);
     }
 }

@@ -40,6 +40,46 @@ To add a new migration after changing entities in `VeSessionManager.Core`:
 dotnet ef migrations add <Name> --project src/VeSessionManager.Core
 ```
 
+## First sign-in on a new deployment
+
+A brand-new database has no account anyone can sign into — `DevAuthSeeder`'s test users only exist in
+Development. So on first start, if **no account has a password**, the app creates a setup
+administrator:
+
+| | |
+|---|---|
+| Email | `setup@vesessionmanager.local` |
+| Password | `Setup-Password1` |
+
+**Sign in with it, then immediately create your own administrator under Admin → Users.** The setup
+account is **deactivated automatically** the moment a real SystemAdmin exists — it is not a cleanup
+step you have to remember — and a banner sits across every page until you do it.
+
+> **These credentials are public.** They work on any deployment from first start until you create a
+> real administrator. On a fresh box that means an empty system with no teams, credentials or
+> candidate data in it — but finish setup before exposing the site to the internet, and don't leave a
+> deployment sitting at this stage.
+
+For an internet-facing deployment, skip the shared account entirely and create the first
+administrator from the command line — the password comes from the environment, so it never lands in
+shell history or a log:
+
+```bash
+VSM_ADMIN_PASSWORD='choose-something-long'   dotnet VeSessionManager.Web.dll --create-admin   --email you@example.org --name "Your Name" [--callsign WX0MIK]
+```
+
+Because that leaves a password-holding account in place, the setup account is never created at all.
+
+### Also worth doing before real sessions run
+
+- **Admin → System Settings → Test Mode** — turn it **on** with an override address until you are
+  ready to email real candidates. Every email in the app routes through it.
+- **Admin → System Settings → System Email** — required before password reset can send anything.
+- **Admin → System Settings → PII retention window** — null by default, and the purge job will not
+  run until it is set.
+- **Admin → VECs** — each VEC needs an ExamTools code (if it differs from the name) *and* a fee
+  configuration, or its sessions are silently skipped at ingestion.
+
 ## Configuration & Secrets
 
 **ExamTools credentials (Phase 1) now live on the `Team` row in the DB**, hand-edited directly

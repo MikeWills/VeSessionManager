@@ -423,4 +423,75 @@ public class UserManagementServiceTests
         Assert.Equal(UserActionResult.Success, result);
         Assert.Equal("WX0MIK", created!.CallSign);
     }
+
+    // ---- Automatic retirement of the bootstrap account (2026-08-01) ----
+
+    private static async Task<User> SeedBootstrapAdminAsync(AppDbContext dbContext, UserManager<User> userManager)
+    {
+        var bootstrap = new User
+        {
+            Name = "Setup Administrator",
+            Email = UserManagementService.BootstrapAdminEmail,
+            UserName = UserManagementService.BootstrapAdminEmail,
+            Role = UserRole.SystemAdmin
+        };
+        await userManager.CreateAsync(bootstrap, ValidPassword);
+        return bootstrap;
+    }
+
+    /// <summary>
+    /// The temporary bootstrap account must not be something anyone has to remember to clean up —
+    /// every minute it stays enabled is a standing exposure.
+    /// </summary>
+    [Fact]
+    public async Task CreateAsync_NewSystemAdmin_AutomaticallyDeactivatesTheBootstrapAccount()
+    {
+        await using var dbContext = CreateContext();
+        var userManager = CreateUserManager(dbContext);
+        var bootstrap = await SeedBootstrapAdminAsync(dbContext, userManager);
+
+        // Acting user is the bootstrap account itself — the realistic case, since on a fresh
+        // deployment it is the only account that could have reached the create screen.
+        var (result, _) = await CreateService(dbContext, userManager).CreateAsync(
+            "real@example.com", "Real Admin", UserRole.SystemAdmin, ValidPassword, bootstrap.Id, CancellationToken.None);
+
+        Assert.Equal(UserActionResult.Success, result);
+        var retired = await userManager.FindByEmailAsync(UserManagementService.BootstrapAdminEmail);
+        Assert.True(await userManager.IsLockedOutAsync(retired!));
+        Assert.Contains(dbContext.AuditLogs, a => a.Action == "UserDeactivated" && a.EntityId == bootstrap.Id);
+    }
+
+    /// <summary>
+    /// Creating a non-admin must not retire it — otherwise adding a Session Manager on a fresh
+    /// deployment would lock the only person who can administer it out of their own server.
+    /// </summary>
+    [Fact]
+    public async Task CreateAsync_NewNonAdmin_LeavesTheBootstrapAccountAlone()
+    {
+        await using var dbContext = CreateContext();
+        var userManager = CreateUserManager(dbContext);
+        var bootstrap = await SeedBootstrapAdminAsync(dbContext, userManager);
+
+        await CreateService(dbContext, userManager).CreateAsync(
+            "sm@example.com", "Session Manager", UserRole.SessionManager, ValidPassword, bootstrap.Id, CancellationToken.None);
+
+        var stillActive = await userManager.FindByEmailAsync(UserManagementService.BootstrapAdminEmail);
+        Assert.False(await userManager.IsLockedOutAsync(stillActive!));
+    }
+
+    /// <summary>A deployment that never had a bootstrap account (--create-admin was used) must be unaffected.</summary>
+    [Fact]
+    public async Task CreateAsync_NoBootstrapAccountPresent_IsANoOp()
+    {
+        await using var dbContext = CreateContext();
+        var userManager = CreateUserManager(dbContext);
+        var actingUser = new User { UserName = "sysadmin@example.com", Email = "sysadmin@example.com", Name = "Sys Admin", Role = UserRole.SystemAdmin };
+        await userManager.CreateAsync(actingUser, ValidPassword);
+
+        var (result, _) = await CreateService(dbContext, userManager).CreateAsync(
+            "real@example.com", "Real Admin", UserRole.SystemAdmin, ValidPassword, actingUser.Id, CancellationToken.None);
+
+        Assert.Equal(UserActionResult.Success, result);
+        Assert.DoesNotContain(dbContext.AuditLogs, a => a.Action == "UserDeactivated");
+    }
 }

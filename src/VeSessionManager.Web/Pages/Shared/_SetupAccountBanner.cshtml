@@ -1,0 +1,18 @@
+@using Microsoft.AspNetCore.Identity
+@using VeSessionManager.Core.Entities
+@inject UserManager<User> UserManager
+@{
+    // Shown only while signed in as the documented setup account. Deliberately checks the signed-in
+    // identity rather than "does the setup account exist", so it disappears the moment you switch to
+    // your own account — which is also the moment UserManagementService retires the setup one.
+    var signedInAsSetupAccount = User.Identity?.IsAuthenticated == true
+        && string.Equals(UserManager.GetUserName(User), VeSessionManager.Web.BootstrapAdminSeeder.Email, StringComparison.OrdinalIgnoreCase);
+}
+@if (signedInAsSetupAccount)
+{
+    <div style="background:#b9770e;color:#fff;text-align:center;font-weight:600;font-size:13px;padding:8px 16px;letter-spacing:.02em;">
+        You are signed in with the shared setup account, and its password is published in the README.
+        <a href="/Admin/Users" style="color:#fff;text-decoration:underline;">Create your own administrator account</a>
+        — this one is disabled automatically as soon as you do.
+    </div>
+}
