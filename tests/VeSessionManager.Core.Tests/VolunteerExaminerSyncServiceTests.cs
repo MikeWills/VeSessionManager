@@ -72,7 +72,7 @@ public class VolunteerExaminerSyncServiceTests
         return team;
     }
 
-    private static async Task<Session> SeedSessionAsync(AppDbContext dbContext, Team team, string examToolsSessionId = "session-1", SessionStatus status = SessionStatus.Active)
+    private static async Task<Session> SeedSessionAsync(AppDbContext dbContext, Team team, string examToolsSessionId = "session-1", SessionStatus status = SessionStatus.Active, DateTime? scheduledStartUtc = null)
     {
         var vec = new Vec { Name = "ARRL" };
         var user = new User { Name = "System", Email = "system@localhost", Role = UserRole.SystemAdmin };
@@ -89,7 +89,7 @@ public class VolunteerExaminerSyncServiceTests
         {
             ExamToolsSessionId = examToolsSessionId,
             Title = "Test Session",
-            ScheduledStartUtc = new DateTime(2026, 7, 24, 17, 0, 0, DateTimeKind.Utc),
+            ScheduledStartUtc = scheduledStartUtc ?? new DateTime(2026, 7, 24, 17, 0, 0, DateTimeKind.Utc),
             Team = team,
             Vec = vec,
             FeeConfiguration = feeConfiguration,
@@ -390,5 +390,42 @@ public class VolunteerExaminerSyncServiceTests
 
         Assert.Single(client.RosterFetches);
         Assert.Equal(1, result.LinksAdded);
+    }
+
+    /// <summary>
+    /// A finished session whose roster ExamTools cannot serve must eventually stop being retried.
+    /// Real case (2026-08-01): session 819 / 6567ff0cfb29450af7ba19da, a 2023 session pulled in by
+    /// the historical import, returned HTTP 500 for its roster on every attempt — so it never got a
+    /// roster, never settled, and logged a failed API call every hour indefinitely.
+    /// </summary>
+    [Fact]
+    public async Task FinishedSessionOlderThanTheRetryWindow_WithNoRoster_IsNotRePolled()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        await SeedSessionAsync(dbContext, team, scheduledStartUtc: Now - VolunteerExaminerSyncService.RosterRetryWindow.Add(TimeSpan.FromDays(1)));
+        var client = new FakeExamToolsClient();
+
+        await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+
+        Assert.Empty(client.RosterFetches);
+    }
+
+    /// <summary>
+    /// The other half: a recently-finished session with no roster must still be retried, or a
+    /// session that appeared and closed inside one polling interval loses its roster permanently.
+    /// That is the behaviour the 2026-07-31 fix deliberately preserved.
+    /// </summary>
+    [Fact]
+    public async Task FinishedSessionInsideTheRetryWindow_WithNoRoster_IsStillRePolled()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        await SeedSessionAsync(dbContext, team, scheduledStartUtc: Now.AddDays(-2));
+        var client = new FakeExamToolsClient();
+
+        await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+
+        Assert.Single(client.RosterFetches);
     }
 }

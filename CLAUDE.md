@@ -89,7 +89,10 @@ cap and a newer entry needs to be added; oldest goes first.
   makes leaving the existing 1710 rows in place safe. Separately, scheduling/notification queries
   gained a `>= now - 1 day` bound: a past session can never satisfy
   `ScheduledStartUtc == ZoomDiscordSyncedStartUtc`, so 794 sessions + 1991 candidates were being
-  loaded, filtered and log-counted every tick forever.
+  loaded, filtered and log-counted every tick forever. Third case, same shape:
+  `VolunteerExaminerSyncService` settled a finished session only once it *had* a roster, so a 2023
+  session whose roster ExamTools 500s on retried hourly forever — new `RosterRetryWindow` (30 days)
+  settles it regardless.
 - **Self-service password reset + deployment-wide "system" email sender (2026-08-01).** See
   `docs/password-reset.md`. There was **no password reset of any kind** — a local-account user who
   forgot their password was locked out permanently, hand-editing `AspNetUsers` the only recovery

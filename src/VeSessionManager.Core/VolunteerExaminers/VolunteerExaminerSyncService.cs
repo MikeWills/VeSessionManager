@@ -23,6 +23,15 @@ public class VolunteerExaminerSyncService(
     TimeProvider timeProvider,
     ILogger<VolunteerExaminerSyncService> logger)
 {
+    /// <summary>
+    /// How long after a session's scheduled start this service keeps retrying a roster it has not
+    /// managed to fetch. Beyond this a finished session is settled even with an empty roster — see
+    /// the reasoning at the RemoveAll below. Anchored on ScheduledStartUtc, not ExamToolsClosedUtc,
+    /// which the historical import stamps at *import* time (the same trap the payment and
+    /// exam-result windows document).
+    /// </summary>
+    public static readonly TimeSpan RosterRetryWindow = TimeSpan.FromDays(30);
+
     public async Task<VeRosterSyncResult> RunAsync(Team team, CancellationToken cancellationToken)
     {
         var result = new VeRosterSyncResult();
@@ -68,13 +77,22 @@ public class VolunteerExaminerSyncService(
         // appears and closes inside a single polling interval would otherwise be skipped before its
         // roster was ever fetched, losing it permanently. An empty roster keeps being retried, so a
         // sync that failed at the time self-heals instead of being silently written off.
+        //
+        // ...but "retry forever" is only right while the roster is still plausibly *fetchable*. A
+        // real 2023 session pulled in by the historical import (819 / 6567ff0cfb29450af7ba19da)
+        // returns HTTP 500 from ExamTools every time, so its roster stayed empty, it never settled,
+        // and it produced one failed API call plus one ERROR line every hour, forever. Past
+        // RosterRetryWindow a finished session is settled whether or not a roster was ever obtained:
+        // nobody is assigning VEs to a session from two years ago, so an empty roster that old is a
+        // fact about ExamTools, not a sync still worth retrying.
         var now = timeProvider.GetUtcNow().UtcDateTime;
+        var retryCutoff = now - RosterRetryWindow;
         var settled = sessions.RemoveAll(s =>
             (s.ExamToolsClosedUtc is not null || s.TestingCompletedUtc is not null || s.HasEnded(now))
-            && s.SessionVolunteerExaminers.Count > 0);
+            && (s.SessionVolunteerExaminers.Count > 0 || s.ScheduledStartUtc < retryCutoff));
         if (settled > 0)
         {
-            logger.LogInformation("VE roster sync for team {TeamId} ({TeamName}): skipped {SettledCount} finished session(s) that already have a roster", team.Id, team.Name, settled);
+            logger.LogInformation("VE roster sync for team {TeamId} ({TeamName}): skipped {SettledCount} finished session(s) that already have a roster or started over {RetryWindowDays} days ago", team.Id, team.Name, settled, RosterRetryWindow.TotalDays);
         }
 
         // Each session isolated and saved independently — same reasoning as every other scan-based

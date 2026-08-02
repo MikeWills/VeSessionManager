@@ -214,6 +214,25 @@ Three things worth knowing about the shape of the fix:
   that data in place rather than mass-delete real rows, which is only safe *because* the link query
   is bounded too. `ExistingUnpaidPaymentOnALongPastSession_GetsNoSquareLink` is the regression test.
 
+## Companion fix 5: roster retries give up eventually (2026-08-01)
+
+Companion fix 1 (above) settles a finished session only once it **has** a roster, precisely so a
+session that appeared and closed inside one polling interval isn't written off before its roster was
+ever fetched — "an empty roster keeps being retried, so a sync that failed at the time self-heals."
+
+That is right only while the roster is still plausibly fetchable. Session 819
+(`6567ff0cfb29450af7ba19da` — a Mongo ObjectId whose embedded timestamp is **2023-11-30**) came in
+via the historical import, and ExamTools returns **HTTP 500** for its roster every single time. So it
+never got a roster, never settled, and produced one failed API call plus one `[ERR]` line **every
+hour, indefinitely**.
+
+`RosterRetryWindow` (30 days, anchored on `ScheduledStartUtc` for the same reason as everything else
+here) now settles a finished session whether or not a roster was ever obtained. Nobody assigns VEs to
+a session from two years ago, so an empty roster that old is a fact about ExamTools rather than a
+sync worth retrying. Both halves are pinned:
+`FinishedSessionOlderThanTheRetryWindow_WithNoRoster_IsNotRePolled` and
+`FinishedSessionInsideTheRetryWindow_WithNoRoster_IsStillRePolled`.
+
 ## Companion fix 4: the log stopped being unreadable (2026-08-01)
 
 Same root cause, cosmetic symptom. `SessionEventSchedulingService` selected sessions where
