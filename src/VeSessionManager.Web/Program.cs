@@ -203,15 +203,47 @@ builder.Services.AddRazorPages();
 
 var app = builder.Build();
 
+// One-off bootstrap of the first SystemAdmin on a fresh deployment. Exits immediately instead of
+// starting the web host — same shape as the Worker's --migrate-team-secrets/--run-uls switches.
+// Must come before the normal startup path so it can run on a box where the service isn't up yet.
+if (args.Contains(BootstrapAdminCommand.Switch))
+{
+    return await BootstrapAdminCommand.RunAsync(app.Services, args);
+}
+
 using (var scope = app.Services.CreateScope())
 {
     var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     dbContext.Database.Migrate();
 
+    var startupLogger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+
     if (app.Environment.IsDevelopment())
     {
-        var startupLogger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
         await DevAuthSeeder.SeedAsync(scope.ServiceProvider, startupLogger);
+    }
+
+    // No account is seeded on a fresh deployment — the first administrator is created explicitly
+    // with --create-admin, so this app never ships a shared credential that works before setup.
+    //
+    // Refuse to serve at all in that state rather than starting into a login page that cannot
+    // succeed: a running site whose every credential is rejected looks like a forgotten password or
+    // a broken auth config, and is a worse thing to hand someone than a service that plainly did not
+    // start. Exiting non-zero also makes the failure visible to systemd and to the deploy workflow,
+    // which already waits on the unit becoming active.
+    //
+    // Guard is "can anyone sign in", not "does a user exist": the Worker's DevDataSeeder creates a
+    // passwordless "System" user to own audit-trail foreign keys, so a row count would pass here on
+    // a deployment nobody can actually get into.
+    if (!await scope.ServiceProvider.GetRequiredService<AppDbContext>().Users.AnyAsync(u => u.PasswordHash != null))
+    {
+        startupLogger.LogCritical(
+            "Refusing to start: no account on this deployment can sign in. Create the first administrator " +
+            "with: dotnet VeSessionManager.Web.dll {Switch} --email <email> --name <name>. A password is " +
+            "generated and printed; set {EnvironmentVariable} first to choose your own. The Worker is " +
+            "unaffected and can keep running.",
+            BootstrapAdminCommand.Switch, BootstrapAdminCommand.PasswordEnvironmentVariable);
+        return 1;
     }
 }
 
@@ -238,3 +270,7 @@ app.MapRazorPages()
 app.MapSquareWebhook();
 
 app.Run();
+
+// Required because the --create-admin branch above returns an exit code, which makes the
+// top-level entry point int-returning.
+return 0;
