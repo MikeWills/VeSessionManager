@@ -237,12 +237,21 @@ using (var scope = app.Services.CreateScope())
     // a deployment nobody can actually get into.
     if (!await scope.ServiceProvider.GetRequiredService<AppDbContext>().Users.AnyAsync(u => u.PasswordHash != null))
     {
-        startupLogger.LogCritical(
-            "Refusing to start: no account on this deployment can sign in. Create the first administrator " +
-            "with: dotnet VeSessionManager.Web.dll {Switch} --email <email> --name <name>. A password is " +
-            "generated and printed; set {EnvironmentVariable} first to choose your own. The Worker is " +
-            "unaffected and can keep running.",
-            BootstrapAdminCommand.Switch, BootstrapAdminCommand.PasswordEnvironmentVariable);
+        var refusal =
+            "Refusing to start: no account on this deployment can sign in." + Environment.NewLine +
+            $"  Create the first administrator with: dotnet VeSessionManager.Web.dll {BootstrapAdminCommand.Switch} --email <email> --name <name>" + Environment.NewLine +
+            $"  A password is generated and printed; set {BootstrapAdminCommand.PasswordEnvironmentVariable} first to choose your own." + Environment.NewLine +
+            "  The Worker is unaffected and can keep running.";
+
+        // Written straight to stderr, not only through the logger. Returning here skips host
+        // disposal, so Serilog never flushes and the message is lost from *both* the console and the
+        // file sink — verified by running this against an empty database, where the process exited 1
+        // with no explanation anywhere. That is precisely the confusing failure this check exists to
+        // prevent, and on a systemd box (Restart=always) it would repeat silently every ten seconds.
+        // stderr is captured by journalctl regardless of how Serilog is configured.
+        Console.Error.WriteLine(refusal);
+        startupLogger.LogCritical("{Refusal}", refusal);
+        await Log.CloseAndFlushAsync();
         return 1;
     }
 }
