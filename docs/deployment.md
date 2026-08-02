@@ -185,7 +185,7 @@ the "is anyone able to sign in?" check is written against `PasswordHash != null`
 the role or a row count.)
 
 ```bash
-dotnet /opt/vesessionmanager/web/VeSessionManager.Web.dll --create-admin   --email you@example.org --name "Your Name" [--callsign WX0MIK]
+dotnet /opt/vesessionmanager/web/VeSessionManager.Web.dll --create-admin --email you@example.org --name "Your Name" [--callsign WX0MIK]
 ```
 
 Applies migrations first, so it works on a box where the services have never started. Prints a

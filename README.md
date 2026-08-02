@@ -61,13 +61,27 @@ To choose the password yourself — for scripted or repeatable provisioning — 
 environment rather than passing it as an argument, so it stays out of shell history and `ps` output:
 
 ```bash
-VSM_ADMIN_PASSWORD='choose-something-long'   dotnet VeSessionManager.Web.dll --create-admin --email you@example.org --name "Your Name"
+VSM_ADMIN_PASSWORD='choose-something-long' dotnet VeSessionManager.Web.dll --create-admin --email you@example.org --name "Your Name"
 ```
 
 **The app refuses to start until an administrator exists** — it logs `Critical` and exits rather than
 serving a login page where nothing can succeed. On a server with the systemd unit installed
 (`Restart=always`), that means the Web service restart-loops until you run the command above; it
 recovers by itself as soon as you do. The Worker is unaffected.
+
+### Start order on a new server
+
+1. **`--create-admin`** — before either service. It applies migrations, so the schema is in place too.
+2. **Worker** — migrations are already applied, so it has nothing to do but start polling.
+3. **Web** — comes up clean now that an account exists.
+
+Web and Worker both call `Database.Migrate()` at startup and would otherwise race on the same SQLite
+file, which is why the deploy workflow starts Worker first and waits for it. Running `--create-admin`
+ahead of both means neither service is ever the one applying migrations.
+
+An automated (tag-triggered) deploy starts both services itself, so on a *first* deploy the Web unit
+restart-loops until you run `--create-admin`. That is expected, and clears on the next restart — see
+[`docs/deployment.md`](docs/deployment.md).
 
 ### Also worth doing before real sessions run
 
