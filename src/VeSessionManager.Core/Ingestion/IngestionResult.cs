@@ -23,10 +23,13 @@ public class IngestionResult
     /// <summary>Historical import only: sessions marked Submitted-to-VEC because they predate this app tracking them (see ImportHistoricalRangeAsync).</summary>
     public int SessionsMarkedVecSubmitted { get; set; }
 
+    /// <summary>Historical import only: candidates assumed Granted rather than left for the ULS watcher to poll forever (see MarkHistoricalCandidatesGranted).</summary>
+    public int CandidatesAssumedGranted { get; set; }
+
     public override string ToString() =>
         $"sessions: +{SessionsAdded} rescheduled {SessionsRescheduled} flagged {SessionsFlaggedForReview} " +
         $"cancelled {SessionsCancelled} closed(ExamTools) {SessionsClosedByExamTools} skipped(no config) {SessionsSkippedNoConfig} " +
         $"vec-submitted {SessionsMarkedVecSubmitted}; " +
-        $"candidates: +{CandidatesAdded} updated {CandidatesUpdated} withdrew {CandidatesWithdrawn} " +
+        $"candidates: +{CandidatesAdded} updated {CandidatesUpdated} withdrew {CandidatesWithdrawn} assumed-granted {CandidatesAssumedGranted} " +
         $"sessions failed {SessionsFailedCandidateSync}";
 }

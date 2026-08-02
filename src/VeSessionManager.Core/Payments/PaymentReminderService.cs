@@ -92,6 +92,7 @@ public class PaymentReminderService(
     private async Task SendFiveDayRemindersAsync(Team team, DateTime now, EmailSettings emailSettings, PaymentReminderResult result, CancellationToken cancellationToken)
     {
         var threshold = now.AddDays(-ReminderThresholdDays);
+        var paymentCutoff = PaymentEligibilityWindow.CutoffUtc(now);
 
         var payments = await dbContext.Payments
             .Include(p => p.Candidate).ThenInclude(c => c.Session)
@@ -101,6 +102,11 @@ public class PaymentReminderService(
                         && p.Candidate.Email != null
                         && p.Candidate.Session.TeamId == team.Id
                         && p.Candidate.Session.Status == SessionStatus.Active
+                        // Status == Active means "not cancelled", not "not finished" — without an
+                        // age bound this reaches the historical import's backfilled candidates and
+                        // would email them about payments for sessions they sat months ago.
+                        // See PaymentEligibilityWindow.
+                        && p.Candidate.Session.ScheduledStartUtc >= paymentCutoff
                         && ((p.Candidate.ApplicationStatus == CandidateApplicationStatus.Received
                                 && p.Candidate.ApplicationDateEnteredUtc != null
                                 && p.Candidate.ApplicationDateEnteredUtc <= threshold)
@@ -163,6 +169,7 @@ public class PaymentReminderService(
     private async Task ProcessExpirationsAsync(Team team, DateTime now, EmailSettings emailSettings, PaymentReminderResult result, CancellationToken cancellationToken)
     {
         var threshold = now.AddDays(-ExpirationThresholdDays);
+        var paymentCutoff = PaymentEligibilityWindow.CutoffUtc(now);
 
         var payments = await dbContext.Payments
             .Include(p => p.Candidate).ThenInclude(c => c.Session)
@@ -170,6 +177,11 @@ public class PaymentReminderService(
                         && !p.ExpiredUnpaid
                         && p.Candidate.Session.TeamId == team.Id
                         && p.Candidate.Session.Status == SessionStatus.Active
+                        // Status == Active means "not cancelled", not "not finished" — without an
+                        // age bound this reaches the historical import's backfilled candidates and
+                        // would email them about payments for sessions they sat months ago.
+                        // See PaymentEligibilityWindow.
+                        && p.Candidate.Session.ScheduledStartUtc >= paymentCutoff
                         && ((!CandidateApplicationStatusExtensions.TerminalStatuses.Contains(p.Candidate.ApplicationStatus)
                                 && p.Candidate.ApplicationDateEnteredUtc != null
                                 && p.Candidate.ApplicationDateEnteredUtc <= threshold)

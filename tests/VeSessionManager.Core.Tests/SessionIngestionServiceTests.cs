@@ -437,6 +437,51 @@ public class SessionIngestionServiceTests
         Assert.Equal(99, after.VecSubmittedByUserId);
     }
 
+    /// <summary>
+    /// Historical candidates are assumed granted so UlsWatcherService stops polling FCC about
+    /// licences from one to four years ago — one HTTP call per candidate, twice a day, forever.
+    /// </summary>
+    [Fact]
+    public async Task HistoricalImport_AssumesCandidatesAreGranted_WithoutInventingLicenceData()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        await SeedVecAndFeeConfigAsync(dbContext);
+        var client = new FakeExamToolsClient();
+        var done = PendingSession(id: "old-1", applicantCount: 1);
+        done.State = "done";
+        client.ClosedSessionsFor(team.Id).Add(done);
+        client.ApplicantsFor(team.Id)["old-1"] = [Applicant()];
+
+        var result = await CreateService(dbContext, client).ImportHistoricalRangeAsync(
+            team, new DateOnly(2026, 1, 1), new DateOnly(2026, 1, 31), ImportingUserId, CancellationToken.None);
+
+        Assert.Equal(1, result.CandidatesAssumedGranted);
+        var candidate = dbContext.Candidates.Single();
+        Assert.Equal(CandidateApplicationStatus.Granted, candidate.ApplicationStatus);
+        // Status only — a call sign or grant date here would be fabricated, never verified.
+        Assert.Null(candidate.CallSign);
+        Assert.Null(candidate.LicenseGrantDateUtc);
+    }
+
+    /// <summary>The routine poll must NOT pre-mark anything — only the historical import may assume this.</summary>
+    [Fact]
+    public async Task RoutineIngestion_DoesNotAssumeCandidatesAreGranted()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        await SeedVecAndFeeConfigAsync(dbContext);
+        var client = new FakeExamToolsClient();
+        var pending = PendingSession(applicantCount: 1);
+        client.SessionsFor(team.Id).Add(pending);
+        client.ApplicantsFor(team.Id)["session-1"] = [Applicant()];
+
+        var result = await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+
+        Assert.Equal(0, result.CandidatesAssumedGranted);
+        Assert.Equal(CandidateApplicationStatus.Unmatched, dbContext.Candidates.Single().ApplicationStatus);
+    }
+
     /// <summary>The routine poll must NOT pre-mark anything — only the historical import may assume this.</summary>
     [Fact]
     public async Task RoutineIngestion_DoesNotMarkSessionsSubmittedToVec()

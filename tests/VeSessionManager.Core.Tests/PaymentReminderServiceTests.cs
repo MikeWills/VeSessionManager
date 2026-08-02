@@ -98,7 +98,8 @@ public class PaymentReminderServiceTests
         SessionStatus sessionStatus = SessionStatus.Active,
         PaymentStatus paymentStatus = PaymentStatus.Unpaid,
         bool expiredUnpaid = false,
-        DateTime? paymentReminderSentUtc = null)
+        DateTime? paymentReminderSentUtc = null,
+        DateTime? scheduledStartUtc = null)
     {
         var vec = new Vec { Name = "ARRL" };
         var user = new User { Name = "System", Email = "system@localhost", Role = UserRole.SystemAdmin };
@@ -109,7 +110,7 @@ public class PaymentReminderServiceTests
         };
         var session = new Session
         {
-            ExamToolsSessionId = "session-1", Title = "July Session", ScheduledStartUtc = Now.AddDays(-3),
+            ExamToolsSessionId = "session-1", Title = "July Session", ScheduledStartUtc = scheduledStartUtc ?? Now.AddDays(-3),
             DurationMinutes = 60, Vec = vec, TeamId = team.Id, FeeConfiguration = feeConfiguration, Status = sessionStatus,
             ZoomJoinUrl = "https://zoom.us/j/123", CreatedUtc = Now
         };
@@ -184,6 +185,47 @@ public class PaymentReminderServiceTests
     }
 
     // ---- 5-day reminder ----
+
+    /// <summary>
+    /// Historical-import safety (2026-08-01). These queries filtered on Session.Status == Active,
+    /// which means "not cancelled", never "not finished" — so once SMTP is configured, a year of
+    /// backfilled candidates would have received "you haven't paid" emails about sessions they sat
+    /// months ago. The seeded session is far past the reminder threshold, so without the
+    /// PaymentEligibilityWindow bound this very much fires.
+    /// </summary>
+    [Fact]
+    public async Task Reminder_ForALongPastSession_DoesNotFire()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        await SeedEmailSettingsAndTemplatesAsync(dbContext, team);
+        await SeedCandidateWithPaymentAsync(
+            dbContext, team, applicationDateEnteredUtc: Now.AddDays(-190), scheduledStartUtc: Now.AddDays(-200));
+        var sender = new FakeEmailSender();
+
+        var result = await CreateService(dbContext, sender).RunAsync(team, CancellationToken.None);
+
+        Assert.Equal(0, result.RemindersSent);
+        Assert.Empty(sender.SentMessages);
+        Assert.Null((await dbContext.Payments.SingleAsync()).PaymentReminderSentUtc);
+    }
+
+    /// <summary>Same session age must not be silently expired out from under a real candidate either.</summary>
+    [Fact]
+    public async Task Expiration_ForALongPastSession_DoesNotFire()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        await SeedEmailSettingsAndTemplatesAsync(dbContext, team);
+        await SeedCandidateWithPaymentAsync(
+            dbContext, team, applicationDateEnteredUtc: Now.AddDays(-190), scheduledStartUtc: Now.AddDays(-200));
+        var sender = new FakeEmailSender();
+
+        var result = await CreateService(dbContext, sender).RunAsync(team, CancellationToken.None);
+
+        Assert.Equal(0, result.ExpirationsProcessed);
+        Assert.False((await dbContext.Payments.SingleAsync()).ExpiredUnpaid);
+    }
 
     [Fact]
     public async Task Reminder_ExactlyFiveDaysSinceApplicationDateEntered_Fires()

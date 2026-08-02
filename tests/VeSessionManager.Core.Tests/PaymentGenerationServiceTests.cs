@@ -79,7 +79,8 @@ public class PaymentGenerationServiceTests
     /// <summary>Seeds Vec/User/FeeConfiguration/Session/Candidate. FeeCollectionEnabled defaults true, $15.</summary>
     private static async Task<Candidate> SeedCandidateAsync(
         AppDbContext dbContext, Team team, bool feeCollectionEnabled = true, decimal examFeeAmount = 15m,
-        SessionStatus sessionStatus = SessionStatus.Active, bool purged = false, bool supportsYouthProgram = false)
+        SessionStatus sessionStatus = SessionStatus.Active, bool purged = false, bool supportsYouthProgram = false,
+        DateTime? scheduledStartUtc = null)
     {
         var vec = new Vec { Name = "ARRL", SupportsYouthProgram = supportsYouthProgram };
         var user = new User { Name = "System", Email = "system@localhost", Role = UserRole.SystemAdmin };
@@ -96,7 +97,7 @@ public class PaymentGenerationServiceTests
         {
             ExamToolsSessionId = "session-1",
             Title = "July Session",
-            ScheduledStartUtc = Now.AddDays(4),
+            ScheduledStartUtc = scheduledStartUtc ?? Now.AddDays(4),
             DurationMinutes = 60,
             Vec = vec,
             TeamId = team.Id,
@@ -116,6 +117,72 @@ public class PaymentGenerationServiceTests
         dbContext.Candidates.Add(candidate);
         await dbContext.SaveChangesAsync();
         return candidate;
+    }
+
+    // ---- Historical-import safety (2026-08-01) ----
+
+    /// <summary>
+    /// The bug this guards: PaymentGenerationService filtered only on Session.Status == Active,
+    /// which means "not cancelled", never "not finished". After the historical import backfilled a
+    /// year of sessions it created ~1710 Unpaid payments for candidates who tested months earlier.
+    /// </summary>
+    [Fact]
+    public async Task CandidateOnALongPastSession_GetsNoPayment()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        await SeedCandidateAsync(dbContext, team, scheduledStartUtc: Now.AddDays(-200));
+        var square = new FakeSquareClient();
+
+        var result = await CreateService(dbContext, square).RunAsync(team, CancellationToken.None);
+
+        Assert.Equal(0, result.PaymentsCreated);
+        Assert.Empty(dbContext.Payments);
+        Assert.Empty(square.Calls);
+    }
+
+    /// <summary>
+    /// The half that actually protects real people: payments the unbounded version already created
+    /// are still in the table. Without a bound here, the first poll after Square credentials are set
+    /// would mint a live payment link for every one of them.
+    /// </summary>
+    [Fact]
+    public async Task ExistingUnpaidPaymentOnALongPastSession_GetsNoSquareLink()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        var candidate = await SeedCandidateAsync(dbContext, team, scheduledStartUtc: Now.AddDays(-200));
+        dbContext.Payments.Add(new Payment
+        {
+            CandidateId = candidate.Id,
+            Reason = PaymentReason.InitialExam,
+            Amount = 15m,
+            Status = PaymentStatus.Unpaid,
+            CreatedUtc = Now
+        });
+        await dbContext.SaveChangesAsync();
+        var square = new FakeSquareClient();
+
+        var result = await CreateService(dbContext, square).RunAsync(team, CancellationToken.None);
+
+        Assert.Equal(0, result.LinksGenerated);
+        Assert.Empty(square.Calls);
+        Assert.Null(dbContext.Payments.Single().PaymentLinkUrl);
+    }
+
+    /// <summary>A session inside the window still works normally — the bound must not break the real feature.</summary>
+    [Fact]
+    public async Task CandidateOnARecentlyEndedSession_StillGetsPaymentAndLink()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        await SeedCandidateAsync(dbContext, team, scheduledStartUtc: Now.AddDays(-2));
+        var square = new FakeSquareClient();
+
+        var result = await CreateService(dbContext, square).RunAsync(team, CancellationToken.None);
+
+        Assert.Equal(1, result.PaymentsCreated);
+        Assert.Equal(1, result.LinksGenerated);
     }
 
     [Fact]

@@ -182,6 +182,101 @@ already submitted.** For a genuinely historical range that is true by constructi
 that overlaps recent, not-yet-submitted sessions and you will mark them submitted when they aren't —
 keep the end date behind your real submission backlog.
 
+## Companion fix 3: payment work is bounded by session age (2026-08-01)
+
+Found the day after the first real import, by reading the Worker log — not by anything failing.
+
+`PaymentGenerationService` filtered on `Session.Status == SessionStatus.Active` and **nothing else**.
+Per CLAUDE.md that means *"not cancelled"*, never *"not finished"*, so the import's year of
+backfilled candidates all queued up for payment: it created **~1710 Unpaid `InitialExam` payments**
+for people who tested months earlier.
+
+They were inert only because that team had no Square credentials. **The first poll after Square was
+configured would have generated ~1710 live payment links** for candidates from last winter — and
+`PaymentReminderService`, whose queries had the same `Status == Active`-only bound, would then have
+emailed them all about it once SMTP was configured. Both were one config change away from firing.
+
+`PaymentEligibilityWindow` (30 days, anchored on `ScheduledStartUtc`) now bounds four queries:
+payment creation, Square link generation, reminders, and expiration.
+
+Three things worth knowing about the shape of the fix:
+
+- **A window, not `HasEnded`.** "Has the session ended?" is the wrong test for money — a payment
+  reminder keys off `Candidate.ApplicationDateEnteredUtc`, which FCC sets *after* the session runs,
+  so reminders legitimately target sessions that already ended. A blanket `HasEnded` guard would
+  have broken the real feature. Same reasoning, and same shape, as
+  `ExamResultSyncService.ResultSyncWindow`.
+- **Anchored on `ScheduledStartUtc`, never `ExamToolsClosedUtc`** — the import stamps the close field
+  at *import* time, so anchoring there would make every backfilled session look like it closed today.
+  Exactly the trap the exam-result window already documents.
+- **Bounding link generation is the half that protects real people.** Guarding creation alone would
+  have stopped new bad rows while leaving the ~1710 existing ones live. The decision was to leave
+  that data in place rather than mass-delete real rows, which is only safe *because* the link query
+  is bounded too. `ExistingUnpaidPaymentOnALongPastSession_GetsNoSquareLink` is the regression test.
+
+## Imported candidates are assumed granted (2026-08-01)
+
+Session-lifecycle rule, decided after the import surfaced the bugs below: **a historical load assumes
+everyone was granted.** There is no reason to keep asking FCC whether a licence from one to four
+years ago was issued — it either happened long ago or never will.
+
+Left non-terminal, those candidates are polled by `UlsWatcherService` (one HTTP call each, twice a
+day, forever) and counted as outstanding on Applicant Status. Marking them `Granted` makes them
+terminal, and terminal is already the universal "stop processing" signal across this codebase.
+
+Two limits on what is asserted:
+
+- **Only the status.** `CallSign` and `LicenseGrantDateUtc` stay null, because they were never
+  verified. Inventing them would put fabricated licence data in a table other screens read.
+- **A candidate the watcher already matched is untouched.** Where `UlsWatcherService` pulled a real
+  call sign from ExamTools' ULS API during an earlier run, that candidate is already terminal and
+  keeps its real data. In the live backfill all 542 affected rows had no call sign, so nothing
+  verified was overwritten.
+
+No per-candidate audit entry: an import writes thousands at once and the audit log is a fixed 200-row
+window with no filtering (issue #86). The aggregate lands in `IngestionResult.CandidatesAssumedGranted`
+and the import's log line instead.
+
+Applied to existing data 2026-08-01: **542 candidates** (536 `Unmatched`, 6 `Received`; HRCC 524,
+MARC 18), backup `vesessionmanager.db.bak-before-assumed-granted-20260801-2230`.
+
+## Companion fix 5: roster retries give up eventually (2026-08-01)
+
+Companion fix 1 (above) settles a finished session only once it **has** a roster, precisely so a
+session that appeared and closed inside one polling interval isn't written off before its roster was
+ever fetched — "an empty roster keeps being retried, so a sync that failed at the time self-heals."
+
+That is right only while the roster is still plausibly fetchable. Session 819
+(`6567ff0cfb29450af7ba19da` — a Mongo ObjectId whose embedded timestamp is **2023-11-30**) came in
+via the historical import, and ExamTools returns **HTTP 500** for its roster every single time. So it
+never got a roster, never settled, and produced one failed API call plus one `[ERR]` line **every
+hour, indefinitely**.
+
+`RosterRetryWindow` (30 days, anchored on `ScheduledStartUtc` for the same reason as everything else
+here) now settles a finished session whether or not a roster was ever obtained. Nobody assigns VEs to
+a session from two years ago, so an empty roster that old is a fact about ExamTools rather than a
+sync worth retrying. Both halves are pinned:
+`FinishedSessionOlderThanTheRetryWindow_WithNoRoster_IsNotRePolled` and
+`FinishedSessionInsideTheRetryWindow_WithNoRoster_IsStillRePolled`.
+
+## Companion fix 4: the log stopped being unreadable (2026-08-01)
+
+Same root cause, cosmetic symptom. `SessionEventSchedulingService` selected sessions where
+`ScheduledStartUtc != ZoomDiscordSyncedStartUtc` and filtered `HasEnded` ones out in memory — but a
+past session can *never* satisfy that equality, because it is deliberately never synced. So all 794
+backfilled sessions were loaded, filtered and log-counted on **every tick, forever**, with the count
+only growing. `CandidateNotificationService` did the same with 1991 candidates. Two INFO lines per
+team per tick, drowning every real line.
+
+Both queries now carry a coarse `ScheduledStartUtc >= now - 1 day` bound. A session starting more
+than a day ago has certainly ended (durations are hours), so the precise in-memory `HasEnded` check
+still sees everything it needs, and the skip counters still report genuinely-just-ended sessions.
+
+Note the counter semantics changed deliberately: a long-past session is no longer *counted* as
+skipped, because it is never loaded. `LongPastSession_IsNotEvenConsidered_AndIsNotCountedAsSkipped`
+pins that, and an existing test was updated from a 15-day-old session to a 4-hour-old one to keep
+covering the "counted as skipped" path.
+
 ## Companion fix: VE roster sync no longer re-polls finished sessions
 
 Not in issue #67, but a blocker for it. `VolunteerExaminerSyncService` synced **every Active session**

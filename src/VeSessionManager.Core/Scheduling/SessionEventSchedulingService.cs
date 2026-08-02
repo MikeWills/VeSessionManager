@@ -55,8 +55,19 @@ public class SessionEventSchedulingService(
         var now = timeProvider.GetUtcNow().UtcDateTime;
         var result = new SchedulingResult();
 
+        // Query-side coarse bound (2026-08-01): a past session can never satisfy the
+        // ScheduledStartUtc == ZoomDiscordSyncedStartUtc equality, because it is deliberately never
+        // synced — so without this, every session the historical import backfilled was loaded,
+        // filtered out and log-counted on every tick, forever, with the count only growing (794 for
+        // one team). A session starting more than a day ago has certainly ended (durations are
+        // hours), so the precise HasEnded check below still sees everything it needs.
+        var recentSessionCutoff = now.AddDays(-1);
+
         var candidateSessions = await dbContext.Sessions
-            .Where(s => s.TeamId == team.Id && s.Status == SessionStatus.Active && s.ScheduledStartUtc != s.ZoomDiscordSyncedStartUtc)
+            .Where(s => s.TeamId == team.Id
+                        && s.Status == SessionStatus.Active
+                        && s.ScheduledStartUtc >= recentSessionCutoff
+                        && s.ScheduledStartUtc != s.ZoomDiscordSyncedStartUtc)
             .ToListAsync(cancellationToken);
 
         // A session ingested via the completed-session backfill window (see SessionIngestionService)
