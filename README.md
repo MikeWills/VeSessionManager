@@ -64,8 +64,10 @@ environment rather than passing it as an argument, so it stays out of shell hist
 VSM_ADMIN_PASSWORD='choose-something-long'   dotnet VeSessionManager.Web.dll --create-admin --email you@example.org --name "Your Name"
 ```
 
-If you start the app before doing this, the login page will reject every credential — there is
-nothing to sign in as. The startup log says so explicitly and repeats the command.
+**The app refuses to start until an administrator exists** — it logs `Critical` and exits rather than
+serving a login page where nothing can succeed. On a server with the systemd unit installed
+(`Restart=always`), that means the Web service restart-loops until you run the command above; it
+recovers by itself as soon as you do. The Worker is unaffected.
 
 ### Also worth doing before real sessions run
 

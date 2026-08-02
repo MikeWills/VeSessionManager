@@ -225,16 +225,25 @@ using (var scope = app.Services.CreateScope())
 
     // No account is seeded on a fresh deployment — the first administrator is created explicitly
     // with --create-admin, so this app never ships a shared credential that works before setup.
-    // The trade-off is that starting the app first leaves a login page nobody can get past, with no
-    // explanation, so say so loudly. Guard is "can anyone sign in", not "does a user exist": the
-    // Worker's DevDataSeeder creates a passwordless "System" user to own audit-trail foreign keys.
+    //
+    // Refuse to serve at all in that state rather than starting into a login page that cannot
+    // succeed: a running site whose every credential is rejected looks like a forgotten password or
+    // a broken auth config, and is a worse thing to hand someone than a service that plainly did not
+    // start. Exiting non-zero also makes the failure visible to systemd and to the deploy workflow,
+    // which already waits on the unit becoming active.
+    //
+    // Guard is "can anyone sign in", not "does a user exist": the Worker's DevDataSeeder creates a
+    // passwordless "System" user to own audit-trail foreign keys, so a row count would pass here on
+    // a deployment nobody can actually get into.
     if (!await scope.ServiceProvider.GetRequiredService<AppDbContext>().Users.AnyAsync(u => u.PasswordHash != null))
     {
-        startupLogger.LogWarning(
-            "No account on this deployment can sign in yet. Create the first administrator with: dotnet " +
-            "VeSessionManager.Web.dll {Switch} --email <email> --name <name>. A password is generated and " +
-            "printed; set {EnvironmentVariable} first to choose your own.",
+        startupLogger.LogCritical(
+            "Refusing to start: no account on this deployment can sign in. Create the first administrator " +
+            "with: dotnet VeSessionManager.Web.dll {Switch} --email <email> --name <name>. A password is " +
+            "generated and printed; set {EnvironmentVariable} first to choose your own. The Worker is " +
+            "unaffected and can keep running.",
             BootstrapAdminCommand.Switch, BootstrapAdminCommand.PasswordEnvironmentVariable);
+        return 1;
     }
 }
 

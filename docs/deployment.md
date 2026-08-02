@@ -198,9 +198,35 @@ history and to anyone who can run `ps`.
 
 **Nothing is seeded automatically.** An earlier design created a setup account with credentials
 published in the README; that was reverted (2026-08-01) because it meant a documented username and
-password worked on every deployment from first start until setup was finished. The cost of the
-current design is that starting the app before running the command leaves a login page nobody can get
-past — so startup logs a `Warning` naming the exact command, and the login page says the same thing.
+password worked on every deployment from first start until setup was finished.
+
+**The Web app refuses to start until an administrator exists.** Rather than serving a login page
+where every credential is rejected — which looks like a forgotten password or broken auth rather than
+unfinished setup — it logs `Critical` and exits non-zero:
+
+```
+[CRT] Refusing to start: no account on this deployment can sign in. Create the first administrator with: ...
+```
+
+### Run `--create-admin` *before* starting the Web service on a new box
+
+Because the unit is `Restart=always` / `RestartSec=10`, a Web service started before the administrator
+exists will **restart-loop every ten seconds**, logging that line each time, until you create one. It
+self-heals the moment you do — the next restart comes up normally — but on a fresh server the tidy
+order is:
+
+```bash
+# after the files are in place, before starting vesessionmanager-web
+dotnet /opt/vesessionmanager/web/VeSessionManager.Web.dll --create-admin --email you@example.org --name "Your Name"
+sudo systemctl start vesessionmanager-web
+```
+
+`--create-admin` applies migrations itself, so it is safe to run before either service has ever
+started. **The Worker is unaffected** and will happily poll ExamTools with no user accounts at all —
+only the Web app has a login surface to protect.
+
+Expect the first deploy to a brand-new server to report the Web unit as failed if you skip this: that
+is the safeguard working, not a broken build.
 
 ## systemd Services
 
