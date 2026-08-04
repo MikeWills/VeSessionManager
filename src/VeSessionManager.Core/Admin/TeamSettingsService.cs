@@ -1,5 +1,7 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using VeSessionManager.Core.Data;
+using VeSessionManager.Core.Email;
 using VeSessionManager.Core.Entities;
 
 namespace VeSessionManager.Core.Admin;
@@ -12,7 +14,7 @@ namespace VeSessionManager.Core.Admin;
 /// placeholder driven by Team.IsXConfigured, and only pass a value through when the admin actually
 /// typed a new one. Audit Details never contain the secret value itself.
 /// </summary>
-public class TeamSettingsService(AppDbContext dbContext, TimeProvider timeProvider)
+public class TeamSettingsService(AppDbContext dbContext, TimeProvider timeProvider, ILogger<TeamSettingsService> logger)
 {
     public async Task<(TeamActionResult Result, Team? Team)> CreateAsync(string name, int userId, CancellationToken cancellationToken)
     {
@@ -25,6 +27,14 @@ public class TeamSettingsService(AppDbContext dbContext, TimeProvider timeProvid
         var team = new Team { Name = name, CreatedUtc = now };
         dbContext.Teams.Add(team);
         await dbContext.SaveChangesAsync(cancellationToken);
+
+        // Seed the team's EmailSettings row and default templates immediately (2026-08-04). These
+        // used to appear only when the Worker next started, so a team created here was silently
+        // non-functional for email until someone restarted a different process — the Email Templates
+        // page read "No templates seeded for this team yet", and CandidateNotificationService skipped
+        // the team with a single log line rather than sending anything. Idempotent, so the Worker's
+        // startup sweep remains a harmless backfill.
+        await EmailDefaultsSeeder.SeedForTeamAsync(dbContext, logger, team);
 
         AddAudit(userId, "TeamCreated", team.Id, $"Team '{name}' created.", now);
         await dbContext.SaveChangesAsync(cancellationToken);
