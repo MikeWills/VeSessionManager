@@ -124,6 +124,47 @@ unusable for an hour after every scheduled poll, i.e. exactly the wait it exists
 A team with no ExamTools credentials gets the button disabled and an explanatory line pointing at
 Team Settings, rather than a refresh that quietly does nothing.
 
+### The per-session button is session-scoped, not team-wide (2026-08-03)
+
+Until 2026-08-03 the session Detail page's "Refresh candidates" button ran the same team-wide
+`RunAsync` as this page — so clicking it on one session could mint Square payment links and send
+confirmation emails for every *other* session the team had, far more side effects than the button
+implied. It now calls `ManualCandidateRefreshService.RunForSessionAsync(team, sessionId, …)`, which
+scopes every pipeline step to that one session:
+
+- **Candidate sync** — new `SessionIngestionService.RefreshSessionCandidatesAsync` fetches only that
+  session's applicant export. It deliberately does **not** create sessions or run cancellation
+  detection — both require diffing the complete team feed (a session id disappearing from the feed
+  *is* the cancellation signal, issue #68), which is exactly the team-wide work being avoided. The
+  team feed is still read for the session's closed-stamp/reschedule handling and the
+  `applicantCount` that gates withdrawal detection; a session in neither feed passes a null
+  count, which makes `SyncCandidates` skip withdrawal detection rather than misread absence.
+
+  **It must read both feeds.** The first version read only `GetTeamSessionsAsync`, which never
+  carries a closed ("done") session — that is precisely why `RunAsync` merges
+  `GetTeamClosedSessionsAsync` — so the close-stamp branch was unreachable and the button could
+  never close a session (reported live and fixed the same day, 2026-08-03; regression test
+  `RefreshSessionCandidates_SessionClosedSincePendFeed_StampsClosedAndDoesFinalSync`). The closed
+  feed is queried only when the session is absent from the pend feed, so the common still-open case
+  costs one call. Its date range is anchored on the session's own scheduled date ±1 day rather than
+  the rolling `CompletedSessionBackfillWindow`: per-session scope means it can be exact, and a
+  Session Manager can pull the close stamp for a session far older than the rolling window.
+- **Exam results** — new `ExamResultSyncService.SyncSessionAsync`, which has **no
+  `ResultSyncWindow` bound**. This makes the window's long-documented escape hatch real for the
+  first time: the manual refresh used to run `RunAsync`, whose window applied regardless, so a
+  session graded later than 14 days after it ran actually had no on-demand path.
+- **VE roster, Zoom/Discord scheduling, payment links, confirmation emails** — the existing
+  `RunAsync`/`SendRegistrationConfirmationsAsync` methods gained a trailing optional
+  `int? onlySessionId` filter parameter; null (every scheduled/team-wide caller) is unchanged.
+
+Team Maintenance's "Refresh now" keeps the team-wide `RunAsync` — it is the page whose job is the
+whole team, and it is the throttled one. Job History names are unchanged (`Manual*`) for both
+scopes; the dashboard distinction that matters is manual-vs-scheduled, not which button.
+
+This also narrows (but does not close — see the audit's T08/T20) the Web-vs-Worker concurrent-run
+window: the Web-side pipeline now only ever races the Worker on one session's rows instead of the
+whole team's.
+
 ## Historical import
 
 See `docs/historical-import.md` — the third section of this page, and the other half of issue #67.

@@ -91,6 +91,28 @@ Square's own payment-link id, captured at creation time so it's available for a 
   crash-safety pattern. On success, an `AuditLog` row is written (`UserId = null`, self-service
   action, same pattern as the PII purge job) noting the fee switch.
 
+### The idempotency key really is persist-once now (fixed 2026-08-03)
+
+The paragraph above described the intent from the start, and the code carried a comment saying so —
+but the assignment was `payment.SquareIdempotencyKey = Guid.NewGuid().ToString()`, **unconditional**,
+so a fresh key was minted on every attempt. That is the exact "key generated fresh per attempt
+(useless)" trap CLAUDE.md's Established Patterns warn to check for, and a comment claiming the
+pattern is not evidence of it (audit finding T07).
+
+The failure it allowed: Square accepts `CreatePaymentLink`, the process dies before the save at the
+end of the method, the Payment is still `Unpaid` so the page lets the candidate confirm again — and
+the retry mints a *different* key, producing a second live Square order with the first orphaned and
+still payable.
+
+The fix is not simply `??=`, because the key already on the Payment belongs to the **standard-rate**
+link: reusing that would make Square replay the standard link at the standard price. So the key is
+cleared in the same block that deletes the standard link (both `SquarePaymentLinkId` and
+`SquareIdempotencyKey` go to null together, and that clearing is what makes the `??=` safe), then
+`??=` generates and persists a youth-attempt key before Square is called. A retry then finds the key
+already set, sends the same one, and gets an idempotent replay of the same link. A crash *during*
+the delete leaves both fields as they were, and the delete is retried — harmlessly, since it is
+already best-effort and 404-tolerant.
+
 No new field tracks "this candidate confirmed youth status" beyond what already exists:
 `Payment.Amount` correctly reflecting the youth rate *is* the record — financial reports already
 read `Amount`.

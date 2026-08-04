@@ -113,13 +113,23 @@ public class YouthPaymentConfirmationService(
                 logger.LogWarning(ex, "Failed to delete old Square payment link {SquarePaymentLinkId} for Payment {PaymentId} — continuing to generate the youth-rate link anyway",
                     payment.SquarePaymentLinkId, payment.Id);
             }
+
+            // The standard-rate link is gone, so its key must go with it — the youth call needs a
+            // key Square has never seen, or it would replay the standard-rate link straight back.
+            // Clearing both here (rather than assigning a fresh key unconditionally below) is what
+            // makes the ??= on the next line safe.
+            payment.SquarePaymentLinkId = null;
+            payment.SquareIdempotencyKey = null;
         }
 
-        // Persisted *before* calling Square and reused as-is if already set from a previous attempt
-        // — same crash-safety pattern as PaymentGenerationService.GenerateLinkAsync (a crash between
-        // Square's call succeeding and the new link being saved would otherwise generate a second,
-        // different link on a retried confirmation).
-        payment.SquareIdempotencyKey = Guid.NewGuid().ToString();
+        // Persisted *before* calling Square and reused as-is on a retry — the crash-safety pattern
+        // PaymentGenerationService.GenerateLinkAsync follows. Until 2026-08-03 this assigned a fresh
+        // Guid unconditionally while claiming in a comment to do exactly what it now does: a crash
+        // between Square accepting CreatePaymentLink and the save at the end of this method left the
+        // Payment Unpaid, so the candidate could confirm again, mint a *different* key, and get a
+        // second live Square order with the first orphaned and still payable. With the key persisted
+        // first and reused, the retried call is an idempotent replay that returns the same link.
+        payment.SquareIdempotencyKey ??= Guid.NewGuid().ToString();
         await dbContext.SaveChangesAsync(cancellationToken);
 
         var link = await squareClient.CreatePaymentLinkAsync(

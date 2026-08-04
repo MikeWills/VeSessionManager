@@ -35,6 +35,24 @@ public class HistoricalImportService(
     /// </summary>
     public static readonly TimeSpan ChunkPause = TimeSpan.FromSeconds(2);
 
+    /// <summary>
+    /// How long a request may sit in <see cref="HistoricalImportStatus.Running"/> before it is
+    /// treated as abandoned and picked up again (2026-08-03).
+    ///
+    /// Without this, a Worker restart mid-import — a deploy, a service restart, a crash — left the
+    /// row Running forever: only Pending rows were ever selected again, nothing reset a stale one,
+    /// and QueueAsync's one-at-a-time guard counts Running, so that team could never queue another
+    /// import. Hand-editing the database was the only recovery, and a deploy window is exactly when
+    /// it would happen.
+    ///
+    /// Generous, because the cost of being wrong is asymmetric: re-running a range is explicitly
+    /// idempotent (chunk counters are saved as they go and ingestion skips sessions it already
+    /// has), whereas reclaiming too eagerly would only waste ExamTools calls. One Worker runs per
+    /// deployment and it processes requests one at a time, so a reclaim cannot collide with a run
+    /// that is genuinely still in progress.
+    /// </summary>
+    public static readonly TimeSpan StaleRunningThreshold = TimeSpan.FromMinutes(30);
+
     /// <summary>Deliberately no cap on how far back a range may reach — the chunking and the pause are what protect ExamTools, not an arbitrary limit on what an operator is allowed to ask for.</summary>
     public async Task<HistoricalImportQueueResult> QueueAsync(
         int teamId, DateOnly startDate, DateOnly endDate, int requestedByUserId, CancellationToken cancellationToken)
@@ -82,22 +100,36 @@ public class HistoricalImportService(
         return HistoricalImportQueueResult.Queued;
     }
 
-    /// <summary>Cheap queue peek, so the Worker can skip writing a JobRunHistory row (and the log lines that come with it) when there is nothing to import.</summary>
-    public Task<bool> HasPendingAsync(CancellationToken cancellationToken) =>
-        dbContext.HistoricalImportRequests.AnyAsync(r => r.Status == HistoricalImportStatus.Pending, cancellationToken);
+    /// <summary>Cheap queue peek, so the Worker can skip writing a JobRunHistory row (and the log lines that come with it) when there is nothing to import. Must use the same eligibility rule as RunNextPendingAsync, or a reclaimable request would never be looked at.</summary>
+    public Task<bool> HasPendingAsync(CancellationToken cancellationToken)
+    {
+        var staleCutoff = timeProvider.GetUtcNow().UtcDateTime - StaleRunningThreshold;
+        return dbContext.HistoricalImportRequests
+            .AnyAsync(r => r.Status == HistoricalImportStatus.Pending
+                           || (r.Status == HistoricalImportStatus.Running && r.StartedUtc != null && r.StartedUtc < staleCutoff),
+                cancellationToken);
+    }
 
-    /// <summary>Runs the oldest pending request, if any. Returns false when there was nothing to do, so the job can stay quiet.</summary>
+    /// <summary>Runs the oldest pending (or abandoned — see StaleRunningThreshold) request, if any. Returns false when there was nothing to do, so the job can stay quiet.</summary>
     public async Task<bool> RunNextPendingAsync(CancellationToken cancellationToken)
     {
+        var staleCutoff = timeProvider.GetUtcNow().UtcDateTime - StaleRunningThreshold;
         var request = await dbContext.HistoricalImportRequests
             .Include(r => r.Team)
-            .Where(r => r.Status == HistoricalImportStatus.Pending)
+            .Where(r => r.Status == HistoricalImportStatus.Pending
+                        || (r.Status == HistoricalImportStatus.Running && r.StartedUtc != null && r.StartedUtc < staleCutoff))
             .OrderBy(r => r.RequestedUtc)
             .FirstOrDefaultAsync(cancellationToken);
 
         if (request?.Team is null)
         {
             return false;
+        }
+
+        if (request.Status == HistoricalImportStatus.Running)
+        {
+            logger.LogWarning("Historical import {RequestId} was left Running since {StartedUtc} (over {ThresholdMinutes} minutes) — the Worker was almost certainly restarted mid-import; resuming at chunk {Resume}/{Total}",
+                request.Id, request.StartedUtc, StaleRunningThreshold.TotalMinutes, request.ChunksCompleted + 1, request.ChunksTotal);
         }
 
         request.Status = HistoricalImportStatus.Running;
@@ -109,7 +141,13 @@ public class HistoricalImportService(
 
         try
         {
-            foreach (var (chunkStart, chunkEnd) in Chunks(request.StartDate, request.EndDate))
+            // Skip(ChunksCompleted) makes a reclaimed request resume where it stopped rather than
+            // re-walk the whole range: chunks are deterministic and ordered, and the counter is
+            // incremented only *after* a chunk's import returns, so the first chunk skipped is
+            // exactly the one that was interrupted. Without this the progress counters would climb
+            // past ChunksTotal (a nonsense "15/12" on the admin page) and every earlier chunk would
+            // be re-fetched from ExamTools for nothing. A fresh Pending request skips zero.
+            foreach (var (chunkStart, chunkEnd) in Chunks(request.StartDate, request.EndDate).Skip(request.ChunksCompleted))
             {
                 cancellationToken.ThrowIfCancellationRequested();
 

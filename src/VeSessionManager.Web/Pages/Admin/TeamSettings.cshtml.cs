@@ -107,7 +107,11 @@ public class TeamSettingsModel(AppDbContext dbContext, UserManager<User> userMan
         return RedirectToPage(new { teamId = auth.Value.Team.Id });
     }
 
-    public async Task<IActionResult> OnPostUpdateSmtpAsync(string? host, int? port, string? username, string? password, bool? useStartTls)
+    /// <param name="useStartTls">Non-nullable on purpose: the form always posts an explicit
+    /// true/false (see the hidden sibling input in the .cshtml), so a null here would mean the form
+    /// was tampered with or changed — and binding it as null used to be indistinguishable from
+    /// "unchecked", which is the bug that made STARTTLS impossible to turn off.</param>
+    public async Task<IActionResult> OnPostUpdateSmtpAsync(string? host, int? port, string? username, string? password, bool useStartTls)
     {
         var auth = await AuthorizeAsync();
         if (auth is null) return Forbid();

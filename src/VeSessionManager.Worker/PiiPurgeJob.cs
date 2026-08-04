@@ -12,7 +12,8 @@ namespace VeSessionManager.Worker;
 /// </summary>
 public class PiiPurgeJob(
     IServiceScopeFactory scopeFactory,
-    IConfiguration configuration) : BackgroundService
+    IConfiguration configuration,
+    ILogger<PiiPurgeJob> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -21,11 +22,14 @@ public class PiiPurgeJob(
 
         do
         {
-            using var scope = scopeFactory.CreateScope();
-            var jobRunHistoryLogger = scope.ServiceProvider.GetRequiredService<JobRunHistoryLogger>();
-            var purgeService = scope.ServiceProvider.GetRequiredService<PiiPurgeService>();
+            await JobTick.GuardedAsync(logger, "PiiPurge", async () =>
+            {
+                using var scope = scopeFactory.CreateScope();
+                var jobRunHistoryLogger = scope.ServiceProvider.GetRequiredService<JobRunHistoryLogger>();
+                var purgeService = scope.ServiceProvider.GetRequiredService<PiiPurgeService>();
 
-            await jobRunHistoryLogger.RunAsync("PiiPurge", purgeService.RunAsync, null, stoppingToken);
+                await jobRunHistoryLogger.RunAsync("PiiPurge", purgeService.RunAsync, null, stoppingToken);
+            });
         }
         while (await timer.WaitForNextTickAsync(stoppingToken));
     }

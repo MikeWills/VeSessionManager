@@ -1,5 +1,7 @@
+using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
@@ -198,6 +200,44 @@ if (!string.IsNullOrWhiteSpace(microsoftClientId) && !string.IsNullOrWhiteSpace(
     });
 }
 
+// Rate limiting for the anonymous account endpoints (2026-08-03 hardening). Two distinct abuses
+// this closes, both reachable by anyone on the internet once this app is public:
+//   - Login: Identity's own lockout (5 tries) does NOT stop an attacker, it *helps* them — five
+//     deliberate wrong passwords against a known admin address locks that account on a rolling
+//     basis indefinitely. Capping requests per IP means the attacker's own rate is bounded first.
+//   - Forgot password: PasswordResetService throttles per *user* (5 min), which does nothing
+//     against breadth — a script with 10,000 addresses still triggers one real SMTP send per known
+//     address, burning the deployment's mail quota and its sending-domain reputation.
+//
+// Deliberately a global limiter with an explicit no-limiter partition for everything else, rather
+// than per-page [EnableRateLimiting] attributes: the protection is then on by default for any new
+// page under /Account, which is the direction the mistake should fall.
+//
+// 20/minute is far above human use (a login is one GET + one POST) but low enough to make
+// brute-force and mail-flooding useless. Static assets live outside /Account and are unaffected.
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
+    {
+        if (!context.Request.Path.StartsWithSegments("/Account"))
+        {
+            return RateLimitPartition.GetNoLimiter("unlimited");
+        }
+
+        // Requires UseForwardedHeaders below to be effective behind the Apache reverse proxy —
+        // without it every request would carry the proxy's own loopback address and the whole
+        // internet would share one 20/minute bucket. See the pipeline comment.
+        var clientKey = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        return RateLimitPartition.GetFixedWindowLimiter(clientKey, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = 20,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0
+        });
+    });
+});
+
 // Add services to the container.
 builder.Services.AddRazorPages();
 
@@ -257,6 +297,18 @@ using (var scope = app.Services.CreateScope())
 }
 
 // Configure the HTTP request pipeline.
+
+// Must be first: Production runs behind an Apache reverse proxy on the same box (see
+// docs/deployment.md), so without this every request appears to come from loopback and carries
+// Kestrel's own plain-HTTP scheme. Two things depend on it — the rate limiter's per-IP partition
+// (which would otherwise put the entire internet in one bucket) and Request.Scheme. Defaults trust
+// only loopback proxies, which is exactly the same-box topology here; no config needed, and in
+// Development (no proxy, no X-Forwarded-* headers) this is a no-op.
+app.UseForwardedHeaders(new ForwardedHeadersOptions
+{
+    ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
+});
+
 if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/Error");
@@ -266,7 +318,43 @@ if (!app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
+// Security response headers (2026-08-03 hardening) — there were none at all before this.
+// frame-ancestors/X-Frame-Options is the load-bearing one: without it an attacker can frame an
+// authenticated page and overlay a decoy button over a destructive action (clickjacking a Session
+// Manager into deleting a candidate). The rest is defence in depth — with a CSP in place, a future
+// encoding slip is contained instead of becoming a session-stealing XSS.
+//
+// Two allowances are deliberate and verified against the actual markup, not guesses:
+//   - style-src 'unsafe-inline' + fonts.googleapis.com: both layouts load Google Fonts, and there
+//     are ~139 inline style="" attributes across the pages. Removing those is the prerequisite for
+//     tightening this, not something to do blind.
+//   - font-src fonts.gstatic.com: what the Google Fonts stylesheet itself pulls.
+// script-src stays 'self' — there is no inline JavaScript anywhere in Pages/ (verified).
+app.Use(async (context, next) =>
+{
+    var headers = context.Response.Headers;
+    headers["X-Content-Type-Options"] = "nosniff";
+    headers["X-Frame-Options"] = "DENY";
+    headers["Referrer-Policy"] = "same-origin";
+    headers["Content-Security-Policy"] =
+        "default-src 'self'; " +
+        "base-uri 'self'; " +
+        "object-src 'none'; " +
+        "frame-ancestors 'none'; " +
+        "img-src 'self' data:; " +
+        "script-src 'self'; " +
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
+        "font-src 'self' https://fonts.gstatic.com; " +
+        // Square is listed because the youth-rate flow hands the candidate off to Square-hosted
+        // checkout; today that is a server-issued redirect rather than a cross-origin form post,
+        // so 'self' alone would also pass — this keeps it correct if that ever becomes a direct post.
+        "form-action 'self' https://*.squareup.com";
+    await next();
+});
+
 app.UseRouting();
+
+app.UseRateLimiter();
 
 // Was missing entirely before Phase 9a — UseAuthorization() alone never populated HttpContext.User,
 // so it had been a silent no-op since Phase 0's scaffold.

@@ -152,6 +152,32 @@ produces and keeps the routine sweep's cancellation heuristic away from them.
 A failed chunk marks the request `Failed` and keeps everything earlier chunks imported; re-queueing
 the same range resumes rather than duplicating.
 
+### An abandoned `Running` request is reclaimed and resumed (2026-08-03)
+
+A clean *failure* was always handled. A **restart** was not: `RunNextPendingAsync` flipped the row to
+`Running`, only `Pending` rows were ever selected again, its catch filter deliberately excludes
+`OperationCanceledException`, and nothing anywhere reset a stale row. So a graceful shutdown
+mid-import — a deploy, a `systemctl restart`, a crash — left the request `Running` **forever**, and
+because `QueueAsync`'s one-at-a-time guard counts `Running`, that team could never queue another
+import again. Hand-editing the database was the only recovery, and a deploy window is precisely when
+it happens (audit finding T11).
+
+Both `HasPendingAsync` and `RunNextPendingAsync` now also select a request that has been `Running`
+longer than `StaleRunningThreshold` (30 minutes). The two must keep using the same predicate — the
+Worker calls `HasPendingAsync` first as a cheap peek, so a reclaimable request that only the second
+method recognised would never be looked at.
+
+The threshold is generous on purpose, because the failure is asymmetric: re-running is idempotent,
+while reclaiming too eagerly only wastes ExamTools calls. And it cannot collide with a live run —
+one Worker runs per deployment and processes requests one at a time.
+
+**Resuming picks up at the interrupted chunk**, via `Chunks(...).Skip(request.ChunksCompleted)`. The
+counter is incremented only after a chunk's import returns, so the first chunk not skipped is exactly
+the one that was cut off. Without this the reclaim would re-walk the whole range: every earlier chunk
+re-fetched from ExamTools for nothing, and the progress counters climbing past `ChunksTotal` to show
+a nonsense "15/12" on the admin page. A fresh `Pending` request skips zero, so the normal path is
+unchanged.
+
 ### Imported sessions are marked submitted to the VEC (2026-08-01)
 
 Sessions arrived with `VecSubmissionStatus` at its default, `NotSubmitted`. That is wrong for

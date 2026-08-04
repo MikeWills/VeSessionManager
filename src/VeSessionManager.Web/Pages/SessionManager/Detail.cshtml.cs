@@ -157,9 +157,10 @@ public class DetailModel(
 
     // Pulls this session's team through the exact same pipeline SessionIngestionJob runs on its own
     // tick (ingestion, VE roster sync, Zoom/Discord scheduling, Square payment links, confirmation
-    // emails) — see ManualCandidateRefreshService. Runs for the whole team, not just this session,
-    // same as the background job; a Session Manager clicking this on one session's page still wants
-    // any other of their team's sessions caught up too.
+    // emails) — see ManualCandidateRefreshService. Scoped to THIS session only (changed 2026-08-03;
+    // it previously ran the whole team's pipeline, so one click could send emails and mint payment
+    // links for every other session the team had) — the rest of the team catches up on the Worker's
+    // next scheduled tick, and Team Maintenance's "Refresh now" remains the team-wide button.
     //
     // TODO: refine the confirmation-email flow this (and the background job) triggers — audit how
     // many emails a candidate actually receives and when, across registration/reminder/reschedule
@@ -169,7 +170,7 @@ public class DetailModel(
         var auth = await AuthorizeAsync();
         if (auth is null) return Forbid();
 
-        var result = await manualRefreshService.RunAsync(auth.Value.Session.Team, CancellationToken.None);
+        var result = await manualRefreshService.RunForSessionAsync(auth.Value.Session.Team, Id, CancellationToken.None);
         SetStatus(true,
             $"Refreshed — {result.CandidatesAdded} new candidate(s), {result.CandidatesUpdated} updated, {result.ConfirmationEmailsSent} confirmation email(s) sent.",
             "");
@@ -302,7 +303,10 @@ public class DetailModel(
 
     private async Task<(User User, Session Session)?> AuthorizeAsync()
     {
-        var user = await userManager.GetUserAsync(User);
+        // Must be GetUserWithManagerAsync, not the bare GetUserAsync: CanEdit reads user.UserTeams,
+        // which the bare load leaves empty — every POST here would Forbid() for TeamAdmin/
+        // SessionManager (SystemAdmin's role short-circuit masked it). See CLAUDE.md Known Constraints.
+        var user = await userManager.GetUserWithManagerAsync(dbContext, User);
         if (user is null)
         {
             return null;

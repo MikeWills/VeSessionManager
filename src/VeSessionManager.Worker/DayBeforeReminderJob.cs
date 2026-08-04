@@ -13,8 +13,8 @@ namespace VeSessionManager.Worker;
 /// than a duplicate send. Looped per Team — each team has its own SMTP account (multi-team, see
 /// docs/multi-team.md).
 /// </summary>
-public class DayBeforeReminderJob(IServiceScopeFactory scopeFactory, IConfiguration configuration)
-    : PerTeamDailyJob(scopeFactory, configuration, "DayBeforeReminder", "Jobs:DayBeforeReminderIntervalHours", 24)
+public class DayBeforeReminderJob(IServiceScopeFactory scopeFactory, IConfiguration configuration, ILogger<DayBeforeReminderJob> logger)
+    : PerTeamDailyJob(scopeFactory, configuration, logger, "DayBeforeReminder", "Jobs:DayBeforeReminderIntervalHours", 24)
 {
     protected override Task RunForTeamAsync(IServiceProvider scopedServices, Team team, CancellationToken cancellationToken) =>
         scopedServices.GetRequiredService<CandidateNotificationService>().SendDayBeforeRemindersAsync(team, cancellationToken);

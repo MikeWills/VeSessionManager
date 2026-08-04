@@ -63,9 +63,50 @@ public class PiiPurgeService(
 
         result.GrantedCandidatesPurged = await PurgeGrantedCandidatesAsync(cutoffExclusive, retentionWindowDays, now, cancellationToken);
         result.FailedCandidatesPurged = await PurgeFailedCandidatesAsync(cutoffExclusive, retentionWindowDays, now, cancellationToken);
+        result.AlreadyPurgedCandidatesRepaired = await RepairIncompletelyPurgedCandidatesAsync(now, cancellationToken);
 
         logger.LogInformation("PII purge run finished: {Result}", result);
         return result;
+    }
+
+    /// <summary>
+    /// Re-clears rows that were purged before FirstName was added to CandidatePiiFields.Clear
+    /// (2026-08-03): those candidates carry PiiPurgedUtc, so both triggers above skip them forever,
+    /// yet still hold a given name. Scan-based and self-healing rather than a one-off migration
+    /// script — the same idiom as the ExtId and license-class backfills — so it needs no deployment
+    /// step and costs one indexed-null check per run once the backlog is drained.
+    ///
+    /// The *action* is the whole shared Clear rather than a targeted `FirstName = null`, because
+    /// Clear is idempotent and re-running it costs nothing. The *detection* is deliberately narrow:
+    /// `FirstName != null` is the signature of this specific historical gap. *A future field added
+    /// to Clear will NOT be repaired by this predicate* — by then FirstName is null everywhere, so
+    /// no row matches. Adding a field to Clear therefore means widening this filter to include it
+    /// (`|| NewField != null`), or the same class of stale row reappears silently.
+    ///
+    /// PiiPurgedUtc is preserved, not restamped — the purge date records when retention actually
+    /// expired, not when this repair happened to run.
+    /// </summary>
+    private async Task<int> RepairIncompletelyPurgedCandidatesAsync(DateTime now, CancellationToken cancellationToken)
+    {
+        var candidates = await dbContext.Candidates
+            .Include(c => c.Payments)
+            .Where(c => c.PiiPurgedUtc != null && c.FirstName != null)
+            .ToListAsync(cancellationToken);
+
+        foreach (var candidate in candidates)
+        {
+            var originalPurgedUtc = candidate.PiiPurgedUtc!.Value;
+            CandidatePiiFields.Clear(candidate, originalPurgedUtc);
+            AddAudit(candidate.Id, "PII re-cleared: fields added to the purge definition after this candidate was originally purged.", now);
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+
+        if (candidates.Count > 0)
+        {
+            logger.LogInformation("PII purge repaired {Count} previously-purged candidate(s) that still held fields added to the purge definition later", candidates.Count);
+        }
+
+        return candidates.Count;
     }
 
     private async Task<int> PurgeGrantedCandidatesAsync(DateTime cutoffExclusive, int retentionWindowDays, DateTime now, CancellationToken cancellationToken)

@@ -1239,4 +1239,167 @@ public class SessionIngestionServiceTests
         Assert.Empty(client.CredentialsUsed);
         Assert.Empty(dbContext.Sessions);
     }
+
+    // ---- RefreshSessionCandidatesAsync (session-scoped Detail-page refresh, 2026-08-03) ----
+
+    /// <summary>
+    /// The key behavioural guarantee versus RunAsync: a session-scoped refresh must never run
+    /// cancellation detection or create sessions. Another local Active session that happens to be
+    /// absent from the feed at that moment would be flipped to Cancelled by RunAsync's diff — a
+    /// scoped refresh must leave it (and its candidates) completely alone.
+    /// </summary>
+    [Fact]
+    public async Task RefreshSessionCandidates_SyncsOnlyThatSession_NeverCancelsOrCreatesOthers()
+    {
+        await using var dbContext = CreateContext();
+        await SeedVecAndFeeConfigAsync(dbContext);
+        var team = await SeedTeamAsync(dbContext);
+        var client = new FakeExamToolsClient();
+        client.SessionsFor(team.Id).Add(PendingSession(id: "session-1", applicantCount: 1));
+        client.SessionsFor(team.Id).Add(PendingSession(id: "session-2", applicantCount: 1));
+        client.ApplicantsFor(team.Id)["session-1"] = [Applicant(id: "a1")];
+        client.ApplicantsFor(team.Id)["session-2"] = [Applicant(id: "a2", email: "other@example.com")];
+        await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+        Assert.Equal(2, dbContext.Sessions.Count());
+
+        // The feed changes: session-1 gains an applicant and an email change, session-2 disappears
+        // (RunAsync's cancellation signal), and a brand-new session-3 appears.
+        client.SessionsFor(team.Id).Clear();
+        client.SessionsFor(team.Id).Add(PendingSession(id: "session-1", applicantCount: 2));
+        client.SessionsFor(team.Id).Add(PendingSession(id: "session-3"));
+        client.ApplicantsFor(team.Id)["session-1"] =
+            [Applicant(id: "a1", email: "changed@example.com"), Applicant(id: "a1-late")];
+        client.ApplicantFetches.Clear();
+
+        var target = dbContext.Sessions.Single(s => s.ExamToolsSessionId == "session-1");
+        var result = await CreateService(dbContext, client).RefreshSessionCandidatesAsync(team, target.Id, CancellationToken.None);
+
+        // The named session's candidates are added/updated…
+        Assert.Equal(1, result.CandidatesUpdated);
+        Assert.Equal(1, result.CandidatesAdded);
+        Assert.Equal("changed@example.com", dbContext.Candidates.Single(c => c.ExamToolsApplicantId == "a1").Email);
+        Assert.Equal("session-1", Assert.Single(client.ApplicantFetches));
+
+        // …and everything else is untouched: no new session, no cancellation, other roster intact.
+        Assert.Equal(0, result.SessionsAdded);
+        Assert.Equal(0, result.SessionsCancelled);
+        Assert.Equal(2, dbContext.Sessions.Count()); // session-3 was NOT created
+        var other = dbContext.Sessions.Single(s => s.ExamToolsSessionId == "session-2");
+        Assert.Equal(SessionStatus.Active, other.Status);
+        Assert.Null(other.CancelledUtc);
+        Assert.Equal("other@example.com", dbContext.Candidates.Single(c => c.ExamToolsApplicantId == "a2").Email);
+    }
+
+    /// <summary>
+    /// A session absent from the team feed (closed and aged out of the pend feed) has no
+    /// applicantCount to cross-check the export against, so withdrawal detection must be skipped
+    /// entirely — a local candidate missing from the export must NOT be withdrawn, because clearing
+    /// PII is not reversible and absence-from-feed is not evidence of withdrawal.
+    /// </summary>
+    [Fact]
+    public async Task RefreshSessionCandidates_SessionAbsentFromFeed_NeverWithdrawsAnybody()
+    {
+        await using var dbContext = CreateContext();
+        await SeedVecAndFeeConfigAsync(dbContext);
+        var team = await SeedTeamAsync(dbContext);
+        var client = new FakeExamToolsClient();
+        client.SessionsFor(team.Id).Add(PendingSession(applicantCount: 2));
+        client.ApplicantsFor(team.Id)["session-1"] = [Applicant(id: "stays"), Applicant(id: "vanishes")];
+        await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+        Assert.Equal(2, dbContext.Candidates.Count());
+
+        // The session drops out of the feed entirely; the export now returns only one applicant.
+        client.SessionsFor(team.Id).Clear();
+        client.ApplicantsFor(team.Id)["session-1"] = [Applicant(id: "stays")];
+
+        var target = dbContext.Sessions.Single();
+        var result = await CreateService(dbContext, client).RefreshSessionCandidatesAsync(team, target.Id, CancellationToken.None);
+
+        Assert.Equal(0, result.CandidatesWithdrawn);
+        var missing = dbContext.Candidates.Single(c => c.ExamToolsApplicantId == "vanishes");
+        Assert.NotEqual(CandidateApplicationStatus.NotTested, missing.ApplicationStatus);
+        Assert.NotNull(missing.Name);
+        Assert.Null(missing.PiiPurgedUtc);
+    }
+
+    /// <summary>
+    /// A session already stamped ExamToolsClosedUtc before the refresh began has nothing left to
+    /// give this feed — the PII-bearing applicant export must not be re-fetched for it (candidate
+    /// updates for a finished session arrive via ExamResultSyncService / the ULS watcher instead).
+    /// </summary>
+    [Fact]
+    public async Task RefreshSessionCandidates_SessionAlreadyClosed_DoesNotFetchApplicants()
+    {
+        await using var dbContext = CreateContext();
+        await SeedVecAndFeeConfigAsync(dbContext);
+        var team = await SeedTeamAsync(dbContext);
+        var client = new FakeExamToolsClient();
+        client.SessionsFor(team.Id).Add(PendingSession(applicantCount: 1));
+        client.ApplicantsFor(team.Id)["session-1"] = [Applicant()];
+        await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+
+        var target = dbContext.Sessions.Single();
+        target.ExamToolsClosedUtc = Now;
+        await dbContext.SaveChangesAsync();
+        client.ApplicantFetches.Clear();
+
+        await CreateService(dbContext, client).RefreshSessionCandidatesAsync(team, target.Id, CancellationToken.None);
+
+        Assert.Empty(client.ApplicantFetches);
+    }
+
+    /// <summary>
+    /// Regression (reported live 2026-08-03): the session-scoped refresh read only the pend feed,
+    /// which never carries a "done" session — so the close stamp was unreachable and this button
+    /// could never close a session. It must fall back to the closed feed, and still perform the
+    /// final candidate sync on the run that discovers the close (RunAsync's last-chance rule).
+    /// </summary>
+    [Fact]
+    public async Task RefreshSessionCandidates_SessionClosedSincePendFeed_StampsClosedAndDoesFinalSync()
+    {
+        await using var dbContext = CreateContext();
+        await SeedVecAndFeeConfigAsync(dbContext);
+        var team = await SeedTeamAsync(dbContext);
+        var client = new FakeExamToolsClient();
+        client.SessionsFor(team.Id).Add(PendingSession(applicantCount: 1));
+        client.ApplicantsFor(team.Id)["session-1"] = [Applicant()];
+        await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+
+        var target = dbContext.Sessions.Single();
+        Assert.Null(target.ExamToolsClosedUtc);
+
+        // ExamTools closes the session: it leaves the pend feed and appears in the closed feed only.
+        client.SessionsFor(team.Id).Clear();
+        var done = PendingSession(applicantCount: 2);
+        done.State = "done";
+        client.ClosedSessionsFor(team.Id).Add(done);
+        client.ApplicantsFor(team.Id)["session-1"] = [Applicant(), Applicant(id: "applicant-2", first: "Dana", last: "Vale", email: "dana@example.com", frn: "0098765432")];
+        client.ApplicantFetches.Clear();
+
+        var result = await CreateService(dbContext, client).RefreshSessionCandidatesAsync(team, target.Id, CancellationToken.None);
+
+        var refreshed = dbContext.Sessions.Single();
+        Assert.NotNull(refreshed.ExamToolsClosedUtc);
+        Assert.Equal(1, result.SessionsClosedByExamTools);
+        // Last-chance rule: the run that discovers the close still syncs candidates.
+        Assert.Single(client.ApplicantFetches);
+        Assert.Equal(1, result.CandidatesAdded);
+        Assert.Equal(SessionStatus.Active, refreshed.Status); // never cancelled by the scoped path
+    }
+
+    [Fact]
+    public async Task RefreshSessionCandidates_UnconfiguredTeam_SkipsQuietly_NeverCallsClient()
+    {
+        await using var dbContext = CreateContext();
+        var team = new Team { Name = "Unconfigured Team", CreatedUtc = Now }; // no ExamTools credentials set
+        dbContext.Teams.Add(team);
+        await dbContext.SaveChangesAsync();
+        var client = new FakeExamToolsClient();
+
+        var result = await CreateService(dbContext, client).RefreshSessionCandidatesAsync(team, 1, CancellationToken.None);
+
+        Assert.Equal(0, result.CandidatesAdded);
+        Assert.Empty(client.CredentialsUsed);
+        Assert.Empty(client.ApplicantFetches);
+    }
 }

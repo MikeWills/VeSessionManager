@@ -49,7 +49,9 @@ public class PiiPurgeServiceTests
         CandidateApplicationStatus status,
         DateTime? licenseGrantDateUtc = null,
         DateTime? sessionScheduledStartUtc = null,
-        DateTime? piiPurgedUtc = null)
+        DateTime? piiPurgedUtc = null,
+        string? name = "Roana Glory",
+        string? firstName = null)
     {
         var vec = new Vec { Name = "ARRL" };
         var user = new User { Name = "System", Email = "system@localhost", Role = UserRole.SystemAdmin };
@@ -70,7 +72,7 @@ public class PiiPurgeServiceTests
 
         var candidate = new Candidate
         {
-            ExamToolsApplicantId = "applicant-1", SessionId = session.Id, Name = "Roana Glory",
+            ExamToolsApplicantId = "applicant-1", SessionId = session.Id, Name = name, FirstName = firstName,
             Email = "roana@example.com", Frn = "1234567890", HasFelonyDisclosure = false,
             DateRegisteredUtc = Now.AddDays(-30), ApplicationStatus = status,
             LicenseGrantDateUtc = licenseGrantDateUtc, CallSign = "N0CALL",
@@ -125,7 +127,7 @@ public class PiiPurgeServiceTests
         var purged = await dbContext.Candidates.SingleAsync(c => c.Id == candidate.Id);
         Assert.Null(purged.Name);
         Assert.Null(purged.Email);
-        Assert.Null(purged.Frn);
+        Assert.Equal("1234567890", purged.Frn); // FRN is public FCC data, retained for traceability (2026-08-03)
         Assert.Null(purged.HasFelonyDisclosure);
         Assert.NotNull(purged.PiiPurgedUtc);
         var purgedPayment = await dbContext.Payments.SingleAsync(p => p.Id == payment.Id);
@@ -221,7 +223,7 @@ public class PiiPurgeServiceTests
         var purged = await dbContext.Candidates.SingleAsync(c => c.Id == candidate.Id);
         Assert.Null(purged.Name);
         Assert.Null(purged.Email);
-        Assert.Null(purged.Frn);
+        Assert.Equal("1234567890", purged.Frn); // FRN is public FCC data, retained for traceability (2026-08-03)
         Assert.Null(purged.HasFelonyDisclosure);
         Assert.NotNull(purged.PiiPurgedUtc);
         // Non-PII fields untouched.
@@ -337,5 +339,135 @@ public class PiiPurgeServiceTests
         Assert.Contains("Trigger A", audit.Details);
         Assert.Contains("pre-existing license", audit.Details);
         Assert.Contains("anchored on session date", audit.Details);
+    }
+
+    // ---- repair pass: rows purged before FirstName joined the purge definition (T02, 2026-08-03) ----
+
+    /// <summary>Seeds the exact shape the repair pass exists for: PiiPurgedUtc stamped and Name
+    /// already null (purged under the old definition), but FirstName still holding a given name.</summary>
+    private static Task<(Candidate Candidate, Payment Payment)> SeedIncompletelyPurgedCandidateAsync(
+        AppDbContext dbContext, DateTime originalPurgedUtc) =>
+        SeedCandidateAsync(dbContext, CandidateApplicationStatus.Granted,
+            sessionScheduledStartUtc: Now.Date.AddDays(-60),
+            piiPurgedUtc: originalPurgedUtc,
+            name: null,
+            firstName: "Roana");
+
+    [Fact]
+    public async Task RunAsync_AlreadyPurgedCandidateStillHoldingFirstName_IsRepaired()
+    {
+        await using var dbContext = CreateContext();
+        await SeedSystemSettingsAsync(dbContext, piiRetentionWindowDays: 30);
+        var (candidate, _) = await SeedIncompletelyPurgedCandidateAsync(dbContext, Now.AddDays(-40));
+
+        var result = await CreateService(dbContext).RunAsync(CancellationToken.None);
+
+        Assert.Equal(1, result.AlreadyPurgedCandidatesRepaired);
+        var repaired = await dbContext.Candidates.SingleAsync(c => c.Id == candidate.Id);
+        Assert.Null(repaired.FirstName);
+        Assert.Null(repaired.Name);
+        Assert.Null(repaired.Email);
+    }
+
+    [Fact]
+    public async Task RunAsync_RepairingAnAlreadyPurgedCandidate_PreservesTheOriginalPurgeDate()
+    {
+        // The purge date records when retention actually expired, not when this repair happened to
+        // run — restamping it would silently reset the record for every affected row.
+        await using var dbContext = CreateContext();
+        await SeedSystemSettingsAsync(dbContext, piiRetentionWindowDays: 30);
+        var originalPurgedUtc = Now.AddDays(-40);
+        var (candidate, _) = await SeedIncompletelyPurgedCandidateAsync(dbContext, originalPurgedUtc);
+
+        await CreateService(dbContext).RunAsync(CancellationToken.None);
+
+        var repaired = await dbContext.Candidates.SingleAsync(c => c.Id == candidate.Id);
+        Assert.Equal(originalPurgedUtc, repaired.PiiPurgedUtc);
+    }
+
+    [Fact]
+    public async Task RunAsync_RepairPass_IsIdempotent_SecondRunRepairsNothing()
+    {
+        await using var dbContext = CreateContext();
+        await SeedSystemSettingsAsync(dbContext, piiRetentionWindowDays: 30);
+        await SeedIncompletelyPurgedCandidateAsync(dbContext, Now.AddDays(-40));
+        var service = CreateService(dbContext);
+
+        var first = await service.RunAsync(CancellationToken.None);
+        var second = await service.RunAsync(CancellationToken.None);
+
+        Assert.Equal(1, first.AlreadyPurgedCandidatesRepaired);
+        Assert.Equal(0, second.AlreadyPurgedCandidatesRepaired);
+    }
+
+    [Fact]
+    public async Task RunAsync_RepairPass_DoesNotCountAgainstTheTriggerCounters()
+    {
+        // A repaired row is already purged — it must not be reported as a fresh Trigger A/B purge.
+        await using var dbContext = CreateContext();
+        await SeedSystemSettingsAsync(dbContext, piiRetentionWindowDays: 30);
+        await SeedIncompletelyPurgedCandidateAsync(dbContext, Now.AddDays(-40));
+
+        var result = await CreateService(dbContext).RunAsync(CancellationToken.None);
+
+        Assert.Equal(0, result.GrantedCandidatesPurged);
+        Assert.Equal(0, result.FailedCandidatesPurged);
+    }
+
+    [Fact]
+    public async Task RunAsync_RepairPass_AlsoClearsAnyLiveSquareLinkLeftOnThePayment()
+    {
+        await using var dbContext = CreateContext();
+        await SeedSystemSettingsAsync(dbContext, piiRetentionWindowDays: 30);
+        var (_, payment) = await SeedIncompletelyPurgedCandidateAsync(dbContext, Now.AddDays(-40));
+
+        await CreateService(dbContext).RunAsync(CancellationToken.None);
+
+        var repairedPayment = await dbContext.Payments.SingleAsync(p => p.Id == payment.Id);
+        Assert.Null(repairedPayment.PaymentLinkUrl);
+        Assert.Null(repairedPayment.SquarePaymentReferenceId);
+    }
+
+    [Fact]
+    public async Task RunAsync_RepairPass_WritesAnAuditLogEntry()
+    {
+        await using var dbContext = CreateContext();
+        await SeedSystemSettingsAsync(dbContext, piiRetentionWindowDays: 30);
+        var (candidate, _) = await SeedIncompletelyPurgedCandidateAsync(dbContext, Now.AddDays(-40));
+
+        await CreateService(dbContext).RunAsync(CancellationToken.None);
+
+        var audit = await dbContext.AuditLogs.SingleAsync(a => a.EntityId == candidate.Id && a.EntityType == nameof(Candidate));
+        Assert.Equal("CandidatePiiPurged", audit.Action);
+        Assert.Null(audit.UserId);
+        Assert.Contains("re-cleared", audit.Details);
+    }
+
+    [Fact]
+    public async Task RunAsync_FullyPurgedCandidate_IsNotRepairedAgain()
+    {
+        await using var dbContext = CreateContext();
+        await SeedSystemSettingsAsync(dbContext, piiRetentionWindowDays: 30);
+        await SeedCandidateAsync(dbContext, CandidateApplicationStatus.Granted,
+            sessionScheduledStartUtc: Now.Date.AddDays(-60), piiPurgedUtc: Now.AddDays(-40),
+            name: null, firstName: null);
+
+        var result = await CreateService(dbContext).RunAsync(CancellationToken.None);
+
+        Assert.Equal(0, result.AlreadyPurgedCandidatesRepaired);
+    }
+
+    [Fact]
+    public async Task RunAsync_NotConfigured_DoesNotRunTheRepairPassEither()
+    {
+        // The repair pass sits behind the same early return as the purge triggers.
+        await using var dbContext = CreateContext();
+        await SeedSystemSettingsAsync(dbContext, piiRetentionWindowDays: null);
+        var (candidate, _) = await SeedIncompletelyPurgedCandidateAsync(dbContext, Now.AddDays(-40));
+
+        var result = await CreateService(dbContext).RunAsync(CancellationToken.None);
+
+        Assert.Equal(0, result.AlreadyPurgedCandidatesRepaired);
+        Assert.Equal("Roana", (await dbContext.Candidates.SingleAsync(c => c.Id == candidate.Id)).FirstName);
     }
 }

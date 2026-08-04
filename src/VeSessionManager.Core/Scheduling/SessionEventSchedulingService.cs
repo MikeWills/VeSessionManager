@@ -50,7 +50,9 @@ public class SessionEventSchedulingService(
     TimeProvider timeProvider,
     ILogger<SessionEventSchedulingService> logger)
 {
-    public async Task<SchedulingResult> RunAsync(Team team, CancellationToken cancellationToken)
+    /// <param name="onlySessionId">Restrict the run to one session (the Detail page's
+    /// session-scoped refresh); null (every scheduled/team-wide run) scans the whole team.</param>
+    public async Task<SchedulingResult> RunAsync(Team team, CancellationToken cancellationToken, int? onlySessionId = null)
     {
         var now = timeProvider.GetUtcNow().UtcDateTime;
         var result = new SchedulingResult();
@@ -67,7 +69,8 @@ public class SessionEventSchedulingService(
             .Where(s => s.TeamId == team.Id
                         && s.Status == SessionStatus.Active
                         && s.ScheduledStartUtc >= recentSessionCutoff
-                        && s.ScheduledStartUtc != s.ZoomDiscordSyncedStartUtc)
+                        && s.ScheduledStartUtc != s.ZoomDiscordSyncedStartUtc
+                        && (onlySessionId == null || s.Id == onlySessionId))
             .ToListAsync(cancellationToken);
 
         // A session ingested via the completed-session backfill window (see SessionIngestionService)
@@ -114,7 +117,8 @@ public class SessionEventSchedulingService(
         }
 
         var sessionsNeedingCleanup = await dbContext.Sessions
-            .Where(s => s.TeamId == team.Id && s.Status == SessionStatus.Cancelled && (s.ZoomMeetingId != null || s.DiscordEventId != null))
+            .Where(s => s.TeamId == team.Id && s.Status == SessionStatus.Cancelled && (s.ZoomMeetingId != null || s.DiscordEventId != null)
+                        && (onlySessionId == null || s.Id == onlySessionId))
             .ToListAsync(cancellationToken);
 
         LogUnconfiguredCleanups(team, sessionsNeedingCleanup);

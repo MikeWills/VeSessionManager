@@ -36,7 +36,9 @@ public class CandidateNotificationService(
     private const string YouthProgramInstructionsKey = "ArrlYouthProgramInstructions";
     private const string FelonyDisclosureInstructionsKey = "FelonyDisclosureInstructions";
 
-    public async Task<EmailNotificationResult> SendRegistrationConfirmationsAsync(Team team, CancellationToken cancellationToken)
+    /// <param name="onlySessionId">Restrict the run to one session's candidates (the Detail page's
+    /// session-scoped refresh); null (every scheduled/team-wide run) scans the whole team.</param>
+    public async Task<EmailNotificationResult> SendRegistrationConfirmationsAsync(Team team, CancellationToken cancellationToken, int? onlySessionId = null)
     {
         var result = new EmailNotificationResult();
         var now = timeProvider.GetUtcNow().UtcDateTime;
@@ -63,7 +65,8 @@ public class CandidateNotificationService(
                         // ever grow, and the lines drowned out real ones (~1991 for one team). A
                         // session starting more than a day ago has certainly ended (durations are
                         // hours), so this never hides one the precise HasEnded check below needs.
-                        && c.Session.ScheduledStartUtc >= recentSessionCutoff)
+                        && c.Session.ScheduledStartUtc >= recentSessionCutoff
+                        && (onlySessionId == null || c.SessionId == onlySessionId))
             .ToListAsync(cancellationToken);
 
         // A candidate on a session ingested via the completed-session backfill window (see

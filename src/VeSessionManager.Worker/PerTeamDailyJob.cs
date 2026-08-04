@@ -18,6 +18,7 @@ namespace VeSessionManager.Worker;
 public abstract class PerTeamDailyJob(
     IServiceScopeFactory scopeFactory,
     IConfiguration configuration,
+    ILogger logger,
     string jobName,
     string intervalConfigKey,
     int defaultIntervalHours) : BackgroundService
@@ -29,19 +30,22 @@ public abstract class PerTeamDailyJob(
 
         do
         {
-            using var scope = scopeFactory.CreateScope();
-            var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-            var jobRunHistoryLogger = scope.ServiceProvider.GetRequiredService<JobRunHistoryLogger>();
-
-            var teams = await dbContext.Teams.ToListAsync(stoppingToken);
-            foreach (var team in teams)
+            await JobTick.GuardedAsync(logger, jobName, async () =>
             {
-                await jobRunHistoryLogger.RunAsync(
-                    jobName,
-                    ct => RunForTeamAsync(scope.ServiceProvider, team, ct),
-                    team.Id,
-                    stoppingToken);
-            }
+                using var scope = scopeFactory.CreateScope();
+                var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                var jobRunHistoryLogger = scope.ServiceProvider.GetRequiredService<JobRunHistoryLogger>();
+
+                var teams = await dbContext.Teams.ToListAsync(stoppingToken);
+                foreach (var team in teams)
+                {
+                    await jobRunHistoryLogger.RunAsync(
+                        jobName,
+                        ct => RunForTeamAsync(scope.ServiceProvider, team, ct),
+                        team.Id,
+                        stoppingToken);
+                }
+            });
         }
         while (await timer.WaitForNextTickAsync(stoppingToken));
     }

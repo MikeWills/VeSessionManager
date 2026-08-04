@@ -12,8 +12,8 @@ namespace VeSessionManager.Worker;
 /// has its own separate Square merchant account and its own purge threshold (see
 /// docs/payment-link-purge.md).
 /// </summary>
-public class SquareLinkPurgeJob(IServiceScopeFactory scopeFactory, IConfiguration configuration)
-    : PerTeamDailyJob(scopeFactory, configuration, "SquareLinkPurge", "Jobs:SquareLinkPurgeIntervalHours", 24)
+public class SquareLinkPurgeJob(IServiceScopeFactory scopeFactory, IConfiguration configuration, ILogger<SquareLinkPurgeJob> logger)
+    : PerTeamDailyJob(scopeFactory, configuration, logger, "SquareLinkPurge", "Jobs:SquareLinkPurgeIntervalHours", 24)
 {
     protected override Task RunForTeamAsync(IServiceProvider scopedServices, Team team, CancellationToken cancellationToken) =>
         scopedServices.GetRequiredService<SquarePaymentLinkPurgeService>().RunAsync(team, cancellationToken);

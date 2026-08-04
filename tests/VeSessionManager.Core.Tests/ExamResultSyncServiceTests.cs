@@ -470,4 +470,50 @@ public class ExamResultSyncServiceTests
 
         Assert.Empty(client.DetailFetches);
     }
+
+    // ---- SyncSessionAsync (session-scoped Detail-page refresh, 2026-08-03) ----
+
+    /// <summary>
+    /// SyncSessionAsync is the on-demand escape hatch ResultSyncWindow's doc comment promises: a
+    /// session graded later than the window still gets its results applied when refreshed from the
+    /// Detail page — the exact session RunAsync's window bound would skip — and only the named
+    /// session is touched.
+    /// </summary>
+    [Fact]
+    public async Task SyncSessionAsync_SessionOlderThanResultSyncWindow_StillAppliesResults_OnlyForThatSession()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        var oldSession = await SeedSessionAsync(dbContext, team, "old-session", scheduledStartUtc: Now.AddDays(-60));
+        var recentSession = await SeedSessionAsync(dbContext, team, "recent-session", scheduledStartUtc: Now.AddDays(-1));
+        var oldCandidate = await SeedCandidateAsync(dbContext, oldSession, "applicant-old");
+        var otherCandidate = await SeedCandidateAsync(dbContext, recentSession, "applicant-other");
+        var client = new FakeExamToolsClient();
+        client.SetDetail(oldCandidate.ExamToolsApplicantId!, new ExamToolsExamResult { Element = 3, Graded = true, Passed = false });
+        client.SetDetail(otherCandidate.ExamToolsApplicantId!, new ExamToolsExamResult { Element = 2, Graded = true, Passed = true });
+
+        var result = await CreateService(dbContext, client).SyncSessionAsync(team, oldSession.Id, CancellationToken.None);
+
+        Assert.Equal(1, result.CandidatesMarkedFailed);
+        Assert.Equal("applicant-old", Assert.Single(client.DetailFetches)); // the other session was never polled
+        Assert.Equal(CandidateApplicationStatus.Failed, (await dbContext.Candidates.FindAsync(oldCandidate.Id))!.ApplicationStatus);
+        var untouched = (await dbContext.Candidates.FindAsync(otherCandidate.Id))!;
+        Assert.False(untouched.Tested);
+        Assert.Equal(CandidateApplicationStatus.Unmatched, untouched.ApplicationStatus);
+    }
+
+    [Fact]
+    public async Task SyncSessionAsync_FutureSession_IsSkipped_NeverCallsClient()
+    {
+        // Still requires the session to have started — a future session can't have results yet.
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        var session = await SeedSessionAsync(dbContext, team, scheduledStartUtc: Now.AddDays(1));
+        await SeedCandidateAsync(dbContext, session);
+        var client = new FakeExamToolsClient();
+
+        await CreateService(dbContext, client).SyncSessionAsync(team, session.Id, CancellationToken.None);
+
+        Assert.Empty(client.DetailFetches);
+    }
 }

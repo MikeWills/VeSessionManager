@@ -360,6 +360,164 @@ public class HistoricalImportServiceTests
         Assert.Single(dbContext.Sessions);
     }
 
+    // ---- Reclaiming a request abandoned by a Worker restart (T11, 2026-08-03) ----
+
+    /// <summary>Seeds a request already in Running — the state a Worker restart mid-import leaves behind.</summary>
+    private static async Task<HistoricalImportRequest> SeedRunningRequestAsync(
+        AppDbContext dbContext, Team team, DateOnly startDate, DateOnly endDate, DateTime startedUtc, int chunksCompleted = 0)
+    {
+        var request = new HistoricalImportRequest
+        {
+            TeamId = team.Id,
+            StartDate = startDate,
+            EndDate = endDate,
+            Status = HistoricalImportStatus.Running,
+            RequestedByUserId = 1,
+            RequestedUtc = startedUtc,
+            StartedUtc = startedUtc,
+            ChunksTotal = HistoricalImportService.CountChunks(startDate, endDate),
+            ChunksCompleted = chunksCompleted
+        };
+        dbContext.HistoricalImportRequests.Add(request);
+        await dbContext.SaveChangesAsync();
+        return request;
+    }
+
+    [Fact]
+    public async Task RunNextPending_RequestLeftRunningPastTheStaleThreshold_IsReclaimedAndCompleted()
+    {
+        // Without this, a Worker restart mid-import left the row Running forever: only Pending rows
+        // were selected, and QueueAsync's one-at-a-time guard counts Running, so the team could
+        // never queue another import without someone hand-editing the database.
+        await using var dbContext = CreateContext();
+        var team = await SeedAsync(dbContext);
+        var abandonedAt = Now - HistoricalImportService.StaleRunningThreshold - TimeSpan.FromMinutes(1);
+        var request = await SeedRunningRequestAsync(dbContext, team, new DateOnly(2026, 1, 1), new DateOnly(2026, 1, 31), abandonedAt);
+
+        var ranSomething = await CreateService(dbContext, new FakeExamToolsClient()).RunNextPendingAsync(CancellationToken.None);
+
+        Assert.True(ranSomething);
+        var reclaimed = await dbContext.HistoricalImportRequests.SingleAsync(r => r.Id == request.Id);
+        Assert.Equal(HistoricalImportStatus.Completed, reclaimed.Status);
+    }
+
+    [Fact]
+    public async Task HasPending_RequestLeftRunningPastTheStaleThreshold_IsVisibleToTheQueuePeek()
+    {
+        // Must use the same eligibility rule as RunNextPendingAsync, or the Worker's cheap peek would
+        // skip the tick and the reclaimable request would never be looked at.
+        await using var dbContext = CreateContext();
+        var team = await SeedAsync(dbContext);
+        await SeedRunningRequestAsync(dbContext, team, new DateOnly(2026, 1, 1), new DateOnly(2026, 1, 31),
+            Now - HistoricalImportService.StaleRunningThreshold - TimeSpan.FromMinutes(1));
+
+        Assert.True(await CreateService(dbContext, new FakeExamToolsClient()).HasPendingAsync(CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task RunNextPending_RequestRunningInsideTheStaleThreshold_IsLeftAlone()
+    {
+        // A genuinely in-progress import must not be picked up a second time.
+        await using var dbContext = CreateContext();
+        var team = await SeedAsync(dbContext);
+        var client = new FakeExamToolsClient();
+        await SeedRunningRequestAsync(dbContext, team, new DateOnly(2026, 1, 1), new DateOnly(2026, 1, 31),
+            Now - HistoricalImportService.StaleRunningThreshold + TimeSpan.FromMinutes(1));
+
+        var ranSomething = await CreateService(dbContext, client).RunNextPendingAsync(CancellationToken.None);
+
+        Assert.False(ranSomething);
+        Assert.Empty(client.ClosedFeedCalls);
+        Assert.Equal(HistoricalImportStatus.Running, dbContext.HistoricalImportRequests.Single().Status);
+    }
+
+    [Fact]
+    public async Task HasPending_RequestRunningInsideTheStaleThreshold_IsNotVisibleToTheQueuePeek()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedAsync(dbContext);
+        await SeedRunningRequestAsync(dbContext, team, new DateOnly(2026, 1, 1), new DateOnly(2026, 1, 31),
+            Now - HistoricalImportService.StaleRunningThreshold + TimeSpan.FromMinutes(1));
+
+        Assert.False(await CreateService(dbContext, new FakeExamToolsClient()).HasPendingAsync(CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task RunNextPending_ReclaimedRequest_ResumesAtTheChunkAfterTheLastCompletedOne()
+    {
+        // Skip(ChunksCompleted): the counter is incremented only after a chunk's import returns, so
+        // the first chunk not skipped is exactly the interrupted one. Re-walking from the start
+        // would re-fetch every earlier month from ExamTools for nothing.
+        await using var dbContext = CreateContext();
+        var team = await SeedAsync(dbContext);
+        var client = new FakeExamToolsClient();
+        await SeedRunningRequestAsync(dbContext, team, new DateOnly(2026, 1, 1), new DateOnly(2026, 3, 31),
+            Now - HistoricalImportService.StaleRunningThreshold - TimeSpan.FromMinutes(1), chunksCompleted: 1);
+
+        await CreateService(dbContext, client).RunNextPendingAsync(CancellationToken.None);
+
+        Assert.Equal(
+            [(new DateOnly(2026, 2, 1), new DateOnly(2026, 2, 28)), (new DateOnly(2026, 3, 1), new DateOnly(2026, 3, 31))],
+            client.ClosedFeedCalls);
+    }
+
+    [Fact]
+    public async Task RunNextPending_ReclaimedRequest_ChunkCounterEndsAtTheTotal_NotPastIt()
+    {
+        // Re-walking the whole range would climb past ChunksTotal and render "4/3" on the admin page.
+        await using var dbContext = CreateContext();
+        var team = await SeedAsync(dbContext);
+        await SeedRunningRequestAsync(dbContext, team, new DateOnly(2026, 1, 1), new DateOnly(2026, 3, 31),
+            Now - HistoricalImportService.StaleRunningThreshold - TimeSpan.FromMinutes(1), chunksCompleted: 1);
+
+        await CreateService(dbContext, new FakeExamToolsClient()).RunNextPendingAsync(CancellationToken.None);
+
+        var request = dbContext.HistoricalImportRequests.Single();
+        Assert.Equal(3, request.ChunksTotal);
+        Assert.Equal(3, request.ChunksCompleted);
+    }
+
+    [Fact]
+    public async Task RunNextPending_RunningRequestWithNoStartedUtc_IsNeverReclaimed()
+    {
+        // Null StartedUtc gives no evidence of age, so the "is it stale?" test cannot be made — the
+        // eligibility predicate requires StartedUtc != null on purpose.
+        await using var dbContext = CreateContext();
+        var team = await SeedAsync(dbContext);
+        var request = await SeedRunningRequestAsync(dbContext, team, new DateOnly(2026, 1, 1), new DateOnly(2026, 1, 31), Now.AddDays(-10));
+        request.StartedUtc = null;
+        await dbContext.SaveChangesAsync();
+        var service = CreateService(dbContext, new FakeExamToolsClient());
+
+        Assert.False(await service.RunNextPendingAsync(CancellationToken.None));
+        Assert.False(await service.HasPendingAsync(CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task RunNextPending_APendingRequestIsStillPreferredByRequestedDate_OverAnOlderReclaimable()
+    {
+        // Reclaiming widens the candidate set but must not change the ordering rule.
+        await using var dbContext = CreateContext();
+        var team = await SeedAsync(dbContext);
+        await SeedRunningRequestAsync(dbContext, team, new DateOnly(2026, 1, 1), new DateOnly(2026, 1, 31), Now.AddDays(-1));
+        dbContext.HistoricalImportRequests.Add(new HistoricalImportRequest
+        {
+            TeamId = team.Id,
+            StartDate = new DateOnly(2026, 5, 1),
+            EndDate = new DateOnly(2026, 5, 31),
+            Status = HistoricalImportStatus.Pending,
+            RequestedByUserId = 1,
+            RequestedUtc = Now.AddDays(-2), // older than the abandoned one
+            ChunksTotal = 1
+        });
+        await dbContext.SaveChangesAsync();
+
+        var client = new FakeExamToolsClient();
+        await CreateService(dbContext, client).RunNextPendingAsync(CancellationToken.None);
+
+        Assert.Equal([(new DateOnly(2026, 5, 1), new DateOnly(2026, 5, 31))], client.ClosedFeedCalls);
+    }
+
     private sealed class ThrowOnSecondChunkClient : FakeExamToolsClient
     {
         private int calls;

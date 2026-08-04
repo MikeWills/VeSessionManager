@@ -408,6 +408,100 @@ public class SessionIngestionService(
     }
 
     /// <summary>
+    /// Session-scoped variant of RunAsync's candidate sync, for the session Detail page's "Refresh
+    /// candidates" button (via ManualCandidateRefreshService.RunForSessionAsync) — re-fetches ONE
+    /// session's applicant export instead of running the whole team feed's worth of candidate syncs.
+    ///
+    /// Deliberately does NOT create sessions or run cancellation detection: both require diffing the
+    /// complete team feed (a session id disappearing from the feed IS the cancellation signal —
+    /// issue #68), which is exactly the team-wide work this exists to avoid. The team feed is still
+    /// fetched, read-only, for this session's closed-stamp/reschedule/ExtId handling and for the
+    /// applicantCount that gates withdrawal detection; when the session is in neither feed a null
+    /// count is passed, which makes SyncCandidates skip withdrawal detection rather than misread
+    /// absence as "everyone withdrew".
+    ///
+    /// **Both feeds, not just the pend one.** GetTeamSessionsAsync never returns a closed ("done")
+    /// session — that is the whole reason RunAsync merges GetTeamClosedSessionsAsync — so reading
+    /// only the pend feed made the close-stamp branch below unreachable and left this button unable
+    /// to ever close a session (fixed 2026-08-03, reported live the same day). The closed feed is
+    /// queried only when the session is absent from the pend feed, so the common "still open" case
+    /// still costs one call. Its date range is anchored on this session's own scheduled date rather
+    /// than RunAsync's rolling CompletedSessionBackfillWindow: the range is per-session here, so it
+    /// can be exact, and that also lets a Session Manager pull the close stamp for a session far
+    /// older than the rolling window.
+    /// </summary>
+    public async Task<IngestionResult> RefreshSessionCandidatesAsync(Team team, int sessionId, CancellationToken cancellationToken)
+    {
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+        var result = new IngestionResult();
+
+        if (!team.IsExamToolsConfigured)
+        {
+            logger.LogInformation("Team {TeamId} ({TeamName}) has no ExamTools credentials configured yet — skipping session refresh", team.Id, team.Name);
+            return result;
+        }
+
+        // Payments eager-loaded for the same reason as RunAsync: withdrawal detection clears a
+        // candidate's live Square checkout link via CandidatePiiFields.Clear.
+        var local = await dbContext.Sessions
+            .Include(s => s.Candidates).ThenInclude(c => c.Payments)
+            .FirstOrDefaultAsync(s => s.Id == sessionId && s.TeamId == team.Id, cancellationToken);
+        if (local is null)
+        {
+            return result;
+        }
+
+        var credentials = ExamToolsCredentials.For(team, examToolsOptions.Value.BaseUrl);
+
+        // Same last-chance rule as RunAsync: sync while open, including the refresh that discovers
+        // the close — but a session already stamped closed before this refresh began has nothing
+        // left to give (candidate-level updates for a finished session arrive through
+        // ExamResultSyncService and the ULS watcher, not this feed).
+        var closedBeforeThisRefresh = local.ExamToolsClosedUtc is not null;
+
+        var remote = (await examToolsClient.GetTeamSessionsAsync(credentials, cancellationToken))
+            .FirstOrDefault(r => r.Id == local.ExamToolsSessionId);
+
+        if (remote is null)
+        {
+            // Absent from the pend feed means either "closed" or "no longer carried at all". The
+            // closed feed is the only place a done session exists, and it is a date-range query —
+            // bounded to this session's own date ±1 day, since ExamTools' `date` and our stored UTC
+            // start can land either side of a day boundary.
+            var sessionDate = DateOnly.FromDateTime(local.ScheduledStartUtc);
+            remote = (await examToolsClient.GetTeamClosedSessionsAsync(
+                    credentials, sessionDate.AddDays(-1), sessionDate.AddDays(1), cancellationToken))
+                .FirstOrDefault(r => r.Id == local.ExamToolsSessionId);
+        }
+
+        if (remote is not null)
+        {
+            if (remote.State == DoneState && local.ExamToolsClosedUtc is null)
+            {
+                local.ExamToolsClosedUtc = now;
+                result.SessionsClosedByExamTools++;
+                logger.LogInformation("Session {ExamToolsSessionId} reported closed by ExamTools — no further session-level polling", local.ExamToolsSessionId);
+            }
+
+            ApplyRescheduleRules(local, remote, now, result);
+            local.ExtId ??= remote.SessionDef?.ExtId;
+        }
+
+        if (local.Status == SessionStatus.Active && local.TestingCompletedUtc is null && !closedBeforeThisRefresh)
+        {
+            // No per-session try/catch here, unlike RunAsync's loop: there is only this one session,
+            // and the caller (JobRunHistoryLogger) records the failure — nothing else to protect.
+            var applicants = await examToolsClient.GetSessionApplicantsAsync(credentials, local.ExamToolsSessionId, cancellationToken);
+            SyncCandidates(local, applicants, remote?.ApplicantCount, now, result);
+        }
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+        logger.LogInformation("Session-scoped refresh finished for session {SessionId} ({ExamToolsSessionId}), team {TeamId}: {Result}",
+            local.Id, local.ExamToolsSessionId, team.Id, result);
+        return result;
+    }
+
+    /// <summary>
     /// A state this app doesn't recognise means ExamTools has a lifecycle step we don't model, and
     /// every session in it is silently invisible. That is exactly how "go" (In progress) went
     /// unnoticed until 2026-07-31 — it was dropped by a bare `else` with no log line at all. One

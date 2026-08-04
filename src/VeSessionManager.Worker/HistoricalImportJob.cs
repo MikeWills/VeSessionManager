@@ -22,7 +22,8 @@ namespace VeSessionManager.Worker;
 /// </summary>
 public class HistoricalImportJob(
     IServiceScopeFactory scopeFactory,
-    IConfiguration configuration) : BackgroundService
+    IConfiguration configuration,
+    ILogger<HistoricalImportJob> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -31,26 +32,31 @@ public class HistoricalImportJob(
 
         do
         {
-            using var scope = scopeFactory.CreateScope();
-            var importService = scope.ServiceProvider.GetRequiredService<HistoricalImportService>();
-            var jobRunHistoryLogger = scope.ServiceProvider.GetRequiredService<JobRunHistoryLogger>();
-
-            // Peek first, and only write a JobRunHistory row when there is genuinely work to do.
-            // Logging every empty queue check would bury the ops dashboard under a row a minute —
-            // the same "silence means nothing happened" property every other job here relies on.
-            var hasPending = await importService.HasPendingAsync(stoppingToken);
-            if (!hasPending)
+            await JobTick.GuardedAsync(logger, "HistoricalImport", async () =>
             {
-                continue;
-            }
+                using var scope = scopeFactory.CreateScope();
+                var importService = scope.ServiceProvider.GetRequiredService<HistoricalImportService>();
+                var jobRunHistoryLogger = scope.ServiceProvider.GetRequiredService<JobRunHistoryLogger>();
 
-            await jobRunHistoryLogger.RunAsync(
-                "HistoricalImport",
-                ct => importService.RunNextPendingAsync(ct),
-                // teamId null: the request row carries its own team, and this job step is the queue
-                // drain rather than work on one team's behalf.
-                null,
-                stoppingToken);
+                // Peek first, and only write a JobRunHistory row when there is genuinely work to do.
+                // Logging every empty queue check would bury the ops dashboard under a row a minute —
+                // the same "silence means nothing happened" property every other job here relies on.
+                var hasPending = await importService.HasPendingAsync(stoppingToken);
+                if (!hasPending)
+                {
+                    // `return` (not `continue`) — this is the guarded tick body, so returning ends
+                    // this tick and the do-while goes on to wait for the next one.
+                    return;
+                }
+
+                await jobRunHistoryLogger.RunAsync(
+                    "HistoricalImport",
+                    ct => importService.RunNextPendingAsync(ct),
+                    // teamId null: the request row carries its own team, and this job step is the queue
+                    // drain rather than work on one team's behalf.
+                    null,
+                    stoppingToken);
+            });
         }
         while (await timer.WaitForNextTickAsync(stoppingToken));
     }
