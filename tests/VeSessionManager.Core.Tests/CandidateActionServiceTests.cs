@@ -155,7 +155,7 @@ public class CandidateActionServiceTests
         Assert.Equal(CandidateApplicationStatus.NotTested, updated.ApplicationStatus);
         Assert.Null(updated.Name);
         Assert.Null(updated.Email);
-        Assert.Null(updated.Frn);
+        Assert.Equal("0012345678", updated.Frn); // FRN is public FCC data, retained for traceability (2026-08-03)
         Assert.Null(updated.HasFelonyDisclosure);
         Assert.Equal(Now, updated.PiiPurgedUtc); // immediate, not the delayed Phase 10 window
 

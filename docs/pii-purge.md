@@ -41,11 +41,39 @@ needed, same "excluded as a side effect of the date-null filter" reasoning `docs
 already documents for its own Unmatched exclusion.
 
 Purge action (either trigger, same field set `CandidateActionService`'s delete action already
-nulls): **null** `Candidate.Name`/`Email`/`Frn`/`HasFelonyDisclosure` and
+nulls): **null** `Candidate.Name`/`FirstName`/`Email`/`HasFelonyDisclosure` and
 `Payment.PaymentLinkUrl`/`SquarePaymentReferenceId` on every associated payment, set
-`Candidate.PiiPurgedUtc` to now. **Preserved:** `CallSign`, `LicenseGrantDateUtc`,
+`Candidate.PiiPurgedUtc` to now. **Preserved:** `Frn`, `CallSign`, `LicenseGrantDateUtc`,
 `ApplicationStatus`, `SessionId`, and every `Payment.Amount`/`Status`/`Reason` — needed for
-historical session/VE/financial stats. Unlike the Phase 9 delete action, this purge never touches
+historical session/VE/financial stats. `Frn` was purged until 2026-08-03, when it was reclassified:
+an FRN is public FCC data, not PII, and retaining it keeps a purged record traceable if a question
+about the candidate's application ever comes up (same reasoning as `CallSign` and the ULS keys).
+The Privacy page's retention wording was updated in the same change.
+
+`FirstName` was **missing from the purge entirely** until 2026-08-03 (audit finding T02). It was
+added in Phase 4 for the `{{CandidateFirstName}}` email placeholder and never added to
+`CandidatePiiFields.Clear`, so every purged candidate kept their given name indefinitely — rendered
+on Candidate Detail, and flatly contrary to the Privacy page. Two things came out of that fix:
+
+- **A reflection guard test** (`CandidatePiiFieldsTests`) now enumerates `Candidate`'s properties and
+  fails if anything outside an explicit, commented retained-field allow-list survives `Clear`. Adding
+  a field to the entity now forces a deliberate decision instead of a silent omission. This is the
+  actual fix; the one-line null was the symptom.
+- **A self-healing repair pass** (`PiiPurgeService.RepairIncompletelyPurgedCandidatesAsync`).
+  Already-purged rows carry `PiiPurgedUtc`, so both triggers skip them forever — the one-line fix
+  alone would have helped only future purges. The repair re-runs the whole shared `Clear` on any row
+  where `PiiPurgedUtc != null && FirstName != null`, **preserving the original `PiiPurgedUtc`** (that
+  date records when retention actually expired, not when the repair ran) and reporting a count in
+  `PiiPurgeResult.AlreadyPurgedCandidatesRepaired` — non-zero once, zero forever after. Scan-based
+  and idempotent rather than a one-off migration script, the same idiom as the `ExtId` and
+  license-class backfills, so it needs no deployment step.
+
+  **Know the limit of that repair:** the *action* is a wholesale `Clear` (idempotent, so it costs
+  nothing), but the *detection* is the narrow `FirstName != null`, which is the signature of this
+  one historical gap. A field added to `Clear` in future will **not** be repaired on already-purged
+  rows, because by then `FirstName` is null everywhere and no row matches. Adding a field to `Clear`
+  means widening this predicate too — otherwise the same class of stale row comes back silently.
+  The guard test catches the missing `Clear` line; nothing but this note catches the missing repair. Unlike the Phase 9 delete action, this purge never touches
 `ApplicationStatus`/`ResultMarkedBy*` — it's a privacy-retention action, not a candidate-status
 change.
 
