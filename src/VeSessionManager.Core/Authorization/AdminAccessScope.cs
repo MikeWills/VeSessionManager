@@ -32,10 +32,24 @@ public class AdminAccessScope(SessionAccessScope sessionAccessScope)
     /// vs. Forbid()). Previously this exact resolution was hand-written independently at every admin
     /// config page's OnGetAsync/AuthorizeAsync, including twice within TeamSettingsModel itself.
     /// </summary>
-    public int? TryResolveManageableTeamId(User actingUser, int? requestedTeamId)
+    /// <param name="availableTeamIds">
+    /// The teams the page is offering in its picker, when the caller has them to hand. Supplied only
+    /// so that a SystemAdmin on a deployment with exactly ONE team doesn't have to "choose" from a
+    /// list of one before any admin page will show them anything (2026-08-04) — a TeamAdmin already
+    /// got that for free via the effectiveTeamIds[0] fallback below, so this closes an asymmetry
+    /// that punished the higher-privileged role. Deliberately only auto-selects at a count of one:
+    /// with two or more, making the choice explicit is what stops an admin editing the wrong team's
+    /// credentials by inheriting a stale selection. Omit it to keep the previous behaviour exactly.
+    /// </param>
+    public int? TryResolveManageableTeamId(User actingUser, int? requestedTeamId, IReadOnlyList<int>? availableTeamIds = null)
     {
         if (actingUser.Role == UserRole.SystemAdmin)
         {
+            if (requestedTeamId is null && availableTeamIds is { Count: 1 })
+            {
+                return availableTeamIds[0];
+            }
+
             return requestedTeamId;
         }
 

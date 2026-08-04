@@ -74,7 +74,9 @@ public class TeamMaintenanceModel(
 
         await LoadTeamPickerAsync(user);
 
-        var effectiveTeamId = adminAccessScope.TryResolveManageableTeamId(user, TeamId);
+        var effectiveTeamId = adminAccessScope.TryResolveManageableTeamId(user, TeamId, AvailableTeams.Select(t => t.Id).ToList());
+        // See TeamSettings: keep the picker's rendered state in step with the auto-selection.
+        TeamId = effectiveTeamId;
         if (effectiveTeamId is null)
         {
             // SystemAdmin hasn't picked yet, or a TeamAdmin has no team — benign empty state, not a
@@ -180,7 +182,7 @@ public class TeamMaintenanceModel(
 
         await LoadTeamPickerAsync(user);
 
-        var effectiveTeamId = adminAccessScope.TryResolveManageableTeamId(user, TeamId);
+        var effectiveTeamId = adminAccessScope.TryResolveManageableTeamId(user, TeamId, AvailableTeams.Select(t => t.Id).ToList());
         if (effectiveTeamId is null)
         {
             return null;

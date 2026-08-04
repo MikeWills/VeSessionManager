@@ -51,7 +51,7 @@ public class UsersModel(AppDbContext dbContext, UserManager<User> userManager, A
         AvailableTeams = await adminAccessScope.ScopeTeams(dbContext.Teams, user)
             .OrderBy(t => t.Name).Select(t => new ValueTuple<int, string>(t.Id, t.Name)).ToListAsync();
 
-        var effectiveTeamId = adminAccessScope.TryResolveManageableTeamId(user, TeamId);
+        var effectiveTeamId = adminAccessScope.TryResolveManageableTeamId(user, TeamId, AvailableTeams.Select(t => t.Id).ToList());
         TeamId = effectiveTeamId;
         TeamSummaryLabel = TeamId is not null
             ? AvailableTeams.FirstOrDefault(t => t.Id == TeamId).Name ?? "All teams"

@@ -43,7 +43,11 @@ public class TeamSettingsModel(AppDbContext dbContext, UserManager<User> userMan
         AvailableTeams = await adminAccessScope.ScopeTeams(dbContext.Teams, user)
             .OrderBy(t => t.Name).Select(t => new ValueTuple<int, string>(t.Id, t.Name)).ToListAsync();
 
-        var effectiveTeamId = adminAccessScope.TryResolveManageableTeamId(user, TeamId);
+        var effectiveTeamId = adminAccessScope.TryResolveManageableTeamId(user, TeamId, AvailableTeams.Select(t => t.Id).ToList());
+        // Reflect an auto-selected single team back into the bound property, so the picker renders it
+        // as chosen rather than showing an unchecked radio beside a page that is already displaying
+        // that team's data.
+        TeamId = effectiveTeamId;
         TeamSummaryLabel = effectiveTeamId is not null
             ? AvailableTeams.FirstOrDefault(t => t.Id == effectiveTeamId).Name ?? "Select a team…"
             : "Select a team…";
@@ -165,7 +169,7 @@ public class TeamSettingsModel(AppDbContext dbContext, UserManager<User> userMan
         AvailableTeams = await adminAccessScope.ScopeTeams(dbContext.Teams, user)
             .OrderBy(t => t.Name).Select(t => new ValueTuple<int, string>(t.Id, t.Name)).ToListAsync();
 
-        var effectiveTeamId = adminAccessScope.TryResolveManageableTeamId(user, TeamId);
+        var effectiveTeamId = adminAccessScope.TryResolveManageableTeamId(user, TeamId, AvailableTeams.Select(t => t.Id).ToList());
         if (effectiveTeamId is null)
         {
             return null;
