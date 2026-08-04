@@ -2,6 +2,8 @@ using System.ComponentModel.DataAnnotations;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
+using Microsoft.Extensions.Options;
+using VeSessionManager.Core;
 using VeSessionManager.Core.Authorization;
 
 namespace VeSessionManager.Web.Pages.Account;
@@ -14,7 +16,7 @@ namespace VeSessionManager.Web.Pages.Account;
 /// [AllowAnonymous] is load-bearing: this page is reached precisely when the user cannot sign in.
 /// </summary>
 [AllowAnonymous]
-public class ForgotPasswordModel(PasswordResetService passwordResetService) : PageModel
+public class ForgotPasswordModel(PasswordResetService passwordResetService, IOptions<AppOptions> appOptions) : PageModel
 {
     [BindProperty]
     public InputModel Input { get; set; } = new();
@@ -38,12 +40,21 @@ public class ForgotPasswordModel(PasswordResetService passwordResetService) : Pa
         }
 
         // The reset link must be absolute (it is opened from an email client) and must carry the
-        // token in the query string. Page(...) with a protocol builds it against the request's own
-        // host, so a deployment behind a different hostname needs no extra configuration.
+        // token in the query string.
+        //
+        // Built against the configured App:PublicBaseUrl, deliberately NOT the request's own host
+        // (2026-08-03). The previous version passed protocol: Request.Scheme, which makes
+        // Url.Page emit the attacker-supplied Host header: request a reset for a known SystemAdmin
+        // with a forged Host and the victim receives a genuine, correctly-signed email whose link
+        // hands the attacker a valid single-use reset token. Reading only from configuration makes
+        // that impossible regardless of what any proxy in front of this app forwards. This is also
+        // the same source the Worker already uses for the youth-confirmation link, so every
+        // absolute link this deployment emits now agrees on one host.
+        var resetBaseUri = new Uri(appOptions.Value.PublicBaseUrl, UriKind.Absolute);
         var result = await passwordResetService.RequestResetAsync(
             Input.Email,
-            (userId, token) => Url.Page("/Account/ResetPassword", pageHandler: null,
-                values: new { userId, token }, protocol: Request.Scheme)!,
+            (userId, token) => new Uri(resetBaseUri,
+                Url.Page("/Account/ResetPassword", pageHandler: null, values: new { userId, token })!).ToString(),
             CancellationToken.None);
 
         if (result == PasswordResetRequestResult.SystemEmailNotConfigured)
