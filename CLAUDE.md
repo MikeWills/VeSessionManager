@@ -440,6 +440,16 @@ Keep `README.md` high-level; route deeper technical content to the right file so
 
 - Do not guess at facts, APIs, or library behavior — verify, and cite sources/docs when possible
 - Keep responses concise by default; expand only when asked
+- **Kill a long-running command you no longer need — don't let it run out the clock.** If you start
+  something slow (a build, a `--watch`, a background job, a poll) and then change your mind — the
+  approach changed, the answer arrived another way, it's clearly stuck or waiting on something that
+  won't come — stop it deliberately rather than waiting for it to finish or time out. Letting it
+  expire wastes the time it keeps running and can block later work: a running Web/Worker holds a lock
+  on the build output (see Known Constraints), so an abandoned `dotnet run` turns the next
+  `dotnet build` into a spurious failure. **The exception is anything mid-flight with a side effect
+  that a kill would leave half-applied** — a deploy, a migration, a historical import, a bulk email
+  pass. Those either run to completion or get stopped through their own mechanism, not by killing the
+  process.
 - When producing code, include setup/run instructions for **Visual Studio** and/or **VS Code** as appropriate for the project type
 - Flag any assumptions explicitly rather than silently filling gaps
 - For deployment/CI tasks, default to GitHub Actions targeting Linux (systemd deploy, matching the NcsScheduler pattern), GitHub Flow branching; deploy trigger is on tag push only, not every commit (see Phase 0 in docs/spec.md)
