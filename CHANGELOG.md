@@ -8,6 +8,86 @@ that window, or immediately if it's phase-numbered work already summarized in "C
 design rationale for any entry still lives in its linked `/docs/*.md` file, not here or in
 CLAUDE.md — this file, like CLAUDE.md's Change Log, is pointers only.
 
+- **Click-to-sort columns on every table (2026-07-31).** See `docs/table-sorting.md`. Ascending →
+  descending → back to the server's order; a second column replaces the first; the choice is
+  remembered per page. Two mechanisms behind one appearance: a shared vanilla-JS sorter in `app.js`
+  for every table that renders its full set (opt in with `data-sortable="key"`, remembered in
+  `localStorage`), and real `sort`/`dir` query parameters on the **Sessions list only**, because it
+  pages server-side and reordering just the rows on screen would look like — but not be — a sort of
+  the whole result set (remembered in the existing `vsm_session_filters` cookie, now 6 fields).
+  **Rule for any new table: pages server-side ⇒ sort server-side; otherwise `data-sortable`.** Cells
+  sort on `data-sort-value` when present — mandatory for dates (`"MMM d, yyyy"` sorts Apr before Mar),
+  which is why several row records grew a `...SortValue` member beside their formatted `...Line`.
+- **ULS watcher replaces the FCC bulk-file parser (2026-07-31).** See `docs/uls-watcher.md`;
+  `docs/fcc-uls-watcher.md` is retained as history because the matching rules survived the rewrite
+  and their incident rationale lives there. `FccUlsClient`/`FccUlsRecordParser`/`FccUlsSchedule`/
+  `FccDailyWatcherJob`/`FccWeeklyCatchupJob` and both test files are **deleted**, replaced by one
+  unauthenticated call per non-terminal candidate: `GET exam.tools/api/uls/lookup2/{frn}`
+  (`ExamToolsUlsLookupClient` + `UlsWatcherService` + `UlsWatcherJob`). Motivation: FCC's files are
+  structurally ~26-30h stale (issuance 02:00 ET, file publishes next morning), so the app routinely
+  disagreed with what ExamTools showed a Session Manager on the next screen — and the accuracy
+  trade-off was accepted deliberately since this tracking is informational, not operational ("that's
+  the VEC's job"). **All grant rules carried over unchanged** — Active-only, new-licence grant date
+  on/after session, and the two-part upgrade test — now using `effective_date` (ExamTools' rendering
+  of HD Last Action Date) in place of AM.dat + Last Action Date. Verified live in both directions the
+  same day: two candidates were correctly withheld at 10:00 (class still Technician) and correctly
+  granted at 11:30 once the class moved. Still twice a day (08:00/20:00 ET); the weekly catch-up job
+  is gone entirely (a lookup returns current state, so there is no one-shot window to miss) and the
+  three `--run-fcc-*` switches collapse to `--run-uls`. Migration `UlsWatcherReplacesFccFiles` is
+  **hand-written** — EF's scaffolder paired the columns by position and would have set start-hour 24
+  and a 1-hour interval. New `Candidate.UlsApplicationFileNumber`; Applicant Status gains the ULS
+  licence link and the application file number (no application deep link — `wireless2.fcc.gov` 403s,
+  so the shape is still unverified).
+- **Team selectors unified + `User.CallSign` (2026-07-30).** No linked doc — see TODO.md. The last
+  four pages on the old pills/`<select>` pickers (VE Roster, Admin Users/Team Settings/Email
+  Templates) now use the session list's dropdown. "All teams" is present where a merged view means
+  something and omitted where it doesn't — the two admin config pages edit one team's settings, so
+  their trigger reads "Select a team…" instead. `VolunteerExaminerReportService.GetSessionCountsAsync`
+  widened from a single teamId to the same `IReadOnlyList<int>?` set convention (null = every team);
+  a VE is team-scoped, so a merged run yields one row per VE-per-team, never a silent cross-team
+  merge. Separately: new nullable `User.CallSign` (migration `UserCallSign`), stored upper-invariant
+  like `VolunteerExaminer.CallSign`, editable on Admin → Users. Deliberately not an FK to
+  VolunteerExaminer — see the property's own comment.
+- **Applicant Status / Unmatched Payments: days-pending anchor, 5/10-day colouring, Sessions-style
+  team filter (2026-07-30).** No linked doc — see TODO.md. Days pending now counts only from
+  `ApplicationDateEnteredUtc` (VEC processing time isn't FCC's clock; shows an em dash until FCC has
+  the application). Day 5/day 10 colouring reads `PaymentReminderService`'s now-public
+  `ReminderThresholdDays`/`ExpirationThresholdDays` rather than restating them, and only escalates
+  while an Unpaid payment exists — the condition both of those passes actually require. Team filter
+  switched to the session list's dropdown incl. "All teams", backed by new
+  `SessionAccessScope.ResolveViewableTeamIds` (null = every team) with `Scope()` reimplemented on top.
+  Fixed on the way: a SystemAdmin could never match an unmatched payment, and cross-team matching
+  became possible once several teams shared a screen.
+- **FCC weekly snapshot is days stale — catch-up must sweep the daily files (2026-07-30).** See
+  `docs/fcc-uls-watcher.md`'s "The weekly snapshot is not a rolling backstop". The AM.dat fix below
+  recovered 11 candidates and left 10 that I wrongly reported as legitimately pending (2 hand-checked,
+  the rest assumed). FCC's weekly `complete` zip stamps its own creation date and arrived 4-5 days
+  stale, while `RunDailyAsync` reads only yesterday+today — Monday's/Tuesday's files were read by
+  neither. New `RunAllDailyFilesAsync` sweeps Mon-Sat, `FccWeeklyCatchupJob` now runs it alongside the
+  snapshot, plus a `--run-fcc-all-dailies` switch. Recovered 4 more; remaining 6 verified individually.
+- **FCC upgrade detection via AM.dat + Last Action Date, and on-demand watcher runs (2026-07-30).**
+  See `docs/fcc-uls-watcher.md`'s "Confirming a class upgrade" section. The Grant-Date guard added
+  earlier the same day made class upgrades *permanently* undetectable (Grant Date never advances on
+  an upgrade), leaving 20 real candidates stuck — oldest 19 days. Fixed by reading `AM.dat` (operator
+  class, present in every archive, never opened before) and pairing it with `HD`'s Last Action Date,
+  which *does* advance: an upgrade grants only when both the class matches `NewLicenseClass` and the
+  last action is on/after the session. 11 candidates recovered in one weekly pass. Also adds
+  `--run-fcc-daily`/`--run-fcc-weekly` Worker switches (same shape as `--migrate-team-secrets`),
+  replacing the previous "temporarily rewrite `FccDailyWatcherStartHourEt`, restart, put it back"
+  dance for forcing a run.
+- **Session list "Last 7 + Upcoming" filter + past-row shading + quieter EF logging (2026-07-30).**
+  No linked doc. `IndexModel` gets a second forward-looking date-range preset alongside the existing
+  `Upcoming` one — `ScheduledStartUtc` from 7 days ago through the unbounded future in one filter,
+  same ascending "soonest first" sort as `Upcoming` — and it replaces `Upcoming` as the fallback
+  default for a fresh visit with no filter cookie yet (a returning visitor's own remembered choice
+  is unaffected). Independent of any date filter, every row also gets a `row-past` CSS class once
+  `Session.HasEnded(now)` — a light background tint (reusing the existing `--paper` theme token, so
+  it's already correct in both light/dark mode) makes it obvious at a glance which sessions in a
+  mixed list already happened. Unrelated, bundled in the same pass: both `Worker` and `Web`
+  `appsettings.json` now override `Microsoft.EntityFrameworkCore.Database.Command` to `Warning` —
+  full per-query SQL text at `Information` was dominating both projects' logs (one file alone hit
+  2.5MB/day) and burying the actual "Starting job"/"Finished job" business-logic lines underneath;
+  `Web` already had the equivalent `Microsoft.AspNetCore` override, `Worker` never did.
 - **Session.ExtId + breadcrumb rework (2026-07-30).** No linked doc. `Session.ExamToolsSessionId`
   (a raw Mongo id) turned out to be meaningless to a user for "which session is this" purposes —
   new `Session.ExtId` maps `sessionDef.extId` instead, ExamTools' own short lead-VE-callsign code

@@ -77,6 +77,45 @@ would be pure duplication — and goes straight to `CHANGELOG.md` instead. Non-p
 redesigns, hardening passes) start here and move to `CHANGELOG.md` once the section is at/over the
 cap and a newer entry needs to be added; oldest goes first.
 
+- **Worker resilience + duplicate-payment index (2026-08-03).** See `docs/worker-resilience.md`.
+  Every job's per-tick work outside `JobRunHistoryLogger` (settings/team loads, queue peeks,
+  `LastIngestionRunUtc` stamps) was unguarded, so one transient "database is locked" stopped the
+  **whole Worker** — the StopHost trap the constructor rule never covered. New
+  `JobTick.GuardedAsync` wraps each tick; `JobRunHistoryLogger` now protects both its saves and
+  clears the change tracker on the failure path (a poisoned entity was retried by its own `finally`).
+  Separately, a filtered unique index on `Payments (CandidateId, Reason)` closes the Web-vs-Worker
+  double-payment race; creation saves per candidate so one collision can't roll back the pass, and
+  the migration deletes only provably-inert duplicates, failing loudly on any that were linked/paid.
+- **Audit P0/P1 batch: PII purge gap, youth idempotency key, wedged imports, STARTTLS (2026-08-03).**
+  See `docs/pii-purge.md`, `docs/youth-payment-confirmation.md`, `docs/historical-import.md`.
+  `CandidatePiiFields.Clear` never nulled `FirstName` (added Phase 4, never added to the helper), so
+  every purged candidate kept their given name — now cleared, guarded by a **reflection test** that
+  fails when a new `Candidate` field isn't explicitly classified, plus a self-healing repair pass for
+  rows already purged under the old definition. `YouthPaymentConfirmationService` minted a fresh
+  Square idempotency key per attempt despite a comment claiming persist-once (duplicate live order on
+  crash-retry) — key now cleared with the standard link it belongs to, then `??=`. Historical import
+  left `Running` by a Worker restart wedged that team's queue forever — now reclaimed after
+  `StaleRunningThreshold` and **resumed at the interrupted chunk** via `Skip(ChunksCompleted)`. Team
+  Settings' STARTTLS checkbox gained its hidden `false` sibling (it could never be turned off).
+- **Public-internet hardening pass (2026-08-03).** See `docs/security-hardening-2026-08-03.md`
+  (Tier 1 of `docs/audit-2026-08-03-tasks.md`). Rate limiting on `/Account/*` (20/min per IP, global
+  limiter + no-limiter partition elsewhere) — which **required adding `UseForwardedHeaders`**, or
+  behind the Apache proxy the whole internet shares one bucket; security response headers incl. a
+  CSP whose `style-src`/`font-src` allowances are load-bearing (Google Fonts + ~139 inline
+  `style=""` attributes — tightening them without removing those breaks the site's typography);
+  password-reset links now built from `App:PublicBaseUrl` instead of the request Host (which was an
+  admin-account-takeover vector) plus `AllowedHosts` pinned — **a deployment under any other
+  hostname now 400s until both are updated**; the youth-rate attestation enforced server-side
+  (`[Required]` on a non-nullable bool is client-side only — it always passes on the server); Square
+  webhook body capped at 64KB.
+- **Session Detail's "Refresh candidates" narrowed from team-wide to session-scoped (2026-08-03).**
+  See `docs/team-maintenance.md`'s "session-scoped" section. The button ran the full team pipeline —
+  one click could mint payment links and send emails for every *other* session the team had. New
+  `ManualCandidateRefreshService.RunForSessionAsync`: `SessionIngestionService.RefreshSessionCandidatesAsync`
+  syncs one session's applicants (no session create/cancel — those need the full-feed diff),
+  `ExamResultSyncService.SyncSessionAsync` ignores `ResultSyncWindow` (making the window's documented
+  escape hatch real for the first time), and the other four scan services gained a trailing optional
+  `int? onlySessionId` filter. Team Maintenance's "Refresh now" stays team-wide and throttled.
 - **Payment work bounded by session age; post-import log noise fixed (2026-08-01).** See
   `docs/historical-import.md`'s companion fixes 3 and 4. `PaymentGenerationService` filtered only on
   `Session.Status == Active` (= "not cancelled", never "not finished"), so the historical import's
@@ -187,86 +226,6 @@ cap and a newer entry needs to be added; oldest goes first.
   brings issue #68's false cancellations straight back — `KnownButNotYetClosedSession_IsStillReadFromTheClosedFeed`
   is the regression test. Pulling real history is now a deliberate one-off (see the historical import)
   rather than a side effect of the rolling window.
-- **Click-to-sort columns on every table (2026-07-31).** See `docs/table-sorting.md`. Ascending →
-  descending → back to the server's order; a second column replaces the first; the choice is
-  remembered per page. Two mechanisms behind one appearance: a shared vanilla-JS sorter in `app.js`
-  for every table that renders its full set (opt in with `data-sortable="key"`, remembered in
-  `localStorage`), and real `sort`/`dir` query parameters on the **Sessions list only**, because it
-  pages server-side and reordering just the rows on screen would look like — but not be — a sort of
-  the whole result set (remembered in the existing `vsm_session_filters` cookie, now 6 fields).
-  **Rule for any new table: pages server-side ⇒ sort server-side; otherwise `data-sortable`.** Cells
-  sort on `data-sort-value` when present — mandatory for dates (`"MMM d, yyyy"` sorts Apr before Mar),
-  which is why several row records grew a `...SortValue` member beside their formatted `...Line`.
-- **ULS watcher replaces the FCC bulk-file parser (2026-07-31).** See `docs/uls-watcher.md`;
-  `docs/fcc-uls-watcher.md` is retained as history because the matching rules survived the rewrite
-  and their incident rationale lives there. `FccUlsClient`/`FccUlsRecordParser`/`FccUlsSchedule`/
-  `FccDailyWatcherJob`/`FccWeeklyCatchupJob` and both test files are **deleted**, replaced by one
-  unauthenticated call per non-terminal candidate: `GET exam.tools/api/uls/lookup2/{frn}`
-  (`ExamToolsUlsLookupClient` + `UlsWatcherService` + `UlsWatcherJob`). Motivation: FCC's files are
-  structurally ~26-30h stale (issuance 02:00 ET, file publishes next morning), so the app routinely
-  disagreed with what ExamTools showed a Session Manager on the next screen — and the accuracy
-  trade-off was accepted deliberately since this tracking is informational, not operational ("that's
-  the VEC's job"). **All grant rules carried over unchanged** — Active-only, new-licence grant date
-  on/after session, and the two-part upgrade test — now using `effective_date` (ExamTools' rendering
-  of HD Last Action Date) in place of AM.dat + Last Action Date. Verified live in both directions the
-  same day: two candidates were correctly withheld at 10:00 (class still Technician) and correctly
-  granted at 11:30 once the class moved. Still twice a day (08:00/20:00 ET); the weekly catch-up job
-  is gone entirely (a lookup returns current state, so there is no one-shot window to miss) and the
-  three `--run-fcc-*` switches collapse to `--run-uls`. Migration `UlsWatcherReplacesFccFiles` is
-  **hand-written** — EF's scaffolder paired the columns by position and would have set start-hour 24
-  and a 1-hour interval. New `Candidate.UlsApplicationFileNumber`; Applicant Status gains the ULS
-  licence link and the application file number (no application deep link — `wireless2.fcc.gov` 403s,
-  so the shape is still unverified).
-- **Team selectors unified + `User.CallSign` (2026-07-30).** No linked doc — see TODO.md. The last
-  four pages on the old pills/`<select>` pickers (VE Roster, Admin Users/Team Settings/Email
-  Templates) now use the session list's dropdown. "All teams" is present where a merged view means
-  something and omitted where it doesn't — the two admin config pages edit one team's settings, so
-  their trigger reads "Select a team…" instead. `VolunteerExaminerReportService.GetSessionCountsAsync`
-  widened from a single teamId to the same `IReadOnlyList<int>?` set convention (null = every team);
-  a VE is team-scoped, so a merged run yields one row per VE-per-team, never a silent cross-team
-  merge. Separately: new nullable `User.CallSign` (migration `UserCallSign`), stored upper-invariant
-  like `VolunteerExaminer.CallSign`, editable on Admin → Users. Deliberately not an FK to
-  VolunteerExaminer — see the property's own comment.
-- **Applicant Status / Unmatched Payments: days-pending anchor, 5/10-day colouring, Sessions-style
-  team filter (2026-07-30).** No linked doc — see TODO.md. Days pending now counts only from
-  `ApplicationDateEnteredUtc` (VEC processing time isn't FCC's clock; shows an em dash until FCC has
-  the application). Day 5/day 10 colouring reads `PaymentReminderService`'s now-public
-  `ReminderThresholdDays`/`ExpirationThresholdDays` rather than restating them, and only escalates
-  while an Unpaid payment exists — the condition both of those passes actually require. Team filter
-  switched to the session list's dropdown incl. "All teams", backed by new
-  `SessionAccessScope.ResolveViewableTeamIds` (null = every team) with `Scope()` reimplemented on top.
-  Fixed on the way: a SystemAdmin could never match an unmatched payment, and cross-team matching
-  became possible once several teams shared a screen.
-- **FCC weekly snapshot is days stale — catch-up must sweep the daily files (2026-07-30).** See
-  `docs/fcc-uls-watcher.md`'s "The weekly snapshot is not a rolling backstop". The AM.dat fix below
-  recovered 11 candidates and left 10 that I wrongly reported as legitimately pending (2 hand-checked,
-  the rest assumed). FCC's weekly `complete` zip stamps its own creation date and arrived 4-5 days
-  stale, while `RunDailyAsync` reads only yesterday+today — Monday's/Tuesday's files were read by
-  neither. New `RunAllDailyFilesAsync` sweeps Mon-Sat, `FccWeeklyCatchupJob` now runs it alongside the
-  snapshot, plus a `--run-fcc-all-dailies` switch. Recovered 4 more; remaining 6 verified individually.
-- **FCC upgrade detection via AM.dat + Last Action Date, and on-demand watcher runs (2026-07-30).**
-  See `docs/fcc-uls-watcher.md`'s "Confirming a class upgrade" section. The Grant-Date guard added
-  earlier the same day made class upgrades *permanently* undetectable (Grant Date never advances on
-  an upgrade), leaving 20 real candidates stuck — oldest 19 days. Fixed by reading `AM.dat` (operator
-  class, present in every archive, never opened before) and pairing it with `HD`'s Last Action Date,
-  which *does* advance: an upgrade grants only when both the class matches `NewLicenseClass` and the
-  last action is on/after the session. 11 candidates recovered in one weekly pass. Also adds
-  `--run-fcc-daily`/`--run-fcc-weekly` Worker switches (same shape as `--migrate-team-secrets`),
-  replacing the previous "temporarily rewrite `FccDailyWatcherStartHourEt`, restart, put it back"
-  dance for forcing a run.
-- **Session list "Last 7 + Upcoming" filter + past-row shading + quieter EF logging (2026-07-30).**
-  No linked doc. `IndexModel` gets a second forward-looking date-range preset alongside the existing
-  `Upcoming` one — `ScheduledStartUtc` from 7 days ago through the unbounded future in one filter,
-  same ascending "soonest first" sort as `Upcoming` — and it replaces `Upcoming` as the fallback
-  default for a fresh visit with no filter cookie yet (a returning visitor's own remembered choice
-  is unaffected). Independent of any date filter, every row also gets a `row-past` CSS class once
-  `Session.HasEnded(now)` — a light background tint (reusing the existing `--paper` theme token, so
-  it's already correct in both light/dark mode) makes it obvious at a glance which sessions in a
-  mixed list already happened. Unrelated, bundled in the same pass: both `Worker` and `Web`
-  `appsettings.json` now override `Microsoft.EntityFrameworkCore.Database.Command` to `Warning` —
-  full per-query SQL text at `Information` was dominating both projects' logs (one file alone hit
-  2.5MB/day) and burying the actual "Starting job"/"Finished job" business-logic lines underneath;
-  `Web` already had the equivalent `Microsoft.AspNetCore` override, `Worker` never did.
 Everything through Phase 0-10's initial build (ExamTools ingestion, Zoom/Discord, Square, email
 notifications, FCC ULS watcher, payment reminders, VE tracking, VEC submission tracker, admin
 auth/config/candidate-actions, PII purge) plus the public privacy page has aged out to
@@ -373,7 +332,7 @@ To pick up updates: `/plugin marketplace update claude-tools`
 - **ExamTools has no "cancelled" session state** — cancellations are detected by a known session id disappearing from the team feed, reschedules by a changed `date` on the same id. Don't go looking for a status flag that isn't there.
 - **Zoom Server-to-Server OAuth tokens have no refresh token** — they just expire after an hour; the only way to get a new one is to call `/oauth/token` again with the same `account_credentials` grant. `ZoomClient` caches and re-requests a minute before expiry rather than reacting to a 401.
 - **`DateTimeOffset` construction from a Sqlite-round-tripped `DateTime` will throw if you're not careful** — EF Core/Sqlite returns `DateTimeKind.Unspecified`, and `new DateTimeOffset(dateTime, TimeSpan.Zero)` validates Kind against the offset. `DiscordEventClient.ToOffset()` forces `Kind = Utc` first; reuse that pattern anywhere else a stored `DateTime` needs to become a `DateTimeOffset`.
-- **Never validate external-API credentials in a singleton's constructor if that singleton is resolved from inside a Worker `BackgroundService`.** A constructor throw there stops the *entire host* (.NET's default `BackgroundServiceExceptionBehavior` is `StopHost`) — discovered live when an unconfigured `Square:AccessToken` threw from `SquareClient`'s constructor and killed ExamTools/Zoom/Discord polling too, not just payment generation. `ExamToolsClient`/`ZoomClient`/`DiscordEventClient`/`SquareClient` all defer credential checks to first *use* (inside the method that needs them) for exactly this reason — keep new API clients consistent with that pattern.
+- **Never validate external-API credentials in a singleton's constructor if that singleton is resolved from inside a Worker `BackgroundService`.** A constructor throw there stops the *entire host* (.NET's default `BackgroundServiceExceptionBehavior` is `StopHost`) — discovered live when an unconfigured `Square:AccessToken` threw from `SquareClient`'s constructor and killed ExamTools/Zoom/Discord polling too, not just payment generation. `ExamToolsClient`/`ZoomClient`/`DiscordEventClient`/`SquareClient` all defer credential checks to first *use* (inside the method that needs them) for exactly this reason — keep new API clients consistent with that pattern. **The constructor is only half of it (2026-08-03):** the same `StopHost` default kills the Worker for anything thrown by a job's *per-tick* work outside `JobRunHistoryLogger` — settings/team loads, queue peeks, `LastIngestionRunUtc` stamps — and Web and Worker share one SQLite file, so a transient "database is locked" is enough. Every tick body is now wrapped in `JobTick.GuardedAsync`; **a new job's timer loop must use it too**. See `docs/worker-resilience.md`.
 - **Square's `payment.updated` webhook does not include `reference_id`** — only `order_id`. `Payment.SquarePaymentReferenceId` stores the Square `order_id` (returned when the link is created), not our own `Order.ReferenceId` (which is set to `Payment.Id`, but only for human cross-referencing in Square's dashboard — it's never echoed back). See `docs/square-payments.md`.
 - **When an "optional integration" gate combines multiple independent pieces (e.g. Zoom + Discord both feeding one `ZoomDiscordSyncedStartUtc`), do not write the per-piece "settled" check as `!IsConfigured || succeeded`.** That reads as "fine either way," which is wrong: it marks the *whole thing* settled (and stops retrying forever) the instant any one piece is unconfigured, even though the other piece may still be waiting. A dedicated test (`NeitherZoomNorDiscordConfigured_SessionStaysPending_NoCallsMade`) caught this before it shipped. Correct form: `succeeded` alone — a piece that's unconfigured simply never contributes toward "succeeded," so the aggregate stays unsettled (and gets retried, and logged once in aggregate) for as long as that piece stays unconfigured. See `SessionEventSchedulingService.SyncZoomAndDiscordAsync`.
 - **A "create if id is null" check is not enough for any external API call whose success and its local persistence aren't atomic.** Real duplicate Discord events (~6, live incident 2026-07-21) were created because the process crashed/restarted after Discord's API call succeeded but before `SaveChangesAsync` persisted the returned id. See Established Patterns above for the fix pattern (query-before-create / persisted idempotency key) — this same bug class was found and fixed in Discord, Zoom, and Square the same day via proactive self-audit, not three separate reported incidents.
@@ -415,6 +374,23 @@ To pick up updates: `/plugin marketplace update claude-tools`
   For "is this session finished?", test `ExamToolsClosedUtc`/`TestingCompletedUtc` (plus `HasEnded`
   as the backstop for rows predating `ExamToolsClosedUtc`), never `Status`.
 - **`SessionAccessScope` has two team-resolution methods and picking the wrong one silently empties a page.** `ResolveViewableTeamIds(user, selectedTeamId)` returns the team-id *set* to filter by, where **null means every team** (SystemAdmin, unfiltered) — use it for any list that can render several teams merged. `TryResolveViewableTeamId` collapses to a *single* team and returns null for "no team context, show nothing" — only correct for a page that genuinely cannot render without one team chosen. Applicant Status and Unmatched Payments used the latter and so had no "All teams" and bounced to an empty page after every action (fixed 2026-07-30). Related trap in the same area: a guard written as `GetEffectiveTeamIds(user)?.Contains(id) ?? false` is **always false for a SystemAdmin** (that method returns null for them, meaning "all teams"), which is exactly how a SystemAdmin ended up 403ing on every unmatched-payment match.
+- **`[Required]` on a non-nullable `bool` is a client-side-only guard — it never fails server-side.**
+  The checkbox tag helper posts a hidden `false`, and any bound value satisfies `Required` for a
+  value type, so `ModelState.IsValid` is always true for that field. Found on the anonymous
+  youth-rate page, where it meant a direct POST could claim the discount with no attestation
+  (2026-08-03). Any "must tick this box" rule needs an explicit handler check (or
+  `[Range(typeof(bool), "true", "true")]`); keep `[Required]` only for the browser experience.
+- **A per-IP rate limiter behind a reverse proxy needs `UseForwardedHeaders`, or it becomes a
+  self-inflicted outage** — without it every request carries the proxy's loopback address, so all
+  clients share one partition and a handful of requests locks out everyone. Added together
+  2026-08-03; the defaults trust loopback proxies, which matches this deployment's same-box Apache.
+  Same middleware is what makes `Request.Scheme` correct behind TLS termination.
+- **`AllowedHosts` is pinned to `ve.wx0mik.radio` in Web's `appsettings.Production.json`
+  (2026-08-03).** A deployment served under any other hostname — beta box, staging name, bare IP —
+  returns **400 Bad Request for every request** until that value and `App:PublicBaseUrl` beside it
+  are updated. Both take a semicolon-separated list. Pinned because the framework default `"*"`
+  combined with request-host-derived absolute URLs was an admin-account-takeover vector; see
+  `docs/security-hardening-2026-08-03.md`.
 - **Browser-verifying any authenticated page needs Mike to log in — Claude will not type the dev
   password into the login form.** Every Session Manager and Admin page is `[Authorize]`d, so a UI
   change can't be clicked through until someone signs in. Claude declines to enter a password to
