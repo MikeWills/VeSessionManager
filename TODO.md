@@ -167,3 +167,36 @@ against a real server. See `docs/deployment.md` for step-by-step instructions fo
     outside it (as the DB already does) or every encrypted credential dies with the update.
   - Still undecided from the original note: how "critical" gets flagged, and whether the trigger is
     the app polling GitHub or something pushed to it.
+
+## Delete a user that has no history (raised 2026-08-04, during the beta setup)
+
+Admin → Users can only Deactivate, so a mistyped or throwaway account is a dead row forever. Add a
+delete that is allowed only when the account has nothing attributed to it.
+
+**"No history" needs defining before this is built — the obvious reading doesn't work.** Thirteen
+FKs reference `User`, all `OnDelete(Restrict)`: fee configs created, sessions marked
+completed/VEC-submitted/override-set, candidates graded, payments refund-flagged, historical import
+requests, email templates, email settings, system settings, unmatched payments resolved, `UserTeams`,
+`ManagedByUser`, and `AuditLog.UserId`.
+
+That last one is the problem: **every account is referenced by an audit row from creation onwards**
+(`BootstrapAdminCommand` self-attributes its own `UserCreated` entry; `UserManagementService.CreateAsync`
+writes one too). So a literal "no rows reference this user" test is never true, and the button would
+silently never fire.
+
+Three options, undecided — this is the call to make first:
+- **Delete the account's own lifecycle audit rows** (the `UserCreated`/`UserDeactivated` entries about
+  it) and write a fresh entry recording the deletion, naming the removed email. Existence and removal
+  stay on the record; the dead row goes. *Recommended.*
+- **Null `AuditLog.UserId`** on their rows instead — preserves every entry, but re-attributes real
+  actions to "system" (null already means "a background job did this"), which misrepresents who acted.
+- **Treat audit rows as history** — safest, but then the feature is inert.
+
+Other things to settle when it's picked up:
+- The refusal must name the blocker ("has 3 sessions marked complete"), not just decline.
+- `userManager.DeleteAsync` covers the Identity side (roles/logins/claims/tokens); `UserTeams` rows
+  must be removed explicitly first, since that FK is Restrict too.
+- Anyone with `ManagedByUserId` pointing at the target blocks deletion — decide whether to refuse or
+  null the link.
+- Never allow deleting the last account that can sign in, or the deployment locks itself out — the
+  same condition `Program.cs`'s refuse-to-start guard already checks.
