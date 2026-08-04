@@ -134,7 +134,10 @@ public class CandidateDetailModel(
 
     private async Task<(User User, Session Session)?> AuthorizeAsync()
     {
-        var user = await userManager.GetUserAsync(User);
+        // Must be GetUserWithManagerAsync, not the bare GetUserAsync: CanEdit reads user.UserTeams,
+        // which the bare load leaves empty — every POST here would Forbid() for TeamAdmin/
+        // SessionManager (SystemAdmin's role short-circuit masked it). See CLAUDE.md Known Constraints.
+        var user = await userManager.GetUserWithManagerAsync(dbContext, User);
         if (user is null)
         {
             return null;
