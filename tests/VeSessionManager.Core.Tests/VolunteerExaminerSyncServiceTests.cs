@@ -428,4 +428,30 @@ public class VolunteerExaminerSyncServiceTests
 
         Assert.Single(client.RosterFetches);
     }
+
+    /// <summary>
+    /// The onlySessionId filter (session-scoped Detail-page refresh, 2026-08-03): with two eligible
+    /// sessions, only the named session's roster is fetched and linked; the other waits for the
+    /// Worker's next team-wide tick.
+    /// </summary>
+    [Fact]
+    public async Task RunAsync_WithOnlySessionId_SyncsOnlyThatSessionsRoster()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        var sessionA = await SeedSessionAsync(dbContext, team, "session-a");
+        var sessionB = await SeedSessionAsync(dbContext, team, "session-b");
+        var client = new FakeExamToolsClient();
+        client.SetRoster(team.Id, sessionA.ExamToolsSessionId, new ExamToolsVe { Call = "N2SPG", Name = "Session A's VE" });
+        client.SetRoster(team.Id, sessionB.ExamToolsSessionId, new ExamToolsVe { Call = "NP2UU", Name = "Session B's VE" });
+
+        var result = await CreateService(dbContext, client).RunAsync(team, CancellationToken.None, sessionA.Id);
+
+        Assert.Equal("session-a", Assert.Single(client.RosterFetches));
+        Assert.Equal(1, result.LinksAdded);
+        var ve = Assert.Single(dbContext.VolunteerExaminers);
+        Assert.Equal("N2SPG", ve.CallSign);
+        var link = Assert.Single(dbContext.SessionVolunteerExaminers);
+        Assert.Equal(sessionA.Id, link.SessionId);
+    }
 }

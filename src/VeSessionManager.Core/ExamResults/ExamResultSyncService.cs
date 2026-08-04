@@ -99,30 +99,70 @@ public class ExamResultSyncService(
 
         foreach (var session in sessions)
         {
-            var pendingCandidates = session.Candidates
-                .Where(c => c.ExamToolsApplicantId is not null
-                    && c.ApplicationStatus != CandidateApplicationStatus.Failed
-                    && c.ApplicationStatus != CandidateApplicationStatus.NotTested
-                    && (!c.Tested || c.NewLicenseClass is null))
-                .ToList();
-
-            foreach (var candidate in pendingCandidates)
-            {
-                try
-                {
-                    var detail = await examToolsClient.GetApplicantDetailAsync(credentials, session.ExamToolsSessionId, candidate.ExamToolsApplicantId!, cancellationToken);
-                    ApplyResult(candidate, detail, now, result);
-                    await dbContext.SaveChangesAsync(cancellationToken);
-                }
-                catch (Exception ex)
-                {
-                    logger.LogError(ex, "Failed to sync exam result for candidate {CandidateId} in session {SessionId} ({ExamToolsSessionId})", candidate.Id, session.Id, session.ExamToolsSessionId);
-                }
-            }
+            await SyncSessionCandidatesAsync(credentials, session, now, result, cancellationToken);
         }
 
         logger.LogInformation("Exam result sync finished for team {TeamId} ({TeamName}): {Result}", team.Id, team.Name, result);
         return result;
+    }
+
+    /// <summary>
+    /// On-demand single-session variant of RunAsync with NO ResultSyncWindow bound — this is the
+    /// escape hatch ResultSyncWindow's own doc comment promises for a session graded later than the
+    /// window. (Until 2026-08-03 the manual refresh ran RunAsync, whose window applied regardless,
+    /// so the promised escape hatch didn't actually exist.) Still requires the session to be
+    /// non-cancelled and already started: a cancelled session has no results to sync, and a future
+    /// one can't have any yet.
+    /// </summary>
+    public async Task<ExamResultSyncResult> SyncSessionAsync(Team team, int sessionId, CancellationToken cancellationToken)
+    {
+        var result = new ExamResultSyncResult();
+
+        if (!team.IsExamToolsConfigured)
+        {
+            logger.LogInformation("Team {TeamId} ({TeamName}) has no ExamTools credentials configured yet — skipping exam result sync", team.Id, team.Name);
+            return result;
+        }
+
+        var credentials = ExamToolsCredentials.For(team, examToolsOptions.Value.BaseUrl);
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+
+        var session = await dbContext.Sessions
+            .Include(s => s.Candidates)
+            .FirstOrDefaultAsync(s => s.Id == sessionId && s.TeamId == team.Id
+                        && s.Status == SessionStatus.Active && s.ScheduledStartUtc <= now,
+                cancellationToken);
+        if (session is not null)
+        {
+            await SyncSessionCandidatesAsync(credentials, session, now, result, cancellationToken);
+        }
+
+        logger.LogInformation("Exam result sync finished for session {SessionId}, team {TeamId} ({TeamName}): {Result}", sessionId, team.Id, team.Name, result);
+        return result;
+    }
+
+    private async Task SyncSessionCandidatesAsync(ExamToolsCredentials credentials, Session session, DateTime now, ExamResultSyncResult result, CancellationToken cancellationToken)
+    {
+        var pendingCandidates = session.Candidates
+            .Where(c => c.ExamToolsApplicantId is not null
+                && c.ApplicationStatus != CandidateApplicationStatus.Failed
+                && c.ApplicationStatus != CandidateApplicationStatus.NotTested
+                && (!c.Tested || c.NewLicenseClass is null))
+            .ToList();
+
+        foreach (var candidate in pendingCandidates)
+        {
+            try
+            {
+                var detail = await examToolsClient.GetApplicantDetailAsync(credentials, session.ExamToolsSessionId, candidate.ExamToolsApplicantId!, cancellationToken);
+                ApplyResult(candidate, detail, now, result);
+                await dbContext.SaveChangesAsync(cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Failed to sync exam result for candidate {CandidateId} in session {SessionId} ({ExamToolsSessionId})", candidate.Id, session.Id, session.ExamToolsSessionId);
+            }
+        }
     }
 
     private void ApplyResult(Candidate candidate, ExamToolsApplicantDetail? detail, DateTime now, ExamResultSyncResult result)

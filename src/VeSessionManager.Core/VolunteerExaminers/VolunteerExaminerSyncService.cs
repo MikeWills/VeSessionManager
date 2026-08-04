@@ -32,7 +32,9 @@ public class VolunteerExaminerSyncService(
     /// </summary>
     public static readonly TimeSpan RosterRetryWindow = TimeSpan.FromDays(30);
 
-    public async Task<VeRosterSyncResult> RunAsync(Team team, CancellationToken cancellationToken)
+    /// <param name="onlySessionId">Restrict the sync to one session (the Detail page's
+    /// session-scoped refresh); null (every scheduled/team-wide run) scans the whole team.</param>
+    public async Task<VeRosterSyncResult> RunAsync(Team team, CancellationToken cancellationToken, int? onlySessionId = null)
     {
         var result = new VeRosterSyncResult();
 
@@ -54,7 +56,8 @@ public class VolunteerExaminerSyncService(
 
         var sessions = await dbContext.Sessions
             .Include(s => s.SessionVolunteerExaminers).ThenInclude(sve => sve.VolunteerExaminer)
-            .Where(s => s.TeamId == team.Id && s.Status == SessionStatus.Active)
+            .Where(s => s.TeamId == team.Id && s.Status == SessionStatus.Active
+                        && (onlySessionId == null || s.Id == onlySessionId))
             .ToListAsync(cancellationToken);
 
         // Session.Status is NOT the "is this session over" signal, and reading it as one is why this

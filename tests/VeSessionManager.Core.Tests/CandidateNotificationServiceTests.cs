@@ -651,4 +651,30 @@ public class CandidateNotificationServiceTests
         Assert.Empty(sender.SentMessages);
         Assert.Null(dbContext.Candidates.Single().YouthProgramInstructionsSentUtc);
     }
+
+    // ---- onlySessionId filter (session-scoped Detail-page refresh, 2026-08-03) ----
+
+    [Fact]
+    public async Task RegistrationConfirmation_WithOnlySessionId_SendsOnlyForThatSession()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        await SeedEmailSettingsAndTemplatesAsync(dbContext, team);
+        var sessionA = await SeedSessionAsync(dbContext, team, Now.AddDays(4));
+        var sessionB = await SeedSessionAsync(dbContext, team, Now.AddDays(5));
+        dbContext.Candidates.Add(NewCandidate(sessionA, "applicant-a", "Roana"));
+        dbContext.Candidates.Add(NewCandidate(sessionB, "applicant-b", "Tomasina"));
+        await dbContext.SaveChangesAsync();
+
+        var sender = new FakeEmailSender();
+        var result = await CreateService(dbContext, sender).SendRegistrationConfirmationsAsync(team, CancellationToken.None, sessionA.Id);
+
+        Assert.Equal(1, result.Sent);
+        var message = Assert.Single(sender.SentMessages);
+        Assert.Equal("roana@example.com", message.ToAddress);
+        // The other session's candidate is neither emailed nor marked — it waits for the next
+        // team-wide tick, whose null onlySessionId still scans everything (covered by the
+        // existing tests above).
+        Assert.Null(dbContext.Candidates.Single(c => c.ExamToolsApplicantId == "applicant-b").RegistrationConfirmationSentUtc);
+    }
 }

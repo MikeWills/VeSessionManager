@@ -760,4 +760,63 @@ public class SessionEventSchedulingServiceTests
         // the distinct set used rather than an exact call count.
         Assert.Equal([111UL, 222UL], discord.GuildIdsUsed.Distinct());
     }
+
+    // ---- onlySessionId filter (session-scoped Detail-page refresh, 2026-08-03) ----
+
+    [Fact]
+    public async Task RunAsync_WithOnlySessionId_SchedulesOnlyThatSession()
+    {
+        await using var dbContext = CreateContext();
+        var (vec, feeConfig) = await SeedRefsAsync(dbContext);
+        var team = await SeedTeamAsync(dbContext);
+        var sessionA = NewSession(vec, feeConfig, team, "session-a");
+        var sessionB = NewSession(vec, feeConfig, team, "session-b");
+        dbContext.Sessions.AddRange(sessionA, sessionB);
+        await dbContext.SaveChangesAsync();
+
+        var zoom = new FakeZoomClient();
+        var discord = new FakeDiscordEventClient();
+        var result = await CreateService(dbContext, zoom, discord).RunAsync(team, CancellationToken.None, sessionA.Id);
+
+        Assert.Equal(1, result.SessionsSynced);
+        Assert.Single(zoom.CreateCalls);
+        Assert.Single(discord.CreateCalls);
+        var syncedA = dbContext.Sessions.Single(s => s.Id == sessionA.Id);
+        Assert.NotNull(syncedA.ZoomMeetingId);
+        Assert.Equal(SessionStart, syncedA.ZoomDiscordSyncedStartUtc);
+        // The other eligible session waits for the Worker's next team-wide tick.
+        var untouchedB = dbContext.Sessions.Single(s => s.Id == sessionB.Id);
+        Assert.Null(untouchedB.ZoomMeetingId);
+        Assert.Null(untouchedB.DiscordEventId);
+        Assert.Null(untouchedB.ZoomDiscordSyncedStartUtc);
+    }
+
+    [Fact]
+    public async Task RunAsync_WithOnlySessionId_CleansUpOnlyThatCancelledSession()
+    {
+        await using var dbContext = CreateContext();
+        var (vec, feeConfig) = await SeedRefsAsync(dbContext);
+        var team = await SeedTeamAsync(dbContext);
+        var cancelledA = NewSession(vec, feeConfig, team, "session-a");
+        cancelledA.Status = SessionStatus.Cancelled;
+        cancelledA.ZoomMeetingId = "zoom-a";
+        cancelledA.DiscordEventId = "discord-a";
+        var cancelledB = NewSession(vec, feeConfig, team, "session-b");
+        cancelledB.Status = SessionStatus.Cancelled;
+        cancelledB.ZoomMeetingId = "zoom-b";
+        cancelledB.DiscordEventId = "discord-b";
+        dbContext.Sessions.AddRange(cancelledA, cancelledB);
+        await dbContext.SaveChangesAsync();
+
+        var zoom = new FakeZoomClient();
+        var discord = new FakeDiscordEventClient();
+        await CreateService(dbContext, zoom, discord).RunAsync(team, CancellationToken.None, cancelledA.Id);
+
+        Assert.Equal("zoom-a", Assert.Single(zoom.DeleteCalls));
+        Assert.Equal("discord-a", Assert.Single(discord.DeleteCalls));
+        // The other cancelled session's stale meeting/event is left for the next team-wide tick.
+        var untouchedB = dbContext.Sessions.Single(s => s.Id == cancelledB.Id);
+        Assert.Equal("zoom-b", untouchedB.ZoomMeetingId);
+        Assert.Equal("discord-b", untouchedB.DiscordEventId);
+    }
 }
