@@ -440,16 +440,17 @@ Keep `README.md` high-level; route deeper technical content to the right file so
 
 - Do not guess at facts, APIs, or library behavior — verify, and cite sources/docs when possible
 - Keep responses concise by default; expand only when asked
-- **Kill a long-running command you no longer need — don't let it run out the clock.** If you start
-  something slow (a build, a `--watch`, a background job, a poll) and then change your mind — the
-  approach changed, the answer arrived another way, it's clearly stuck or waiting on something that
-  won't come — stop it deliberately rather than waiting for it to finish or time out. Letting it
-  expire wastes the time it keeps running and can block later work: a running Web/Worker holds a lock
-  on the build output (see Known Constraints), so an abandoned `dotnet run` turns the next
-  `dotnet build` into a spurious failure. **The exception is anything mid-flight with a side effect
-  that a kill would leave half-applied** — a deploy, a migration, a historical import, a bulk email
-  pass. Those either run to completion or get stopped through their own mechanism, not by killing the
-  process.
+- **If you abandon a slow command and try another approach, kill the first one as you pivot.** The
+  failure mode is not the slowness, it's the orphan: a `find`/search/build takes too long, you switch
+  tactics, get your answer elsewhere — and the original is still running, forgotten, because nothing
+  ever reported back on it. Terminate it at the moment you decide to stop caring about it, not
+  "later". Beyond the wasted work, an abandoned `dotnet run` holds a lock on the build output (see
+  Known Constraints), so it turns a *later, unrelated* `dotnet build` into a spurious failure that
+  looks like a code problem. **Two things this does not license:** killing anything mid-flight whose
+  side effects would be left half-applied (a deploy, a migration, a historical import, a bulk email
+  pass — those stop through their own mechanism or run to completion), and killing a process **you**
+  didn't start. Mike runs Web/Worker locally on purpose; ask before stopping anything you didn't
+  launch yourself, however tidy it would be.
 - When producing code, include setup/run instructions for **Visual Studio** and/or **VS Code** as appropriate for the project type
 - Flag any assumptions explicitly rather than silently filling gaps
 - For deployment/CI tasks, default to GitHub Actions targeting Linux (systemd deploy, matching the NcsScheduler pattern), GitHub Flow branching; deploy trigger is on tag push only, not every commit (see Phase 0 in docs/spec.md)
