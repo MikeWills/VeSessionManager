@@ -104,6 +104,13 @@ doesn't get filesystem access to `/opt/vesessionmanager` or `/var/lib/vesessionm
 every operation that touches them (rsync, the DB backup, service start/stop, journalctl) runs as
 root via a **new**, narrowly-scoped sudoers file specific to this app:
 
+> **These rules are per-unit, and sudo matches the whole command line.** `systemctl stop
+> vesessionmanager-web vesessionmanager-worker` matches *neither* single-unit rule and is rejected —
+> confusingly, as `sudo: a password is required`, which reads like a broken SSH key rather than an
+> allowlist miss. `deploy.yml` therefore issues one `systemctl` call per service; keep it that way
+> rather than widening these rules, since their narrowness is what stops a compromised deploy key
+> from touching anything else on the box.
+
 ```bash
 sudo tee /etc/sudoers.d/vesessionmanager-deploy > /dev/null <<'EOF'
 Defaults:deploy !requiretty

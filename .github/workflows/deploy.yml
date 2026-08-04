@@ -97,9 +97,20 @@ jobs:
             "sudo rsync --ignore-missing-args '$DB_PATH' '$DB_PATH.bak-\$(date +%Y%m%d%H%M%S)'"
 
       - name: Stop services
+        # One service per command, deliberately. The deploy user's sudoers allowlist grants each
+        # unit its own rule ("systemctl stop vesessionmanager-worker", "systemctl stop
+        # vesessionmanager-web"), and sudo matches the WHOLE command line — so the combined
+        # "systemctl stop web worker" form this used to run matched neither rule and was rejected
+        # with "sudo: a password is required", which reads like a broken SSH key rather than an
+        # allowlist miss. Found on the first real deploy, 2026-08-04.
+        #
+        # Keep these split if the allowlist stays per-unit; widening sudoers to "systemctl stop *"
+        # would be the wrong trade, since the narrow rules are what stop a compromised deploy key
+        # from touching anything else on the box. Web stops first so it stops serving before the
+        # Worker goes down.
         run: |
           ssh -i ~/.ssh/deploy_key "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
-            "sudo systemctl stop $WEB_SERVICE $WORKER_SERVICE"
+            "sudo systemctl stop $WEB_SERVICE && sudo systemctl stop $WORKER_SERVICE"
 
       - name: Sync Worker files
         run: |
