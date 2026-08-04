@@ -77,9 +77,24 @@ jobs:
           ssh-keyscan -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts
 
       - name: Backup database
+        # rsync --ignore-missing-args, not cp: on a brand-new server the database does not exist yet
+        # (the operator creates /var/lib/vesessionmanager, but the .db file itself is created by
+        # Database.Migrate() the first time a service starts), so an unconditional cp made the very
+        # FIRST deploy to any box fail here — before stopping services or syncing anything. Found on
+        # the first real deploy, 2026-08-04; it would have hit the production server too.
+        #
+        # Guarding with `test -f` is NOT an option, in either form: `sudo test` is not in the deploy
+        # user's sudoers allowlist, and an unprivileged `test -f` cannot read
+        # /var/lib/vesessionmanager at all — so it would report "missing" even once the database
+        # exists, silently skipping every backup from then on. That is far worse than the failure it
+        # would be replacing.
+        #
+        # rsync is already permitted by that same allowlist (`/usr/bin/rsync *`), copies normally
+        # when the file is there, and is a clean no-op when it is not. A genuine failure (bad
+        # permissions, disk full) still fails the deploy, which is the property worth keeping.
         run: |
           ssh -i ~/.ssh/deploy_key "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
-            "sudo cp '$DB_PATH' '$DB_PATH.bak-\$(date +%Y%m%d%H%M%S)'"
+            "sudo rsync --ignore-missing-args '$DB_PATH' '$DB_PATH.bak-\$(date +%Y%m%d%H%M%S)'"
 
       - name: Stop services
         run: |
