@@ -496,4 +496,45 @@ public class PaymentGenerationServiceTests
 
         Assert.Equal([teamA.Id, teamB.Id], square.CredentialsUsed.Select(c => c.TeamId));
     }
+
+    // ---- onlySessionId filter (session-scoped Detail-page refresh, 2026-08-03) ----
+
+    [Fact]
+    public async Task RunAsync_WithOnlySessionId_CreatesPaymentOnlyForThatSessionsCandidates()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        var candidateA = await SeedCandidateAsync(dbContext, team); // its own Session
+        var candidateB = await SeedCandidateAsync(dbContext, team); // a second, distinct Session
+
+        var square = new FakeSquareClient();
+        var result = await CreateService(dbContext, square).RunAsync(team, CancellationToken.None, candidateA.SessionId);
+
+        Assert.Equal(1, result.PaymentsCreated);
+        var payment = Assert.Single(dbContext.Payments);
+        Assert.Equal(candidateA.Id, payment.CandidateId);
+        // The other session's candidate is left for the next team-wide tick.
+        Assert.Empty(dbContext.Payments.Where(p => p.CandidateId == candidateB.Id));
+    }
+
+    [Fact]
+    public async Task RunAsync_WithOnlySessionId_GeneratesLinkOnlyForThatSessionsPayments()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        var candidateA = await SeedCandidateAsync(dbContext, team);
+        var candidateB = await SeedCandidateAsync(dbContext, team);
+        dbContext.Payments.AddRange(
+            new Payment { CandidateId = candidateA.Id, Reason = PaymentReason.InitialExam, Amount = 15m, Status = PaymentStatus.Unpaid, CreatedUtc = Now },
+            new Payment { CandidateId = candidateB.Id, Reason = PaymentReason.InitialExam, Amount = 15m, Status = PaymentStatus.Unpaid, CreatedUtc = Now });
+        await dbContext.SaveChangesAsync();
+
+        var square = new FakeSquareClient();
+        var result = await CreateService(dbContext, square).RunAsync(team, CancellationToken.None, candidateA.SessionId);
+
+        Assert.Equal(1, result.LinksGenerated);
+        Assert.Single(square.Calls);
+        Assert.NotNull(dbContext.Payments.Single(p => p.CandidateId == candidateA.Id).PaymentLinkUrl);
+        Assert.Null(dbContext.Payments.Single(p => p.CandidateId == candidateB.Id).PaymentLinkUrl);
+    }
 }

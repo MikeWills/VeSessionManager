@@ -26,7 +26,8 @@ namespace VeSessionManager.Worker;
 public class UlsWatcherJob(
     IServiceScopeFactory scopeFactory,
     IConfiguration configuration,
-    TimeProvider timeProvider) : BackgroundService
+    TimeProvider timeProvider,
+    ILogger<UlsWatcherJob> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -34,28 +35,33 @@ public class UlsWatcherJob(
 
         do
         {
-            var (intervalHours, startHourEt) = await GetSettingsAsync(stoppingToken);
-
-            var nowEt = TimeZoneInfo.ConvertTimeFromUtc(timeProvider.GetUtcNow().UtcDateTime, UlsSchedule.EasternTimeZone);
-            var dueSlotUtc = LatestDueSlotUtc(nowEt, startHourEt, intervalHours);
-
-            using var scope = scopeFactory.CreateScope();
-            var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-            var alreadyRanThisSlot = await dbContext.JobRunHistories.AnyAsync(
-                h => h.JobName == "UlsWatcher" && h.Success && h.StartedUtc >= dueSlotUtc, stoppingToken);
-            if (alreadyRanThisSlot)
+            await JobTick.GuardedAsync(logger, "UlsWatcher", async () =>
             {
-                continue;
-            }
+                var (intervalHours, startHourEt) = await GetSettingsAsync(stoppingToken);
 
-            var jobRunHistoryLogger = scope.ServiceProvider.GetRequiredService<JobRunHistoryLogger>();
-            var watcherService = scope.ServiceProvider.GetRequiredService<UlsWatcherService>();
+                var nowEt = TimeZoneInfo.ConvertTimeFromUtc(timeProvider.GetUtcNow().UtcDateTime, UlsSchedule.EasternTimeZone);
+                var dueSlotUtc = LatestDueSlotUtc(nowEt, startHourEt, intervalHours);
 
-            await jobRunHistoryLogger.RunAsync(
-                "UlsWatcher",
-                watcherService.RunAsync,
-                null,
-                stoppingToken);
+                using var scope = scopeFactory.CreateScope();
+                var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                var alreadyRanThisSlot = await dbContext.JobRunHistories.AnyAsync(
+                    h => h.JobName == "UlsWatcher" && h.Success && h.StartedUtc >= dueSlotUtc, stoppingToken);
+                if (alreadyRanThisSlot)
+                {
+                    // `return` (not `continue`) — this is the guarded tick body; returning ends this
+                    // tick and the do-while waits for the next hourly one, same as before.
+                    return;
+                }
+
+                var jobRunHistoryLogger = scope.ServiceProvider.GetRequiredService<JobRunHistoryLogger>();
+                var watcherService = scope.ServiceProvider.GetRequiredService<UlsWatcherService>();
+
+                await jobRunHistoryLogger.RunAsync(
+                    "UlsWatcher",
+                    watcherService.RunAsync,
+                    null,
+                    stoppingToken);
+            });
         }
         while (await timer.WaitForNextTickAsync(stoppingToken));
     }

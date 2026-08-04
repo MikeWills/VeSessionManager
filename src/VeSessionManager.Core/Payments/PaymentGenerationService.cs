@@ -35,7 +35,9 @@ public class PaymentGenerationService(
     TimeProvider timeProvider,
     ILogger<PaymentGenerationService> logger)
 {
-    public async Task<PaymentGenerationResult> RunAsync(Team team, CancellationToken cancellationToken)
+    /// <param name="onlySessionId">Restrict the run to one session's candidates (the Detail page's
+    /// session-scoped refresh); null (every scheduled/team-wide run) scans the whole team.</param>
+    public async Task<PaymentGenerationResult> RunAsync(Team team, CancellationToken cancellationToken, int? onlySessionId = null)
     {
         var result = new PaymentGenerationResult();
         var now = timeProvider.GetUtcNow().UtcDateTime;
@@ -52,6 +54,7 @@ public class PaymentGenerationService(
                         && c.Session.TeamId == team.Id
                         && c.Session.Status == SessionStatus.Active
                         && c.Session.ScheduledStartUtc >= paymentCutoff
+                        && (onlySessionId == null || c.SessionId == onlySessionId)
                         && !c.Payments.Any(p => p.Reason == PaymentReason.InitialExam))
             .ToListAsync(cancellationToken);
 
@@ -70,14 +73,53 @@ public class PaymentGenerationService(
                 CreatedUtc = now
             };
             dbContext.Payments.Add(payment);
-            result.PaymentsCreated++;
-            logger.LogInformation("Created InitialExam Payment for candidate {CandidateId} (session {ExamToolsSessionId}), FeeCollectionEnabled={FeeCollectionEnabled}",
-                candidate.Id, candidate.Session.ExamToolsSessionId, feeConfiguration.FeeCollectionEnabled);
-        }
 
-        if (candidatesNeedingPayment.Count > 0)
-        {
-            await dbContext.SaveChangesAsync(cancellationToken);
+            // Saved per candidate rather than as one batch at the end (2026-08-03). The unique index
+            // on (CandidateId, Reason) means a concurrent run in the other process — Web's manual
+            // refresh racing the Worker's tick — can make exactly one of these inserts fail. With a
+            // single batch save that one collision would roll back every other candidate's payment
+            // in the same pass; per-candidate, it costs only the row the other process already
+            // created. Same crash-safety reasoning as the link-generation loop below.
+            try
+            {
+                await dbContext.SaveChangesAsync(cancellationToken);
+                result.PaymentsCreated++;
+                logger.LogInformation("Created InitialExam Payment for candidate {CandidateId} (session {ExamToolsSessionId}), FeeCollectionEnabled={FeeCollectionEnabled}",
+                    candidate.Id, candidate.Session.ExamToolsSessionId, feeConfiguration.FeeCollectionEnabled);
+            }
+            catch (DbUpdateException ex)
+            {
+                // Detaching first is required — a failed entity stays in the change tracker and
+                // would be retried (and fail again) by every later save in this pass, including
+                // JobRunHistoryLogger's.
+                dbContext.Entry(payment).State = EntityState.Detached;
+
+                // Then ask the database what actually happened, rather than assuming. Catching
+                // DbUpdateException alone would lump two very different causes together: the
+                // expected uniqueness collision, and a transient "database is locked" — which is
+                // entirely realistic here, since Web and Worker share one SQLite file. Both are
+                // survivable (the next tick retries either way), but reporting a lock contention
+                // as "the other process already created it" would send someone hunting a race that
+                // isn't happening. One extra query, only on the failure path.
+                //
+                // Provider-agnostic on purpose: no SQLite error codes, so this keeps working if the
+                // database is ever swapped.
+                var alreadyExists = await dbContext.Payments
+                    .AnyAsync(p => p.CandidateId == candidate.Id && p.Reason == PaymentReason.InitialExam, cancellationToken);
+
+                if (alreadyExists)
+                {
+                    result.PaymentsSkippedAlreadyExisted++;
+                    logger.LogInformation("Skipped creating an InitialExam Payment for candidate {CandidateId} — one already exists, which means the other process (manual refresh vs. scheduled job) created it first",
+                        candidate.Id);
+                }
+                else
+                {
+                    result.PaymentsFailed++;
+                    logger.LogError(ex, "Failed to create an InitialExam Payment for candidate {CandidateId}, and no payment exists afterwards — this is NOT the known Web-vs-Worker collision; the next run will retry",
+                        candidate.Id);
+                }
+            }
         }
 
         // Bounded by the same window as creation above, and this is the half that matters most: the
@@ -90,7 +132,8 @@ public class PaymentGenerationService(
                         && p.PaymentLinkUrl == null
                         && p.SquareLinkPurgedUtc == null
                         && p.Candidate.Session.TeamId == team.Id
-                        && p.Candidate.Session.ScheduledStartUtc >= paymentCutoff)
+                        && p.Candidate.Session.ScheduledStartUtc >= paymentCutoff
+                        && (onlySessionId == null || p.Candidate.SessionId == onlySessionId))
             .ToListAsync(cancellationToken);
 
         if (paymentsNeedingLink.Count > 0 && !team.IsSquareConfigured)

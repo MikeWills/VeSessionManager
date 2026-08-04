@@ -93,6 +93,25 @@ public class AppDbContext(DbContextOptions<AppDbContext> options, IDataProtectio
             // token (the common case — only sessions under a youth-program Vec ever get one) are
             // fine; only a real, generated token collision would violate this.
             b.HasIndex(p => p.YouthConfirmationToken).IsUnique();
+
+            // One InitialExam payment per candidate, enforced by the database (2026-08-03).
+            // PaymentGenerationService decides whether to create one by checking
+            // "!c.Payments.Any(p => p.Reason == InitialExam)" — a read that the Web process (manual
+            // refresh) and the Worker (scheduled tick) can both perform before either one saves,
+            // concluding independently that no payment exists. The result was two Unpaid rows, two
+            // live Square checkout links, and later two reminder emails for one candidate. Nothing
+            // in the schema prevented it.
+            //
+            // Filtered to InitialExam because a Retest payment legitimately repeats — a candidate
+            // may sit (and pay for) several retests. The filter is written from the enum value
+            // rather than a hardcoded 0 so it cannot silently drift if the enum is ever renumbered.
+            //
+            // The index converts an invisible double-charge into a caught constraint violation,
+            // which PaymentGenerationService handles per-candidate as "the other process already
+            // created it" rather than as an error.
+            b.HasIndex(p => new { p.CandidateId, p.Reason })
+                .IsUnique()
+                .HasFilter($"\"Reason\" = {(int)PaymentReason.InitialExam}");
         });
 
         modelBuilder.Entity<SessionVolunteerExaminer>(b =>

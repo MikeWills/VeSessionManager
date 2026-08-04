@@ -42,7 +42,8 @@ namespace VeSessionManager.Worker;
 /// </summary>
 public class SessionIngestionJob(
     IServiceScopeFactory scopeFactory,
-    IConfiguration configuration) : BackgroundService
+    IConfiguration configuration,
+    ILogger<SessionIngestionJob> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -51,71 +52,74 @@ public class SessionIngestionJob(
 
         do
         {
-            using var scope = scopeFactory.CreateScope();
-            var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-            var timeProvider = scope.ServiceProvider.GetRequiredService<TimeProvider>();
-            var jobRunHistoryLogger = scope.ServiceProvider.GetRequiredService<JobRunHistoryLogger>();
-            var systemSettingsService = scope.ServiceProvider.GetRequiredService<SystemSettingsService>();
-            var scheduleService = scope.ServiceProvider.GetRequiredService<IngestionScheduleService>();
-            var ingestionService = scope.ServiceProvider.GetRequiredService<SessionIngestionService>();
-            var veRosterSyncService = scope.ServiceProvider.GetRequiredService<VolunteerExaminerSyncService>();
-            var examResultSyncService = scope.ServiceProvider.GetRequiredService<ExamResultSyncService>();
-            var schedulingService = scope.ServiceProvider.GetRequiredService<SessionEventSchedulingService>();
-            var paymentGenerationService = scope.ServiceProvider.GetRequiredService<PaymentGenerationService>();
-            var notificationService = scope.ServiceProvider.GetRequiredService<CandidateNotificationService>();
-
-            // Read fresh every tick (not once at startup like UlsWatcherJob's own interval) —
-            // the query is trivial (once per tick, not once per team) and means an admin's edit
-            // takes effect on the very next tick, not after a Worker restart.
-            var normalIntervalMinutes = (await systemSettingsService.GetAsync(stoppingToken)).SessionIngestionIntervalMinutes;
-
-            var teams = await dbContext.Teams.ToListAsync(stoppingToken);
-            foreach (var team in teams)
+            await JobTick.GuardedAsync(logger, "SessionIngestion", async () =>
             {
-                if (!scheduleService.IsDue(team, normalIntervalMinutes, timeProvider.GetUtcNow().UtcDateTime))
+                using var scope = scopeFactory.CreateScope();
+                var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                var timeProvider = scope.ServiceProvider.GetRequiredService<TimeProvider>();
+                var jobRunHistoryLogger = scope.ServiceProvider.GetRequiredService<JobRunHistoryLogger>();
+                var systemSettingsService = scope.ServiceProvider.GetRequiredService<SystemSettingsService>();
+                var scheduleService = scope.ServiceProvider.GetRequiredService<IngestionScheduleService>();
+                var ingestionService = scope.ServiceProvider.GetRequiredService<SessionIngestionService>();
+                var veRosterSyncService = scope.ServiceProvider.GetRequiredService<VolunteerExaminerSyncService>();
+                var examResultSyncService = scope.ServiceProvider.GetRequiredService<ExamResultSyncService>();
+                var schedulingService = scope.ServiceProvider.GetRequiredService<SessionEventSchedulingService>();
+                var paymentGenerationService = scope.ServiceProvider.GetRequiredService<PaymentGenerationService>();
+                var notificationService = scope.ServiceProvider.GetRequiredService<CandidateNotificationService>();
+
+                // Read fresh every tick (not once at startup like UlsWatcherJob's own interval) —
+                // the query is trivial (once per tick, not once per team) and means an admin's edit
+                // takes effect on the very next tick, not after a Worker restart.
+                var normalIntervalMinutes = (await systemSettingsService.GetAsync(stoppingToken)).SessionIngestionIntervalMinutes;
+
+                var teams = await dbContext.Teams.ToListAsync(stoppingToken);
+                foreach (var team in teams)
                 {
-                    continue;
+                    if (!scheduleService.IsDue(team, normalIntervalMinutes, timeProvider.GetUtcNow().UtcDateTime))
+                    {
+                        continue;
+                    }
+
+                    await jobRunHistoryLogger.RunAsync(
+                        "SessionIngestion",
+                        ct => ingestionService.RunAsync(team, ct),
+                        team.Id,
+                        stoppingToken);
+
+                    await jobRunHistoryLogger.RunAsync(
+                        "VeRosterSync",
+                        ct => veRosterSyncService.RunAsync(team, ct),
+                        team.Id,
+                        stoppingToken);
+
+                    await jobRunHistoryLogger.RunAsync(
+                        "ExamResultSync",
+                        ct => examResultSyncService.RunAsync(team, ct),
+                        team.Id,
+                        stoppingToken);
+
+                    await jobRunHistoryLogger.RunAsync(
+                        "SessionEventScheduling",
+                        ct => schedulingService.RunAsync(team, ct),
+                        team.Id,
+                        stoppingToken);
+
+                    await jobRunHistoryLogger.RunAsync(
+                        "PaymentGeneration",
+                        ct => paymentGenerationService.RunAsync(team, ct),
+                        team.Id,
+                        stoppingToken);
+
+                    await jobRunHistoryLogger.RunAsync(
+                        "RegistrationConfirmation",
+                        ct => notificationService.SendRegistrationConfirmationsAsync(team, ct),
+                        team.Id,
+                        stoppingToken);
+
+                    team.LastIngestionRunUtc = timeProvider.GetUtcNow().UtcDateTime;
+                    await dbContext.SaveChangesAsync(stoppingToken);
                 }
-
-                await jobRunHistoryLogger.RunAsync(
-                    "SessionIngestion",
-                    ct => ingestionService.RunAsync(team, ct),
-                    team.Id,
-                    stoppingToken);
-
-                await jobRunHistoryLogger.RunAsync(
-                    "VeRosterSync",
-                    ct => veRosterSyncService.RunAsync(team, ct),
-                    team.Id,
-                    stoppingToken);
-
-                await jobRunHistoryLogger.RunAsync(
-                    "ExamResultSync",
-                    ct => examResultSyncService.RunAsync(team, ct),
-                    team.Id,
-                    stoppingToken);
-
-                await jobRunHistoryLogger.RunAsync(
-                    "SessionEventScheduling",
-                    ct => schedulingService.RunAsync(team, ct),
-                    team.Id,
-                    stoppingToken);
-
-                await jobRunHistoryLogger.RunAsync(
-                    "PaymentGeneration",
-                    ct => paymentGenerationService.RunAsync(team, ct),
-                    team.Id,
-                    stoppingToken);
-
-                await jobRunHistoryLogger.RunAsync(
-                    "RegistrationConfirmation",
-                    ct => notificationService.SendRegistrationConfirmationsAsync(team, ct),
-                    team.Id,
-                    stoppingToken);
-
-                team.LastIngestionRunUtc = timeProvider.GetUtcNow().UtcDateTime;
-                await dbContext.SaveChangesAsync(stoppingToken);
-            }
+            });
         }
         while (await timer.WaitForNextTickAsync(stoppingToken));
     }

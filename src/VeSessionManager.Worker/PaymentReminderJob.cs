@@ -11,8 +11,8 @@ namespace VeSessionManager.Worker;
 /// same-day tick a no-op rather than a duplicate send/flag. Looped per Team — each team has its own
 /// SMTP account (multi-team, see docs/multi-team.md).
 /// </summary>
-public class PaymentReminderJob(IServiceScopeFactory scopeFactory, IConfiguration configuration)
-    : PerTeamDailyJob(scopeFactory, configuration, "PaymentReminder", "Jobs:PaymentReminderIntervalHours", 24)
+public class PaymentReminderJob(IServiceScopeFactory scopeFactory, IConfiguration configuration, ILogger<PaymentReminderJob> logger)
+    : PerTeamDailyJob(scopeFactory, configuration, logger, "PaymentReminder", "Jobs:PaymentReminderIntervalHours", 24)
 {
     protected override Task RunForTeamAsync(IServiceProvider scopedServices, Team team, CancellationToken cancellationToken) =>
         scopedServices.GetRequiredService<PaymentReminderService>().RunAsync(team, cancellationToken);
