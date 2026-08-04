@@ -24,11 +24,19 @@ public class YouthPaymentConfirmationServiceTests
         public List<CapturedCall> CreateCalls { get; } = [];
         public List<string> DeletedPaymentLinkIds { get; } = [];
         public Exception? ThrowOnDelete { get; set; }
+
+        /// <summary>Simulates the crash window this service's persist-once idempotency key exists for: Square has been called (the request is recorded) but the caller never gets to persist the result.</summary>
+        public Exception? ThrowOnCreate { get; set; }
         private int _nextOrderId = 8000;
 
         public Task<SquarePaymentLink> CreatePaymentLinkAsync(SquareCredentials credentials, SquarePaymentLinkRequest request, CancellationToken cancellationToken)
         {
             CreateCalls.Add(new CapturedCall(request.ReferenceId, request.ItemName, request.AmountUsd, request.IdempotencyKey));
+            if (ThrowOnCreate is not null)
+            {
+                throw ThrowOnCreate;
+            }
+
             var orderId = $"order-{_nextOrderId++}";
             return Task.FromResult(new SquarePaymentLink { Id = $"link-{orderId}", OrderId = orderId, Url = $"https://square.link/u/{orderId}" });
         }
@@ -63,7 +71,8 @@ public class YouthPaymentConfirmationServiceTests
     /// link already generated and a YouthConfirmationToken set.</summary>
     private static async Task<(Team Team, Payment Payment, Guid Token)> SeedAsync(
         AppDbContext dbContext, bool squareConfigured = true, decimal? youthExamFeeAmount = 5m,
-        PaymentStatus status = PaymentStatus.Unpaid, bool withExistingSquareLink = true)
+        PaymentStatus status = PaymentStatus.Unpaid, bool withExistingSquareLink = true,
+        string? squareIdempotencyKey = null)
     {
         var team = new Team
         {
@@ -114,6 +123,7 @@ public class YouthPaymentConfirmationServiceTests
             PaymentLinkUrl = withExistingSquareLink ? "https://square.link/u/order-old" : null,
             SquarePaymentReferenceId = withExistingSquareLink ? "order-old" : null,
             SquarePaymentLinkId = withExistingSquareLink ? "link-old" : null,
+            SquareIdempotencyKey = squareIdempotencyKey,
             YouthConfirmationToken = token,
             CreatedUtc = Now
         };
@@ -253,5 +263,98 @@ public class YouthPaymentConfirmationServiceTests
         Assert.Empty(square.DeletedPaymentLinkIds);
         var unchanged = await dbContext.Payments.SingleAsync();
         Assert.Equal(15m, unchanged.Amount);
+    }
+
+    // ---- idempotency key: persist-once, reused on retry (T07, 2026-08-03) ----
+
+    [Fact]
+    public async Task ConfirmAsync_WithAnExistingStandardRateLink_SendsAKeySquareHasNotSeen()
+    {
+        // The standard-rate link is deleted here, so its key must go with it — replaying that key
+        // would make Square hand back the standard-rate link at the standard-rate price.
+        await using var dbContext = CreateContext();
+        var (_, _, token) = await SeedAsync(dbContext, squareIdempotencyKey: "standard-rate-key");
+        var square = new FakeSquareClient();
+
+        await CreateService(dbContext, square).ConfirmAsync(token, CancellationToken.None);
+
+        Assert.Equal(["link-old"], square.DeletedPaymentLinkIds);
+        var call = Assert.Single(square.CreateCalls);
+        Assert.NotEqual("standard-rate-key", call.IdempotencyKey);
+        Assert.False(string.IsNullOrWhiteSpace(call.IdempotencyKey));
+    }
+
+    [Fact]
+    public async Task ConfirmAsync_PersistsTheIdempotencyKeyItSendsToSquare()
+    {
+        await using var dbContext = CreateContext();
+        var (_, _, token) = await SeedAsync(dbContext);
+        var square = new FakeSquareClient();
+
+        await CreateService(dbContext, square).ConfirmAsync(token, CancellationToken.None);
+
+        var call = Assert.Single(square.CreateCalls);
+        Assert.Equal(call.IdempotencyKey, (await dbContext.Payments.SingleAsync()).SquareIdempotencyKey);
+    }
+
+    [Fact]
+    public async Task ConfirmAsync_AfterAnInterruptedAttempt_ReusesThePersistedKeyRatherThanMintingANewOne()
+    {
+        // The regression that matters. Until 2026-08-03 this method assigned a fresh Guid on every
+        // call, so a crash between Square accepting CreatePaymentLink and the save at the end left
+        // the Payment Unpaid — the candidate could confirm again, send a *different* key, and get a
+        // second live Square order with the first orphaned and still payable.
+        await using var dbContext = CreateContext();
+        var (_, _, token) = await SeedAsync(dbContext);
+        var crashingSquare = new FakeSquareClient { ThrowOnCreate = new HttpRequestException("connection reset after Square accepted the request") };
+        var service = CreateService(dbContext, crashingSquare);
+
+        await Assert.ThrowsAsync<HttpRequestException>(() => service.ConfirmAsync(token, CancellationToken.None));
+
+        var keySentBeforeTheCrash = Assert.Single(crashingSquare.CreateCalls).IdempotencyKey;
+        var persistedKey = (await dbContext.Payments.SingleAsync()).SquareIdempotencyKey;
+        Assert.Equal(keySentBeforeTheCrash, persistedKey);
+
+        // Act — the candidate clicks confirm again after the crash.
+        var retrySquare = new FakeSquareClient();
+        var result = await CreateService(dbContext, retrySquare).ConfirmAsync(token, CancellationToken.None);
+
+        // Assert — Square sees the same key, so it replays the one order instead of creating a second.
+        Assert.Equal(YouthConfirmationOutcome.Success, result.Outcome);
+        Assert.Equal(keySentBeforeTheCrash, Assert.Single(retrySquare.CreateCalls).IdempotencyKey);
+    }
+
+    [Fact]
+    public async Task ConfirmAsync_WithAKeyPersistedButNoLiveLink_ReusesThatKey()
+    {
+        // The stored state an interrupted attempt leaves behind, seeded directly: no
+        // SquarePaymentLinkId (so nothing to delete and nothing to clear the key), key already set.
+        await using var dbContext = CreateContext();
+        var (_, _, token) = await SeedAsync(dbContext, withExistingSquareLink: false, squareIdempotencyKey: "interrupted-attempt-key");
+        var square = new FakeSquareClient();
+
+        await CreateService(dbContext, square).ConfirmAsync(token, CancellationToken.None);
+
+        Assert.Empty(square.DeletedPaymentLinkIds);
+        Assert.Equal("interrupted-attempt-key", Assert.Single(square.CreateCalls).IdempotencyKey);
+    }
+
+    [Fact]
+    public async Task ConfirmAsync_InterruptedAfterTheOldLinkWasDeleted_DoesNotDeleteTwice()
+    {
+        // Clearing SquarePaymentLinkId alongside the key is what makes the retry skip the delete —
+        // the standard-rate link is already gone.
+        await using var dbContext = CreateContext();
+        var (_, _, token) = await SeedAsync(dbContext);
+        var crashingSquare = new FakeSquareClient { ThrowOnCreate = new HttpRequestException("boom") };
+
+        await Assert.ThrowsAsync<HttpRequestException>(
+            () => CreateService(dbContext, crashingSquare).ConfirmAsync(token, CancellationToken.None));
+
+        var retrySquare = new FakeSquareClient();
+        await CreateService(dbContext, retrySquare).ConfirmAsync(token, CancellationToken.None);
+
+        Assert.Equal(["link-old"], crashingSquare.DeletedPaymentLinkIds);
+        Assert.Empty(retrySquare.DeletedPaymentLinkIds);
     }
 }
