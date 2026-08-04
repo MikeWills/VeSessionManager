@@ -38,7 +38,9 @@ public class EmailTemplatesModel(AppDbContext dbContext, UserManager<User> userM
         AvailableTeams = await adminAccessScope.ScopeTeams(dbContext.Teams, user)
             .OrderBy(t => t.Name).Select(t => new ValueTuple<int, string>(t.Id, t.Name)).ToListAsync();
 
-        var effectiveTeamId = adminAccessScope.TryResolveManageableTeamId(user, TeamId);
+        var effectiveTeamId = adminAccessScope.TryResolveManageableTeamId(user, TeamId, AvailableTeams.Select(t => t.Id).ToList());
+        // See TeamSettings: keep the picker's rendered state in step with the auto-selection.
+        TeamId = effectiveTeamId;
         TeamSummaryLabel = effectiveTeamId is not null
             ? AvailableTeams.FirstOrDefault(t => t.Id == effectiveTeamId).Name ?? "Select a team…"
             : "Select a team…";
