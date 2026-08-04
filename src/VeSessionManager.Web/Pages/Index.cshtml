@@ -9,7 +9,9 @@
     <div class="auth-card">
         <h1>VE Session Manager</h1>
         <p>Automates Zoom scheduling, payment links, and candidate emails for amateur radio VE testing sessions.</p>
+        @* No Privacy link here: _PublicLayout's footer carries one site-wide, and this page's own
+           copy sat directly above it — two identical links, inches apart. Login/ForgotPassword etc.
+           already rely on the layout for this; this page was the only holdout. *@
         <a class="btn-primary" style="display:block;text-align:center;" asp-page="/Account/Login">Log in</a>
-        <a class="auth-link view-link" asp-page="/Privacy">Privacy</a>
     </div>
 </div>
