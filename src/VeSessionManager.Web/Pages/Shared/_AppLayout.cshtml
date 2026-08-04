@@ -188,6 +188,11 @@
         @RenderBody()
     </main>
 
+    <footer class="vesm-footer">
+        <span>VE Session Manager @VeSessionManager.Core.AppVersion.Display</span>
+        <a asp-page="/Privacy">Privacy</a>
+    </footer>
+
     <script src="~/js/app.js" asp-append-version="true"></script>
     @await RenderSectionAsync("Scripts", required: false)
 </body>

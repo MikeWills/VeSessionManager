@@ -83,6 +83,9 @@ nav.chassis-nav a:hover { color: #fff; }
 main.vesm-main { max-width: 1160px; margin: 0 auto; padding: 36px 28px 80px; }
 main.vesm-main.wide { max-width: 1280px; padding: 32px 28px 100px; }
 
+.vesm-footer { max-width: 1160px; margin: 0 auto; padding: 0 28px 32px; font-family: "IBM Plex Mono", monospace; font-size: 11px; letter-spacing: .06em; color: var(--ink-soft); display: flex; gap: 14px; flex-wrap: wrap; }
+.vesm-footer a { color: inherit; }
+
 .page-head { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 24px; flex-wrap: wrap; gap: 12px; }
 h1 { font-size: 24px; margin: 0 0 4px; letter-spacing: -.01em; }
 .eyebrow { font-family: "IBM Plex Mono", monospace; font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-soft); margin: 0; }
