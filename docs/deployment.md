@@ -155,7 +155,7 @@ rather than stored as secrets. Edit them there directly if your setup differs:
 | Variable | Default | What it is |
 |---|---|---|
 | `DEPLOY_PATH` | `/opt/vesessionmanager` | Server directory each publish output is synced into (`worker/`/`web/` subfolders) |
-| `DB_PATH` | `/var/lib/vesessionmanager/vesessionmanager.db` | Shared SQLite DB, backed up before every deploy |
+| `DB_PATH` | `/var/lib/vesessionmanager/vesessionmanager.db` | Shared SQLite DB, backed up before every deploy — via `rsync --ignore-missing-args`, so the first deploy to a new box (where the file doesn't exist yet) isn't a failure; see the step's own comment for why `test -f` can't be used here |
 | `WORKER_SERVICE` | `vesessionmanager-worker` | systemd service for the Worker |
 | `WEB_SERVICE` | `vesessionmanager-web` | systemd service for the Web admin backend |
 | `WEB_PORT` | `5100` | Local port the health check polls after restart — **placeholder**, change it (and the Web unit's `ASPNETCORE_URLS`) if it collides with anything else already running on the box (NcsScheduler already occupies 5000) |
