@@ -1,8 +1,9 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Entities;
 
-namespace VeSessionManager.Worker;
+namespace VeSessionManager.Core.Email;
 
 /// <summary>
 /// Seeds one EmailSettings row and the four EmailTemplate rows per Team, if they don't already
@@ -15,6 +16,15 @@ namespace VeSessionManager.Worker;
 /// Multi-team: both EmailSettings and EmailTemplate content are per-team (confirmed with the
 /// user — templates are customizable per team, not shared) — this loops every Team and seeds a
 /// full set for each, rather than seeding once globally. See docs/multi-team.md.
+///
+/// **Two callers, and the important one is team creation** (moved here from the Worker project
+/// 2026-08-04). This used to run *only* at Worker startup, over whichever teams existed at that
+/// moment — so a team created afterwards through Admin → Teams had no templates and, worse, no
+/// EmailSettings row, which made CandidateNotificationService skip that team entirely with one log
+/// line and send nothing at all. The Web process could create a team that only a restart of a
+/// different process could make functional, and nothing said so. TeamSettingsService.CreateAsync now
+/// calls SeedForTeamAsync directly; the Worker's startup sweep stays as an idempotent backfill for
+/// teams that predate this (and for any created while the Worker was down).
 /// </summary>
 public static class EmailDefaultsSeeder
 {
@@ -29,7 +39,7 @@ public static class EmailDefaultsSeeder
         await dbContext.SaveChangesAsync();
     }
 
-    private static async Task SeedForTeamAsync(AppDbContext dbContext, ILogger logger, Team team)
+    public static async Task SeedForTeamAsync(AppDbContext dbContext, ILogger logger, Team team)
     {
         if (!await dbContext.EmailSettings.AnyAsync(e => e.TeamId == team.Id))
         {

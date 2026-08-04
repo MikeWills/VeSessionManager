@@ -1,6 +1,8 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 using VeSessionManager.Core.Admin;
 using VeSessionManager.Core.Data;
+using VeSessionManager.Core.Email;
 using VeSessionManager.Core.Entities;
 using Xunit;
 
@@ -24,7 +26,7 @@ public class TeamSettingsServiceTests
     }
 
     private static TeamSettingsService CreateService(AppDbContext dbContext) =>
-        new(dbContext, new FixedTimeProvider(Now));
+        new(dbContext, new FixedTimeProvider(Now), NullLogger<TeamSettingsService>.Instance);
 
     private static async Task<User> SeedUserAsync(AppDbContext dbContext)
     {
@@ -57,6 +59,43 @@ public class TeamSettingsServiceTests
         Assert.Equal("TeamCreated", audit.Action);
         Assert.Equal(nameof(Team), audit.EntityType);
         Assert.Equal(team.Id, audit.EntityId);
+    }
+
+    /// <summary>
+    /// Reported from the live beta (2026-08-04): a team created here had no EmailSettings row and no
+    /// templates until the Worker next started, because EmailDefaultsSeeder only ran at Worker
+    /// startup over the teams that existed then. The visible symptom was "No templates seeded for
+    /// this team yet"; the invisible one was CandidateNotificationService skipping the team entirely
+    /// and sending nothing.
+    /// </summary>
+    [Fact]
+    public async Task CreateAsync_SeedsEmailSettingsAndTemplates_WithoutNeedingAWorkerRestart()
+    {
+        await using var dbContext = CreateContext();
+        var user = await SeedUserAsync(dbContext);
+
+        var (_, team) = await CreateService(dbContext).CreateAsync("New Team", user.Id, CancellationToken.None);
+
+        Assert.NotNull(team);
+        Assert.True(await dbContext.EmailSettings.AnyAsync(e => e.TeamId == team!.Id));
+        var templateKeys = await dbContext.EmailTemplates.Where(t => t.TeamId == team!.Id).Select(t => t.Key).ToListAsync();
+        Assert.Contains("RegistrationConfirmation", templateKeys);
+        Assert.Contains("DayBeforeReminder", templateKeys);
+    }
+
+    /// <summary>The Worker's startup sweep still runs over every team, so seeding must not duplicate what CreateAsync already wrote.</summary>
+    [Fact]
+    public async Task CreateAsync_ThenTheWorkersStartupSweep_DoesNotDuplicateTheSeededRows()
+    {
+        await using var dbContext = CreateContext();
+        var user = await SeedUserAsync(dbContext);
+        var (_, team) = await CreateService(dbContext).CreateAsync("New Team", user.Id, CancellationToken.None);
+        var templateCountAfterCreate = await dbContext.EmailTemplates.CountAsync(t => t.TeamId == team!.Id);
+
+        await EmailDefaultsSeeder.SeedAsync(dbContext, NullLogger.Instance);
+
+        Assert.Equal(1, await dbContext.EmailSettings.CountAsync(e => e.TeamId == team!.Id));
+        Assert.Equal(templateCountAfterCreate, await dbContext.EmailTemplates.CountAsync(t => t.TeamId == team!.Id));
     }
 
     [Fact]
