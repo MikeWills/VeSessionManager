@@ -51,7 +51,7 @@
     // Grouped nav dropdowns — whether the trigger itself should show as "active" because the
     // current page is one of its children (the individual links inside still get their own
     // .active state too, same as before).
-    var applicantsGroupActive = activeNav is "ApplicantStatus";
+    var applicantsGroupActive = activeNav is "ApplicantStatus" or "RenewalMonitor";
     var vesGroupActive = activeNav is "VeRoster";
     var settingsGroupActive = activeNav is "AdminTeams" or "AdminTeamSettings" or "AdminUsers" or "AdminEmailTemplates"
         or "AdminFees" or "AdminVecs" or "AdminAuditLog" or "AdminJobHistory" or "AdminSystemSettings";
@@ -99,6 +99,10 @@
                 </button>
                 <div class="menu">
                     <a class="item @(activeNav == "ApplicantStatus" ? "active" : "")" asp-page="/SessionManager/ApplicantStatus">Applicant Status</a>
+                    @* Filed under Applicants because a renewal is, technically, an application —
+                       and it keeps every "waiting on FCC" screen in one place. No role gate, matching
+                       RenewalMonitor's bare [Authorize]; the two must stay in step. *@
+                    <a class="item @(activeNav == "RenewalMonitor" ? "active" : "")" asp-page="/SessionManager/RenewalMonitor">Renewal Monitor</a>
                 </div>
             </div>
             @* Gated to match VeRoster.cshtml.cs's own [Authorize] — the roster is a full VE contact

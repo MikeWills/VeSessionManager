@@ -33,6 +33,18 @@ public sealed record UlsLookupResult
     /// <summary>**Does** advance on an upgrade — ExamTools' rendering of HD's Last Action Date, and the only positive same-record signal that an upgrade actually landed.</summary>
     public DateTime? EffectiveDateUtc { get; init; }
 
+    /// <summary>End of the current 10-year term. **This advancing is the only positive confirmation that a renewal was actually issued** — a renewal leaves call sign, class and grant date untouched, so nothing else on the record changes. Verified live 2026-08-05 (W1AW: <c>expired_date</c> 2031-02-26).</summary>
+    public DateTime? ExpiredDateUtc { get; init; }
+
+    /// <summary>Set when FCC has cancelled the licence outright. Distinct from simply being past <see cref="ExpiredDateUtc"/>, which is still renewable during the grace period.</summary>
+    public DateTime? CancellationDateUtc { get; init; }
+
+    /// <summary>FCC's own FRN for the record. Captured so a watch entry added by call sign gets its FRN filled in automatically — the two identify the same licence and either can be looked up.</summary>
+    public string? Frn { get; init; }
+
+    /// <summary>Licensee name, assembled from the response's separate first/middle/last/suffix fields. A club record (W1AW) leaves all of them blank, so this can legitimately be null on a found record. The address the response also carries is deliberately **not** mapped — nothing here needs it, and not holding it is cheaper than justifying it.</summary>
+    public string? LicenseeName { get; init; }
+
     public IReadOnlyList<UlsPendingApplication> PendingApplications { get; init; } = [];
 
     public static UlsLookupResult NotFound { get; } = new() { Found = false };
@@ -41,6 +53,26 @@ public sealed record UlsLookupResult
 public sealed record UlsPendingApplication
 {
     public string? UlsFileNumber { get; init; }
+
+    /// <summary>
+    /// FCC application purpose code — what the applicant asked for. Renewals are what
+    /// <c>LicenseWatchService</c> keys off: <c>RO</c> (renewal only) and <c>RM</c>
+    /// (renewal/modification), versus <c>NE</c> new, <c>MD</c> modification, <c>AU</c>
+    /// administrative update.
+    /// <para><b>Unconfirmed against a live renewal.</b> The code list is FCC's documented one and the
+    /// field is documented as present on this endpoint, but no record carrying a pending *renewal*
+    /// has been observed yet — W1AW, the record the shape was verified on, had an empty
+    /// <c>pendingApplications</c>. Treated case-insensitively and matched against a set rather than
+    /// one literal, so an unexpected spelling degrades to "not a renewal" instead of throwing.</para>
+    /// </summary>
+    public string? ApplicationPurpose { get; init; }
+
+    /// <summary>True when <see cref="ApplicationPurpose"/> is one of the renewal codes.</summary>
+    public bool IsRenewal =>
+        ApplicationPurpose is { } purpose &&
+        RenewalPurposeCodes.Contains(purpose.Trim(), StringComparer.OrdinalIgnoreCase);
+
+    private static readonly string[] RenewalPurposeCodes = ["RO", "RM"];
 
     /// <summary>When FCC received the application. Maps to Candidate.ApplicationDateEnteredUtc — verified to equal the value the old HD-Last-Action-Date rule produced for a real candidate.</summary>
     public DateTime? ReceiptDateUtc { get; init; }
@@ -62,7 +94,17 @@ internal sealed class UlsLookupResponse
     [JsonPropertyName("prev_license_class")] public string? PrevLicenseClass { get; set; }
     [JsonPropertyName("grant_date")] public DateTime? GrantDate { get; set; }
     [JsonPropertyName("effective_date")] public DateTime? EffectiveDate { get; set; }
+    [JsonPropertyName("expired_date")] public DateTime? ExpiredDate { get; set; }
+    [JsonPropertyName("cancellation_date")] public DateTime? CancellationDate { get; set; }
+    [JsonPropertyName("frn")] public string? Frn { get; set; }
+    [JsonPropertyName("first_name")] public string? FirstName { get; set; }
+    [JsonPropertyName("middle_initial")] public string? MiddleInitial { get; set; }
+    [JsonPropertyName("last_name")] public string? LastName { get; set; }
+    [JsonPropertyName("suffix")] public string? Suffix { get; set; }
     [JsonPropertyName("pendingApplications")] public List<UlsPendingApplicationResponse>? PendingApplications { get; set; }
+
+    // The response also returns address/city/state/zip/pobox. Deliberately unmapped — see
+    // UlsLookupResult.LicenseeName.
 }
 
 internal sealed class UlsPendingApplicationResponse
@@ -72,6 +114,7 @@ internal sealed class UlsPendingApplicationResponse
     /// <summary>`/lookup2/` names this `uls_filenumber`, but `/lookup/` used `_id` for the same value — accept both so a shape tweak doesn't silently blank the file number.</summary>
     [JsonPropertyName("_id")] public string? LegacyId { get; set; }
 
+    [JsonPropertyName("application_purpose")] public string? ApplicationPurpose { get; set; }
     [JsonPropertyName("receipt_date")] public DateTime? ReceiptDate { get; set; }
     [JsonPropertyName("history")] public List<UlsHistoryResponse>? History { get; set; }
 }
