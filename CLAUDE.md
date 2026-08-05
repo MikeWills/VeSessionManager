@@ -89,6 +89,17 @@ would be pure duplication — and goes straight to `CHANGELOG.md` instead. Non-p
 redesigns, hardening passes) start here and move to `CHANGELOG.md` once the section is at/over the
 cap and a newer entry needs to be added; oldest goes first.
 
+- **Mobile-first responsive pass over the whole site (2026-08-05).** See `docs/responsive-ui.md`.
+  `app.css` had **zero media queries** — the site was desktop-only by construction, not merely
+  unpolished. It is now mobile-first (base layer = phone; a `min-width: 768px` "Desktop layer"
+  restores the original design unchanged), the chassis nav collapses behind a `☰` toggle, and tables
+  take one of two treatments: `table.cards` restacks a row into a labelled card (Session Manager
+  screens) while a `.table-scroll` wrapper scrolls sideways (admin screens, expected to follow
+  later — promoting one is just adding the class, since `app.js` generates the card labels from each
+  `<th>` rather than per-cell markup). Focusable controls are 16px on mobile because **iOS Safari
+  zooms on focus below that and never zooms back**, which is also why several inline
+  `style="…font-size:12px…"` attributes became `.menu-input` — a media query cannot override an
+  inline style.
 - **Worker resilience + duplicate-payment index (2026-08-03).** See `docs/worker-resilience.md`.
   Every job's per-tick work outside `JobRunHistoryLogger` (settings/team loads, queue peeks,
   `LastIngestionRunUtc` stamps) was unguarded, so one transient "database is locked" stopped the
@@ -228,16 +239,6 @@ cap and a newer entry needs to be added; oldest goes first.
   `IngestionStatusService` through a fresh scope instead of injecting it. Health is four states, not
   a bool (a fresh install must not open on a red alarm), is deployment-wide regardless of which team
   is being viewed, and fires at **2×** the configured interval — 1× fires during normal operation.
-- **Closed-session sweep narrowed to a discovery net (2026-07-31).** See `docs/historical-import.md`
-  (issue #67, part 1). `CompletedSessionBackfillWindow` 30 days → 7, and a closed session that is
-  already stored locally **and** already carries an `ExamToolsClosedUtc` stamp is dropped from the
-  merged feed instead of being re-processed every tick, for every team, forever (its only remaining
-  effects were a meaningless `ApplyRescheduleRules` and the long-complete `ExtId` backfill). **The
-  stamp half of that test is load-bearing:** skipping on "already known locally" alone would starve a
-  not-yet-closed session of both its `ExamToolsClosedUtc` stamp and its final candidate sync, which
-  brings issue #68's false cancellations straight back — `KnownButNotYetClosedSession_IsStillReadFromTheClosedFeed`
-  is the regression test. Pulling real history is now a deliberate one-off (see the historical import)
-  rather than a side effect of the rolling window.
 Everything through Phase 0-10's initial build (ExamTools ingestion, Zoom/Discord, Square, email
 notifications, FCC ULS watcher, payment reminders, VE tracking, VEC submission tracker, admin
 auth/config/candidate-actions, PII purge) plus the public privacy page has aged out to
@@ -419,6 +420,22 @@ To pick up updates: `/plugin marketplace update claude-tools`
   already-loaded page and dispatching a synthetic `DOMContentLoaded` **also re-fires the original
   instance's listener**, double-initialising every handler and making one click run two state
   cycles — which reads as a real bug and isn't. Use a fresh iframe, not `eval` + dispatch.
+- **In `app.css`, a single-class selector loses to `.vesm button` / `.vesm a` — both are (0,1,1),
+  class *plus element*.** Two separate live bugs came from this: anchor-buttons inheriting the body
+  colour (`.vesm a { color: inherit }` beating `.btn-primary`, white-on-black CTA, 2026-08-04), and
+  the mobile hamburger staying visible on desktop (`.vesm button { display: inline-block }` beating
+  `.nav-toggle { display: none }`, 2026-08-05). Any new rule that fights those two base rules on
+  `color` or `display` needs **two classes** — write `.vesm .nav-toggle`, not `.nav-toggle`. The
+  symptom is silent: the rule is in the file, spelled correctly, and simply doesn't apply.
+- **The Web app cannot be loaded in an iframe, which rules out the obvious way to test responsive
+  layout.** The 2026-08-03 hardening pass sends `X-Frame-Options: DENY` and CSP
+  `frame-ancestors 'none'`, so framing `localhost:5158` at a phone width fails with a broken-image
+  placeholder, not an error — and Chrome separately enforces a ~500px minimum window width, so
+  resizing the window can't produce a phone viewport either. **Don't weaken the headers to test
+  layout.** Use a self-contained harness instead (real `app.css`/`app.js` inlined + representative
+  markup, served over a throwaway local HTTP server, loaded in a sized iframe); it needs no login and
+  can assert on `scrollWidth` vs `clientWidth`. Recipe and the `</script>` escaping trap in
+  `docs/responsive-ui.md`.
 - (Environment-specific quirks and gotchas go here as they're discovered — e.g. API quirks, IIS behavior, network/DMZ restrictions, auth issues)
 
 ## Definition of Done

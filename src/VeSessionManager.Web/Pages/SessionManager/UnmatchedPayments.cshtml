@@ -47,7 +47,7 @@ else
 {
     <p class="session-sub">Square payments that arrived but couldn't be matched to a candidate automatically — usually a payment taken through a separate online payment page rather than one of this app's own generated links. Pick the right candidate below to mark their outstanding payment paid.</p>
 
-    <table data-sortable="unmatched-payments">
+    <table class="cards" data-sortable="unmatched-payments">
         <thead>
             <tr>
                 <th>Received</th>
@@ -91,7 +91,7 @@ else
                         {
                             <form method="post" asp-page-handler="Match" style="display:flex; gap:8px; align-items:center;">
                                 <input type="hidden" name="unmatchedPaymentId" value="@payment.Id" />
-                                <select name="candidateId" required style="font-family:'IBM Plex Mono',monospace; font-size:13px; padding:6px 8px; border:1px solid var(--line-strong); border-radius:5px; background:var(--surface); color:var(--ink);">
+                                <select name="candidateId" required class="menu-input">
                                     <option value="">Select candidate…</option>
                                     @foreach (var candidate in matchable)
                                     {

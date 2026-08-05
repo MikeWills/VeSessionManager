@@ -38,7 +38,7 @@
         <div class="menu" style="width:240px;">
             <label class="item" style="display:block;">
                 <span style="display:block; margin-bottom:4px;">Preset</span>
-                <select name="dateRange" style="width:100%; font-family:'IBM Plex Mono',monospace; font-size:12px; padding:6px 8px; border:1px solid var(--line-strong); border-radius:5px; background:var(--surface); color:var(--ink);">
+                <select name="dateRange" class="menu-input">
                     <option value="">Any time</option>
                     @foreach (var preset in VeSessionManager.Web.Pages.SessionManager.IndexModel.DateRangePresets)
                     {
@@ -49,8 +49,8 @@
             <hr />
             <div class="item" style="cursor:default;">
                 <span style="display:block; margin-bottom:4px;">Custom range (overrides preset)</span>
-                <input type="date" name="dateFrom" value="@Model.DateFrom?.ToString("yyyy-MM-dd")" style="width:100%; margin-bottom:6px; font-family:'IBM Plex Mono',monospace; font-size:12px; padding:6px 8px; border:1px solid var(--line-strong); border-radius:5px; background:var(--surface); color:var(--ink);" />
-                <input type="date" name="dateTo" value="@Model.DateTo?.ToString("yyyy-MM-dd")" style="width:100%; font-family:'IBM Plex Mono',monospace; font-size:12px; padding:6px 8px; border:1px solid var(--line-strong); border-radius:5px; background:var(--surface); color:var(--ink);" />
+                <input type="date" name="dateFrom" value="@Model.DateFrom?.ToString("yyyy-MM-dd")" class="menu-input" />
+                <input type="date" name="dateTo" value="@Model.DateTo?.ToString("yyyy-MM-dd")" class="menu-input" />
             </div>
             <hr />
             <button type="submit" class="item">Apply</button>
@@ -64,7 +64,7 @@
 }
 else
 {
-    <table data-sortable="ve-roster">
+    <table class="cards" data-sortable="ve-roster">
         <thead>
             <tr>
                 <th>Call sign</th>

@@ -34,6 +34,33 @@
       });
     }
 
+    // Mobile nav toggle. Below app.css's 768px breakpoint the chassis nav links and the .who
+    // cluster are one collapsed panel that `header.chassis.nav-open` reveals; from 768px up the
+    // button is display:none and this class is inert, so no width check is needed here.
+    var navToggle = document.getElementById("navToggle");
+    var chassis = navToggle && navToggle.closest("header.chassis");
+
+    function setNavOpen(open) {
+      if (!chassis) return;
+      chassis.classList.toggle("nav-open", open);
+      navToggle.setAttribute("aria-expanded", open ? "true" : "false");
+    }
+
+    if (navToggle && chassis) {
+      navToggle.addEventListener("click", function (event) {
+        // Without this the document handler below treats the click as "outside a menu" and the
+        // panel would close again in the same tick it opened.
+        event.stopPropagation();
+        setNavOpen(!chassis.classList.contains("nav-open"));
+      });
+    }
+
+    document.addEventListener("keydown", function (event) {
+      if (event.key !== "Escape") return;
+      document.querySelectorAll(".menu.open").forEach(function (m) { m.classList.remove("open"); });
+      setNavOpen(false);
+    });
+
     // Kebab row-action menus: click the trigger toggles its own .menu, closes any other open one;
     // click outside any open menu closes it.
     document.addEventListener("click", function (event) {
@@ -53,6 +80,10 @@
         document.querySelectorAll(".menu.open").forEach(function (m) { m.classList.remove("open"); });
       }
 
+      // Tapping the page body closes the mobile nav panel. Anything inside the header is excluded,
+      // so opening one of the panel's own accordion menus doesn't collapse the panel under it.
+      if (!event.target.closest("header.chassis")) setNavOpen(false);
+
       var modalOpener = event.target.closest("[data-open-modal]");
       if (modalOpener) {
         var modal = document.getElementById(modalOpener.getAttribute("data-open-modal"));
@@ -67,8 +98,50 @@
       }
     });
 
+    document.querySelectorAll("table.cards").forEach(labelCardTable);
     document.querySelectorAll("table[data-sortable]").forEach(initSortableTable);
   });
+
+  // ---- Card tables -------------------------------------------------------------------------
+  // Below app.css's 768px breakpoint a <table class="cards"> restacks each row into a labelled
+  // card, where the label is rendered from `content: attr(data-label)`. Rather than hand-writing
+  // data-label on every <td> across every page — hundreds of attributes to add, and to keep in step
+  // with the headers forever after — each cell is stamped here from its own column's <th>.
+  //
+  // That makes promoting another table to cards a one-word markup change (add the class), which is
+  // the point: the admin tables are on horizontal scroll for now and are expected to follow later.
+  //
+  // Two cases get marked instead of labelled:
+  //   .is-unlabelled — the column has no header text at all (the View / ⋮ action columns), so the
+  //                    cell spans the full card width rather than leaving an empty label gutter.
+  //   .is-blank      — the cell rendered nothing. A desktop table still needs the empty cell to
+  //                    keep its grid aligned; a card row reading "FRN —" with no value is noise.
+  function labelCardTable(table) {
+    var head = table.tHead;
+    var body = table.tBodies[0];
+    if (!head || !head.rows.length || !body) return;
+
+    var headerRow = head.rows[head.rows.length - 1];
+    var labels = Array.prototype.map.call(headerRow.cells, function (th) {
+      return (th.getAttribute("data-card-label") || th.textContent).trim();
+    });
+
+    Array.prototype.forEach.call(body.rows, function (row) {
+      Array.prototype.forEach.call(row.cells, function (cell) {
+        // The "nothing matches this filter" row spans the table and is styled on its own.
+        if (cell.hasAttribute("colspan")) return;
+
+        var label = labels[cell.cellIndex] || "";
+        if (label) cell.setAttribute("data-label", label);
+        else cell.classList.add("is-unlabelled");
+
+        // textContent alone would call a cell holding only an icon button or a link empty.
+        if (!cell.textContent.trim() && !cell.querySelector("a, button, input, select, svg, img")) {
+          cell.classList.add("is-blank");
+        }
+      });
+    });
+  }
 
   // ---- Sortable tables ---------------------------------------------------------------------
   // Opt in with <table data-sortable="unique-key-on-this-page">. Clicking a header cycles

@@ -8,6 +8,16 @@ that window, or immediately if it's phase-numbered work already summarized in "C
 design rationale for any entry still lives in its linked `/docs/*.md` file, not here or in
 CLAUDE.md — this file, like CLAUDE.md's Change Log, is pointers only.
 
+- **Closed-session sweep narrowed to a discovery net (2026-07-31).** See `docs/historical-import.md`
+  (issue #67, part 1). `CompletedSessionBackfillWindow` 30 days → 7, and a closed session that is
+  already stored locally **and** already carries an `ExamToolsClosedUtc` stamp is dropped from the
+  merged feed instead of being re-processed every tick, for every team, forever (its only remaining
+  effects were a meaningless `ApplyRescheduleRules` and the long-complete `ExtId` backfill). **The
+  stamp half of that test is load-bearing:** skipping on "already known locally" alone would starve a
+  not-yet-closed session of both its `ExamToolsClosedUtc` stamp and its final candidate sync, which
+  brings issue #68's false cancellations straight back — `KnownButNotYetClosedSession_IsStillReadFromTheClosedFeed`
+  is the regression test. Pulling real history is now a deliberate one-off (see the historical import)
+  rather than a side effect of the rolling window.
 - **Click-to-sort columns on every table (2026-07-31).** See `docs/table-sorting.md`. Ascending →
   descending → back to the server's order; a second column replaces the first; the choice is
   remembered per page. Two mechanisms behind one appearance: a shared vanilla-JS sorter in `app.js`

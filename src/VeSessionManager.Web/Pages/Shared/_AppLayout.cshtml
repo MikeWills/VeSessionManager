@@ -69,6 +69,10 @@
 <body class="vesm">
     <header class="chassis">
         <a class="brand" asp-page="/SessionManager/Index"><span class="dot"></span>VESESSIONMGR</a>
+        @* Mobile-only nav toggle (hidden from 768px up by app.css). It reveals both the nav links
+           and the .who cluster, which are one collapsed panel below the breakpoint — see the
+           "Chassis nav" comment in app.css. app.js keeps aria-expanded in step. *@
+        <button type="button" class="nav-toggle" id="navToggle" aria-expanded="false" aria-label="Menu"><span class="bars"></span></button>
         <nav class="chassis-nav">
             @* The VEC-submission badge rides on Sessions since the standalone VEC Submission page was
                removed as redundant — that worklist is now the Sessions page's "Pending VEC submission"
