@@ -4,6 +4,14 @@ Outstanding testing/configuration items for what's already built. This tracks op
 follow-ups and untriaged requests, not the phase roadmap itself — see [`docs/spec.md`](docs/spec.md)
 for what's planned but not yet built.
 
+> **Code-review findings are tracked separately, in
+> [`docs/audit-2026-08-03-tasks.md`](docs/audit-2026-08-03-tasks.md) — 26 of 39 still open.**
+> Kept out of this file on purpose: they came from one review pass, each carries its own files/fix/
+> acceptance criteria, and that file also records which areas were verified clean so they aren't
+> re-audited. Highest remaining are **T12** (Data Protection key ring stored beside the SQLite
+> database) and **T04** (Web Production config missing `Square`/`ExamTools`, so Web-initiated calls
+> silently use Square Sandbox and `examtools.dev`).
+
 **Completed items are not kept here.** They move to `CHANGELOG.md` as a one-line pointer (design
 rationale lives in the linked `/docs/*.md` file), the same policy CLAUDE.md's own Change Log
 follows. Anything closed before 2026-07-31 was pruned out in that pass — git history has the full

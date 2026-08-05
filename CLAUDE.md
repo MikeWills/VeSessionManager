@@ -5,6 +5,18 @@ This is a Visual Studio project that is designed to automate many of the mundane
 ## Current State
 
 - **All phases of `docs/spec.md` are implemented, Phase 0 through Phase 10** (Phase 0 foundation, Phase 1 ExamTools session/candidate ingestion, Phase 2 Zoom + Discord event scheduling, Phase 3 Square payment links + webhook, Phase 4 candidate notification emails + templates, Phase 5 ULS application/license watcher (rewritten 2026-07-31 onto ExamTools' ULS API — see `docs/uls-watcher.md`), Phase 6 payment reminder & expiration job, Phase 7 VE tracking, Phase 8 VEC submission tracker, Phase 9a-9d admin backend auth/scaffolding/candidate actions/config screens/privacy page, Phase 10 PII purge job) — see spec.md's own Backlog section for unscoped future work (VEC discount programs, no-FRN batch export) and TODO.md for known gaps.
+- **Outstanding review findings live in [`docs/audit-2026-08-03-tasks.md`](docs/audit-2026-08-03-tasks.md)
+  — check it before starting unrelated work.** A six-agent review (security, optimization/dead code,
+  and traceability across four layers) produced 39 findings as self-contained tasks: problem, files,
+  fix, acceptance criteria. **13 are done, 26 remain.** The completed ones were the P0/P1 tier —
+  authorization, public-internet hardening, Worker resilience, the payment race, the PII purge gap.
+  What's left is led by **T12** (the Data Protection key ring sitting beside the SQLite database, so
+  one leaked backup carries both ciphertext and key) and **T04** (Web's Production config missing
+  `Square`/`ExamTools`, so Web-initiated calls fall back to Square *Sandbox* and `examtools.dev`),
+  then a long tail of quality work. That file also records what the review verified as **clean**, so
+  those areas don't need re-auditing. This pointer is deliberately here rather than in the Change Log
+  below, which rotates entries out to `CHANGELOG.md` and would eventually take the only reference
+  with it.
 - Build/test/run: `dotnet build`, `dotnet test`, `dotnet run --project src/VeSessionManager.Worker`, `dotnet run --project src/VeSessionManager.Web` (see README, and Known Constraints below, for the `DOTNET_ENVIRONMENT` gotcha). Tests are xUnit in `tests/VeSessionManager.Core.Tests`, using the EF InMemory provider and fake client implementations — follow `SessionIngestionServiceTests`/`SessionEventSchedulingServiceTests`/`PaymentGenerationServiceTests`/`CandidateNotificationServiceTests`/`UlsWatcherServiceTests`/`PaymentReminderServiceTests` as the pattern.
 
 ## Established Patterns
