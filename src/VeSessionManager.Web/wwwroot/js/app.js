@@ -57,7 +57,7 @@
 
     document.addEventListener("keydown", function (event) {
       if (event.key !== "Escape") return;
-      document.querySelectorAll(".menu.open").forEach(function (m) { m.classList.remove("open"); });
+      closeAllMenus();
       setNavOpen(false);
     });
 
@@ -69,15 +69,18 @@
         var menu = kebab.parentElement.querySelector(".menu");
         if (menu) {
           var wasOpen = menu.classList.contains("open");
-          document.querySelectorAll(".menu.open").forEach(function (m) { m.classList.remove("open"); });
-          if (!wasOpen) menu.classList.add("open");
+          closeAllMenus();
+          if (!wasOpen) {
+            menu.classList.add("open");
+            liftMenuOutOfScrollContainer(kebab, menu);
+          }
         }
         event.stopPropagation();
         return;
       }
 
       if (!event.target.closest(".menu")) {
-        document.querySelectorAll(".menu.open").forEach(function (m) { m.classList.remove("open"); });
+        closeAllMenus();
       }
 
       // Tapping the page body closes the mobile nav panel. Anything inside the header is excluded,
@@ -98,9 +101,70 @@
       }
     });
 
+    // A menu positioned against the viewport does not travel with the row it belongs to, so any
+    // scroll closes it rather than leaving it stranded mid-page. Capture phase, because the scroll
+    // that matters most is the table wrapper's own and that does not bubble.
+    window.addEventListener("scroll", closeAllMenus, true);
+    window.addEventListener("resize", closeAllMenus);
+
     document.querySelectorAll("table.cards").forEach(labelCardTable);
     document.querySelectorAll("table[data-sortable]").forEach(initSortableTable);
   });
+
+  // ---- Row menus inside a scrolling table ------------------------------------------------------
+  // `.table-scroll` exists to let a wide table scroll sideways, but `overflow-x: auto` makes the
+  // wrapper a scroll container in BOTH axes — CSS refuses to pair `overflow-x: auto` with
+  // `overflow-y: visible` and silently promotes the other axis too. An absolutely-positioned row
+  // menu is therefore clipped by the wrapper instead of floating above the page, which is what it
+  // did on 2026-08-05: the kebab menu opened as a sliver cut off at the wrapper's edge, and the
+  // wrapper grew a stray vertical scrollbar.
+  //
+  // The fix is to take the open menu out of the wrapper's coordinate space entirely — `position:
+  // fixed` is relative to the viewport, so no ancestor's overflow can clip it. Coordinates are
+  // computed from the trigger, and cleared again on close so the CSS rules apply normally when the
+  // menu is not inside a scroll container.
+  //
+  // Only menus inside `.table-scroll` are touched. The chassis nav's dropdowns and the mobile
+  // accordion are unaffected.
+  function liftMenuOutOfScrollContainer(kebab, menu) {
+    if (!menu.closest(".table-scroll")) return;
+
+    var trigger = kebab.getBoundingClientRect();
+
+    // Fixed first, so the measurements below are of the menu at its final width rather than one
+    // constrained by the narrow cell it nominally lives in.
+    menu.style.position = "fixed";
+    menu.style.left = "0px";
+    menu.style.top = "0px";
+
+    var width = menu.offsetWidth;
+    var height = menu.offsetHeight;
+    var margin = 8;
+
+    // Right-aligned to the trigger, matching where the menu sits when CSS positions it, then
+    // clamped so it can never hang off either edge on a narrow screen.
+    var left = Math.min(trigger.right - width, window.innerWidth - width - margin);
+    menu.style.left = Math.max(margin, left) + "px";
+
+    // Below the trigger, or flipped above it when there isn't room — a menu opened on the last row
+    // of a long table would otherwise run off the bottom of the window.
+    var top = trigger.bottom + 4;
+    if (top + height > window.innerHeight - margin) {
+      top = Math.max(margin, trigger.top - height - 4);
+    }
+    menu.style.top = top + "px";
+  }
+
+  function closeAllMenus() {
+    document.querySelectorAll(".menu.open").forEach(function (menu) {
+      menu.classList.remove("open");
+      // Always cleared, not just for lifted menus: leaving inline coordinates behind would override
+      // the CSS the next time this same menu opens outside a scroll container.
+      menu.style.position = "";
+      menu.style.left = "";
+      menu.style.top = "";
+    });
+  }
 
   // ---- Card tables -------------------------------------------------------------------------
   // Below app.css's 768px breakpoint a <table class="cards"> restacks each row into a labelled
