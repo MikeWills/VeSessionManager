@@ -338,6 +338,45 @@ public class LicenseWatchServiceTests
         Assert.Equal(WatchedLicenseStatus.Active, licence.DeriveStatus(Now));
     }
 
+    /// <summary>
+    /// A real ULS record, read live on 2026-08-05 (KA0MVW): Active, General, granted 2016-07-01,
+    /// expiring 2026-08-07, no pending applications. Two days out with nothing filed is exactly the
+    /// case this feature exists to surface, so it is pinned rather than left to the synthetic
+    /// threshold tests above. Call sign only — the response's name and address are not stored by the
+    /// app and have no business in a fixture.
+    /// </summary>
+    [Fact]
+    public async Task RealRecord_ExpiringInTwoDaysWithNoRenewal_ReportsExpiringSoon()
+    {
+        using var dbContext = CreateContext();
+        await SeedAsync(dbContext, l => l.CallSign = "KA0MVW");
+
+        var live = new UlsLookupResult
+        {
+            Found = true,
+            CallSign = "KA0MVW",
+            Frn = "0004717963",
+            LicenseStatus = "Active",
+            OperatorClass = LicenseClass.General,
+            // "Technician Plus" is a legacy spelling the class parser has to accept.
+            PreviousOperatorClass = LicenseClass.Technician,
+            GrantDateUtc = new DateTime(2016, 7, 1, 8, 0, 0, DateTimeKind.Utc),
+            EffectiveDateUtc = new DateTime(2016, 7, 1, 8, 0, 0, DateTimeKind.Utc),
+            ExpiredDateUtc = new DateTime(2026, 8, 7, 8, 0, 0, DateTimeKind.Utc),
+            PendingApplications = []
+        };
+        var client = new FakeUlsLookupClient(new() { ["KA0MVW"] = live });
+
+        await CreateService(dbContext, client).RunAsync(CancellationToken.None);
+
+        var licence = await dbContext.WatchedLicenses.SingleAsync();
+        Assert.Equal(WatchedLicenseStatus.ExpiringSoon, licence.DeriveStatus(Now));
+        Assert.True(licence.DeriveStatus(Now).NeedsAttention());
+        Assert.Null(licence.RenewalPendingSinceUtc);
+        // Still inside the window, so it is renewable today without re-testing.
+        Assert.True(licence.ExpiredDateUtc > Now);
+    }
+
     [Fact]
     public void RenewedHighlight_FadesBackToActive()
     {
