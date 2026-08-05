@@ -4,7 +4,7 @@ namespace VeSessionManager.Core.Entities;
 /// A licence a team has asked the app to keep an eye on — club members, family, anyone at all. It is
 /// deliberately **not** tied to a Candidate or a VolunteerExaminer: the whole point is that the
 /// person need never have tested with this team, or be a VE. Tracking VEs' own licences is a
-/// separate feature (see docs/license-watch.md).
+/// separate feature (see docs/renewal-monitor.md).
 ///
 /// Scoped to a Team so every role can use it within their own team(s), the same scoping every list
 /// page already applies.

@@ -1,17 +1,17 @@
 @page
 @using VeSessionManager.Core.Entities
-@model VeSessionManager.Web.Pages.SessionManager.LicenseWatchModel
+@model VeSessionManager.Web.Pages.SessionManager.RenewalMonitorModel
 @{
-    ViewData["Title"] = "Licence Watch";
-    ViewData["ActiveNav"] = "LicenseWatch";
+    ViewData["Title"] = "Renewal Monitor";
+    ViewData["ActiveNav"] = "RenewalMonitor";
     Layout = "_AppLayout";
     var utcNow = DateTime.UtcNow;
 }
 
 <div class="page-head">
     <div>
-        <p class="eyebrow">Licences</p>
-        <h1>Licence Watch</h1>
+        <p class="eyebrow">Applicants</p>
+        <h1>Renewal Monitor</h1>
     </div>
     <button type="button" class="btn-primary" data-open-modal="addLicenseModal">Watch a licence</button>
 </div>
@@ -19,11 +19,11 @@
 @if (Model.AvailableTeams.Count > 1)
 {
     <div class="filters" style="margin-bottom:16px;">
-        <a class="filter-pill @(Model.TeamId is null ? "active" : "")" asp-page="./LicenseWatch">All teams</a>
+        <a class="filter-pill @(Model.TeamId is null ? "active" : "")" asp-page="./RenewalMonitor">All teams</a>
         @foreach (var team in Model.AvailableTeams)
         {
             <a class="filter-pill @(team.Id == Model.TeamId ? "active" : "")"
-               asp-page="./LicenseWatch" asp-route-teamId="@team.Id">@team.Name</a>
+               asp-page="./RenewalMonitor" asp-route-teamId="@team.Id">@team.Name</a>
         }
     </div>
 }

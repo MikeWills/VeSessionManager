@@ -89,8 +89,8 @@ would be pure duplication — and goes straight to `CHANGELOG.md` instead. Non-p
 redesigns, hardening passes) start here and move to `CHANGELOG.md` once the section is at/over the
 cap and a newer entry needs to be added; oldest goes first.
 
-- **Licence Watch: expiration + renewal tracking for an arbitrary watch list (2026-08-05).** See
-  `docs/license-watch.md`. Team-scoped list of any call sign at all — club members, family, people
+- **Renewal Monitor: expiration + renewal tracking for an arbitrary watch list (2026-08-05).** See
+  `docs/renewal-monitor.md`. Team-scoped list of any call sign at all — club members, family, people
   who never tested here — showing expiration and the renewal lifecycle. Screen only, no email, open
   to every role (it is all public FCC record data). **`expired_date` was returned by ExamTools' ULS
   mirror all along and simply never mapped**; call-sign lookup works on the same endpoint as FRN,

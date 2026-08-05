@@ -94,7 +94,7 @@ builder.Services.AddScoped<JobRunHistoryLogger>();
 // exam-result step too, which is the escape hatch for a session graded after
 // ExamResultSyncService.ResultSyncWindow has passed.
 builder.Services.AddScoped<ExamResultSyncService>();
-// The Licence Watch add flow resolves a call sign against ULS before saving, so a typo
+// The Renewal Monitor add flow resolves a call sign against ULS before saving, so a typo
 // is rejected while the user is still on the page rather than becoming a row that
 // silently never resolves. Same client the Worker's refresh job uses.
 builder.Services.AddSingleton<IUlsLookupClient, ExamToolsUlsLookupClient>();

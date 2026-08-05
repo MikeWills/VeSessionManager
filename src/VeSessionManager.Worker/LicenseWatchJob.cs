@@ -4,7 +4,7 @@ using VeSessionManager.Core.Uls;
 namespace VeSessionManager.Worker;
 
 /// <summary>
-/// Refreshes watched licences from ExamTools' ULS mirror — see docs/license-watch.md.
+/// Refreshes watched licences from ExamTools' ULS mirror — see docs/renewal-monitor.md.
 ///
 /// <para>Deliberately the plain "tick every N hours from Worker start" idiom rather than
 /// UlsWatcherJob's wall-clock-ET slot machinery. That job anchors to 08:00/20:00 ET because FCC runs

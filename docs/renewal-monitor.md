@@ -1,7 +1,13 @@
-# Licence Watch
+# Renewal Monitor
 
 A team's watch list of amateur licences: expiration dates, and the renewal lifecycle from
-application through issuance. Anyone can be watched — club members, family, someone who never tested
+application through issuance. Lives under **Applicants** in the nav — a renewal is, technically,
+an application, and it keeps every "waiting on FCC" screen together.
+
+> **Two names, deliberately.** The feature is *Renewal Monitor* in the UI; the Core types are
+> `WatchedLicense` / `LicenseWatchService` / `LicenseWatchJob`, because that is mechanically what
+> they do. The split is kept rather than renamed: the table ships in the `WatchedLicenses`
+> migration, and renaming it would cost a migration on a deployed schema for no functional gain. Anyone can be watched — club members, family, someone who never tested
 with this team. Rows are **not** tied to a `Candidate` or a `VolunteerExaminer`.
 
 Tracking the VE roster's own licences is a **separate, not-yet-built feature**. It was deliberately

@@ -12,7 +12,13 @@ namespace VeSessionManager.Web.Pages.SessionManager;
 
 /// <summary>
 /// A team's watch list of amateur licences — expiration dates, and the renewal lifecycle from
-/// application through issuance. See docs/license-watch.md.
+/// application through issuance. See docs/renewal-monitor.md.
+///
+/// <para><b>Named "Renewal Monitor" in the UI, "watched licence" in the model.</b> The page is filed
+/// under Applicants because a renewal is, technically, an application; the Core types
+/// (<see cref="WatchedLicense"/>, <c>LicenseWatchService</c>) keep the mechanical name because that
+/// is what they are — a licence being watched — and renaming the table would cost a migration on an
+/// already-deployed schema for no functional gain.</para>
 ///
 /// <para><b>Open to all four roles, scoped to their own team(s).</b> Unlike VE Roster (admin-only,
 /// because it is a contact list plus a per-VE leaderboard), this holds nothing sensitive: call sign,
@@ -22,7 +28,7 @@ namespace VeSessionManager.Web.Pages.SessionManager;
 /// authentication.</para>
 /// </summary>
 [Authorize]
-public class LicenseWatchModel(
+public class RenewalMonitorModel(
     AppDbContext dbContext,
     UserManager<User> userManager,
     SessionAccessScope accessScope,

@@ -8,7 +8,7 @@ using Xunit;
 namespace VeSessionManager.Core.Tests;
 
 /// <summary>
-/// Covers the licence watch list — see docs/license-watch.md. Follows UlsWatcherServiceTests' shape:
+/// Covers the licence watch list — see docs/renewal-monitor.md. Follows UlsWatcherServiceTests' shape:
 /// EF InMemory plus a fake lookup client, no live calls.
 /// </summary>
 public class LicenseWatchServiceTests

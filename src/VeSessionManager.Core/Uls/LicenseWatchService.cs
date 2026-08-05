@@ -6,7 +6,7 @@ using VeSessionManager.Core.Entities;
 namespace VeSessionManager.Core.Uls;
 
 /// <summary>
-/// Refreshes every team's watched licences from ExamTools' ULS mirror — see docs/license-watch.md.
+/// Refreshes every team's watched licences from ExamTools' ULS mirror — see docs/renewal-monitor.md.
 ///
 /// <para>Same scan-based, idempotent shape as every other job here: the work is "re-derive current
 /// state from the remote feed", <see cref="WatchedLicense.LastCheckedUtc"/> is both the staleness
