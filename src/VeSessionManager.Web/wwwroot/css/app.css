@@ -180,16 +180,23 @@ tbody tr.row-past:hover { background: var(--row-hover); }
 .session-sub { font-family: "IBM Plex Mono", monospace; font-size: 12px; color: var(--ink-soft); margin-top: 2px; }
 .count { font-family: "IBM Plex Mono", monospace; }
 
-/* Two ways a table survives a phone, chosen per page (see docs/responsive-ui.md):
+/* Two treatments that stack, not alternatives (see docs/responsive-ui.md):
 
-   .table-scroll  — a wrapper div that lets a wide table scroll sideways instead of forcing the page
-                    to. Used for the admin/reference tables, which are rarely opened on a phone.
-                    Inert on desktop, where the table already fits.
-   table.cards    — each row restacks into a labelled card below --bp-md. Used for the Session
-                    Manager screens, which are the ones actually used at a session. Labels come from
-                    the matching <th> at runtime (app.js's labelCardTables), so promoting another
-                    table is just adding the class — no per-cell markup. */
+   table.cards    — below --bp-md each row restacks into a labelled card. Labels come from the
+                    matching <th> at runtime (app.js's labelCardTable), so putting a new table on
+                    cards is just adding the class — no per-cell markup.
+   .table-scroll  — a wrapper div that lets a table too wide for its container scroll sideways
+                    instead of forcing the whole page to.
+
+   Every data table wants BOTH. Cards only exist below 768px, so between 768px and roughly 1100px —
+   a tablet, a split-screen window, a small laptop — a 16-column table is a real table again and
+   overflows the page horizontally with nothing to catch it. The wrapper is what covers that band.
+
+   The :not(.cards) qualifier on min-width is load-bearing: in card mode the table is display:block
+   and a 680px floor would push it straight back off the side of a phone — reintroducing exactly the
+   horizontal page scroll this is all meant to remove. */
 .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.table-scroll > table:not(.cards) { min-width: 680px; }
 
 /* Applicant Status "days pending" escalation, in step with PaymentReminderService's 5-day reminder
    and 10-day expiration passes (see ApplicantStatusModel's threshold constants, which reference
@@ -432,12 +439,9 @@ footer.roster { margin-top: 28px; background: var(--surface); border: 1px solid 
   table.cards td[colspan] { display: block; padding: 16px 14px; text-align: center; color: var(--ink-soft); }
   table.cards td[colspan]::before { content: none; }
 
-  /* Scroll-mode tables keep their columns and scroll sideways. The min-width is what makes them
-     scroll rather than compress every column into unreadable slivers. */
-  .table-scroll > table { min-width: 680px; }
-  /* A hint that there is more to the right, so the cut-off column doesn't read as a broken layout. */
-  .table-scroll { border: 1px solid var(--line); border-radius: 8px; }
-  .table-scroll > table { border: none; border-radius: 0; }
+  /* A table still in table form below the breakpoint keeps its own border, which reads as the edge
+     of the scrollable region. Nothing is in that state today — every table carries .cards — so this
+     is only here for one added later without it. */
 
   .pagination { flex-direction: column; align-items: stretch; gap: 10px; }
   .pagination-controls { justify-content: space-between; }
