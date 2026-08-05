@@ -88,10 +88,15 @@ public class ExamToolsUlsLookupClient(
                 PreviousOperatorClass = ParseLicenseClass(r.PrevLicenseClass),
                 GrantDateUtc = AsUtcDate(r.GrantDate),
                 EffectiveDateUtc = AsUtcDate(r.EffectiveDate),
+                ExpiredDateUtc = AsUtcDate(r.ExpiredDate),
+                CancellationDateUtc = AsUtcDate(r.CancellationDate),
+                Frn = string.IsNullOrWhiteSpace(r.Frn) ? null : r.Frn.Trim(),
+                LicenseeName = BuildLicenseeName(r),
                 PendingApplications = (r.PendingApplications ?? [])
                     .Select(p => new UlsPendingApplication
                     {
                         UlsFileNumber = string.IsNullOrWhiteSpace(p.UlsFileNumber) ? p.LegacyId : p.UlsFileNumber,
+                        ApplicationPurpose = string.IsNullOrWhiteSpace(p.ApplicationPurpose) ? null : p.ApplicationPurpose.Trim(),
                         ReceiptDateUtc = AsUtcDate(p.ReceiptDate),
                         History = (p.History ?? [])
                             .Where(h => !string.IsNullOrWhiteSpace(h.Code))
@@ -100,6 +105,20 @@ public class ExamToolsUlsLookupClient(
                     })
                     .ToList()
             };
+        }
+
+        /// <summary>
+        /// The response carries the licensee's name in four separate fields rather than one. A club
+        /// licence leaves every one of them blank (verified on W1AW), so an empty result is normal
+        /// and returns null rather than an empty or whitespace string.
+        /// </summary>
+        private static string? BuildLicenseeName(UlsLookupResponse r)
+        {
+            var name = string.Join(' ', new[] { r.FirstName, r.MiddleInitial, r.LastName, r.Suffix }
+                .Where(part => !string.IsNullOrWhiteSpace(part))
+                .Select(part => part!.Trim()));
+
+            return string.IsNullOrWhiteSpace(name) ? null : name;
         }
 
         /// <summary>

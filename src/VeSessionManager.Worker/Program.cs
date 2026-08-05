@@ -87,6 +87,7 @@ builder.Services.Configure<UlsLookupOptions>(builder.Configuration.GetSection(Ul
 // unlike Zoom/Square/Email this isn't an optional integration — it always runs.
 builder.Services.AddSingleton<IUlsLookupClient, ExamToolsUlsLookupClient>();
 builder.Services.AddScoped<UlsWatcherService>();
+builder.Services.AddScoped<LicenseWatchService>();
 
 builder.Services.Configure<PaymentReminderOptions>(builder.Configuration.GetSection(PaymentReminderOptions.SectionName));
 builder.Services.AddScoped<PaymentReminderService>();
@@ -108,6 +109,7 @@ builder.Services.AddScoped<JobRunHistoryLogger>();
 builder.Services.AddHostedService<SessionIngestionJob>();
 builder.Services.AddHostedService<DayBeforeReminderJob>();
 builder.Services.AddHostedService<UlsWatcherJob>();
+builder.Services.AddHostedService<LicenseWatchJob>();
 builder.Services.AddHostedService<PaymentReminderJob>();
 builder.Services.AddHostedService<SquareLinkPurgeJob>();
 builder.Services.AddHostedService<PiiPurgeJob>();

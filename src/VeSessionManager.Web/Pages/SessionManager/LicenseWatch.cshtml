@@ -1,0 +1,167 @@
+@page
+@using VeSessionManager.Core.Entities
+@model VeSessionManager.Web.Pages.SessionManager.LicenseWatchModel
+@{
+    ViewData["Title"] = "Licence Watch";
+    ViewData["ActiveNav"] = "LicenseWatch";
+    Layout = "_AppLayout";
+    var utcNow = DateTime.UtcNow;
+}
+
+<div class="page-head">
+    <div>
+        <p class="eyebrow">Licences</p>
+        <h1>Licence Watch</h1>
+    </div>
+    <button type="button" class="btn-primary" data-open-modal="addLicenseModal">Watch a licence</button>
+</div>
+
+@if (Model.AvailableTeams.Count > 1)
+{
+    <div class="filters" style="margin-bottom:16px;">
+        <a class="filter-pill @(Model.TeamId is null ? "active" : "")" asp-page="./LicenseWatch">All teams</a>
+        @foreach (var team in Model.AvailableTeams)
+        {
+            <a class="filter-pill @(team.Id == Model.TeamId ? "active" : "")"
+               asp-page="./LicenseWatch" asp-route-teamId="@team.Id">@team.Name</a>
+        }
+    </div>
+}
+
+@if (!Model.HasTeamContext)
+{
+    <p>No team assigned to this account.</p>
+}
+else
+{
+    @* Both treatments, like every other table here: cards below 768px, wrapper scroll above it.
+       See docs/responsive-ui.md. *@
+    <div class="table-scroll">
+    <table class="cards" data-sortable="watched-licenses">
+        <thead>
+            <tr>
+                <th>Call sign</th>
+                <th>Name</th>
+                <th>Class</th>
+                @if (Model.TeamId is null && Model.AvailableTeams.Count > 1)
+                {
+                    <th>Team</th>
+                }
+                <th>Expires</th>
+                <th>Status</th>
+                <th>Renewal</th>
+                <th>Note</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            @if (Model.Licenses.Count == 0)
+            {
+                <tr><td colspan="9">Nothing on the watch list yet. Add a call sign to start tracking its expiration.</td></tr>
+            }
+            @foreach (var row in Model.Licenses)
+            {
+                var days = row.DaysUntilExpiry(utcNow);
+                <tr>
+                    <td class="mono session-title">@row.License.CallSign</td>
+                    <td>@(row.License.LicenseeName ?? "—")</td>
+                    <td>@(row.License.OperatorClass == LicenseClass.None ? "—" : row.License.OperatorClass.ToString())</td>
+                    @if (Model.TeamId is null && Model.AvailableTeams.Count > 1)
+                    {
+                        <td>@row.License.Team?.Name</td>
+                    }
+                    <td class="count" data-sort-value="@row.ExpiresSortValue">
+                        @row.ExpiresDisplay
+                        @if (days is { } d)
+                        {
+                            @* Escalation reuses the Applicant Status "days pending" pills rather than
+                               introducing new colours — already correct in both themes. Applied to a
+                               span inside the cell, never the td (see app.css). *@
+                            @if (d < 0)
+                            {
+                                <span class="days-critical" title="Expired @(-d) days ago">@d d</span>
+                            }
+                            else if (d <= 90)
+                            {
+                                <span class="days-warning" title="Inside FCC's 90-day renewal window">@d d</span>
+                            }
+                        }
+                    </td>
+                    <td><span class="chip @row.Status.ChipClass()">@row.Status.Label()</span></td>
+                    <td class="mono">@row.RenewalDisplay</td>
+                    <td class="session-sub">@(row.License.Note ?? "")</td>
+                    <td class="row-actions">
+                        <button type="button" class="kebab" aria-label="Actions">⋮</button>
+                        <div class="menu">
+                            @if (row.License.Frn is { } frn)
+                            {
+                                <div class="item mono" style="cursor:default;">FRN @frn</div>
+                            }
+                            @if (row.License.LastCheckedUtc is { } checkedUtc)
+                            {
+                                <div class="item session-sub" style="cursor:default;">Checked @checkedUtc.ToString("MMM d, HH:mm") UTC</div>
+                            }
+                            <hr />
+                            <button type="button" class="item danger" data-open-modal="removeLicenseModal-@row.License.Id">Remove from watch list</button>
+                        </div>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+    </div>
+
+    @foreach (var row in Model.Licenses)
+    {
+        <div class="modal-backdrop" id="removeLicenseModal-@row.License.Id">
+            <div class="modal">
+                <h3>Stop watching @row.License.CallSign?</h3>
+                <p>This only removes it from your team's watch list. Nothing at FCC is affected.</p>
+                <form method="post" asp-page-handler="Remove" asp-route-teamId="@Model.TeamId" asp-antiforgery="true">
+                    <input type="hidden" name="watchedLicenseId" value="@row.License.Id" />
+                    <div class="modal-actions">
+                        <button type="button" class="btn-secondary btn-sm" data-close-modal>Cancel</button>
+                        <button type="submit" class="btn-danger btn-sm">Remove</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    }
+}
+
+<div class="modal-backdrop" id="addLicenseModal">
+    <div class="modal">
+        <h3>Watch a licence</h3>
+        <form method="post" asp-page-handler="Add" asp-route-teamId="@Model.TeamId" asp-antiforgery="true">
+            @if (Model.AvailableTeams.Count > 1)
+            {
+                <div class="field">
+                    <label for="addTeamId">Team</label>
+                    <select id="addTeamId" name="AddTeamId">
+                        @foreach (var team in Model.AvailableTeams)
+                        {
+                            <option value="@team.Id" selected="@(team.Id == Model.AddTeamId)">@team.Name</option>
+                        }
+                    </select>
+                </div>
+            }
+            <div class="field">
+                <label for="addCallSign">Call sign or FRN</label>
+                @* autocapitalize/autocorrect matter on a phone, where the soft keyboard would
+                   otherwise title-case and autocorrect a call sign into something else entirely. *@
+                <input id="addCallSign" name="AddCallSign" required autofocus
+                       autocapitalize="characters" autocorrect="off" spellcheck="false"
+                       placeholder="W1AW" />
+            </div>
+            <div class="field">
+                <label for="addNote">Note (optional)</label>
+                <input id="addNote" name="AddNote" placeholder="Club secretary" />
+            </div>
+            <p class="session-sub" style="margin:10px 0 0;">Looked up at FCC when you add it, so a typo is caught now rather than showing up as a row that never resolves.</p>
+            <div class="modal-actions">
+                <button type="button" class="btn-secondary btn-sm" data-close-modal>Cancel</button>
+                <button type="submit" class="btn-primary btn-sm">Add</button>
+            </div>
+        </form>
+    </div>
+</div>

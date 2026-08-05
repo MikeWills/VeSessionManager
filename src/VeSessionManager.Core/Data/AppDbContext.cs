@@ -41,6 +41,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options, IDataProtectio
     public DbSet<UnmatchedSquarePayment> UnmatchedSquarePayments => Set<UnmatchedSquarePayment>();
     public DbSet<UserTeam> UserTeams => Set<UserTeam>();
     public DbSet<HistoricalImportRequest> HistoricalImportRequests => Set<HistoricalImportRequest>();
+    public DbSet<WatchedLicense> WatchedLicenses => Set<WatchedLicense>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -147,6 +148,17 @@ public class AppDbContext(DbContextOptions<AppDbContext> options, IDataProtectio
             // The Worker's only query is "oldest Pending", and the page's is "this team's requests".
             b.HasIndex(r => new { r.Status, r.RequestedUtc });
             b.HasIndex(r => r.TeamId);
+        });
+
+        modelBuilder.Entity<WatchedLicense>(b =>
+        {
+            b.HasOne(w => w.Team).WithMany().HasForeignKey(w => w.TeamId).OnDelete(DeleteBehavior.Restrict);
+            b.HasOne(w => w.AddedByUser).WithMany().HasForeignKey(w => w.AddedByUserId).OnDelete(DeleteBehavior.Restrict);
+            // Uniqueness is per team, not global: two teams may each independently watch the same
+            // call sign, and neither should be able to see or clobber the other's row.
+            b.HasIndex(w => new { w.TeamId, w.CallSign }).IsUnique();
+            // The refresh job's query is "least recently checked first", across all teams.
+            b.HasIndex(w => w.LastCheckedUtc);
         });
 
         modelBuilder.Entity<EmailTemplate>(b =>

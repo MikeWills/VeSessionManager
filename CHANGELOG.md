@@ -8,6 +8,22 @@ that window, or immediately if it's phase-numbered work already summarized in "C
 design rationale for any entry still lives in its linked `/docs/*.md` file, not here or in
 CLAUDE.md — this file, like CLAUDE.md's Change Log, is pointers only.
 
+- **Admin → Team Maintenance: team-level "Refresh now" + ingestion schedule + Worker-health banner
+  (2026-07-31).** See `docs/team-maintenance.md` (issues #77/#73). New TeamAdmin/SystemAdmin page,
+  operations to Team Settings' configuration. Closes the gap where `ManualCandidateRefreshService`'s
+  **only** trigger was a session Detail page — so a team with no ingested sessions had no way to
+  trigger ingestion at all, and the live workaround was `Team.LastIngestionRunUtc = NULL` by hand.
+  Refresh now reuses the same service unchanged, debounced 60s per team by `TeamRefreshThrottle`
+  (schema-free — it reads the `ManualSessionIngestion` JobRunHistory rows; the per-session button
+  stays unthrottled), and deliberately does **not** write `LastIngestionRunUtc`, so a manual run
+  never delays the scheduled poll. `IngestionStatusService` derives last/next poll from
+  `IngestionScheduleService.IsDue` rather than restating the arithmetic. **Two traps worth knowing:**
+  it reads `SystemSettings` directly because `SystemSettingsService.GetAsync` get-or-creates (a
+  *write*, and this runs on every render — same rule `_TestModeBanner` follows), and the site-wide
+  health banner's `IngestionHealthCache` is a **singleton**, so it resolves the scoped
+  `IngestionStatusService` through a fresh scope instead of injecting it. Health is four states, not
+  a bool (a fresh install must not open on a red alarm), is deployment-wide regardless of which team
+  is being viewed, and fires at **2×** the configured interval — 1× fires during normal operation.
 - **Closed-session sweep narrowed to a discovery net (2026-07-31).** See `docs/historical-import.md`
   (issue #67, part 1). `CompletedSessionBackfillWindow` 30 days → 7, and a closed session that is
   already stored locally **and** already carries an `ExamToolsClosedUtc` stamp is dropped from the

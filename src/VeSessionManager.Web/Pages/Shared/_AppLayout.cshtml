@@ -101,6 +101,10 @@
                     <a class="item @(activeNav == "ApplicantStatus" ? "active" : "")" asp-page="/SessionManager/ApplicantStatus">Applicant Status</a>
                 </div>
             </div>
+            @* No role gate, matching LicenseWatch's bare [Authorize] — the two must stay in step.
+               Everything on that page is public FCC record data, so every role can use it within
+               their own team(s). *@
+            <a asp-page="/SessionManager/LicenseWatch" class="@(activeNav == "LicenseWatch" ? "active" : "")">Licences</a>
             @* Gated to match VeRoster.cshtml.cs's own [Authorize] — the roster is a full VE contact
                list plus a per-VE session-count leaderboard, restricted to admin roles (2026-08-01).
                Same rule as UnmatchedPayments below: never render a link the user's role will 403 on. *@

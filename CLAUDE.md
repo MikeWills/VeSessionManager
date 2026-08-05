@@ -89,6 +89,17 @@ would be pure duplication — and goes straight to `CHANGELOG.md` instead. Non-p
 redesigns, hardening passes) start here and move to `CHANGELOG.md` once the section is at/over the
 cap and a newer entry needs to be added; oldest goes first.
 
+- **Licence Watch: expiration + renewal tracking for an arbitrary watch list (2026-08-05).** See
+  `docs/license-watch.md`. Team-scoped list of any call sign at all — club members, family, people
+  who never tested here — showing expiration and the renewal lifecycle. Screen only, no email, open
+  to every role (it is all public FCC record data). **`expired_date` was returned by ExamTools' ULS
+  mirror all along and simply never mapped**; call-sign lookup works on the same endpoint as FRN,
+  which is what makes call-sign-first entry possible. **Renewal issuance has no positive signal
+  except the expiration date moving** — a renewal leaves call sign, class and grant date untouched —
+  so the service stores the expiry as it stood when the renewal was first seen and only claims it
+  landed once the current value passes that anchor. FCC's own `data.fcc.gov` License View API is
+  Akamai-403 from this deployment, same as `wireless2`. Tracking **VEs'** licences is a deliberately
+  separate, not-yet-built feature.
 - **Mobile-first responsive pass over the whole site (2026-08-05).** See `docs/responsive-ui.md`.
   `app.css` had **zero media queries** — the site was desktop-only by construction, not merely
   unpolished. It is now mobile-first (base layer = phone; a `min-width: 768px` "Desktop layer"
@@ -224,22 +235,6 @@ cap and a newer entry needs to be added; oldest goes first.
   clear a pre-existing backlog); an already-Submitted session keeps its original date/user; and
   `RunAsync` never does this — only the historical path may assume paperwork was filed. Note the
   assumption: importing a range that overlaps genuinely unsubmitted sessions marks them submitted too.
-- **Admin → Team Maintenance: team-level "Refresh now" + ingestion schedule + Worker-health banner
-  (2026-07-31).** See `docs/team-maintenance.md` (issues #77/#73). New TeamAdmin/SystemAdmin page,
-  operations to Team Settings' configuration. Closes the gap where `ManualCandidateRefreshService`'s
-  **only** trigger was a session Detail page — so a team with no ingested sessions had no way to
-  trigger ingestion at all, and the live workaround was `Team.LastIngestionRunUtc = NULL` by hand.
-  Refresh now reuses the same service unchanged, debounced 60s per team by `TeamRefreshThrottle`
-  (schema-free — it reads the `ManualSessionIngestion` JobRunHistory rows; the per-session button
-  stays unthrottled), and deliberately does **not** write `LastIngestionRunUtc`, so a manual run
-  never delays the scheduled poll. `IngestionStatusService` derives last/next poll from
-  `IngestionScheduleService.IsDue` rather than restating the arithmetic. **Two traps worth knowing:**
-  it reads `SystemSettings` directly because `SystemSettingsService.GetAsync` get-or-creates (a
-  *write*, and this runs on every render — same rule `_TestModeBanner` follows), and the site-wide
-  health banner's `IngestionHealthCache` is a **singleton**, so it resolves the scoped
-  `IngestionStatusService` through a fresh scope instead of injecting it. Health is four states, not
-  a bool (a fresh install must not open on a red alarm), is deployment-wide regardless of which team
-  is being viewed, and fires at **2×** the configured interval — 1× fires during normal operation.
 Everything through Phase 0-10's initial build (ExamTools ingestion, Zoom/Discord, Square, email
 notifications, FCC ULS watcher, payment reminders, VE tracking, VEC submission tracker, admin
 auth/config/candidate-actions, PII purge) plus the public privacy page has aged out to

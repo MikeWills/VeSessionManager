@@ -1,0 +1,209 @@
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.RazorPages;
+using Microsoft.EntityFrameworkCore;
+using VeSessionManager.Core.Authorization;
+using VeSessionManager.Core.Data;
+using VeSessionManager.Core.Entities;
+using VeSessionManager.Core.Uls;
+
+namespace VeSessionManager.Web.Pages.SessionManager;
+
+/// <summary>
+/// A team's watch list of amateur licences — expiration dates, and the renewal lifecycle from
+/// application through issuance. See docs/license-watch.md.
+///
+/// <para><b>Open to all four roles, scoped to their own team(s).</b> Unlike VE Roster (admin-only,
+/// because it is a contact list plus a per-VE leaderboard), this holds nothing sensitive: call sign,
+/// licensee name and expiry are all public FCC record data, and a TeamLead has as much reason to
+/// check whether a club member's licence is lapsing as anyone else. The <c>[Authorize]</c> here and
+/// the nav gate in _AppLayout.cshtml must therefore stay in step — both simply require
+/// authentication.</para>
+/// </summary>
+[Authorize]
+public class LicenseWatchModel(
+    AppDbContext dbContext,
+    UserManager<User> userManager,
+    SessionAccessScope accessScope,
+    IUlsLookupClient lookupClient,
+    TimeProvider timeProvider) : PageModel
+{
+    [BindProperty(SupportsGet = true)]
+    public int? TeamId { get; set; }
+
+    public bool HasTeamContext { get; private set; }
+    public IReadOnlyList<(int Id, string Name)> AvailableTeams { get; private set; } = [];
+    public string TeamSummaryLabel { get; private set; } = "All teams";
+    public IReadOnlyList<WatchedLicenseRow> Licenses { get; private set; } = [];
+
+    /// <summary>Which team a newly added licence is filed under. Only meaningful — and only rendered — when the user can see more than one.</summary>
+    [BindProperty]
+    public int? AddTeamId { get; set; }
+
+    [BindProperty]
+    public string? AddCallSign { get; set; }
+
+    [BindProperty]
+    public string? AddNote { get; set; }
+
+    public async Task OnGetAsync() => await LoadAsync();
+
+    /// <summary>
+    /// Adds a licence, resolving the entry against ULS first.
+    ///
+    /// <para><b>The lookup is synchronous and blocking on purpose.</b> A mistyped call sign that is
+    /// merely stored would sit in the list forever showing "not checked yet", and the person who
+    /// typed it would be long gone. Resolving now means the error lands while they can still fix it,
+    /// and it is also what lets a row entered as an FRN be stored under its call sign — which is what
+    /// the list is keyed on and what a human recognises.</para>
+    /// </summary>
+    public async Task<IActionResult> OnPostAddAsync()
+    {
+        var user = await userManager.GetUserWithManagerAsync(dbContext, User) ?? throw new InvalidOperationException("No authenticated user for an [Authorize]d page.");
+        AvailableTeams = await accessScope.GetAvailableTeamsAsync(dbContext, user);
+
+        var entry = AddCallSign?.Trim();
+        if (string.IsNullOrWhiteSpace(entry))
+        {
+            TempData["ErrorMessage"] = "Enter a call sign or FRN.";
+            return RedirectToPage(new { TeamId });
+        }
+
+        // Re-authorized server-side rather than trusting the posted team id: the picker only decides
+        // what is worth rendering.
+        var targetTeamId = AddTeamId ?? (AvailableTeams.Count == 1 ? AvailableTeams[0].Id : null);
+        if (targetTeamId is null || !AvailableTeams.Any(t => t.Id == targetTeamId))
+        {
+            TempData["ErrorMessage"] = "Choose a team to add this licence to.";
+            return RedirectToPage(new { TeamId });
+        }
+
+        var lookup = await lookupClient.LookupByFrnAsync(entry, HttpContext.RequestAborted);
+        if (lookup is null)
+        {
+            // The endpoint itself was unreachable. Distinct from "no such call sign" — say so, rather
+            // than telling someone their correct call sign does not exist.
+            TempData["ErrorMessage"] = $"Couldn't reach the FCC licence lookup just now — {entry.ToUpperInvariant()} wasn't added. Try again shortly.";
+            return RedirectToPage(new { TeamId });
+        }
+
+        if (!lookup.Found || string.IsNullOrWhiteSpace(lookup.CallSign))
+        {
+            TempData["ErrorMessage"] = $"FCC has no licence record for \"{entry}\". Check the call sign or FRN and try again.";
+            return RedirectToPage(new { TeamId });
+        }
+
+        var callSign = lookup.CallSign.Trim().ToUpperInvariant();
+        if (await dbContext.WatchedLicenses.AnyAsync(w => w.TeamId == targetTeamId && w.CallSign == callSign, HttpContext.RequestAborted))
+        {
+            TempData["ErrorMessage"] = $"{callSign} is already on this team's watch list.";
+            return RedirectToPage(new { TeamId });
+        }
+
+        var utcNow = timeProvider.GetUtcNow().UtcDateTime;
+        var licence = new WatchedLicense
+        {
+            TeamId = targetTeamId.Value,
+            CallSign = callSign,
+            Note = string.IsNullOrWhiteSpace(AddNote) ? null : AddNote.Trim(),
+            AddedByUserId = user.Id,
+            AddedUtc = utcNow
+        };
+
+        // Populate from the lookup already in hand, so the row is complete on first render instead of
+        // showing "not checked yet" until the Worker's next tick. Reuses the service's own mapping so
+        // the two can't drift.
+        LicenseWatchService.Apply(licence, lookup, utcNow, new LicenseWatchResult());
+
+        dbContext.WatchedLicenses.Add(licence);
+        await dbContext.SaveChangesAsync(HttpContext.RequestAborted);
+
+        // Audited after the save, because EntityId is an int and the row has no id until then.
+        dbContext.AddAuditLog(user.Id, "Create", nameof(WatchedLicense), licence.Id, $"Added {callSign} to the licence watch list", utcNow);
+        await dbContext.SaveChangesAsync(HttpContext.RequestAborted);
+
+        TempData["StatusMessage"] = $"{callSign} added to the watch list.";
+        return RedirectToPage(new { TeamId });
+    }
+
+    public async Task<IActionResult> OnPostRemoveAsync(int watchedLicenseId)
+    {
+        var user = await userManager.GetUserWithManagerAsync(dbContext, User) ?? throw new InvalidOperationException("No authenticated user for an [Authorize]d page.");
+
+        var licence = await dbContext.WatchedLicenses.FirstOrDefaultAsync(w => w.Id == watchedLicenseId, HttpContext.RequestAborted);
+        if (licence is null)
+        {
+            TempData["ErrorMessage"] = "That licence is no longer on the watch list.";
+            return RedirectToPage(new { TeamId });
+        }
+
+        // GetEffectiveTeamIds returns null for a SystemAdmin, meaning "every team" — so a plain
+        // Contains check would 403 exactly the person with the most access. Same trap CLAUDE.md
+        // records for the unmatched-payment match action.
+        var effectiveTeamIds = accessScope.GetEffectiveTeamIds(user);
+        if (effectiveTeamIds is not null && !effectiveTeamIds.Contains(licence.TeamId))
+        {
+            return Forbid();
+        }
+
+        dbContext.WatchedLicenses.Remove(licence);
+        dbContext.AddAuditLog(user.Id, "Delete", nameof(WatchedLicense), licence.Id, $"Removed {licence.CallSign} from the licence watch list", timeProvider.GetUtcNow().UtcDateTime);
+        await dbContext.SaveChangesAsync(HttpContext.RequestAborted);
+
+        TempData["StatusMessage"] = $"{licence.CallSign} removed from the watch list.";
+        return RedirectToPage(new { TeamId });
+    }
+
+    private async Task LoadAsync()
+    {
+        var user = await userManager.GetUserWithManagerAsync(dbContext, User) ?? throw new InvalidOperationException("No authenticated user for an [Authorize]d page.");
+
+        AvailableTeams = await accessScope.GetAvailableTeamsAsync(dbContext, user);
+        AddTeamId ??= TeamId ?? (AvailableTeams.Count == 1 ? AvailableTeams[0].Id : null);
+
+        // null means "every team this user can see, merged" — never "no teams". Using
+        // TryResolveViewableTeamId here instead would silently empty the page for a SystemAdmin who
+        // hasn't picked a team (the trap CLAUDE.md records for Applicant Status).
+        var teamIds = accessScope.ResolveViewableTeamIds(user, TeamId);
+        HasTeamContext = teamIds is null || teamIds.Count > 0;
+        TeamSummaryLabel = TeamId is not null
+            ? AvailableTeams.FirstOrDefault(t => t.Id == TeamId).Name ?? "All teams"
+            : "All teams";
+
+        if (!HasTeamContext) return;
+
+        var query = dbContext.WatchedLicenses.Include(w => w.Team).AsQueryable();
+        if (teamIds is not null) query = query.Where(w => teamIds.Contains(w.TeamId));
+
+        var rows = await query.ToListAsync(HttpContext.RequestAborted);
+        var utcNow = timeProvider.GetUtcNow().UtcDateTime;
+
+        // Status is derived, so the ordering that depends on it has to happen in memory. The set is
+        // one team's watch list — tens of rows, not thousands — so this is not the N+1 shape the
+        // report queries have to worry about.
+        Licenses = [.. rows
+            .Select(w => new WatchedLicenseRow(w, w.DeriveStatus(utcNow)))
+            .OrderByDescending(r => r.Status.NeedsAttention())
+            .ThenBy(r => r.License.ExpiredDateUtc ?? DateTime.MaxValue)
+            .ThenBy(r => r.License.CallSign)];
+    }
+
+    public record WatchedLicenseRow(WatchedLicense License, WatchedLicenseStatus Status)
+    {
+        public string ExpiresDisplay => License.ExpiredDateUtc?.ToString("MMM d, yyyy") ?? "—";
+
+        /// <summary>Round-trip value for the client-side table sorter — "Apr 2" does not sort against "Mar 30" as text.</summary>
+        public string ExpiresSortValue => License.ExpiredDateUtc?.ToString("o") ?? "";
+
+        /// <summary>Signed, so an already-expired licence reads as a negative number rather than silently clamping to zero.</summary>
+        public int? DaysUntilExpiry(DateTime utcNow) =>
+            License.ExpiredDateUtc is { } expires ? (int)Math.Floor((expires - utcNow).TotalDays) : null;
+
+        public string RenewalDisplay => License.RenewalPendingSinceUtc is { } since
+            ? $"Filed, seen {since:MMM d}"
+            : License.RenewalConfirmedUtc is { } confirmed
+                ? $"Issued {confirmed:MMM d}"
+                : "—";
+    }
+}
