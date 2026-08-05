@@ -37,7 +37,10 @@
         <div class="menu" style="width:240px;">
             <label class="item" style="display:block;">
                 <span style="display:block; margin-bottom:4px;">Preset</span>
-                <select name="dateRange" style="width:100%; font-family:'IBM Plex Mono',monospace; font-size:12px; padding:6px 8px; border:1px solid var(--line-strong); border-radius:5px; background:var(--surface); color:var(--ink);">
+                @* .menu-input rather than an inline style: an inline font-size can't be overridden
+                   by a media query, and anything under 16px makes iOS Safari zoom the page on focus
+                   and never zoom back. See the "Form field" comment in app.css. *@
+                <select name="dateRange" class="menu-input">
                     <option value="">Any time</option>
                     <option value="Upcoming" selected="@(Model.DateRange == "Upcoming")">Upcoming</option>
                     <option value="Last7PlusUpcoming" selected="@(Model.DateRange == "Last7PlusUpcoming")">Last 7 + Upcoming</option>
@@ -50,8 +53,8 @@
             <hr />
             <div class="item" style="cursor:default;">
                 <span style="display:block; margin-bottom:4px;">Custom range (overrides preset)</span>
-                <input type="date" name="dateFrom" value="@Model.DateFrom?.ToString("yyyy-MM-dd")" style="width:100%; margin-bottom:6px; font-family:'IBM Plex Mono',monospace; font-size:12px; padding:6px 8px; border:1px solid var(--line-strong); border-radius:5px; background:var(--surface); color:var(--ink);" />
-                <input type="date" name="dateTo" value="@Model.DateTo?.ToString("yyyy-MM-dd")" style="width:100%; font-family:'IBM Plex Mono',monospace; font-size:12px; padding:6px 8px; border:1px solid var(--line-strong); border-radius:5px; background:var(--surface); color:var(--ink);" />
+                <input type="date" name="dateFrom" value="@Model.DateFrom?.ToString("yyyy-MM-dd")" class="menu-input" />
+                <input type="date" name="dateTo" value="@Model.DateTo?.ToString("yyyy-MM-dd")" class="menu-input" />
             </div>
             <hr />
             <button type="submit" class="item">Apply</button>
@@ -80,7 +83,7 @@
    screen would look like — but not be — a sort of the whole result set. Each href is the next
    state in the ascending → descending → unsorted cycle; the ▲/▼ arrow is driven by aria-sort, the
    same CSS the client-sorted tables use. *@
-<table>
+<table class="cards">
     <thead>
         <tr>
             @{

@@ -52,12 +52,34 @@
 .vesm a { color: inherit; }
 .vesm :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 
-/* Chassis nav */
-header.chassis { background: var(--panel); color: #EDEFEC; padding: 0 28px; display: flex; align-items: center; gap: 28px; height: 56px; }
+/* Chassis nav.
+   Mobile-first: the bar carries only the brand and the ☰ toggle, and the nav links plus the .who
+   cluster (user menu / help / theme toggle) live in a panel that `header.chassis.nav-open` reveals
+   below them. The desktop single-row layout is restored at the --bp-md min-width block near the
+   bottom of this file — see "Desktop layer". */
+header.chassis { background: var(--panel); color: #EDEFEC; padding: 8px 16px; display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
 .brand { font-family: "IBM Plex Mono", monospace; font-weight: 600; font-size: 13px; letter-spacing: .06em; display: flex; align-items: center; gap: 8px; text-decoration: none; }
 .brand .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); box-shadow: 0 0 6px rgba(63, 143, 95, .8); }
-nav.chassis-nav { display: flex; gap: 4px; flex: 1; align-items: center; }
-nav.chassis-nav a { font-size: 13px; padding: 8px 12px; border-radius: 5px; text-decoration: none; color: #B9C0BC; }
+
+/* Hamburger — mobile only, hidden from --bp-md up. margin-left:auto is what pins it to the right of
+   the bar while the brand sits left; on desktop the nav's own flex:1 takes over that job.
+
+   Selector is `.vesm .nav-toggle`, not `.nav-toggle`, and that is load-bearing: `.vesm button` in
+   the Buttons section sets `display: inline-block` at (0,1,1) — class plus element — which outranks
+   a bare `.nav-toggle` at (0,1,0). Written the short way, the desktop `display: none` below silently
+   lost and the hamburger stayed visible on desktop. Same trap as the anchor-button colour note
+   further down; any new rule that fights `.vesm button` needs two classes to win. */
+.vesm .nav-toggle { margin-left: auto; display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; padding: 0; background: var(--panel-2); color: #EDEFEC; border: none; border-radius: 5px; cursor: pointer; }
+.vesm .nav-toggle:hover { background: #2A3338; }
+.nav-toggle .bars, .nav-toggle .bars::before, .nav-toggle .bars::after { display: block; width: 17px; height: 2px; border-radius: 2px; background: currentColor; }
+.nav-toggle .bars { position: relative; }
+.nav-toggle .bars::before, .nav-toggle .bars::after { content: ""; position: absolute; left: 0; }
+.nav-toggle .bars::before { top: -5px; }
+.nav-toggle .bars::after { top: 5px; }
+
+nav.chassis-nav { display: none; flex-basis: 100%; flex-direction: column; align-items: stretch; gap: 2px; padding-bottom: 4px; }
+header.chassis.nav-open nav.chassis-nav { display: flex; }
+nav.chassis-nav a { font-size: 14px; padding: 11px 12px; border-radius: 5px; text-decoration: none; color: #B9C0BC; }
 nav.chassis-nav a.active { background: var(--panel-2); color: #fff; }
 nav.chassis-nav a:hover { color: #fff; }
 
@@ -67,30 +89,44 @@ nav.chassis-nav a:hover { color: #fff; }
 
 /* Grouped nav dropdowns (Applicants / VEs / Settings) — same row-action kebab/menu component as
    everywhere else, restyled so the trigger reads as just another chassis-nav link. */
-.nav-group { position: relative; display: inline-flex; }
-.nav-group > .kebab { background: transparent; border: none; font-family: inherit; font-size: 13px; padding: 8px 12px; border-radius: 5px; color: #B9C0BC; cursor: pointer; }
+.nav-group { position: relative; display: flex; }
+.nav-group > .kebab { flex: 1; text-align: left; background: transparent; border: none; font-family: inherit; font-size: 14px; padding: 11px 12px; border-radius: 5px; color: #B9C0BC; cursor: pointer; }
 .nav-group > .kebab:hover { color: #fff; }
 .nav-group > .kebab.active { background: var(--panel-2); color: #fff; }
-.nav-group .menu { top: 38px; left: 0; right: auto; }
 .panel-actions .menu { left: 0; right: auto; }
 .menu a.item.active { font-weight: 600; background: var(--paper); }
-.who { font-family: "IBM Plex Mono", monospace; font-size: 11.5px; color: #9AA39D; display: flex; align-items: center; gap: 8px; }
+
+/* Inside the collapsed mobile panel a floating dropdown would overlay the links beneath it, so the
+   chassis menus expand inline (accordion) instead. They go back to absolutely-positioned dropdowns
+   at --bp-md. The .open toggle is the same app.js behaviour either way. */
+/* Column, not the default row: once the menu below is position:static it becomes a real sibling of
+   its trigger in this flex container, and a row would lay it out *beside* the button instead of
+   under it. */
+.nav-group, .user-menu, .help-menu { flex-basis: 100%; flex-direction: column; align-items: stretch; }
+.nav-group .menu, .user-menu .menu, .help-menu .menu { position: static; width: auto; margin: 2px 0 6px 12px; background: transparent; border: none; border-radius: 0; box-shadow: none; padding: 0; }
+.nav-group .menu .item, .user-menu .menu .item, .help-menu .menu .item { color: #B9C0BC; padding: 11px 12px; }
+.nav-group .menu .item:hover, .user-menu .menu .item:hover, .help-menu .menu .item:hover { background: var(--panel-2); }
+.nav-group .menu a.item.active { background: var(--panel-2); color: #fff; }
+.nav-group .menu hr, .user-menu .menu hr, .help-menu .menu hr { border-top-color: #333B40; }
+
+.who { font-family: "IBM Plex Mono", monospace; font-size: 11.5px; color: #9AA39D; display: none; flex-basis: 100%; flex-wrap: wrap; align-items: center; gap: 8px; padding-bottom: 6px; }
+header.chassis.nav-open .who { display: flex; }
 .who .role { background: var(--panel-2); color: #EDEFEC; padding: 3px 8px; border-radius: 99px; letter-spacing: .05em; }
 
 .theme-toggle { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; background: var(--panel-2); color: #EDEFEC; border: none; border-radius: 99px; cursor: pointer; padding: 0; }
 .theme-toggle:hover { background: #2A3338; }
 
-main.vesm-main { max-width: 1160px; margin: 0 auto; padding: 36px 28px 80px; }
-main.vesm-main.wide { max-width: 1280px; padding: 32px 28px 100px; }
+main.vesm-main { max-width: 1160px; margin: 0 auto; padding: 20px 16px 56px; }
+main.vesm-main.wide { max-width: 1280px; padding: 20px 16px 56px; }
 
-.vesm-footer { max-width: 1160px; margin: 0 auto; padding: 0 28px 32px; font-family: "IBM Plex Mono", monospace; font-size: 11px; letter-spacing: .06em; color: var(--ink-soft); display: flex; gap: 14px; flex-wrap: wrap; }
+.vesm-footer { max-width: 1160px; margin: 0 auto; padding: 0 16px 24px; font-family: "IBM Plex Mono", monospace; font-size: 11px; letter-spacing: .06em; color: var(--ink-soft); display: flex; gap: 14px; flex-wrap: wrap; }
 .vesm-footer a { color: inherit; }
 
 .page-head { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 24px; flex-wrap: wrap; gap: 12px; }
 h1 { font-size: 24px; margin: 0 0 4px; letter-spacing: -.01em; }
 .eyebrow { font-family: "IBM Plex Mono", monospace; font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-soft); margin: 0; }
 .filters { display: flex; gap: 8px; flex-wrap: wrap; }
-.filters a.filter-pill { font-family: "IBM Plex Mono", monospace; font-size: 12px; padding: 7px 13px; border-radius: 99px; border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink-soft); cursor: pointer; text-decoration: none; display: inline-block; }
+.filters a.filter-pill { font-family: "IBM Plex Mono", monospace; font-size: 12px; padding: 9px 14px; border-radius: 99px; border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink-soft); cursor: pointer; text-decoration: none; display: inline-block; }
 .filters a.filter-pill.active { background: var(--panel); color: #fff; border-color: var(--panel); }
 
 /* Outstanding-work count inside a team-picker pill (Applicant Status / Unmatched Payments). Unlike
@@ -104,13 +140,13 @@ h1 { font-size: 24px; margin: 0 0 4px; letter-spacing: -.01em; }
    the ghost-icon look the kebab has inside a table row, and left-aligned since the trigger sits at
    the start of the row rather than a table row's right edge. */
 .filter-dropdown { position: relative; display: inline-flex; }
-.filter-dropdown > .kebab { font-family: "IBM Plex Mono", monospace; font-size: 12px; padding: 7px 13px; border-radius: 99px; border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink-soft); }
+.filter-dropdown > .kebab { font-family: "IBM Plex Mono", monospace; font-size: 12px; padding: 9px 14px; border-radius: 99px; border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink-soft); }
 .filter-dropdown > .kebab.active { background: var(--panel); color: #fff; border-color: var(--panel); }
-.filter-dropdown > .menu { left: 0; right: auto; top: 40px; width: 200px; }
-.menu label.item { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 5px; cursor: pointer; font-size: 13px; color: var(--ink); }
+.filter-dropdown > .menu { left: 0; right: auto; top: 44px; width: 240px; }
+.menu label.item { display: flex; align-items: center; gap: 10px; padding: 10px; border-radius: 5px; cursor: pointer; font-size: 14px; color: var(--ink); }
 .menu label.item:hover { background: var(--paper); }
-.menu label.item input[type="checkbox"], .menu label.item input[type="radio"] { width: auto; margin: 0; }
-.filter-select { font-family: "IBM Plex Mono", monospace; font-size: 12px; padding: 7px 13px; border-radius: 99px; border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink-soft); cursor: pointer; }
+.menu label.item input[type="checkbox"], .menu label.item input[type="radio"] { width: auto; min-width: 18px; min-height: 18px; margin: 0; }
+.filter-select { font-family: "IBM Plex Mono", monospace; font-size: 16px; padding: 9px 14px; border-radius: 99px; border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink-soft); cursor: pointer; max-width: 100%; }
 
 .pagination { display: flex; justify-content: space-between; align-items: center; margin-top: 16px; flex-wrap: wrap; gap: 12px; }
 .pagination-summary { font-family: "IBM Plex Mono", monospace; font-size: 12px; color: var(--ink-soft); }
@@ -144,6 +180,17 @@ tbody tr.row-past:hover { background: var(--row-hover); }
 .session-sub { font-family: "IBM Plex Mono", monospace; font-size: 12px; color: var(--ink-soft); margin-top: 2px; }
 .count { font-family: "IBM Plex Mono", monospace; }
 
+/* Two ways a table survives a phone, chosen per page (see docs/responsive-ui.md):
+
+   .table-scroll  — a wrapper div that lets a wide table scroll sideways instead of forcing the page
+                    to. Used for the admin/reference tables, which are rarely opened on a phone.
+                    Inert on desktop, where the table already fits.
+   table.cards    — each row restacks into a labelled card below --bp-md. Used for the Session
+                    Manager screens, which are the ones actually used at a session. Labels come from
+                    the matching <th> at runtime (app.js's labelCardTables), so promoting another
+                    table is just adding the class — no per-cell markup. */
+.table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
 /* Applicant Status "days pending" escalation, in step with PaymentReminderService's 5-day reminder
    and 10-day expiration passes (see ApplicantStatusModel's threshold constants, which reference
    that service's own values rather than restating them). Reuses the existing --amber/--brick token pairs
@@ -174,7 +221,7 @@ tbody tr.row-past:hover { background: var(--row-hover); }
 .view-link:hover { text-decoration: underline; }
 
 /* Buttons */
-.vesm button, .vesm .btn { font-family: inherit; font-size: 13px; font-weight: 600; border-radius: 5px; padding: 9px 16px; cursor: pointer; border: 1px solid transparent; white-space: nowrap; display: inline-block; text-decoration: none; }
+.vesm button, .vesm .btn { font-family: inherit; font-size: 14px; font-weight: 600; border-radius: 5px; padding: 11px 16px; cursor: pointer; border: 1px solid transparent; white-space: nowrap; display: inline-block; text-decoration: none; }
 .btn-primary { background: var(--panel); color: #fff; }
 .btn-primary:hover { background: var(--panel-2); }
 .btn-secondary { background: var(--surface); color: var(--ink); border-color: var(--line-strong); }
@@ -202,20 +249,25 @@ tbody tr.row-past:hover { background: var(--row-hover); }
 .crumb a { color: var(--focus); text-decoration: none; }
 
 /* Session header panel */
-.session-panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 22px 26px; display: flex; justify-content: space-between; gap: 24px; flex-wrap: wrap; margin-bottom: 28px; }
+.session-panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 18px 16px; display: flex; justify-content: space-between; gap: 20px; flex-wrap: wrap; margin-bottom: 22px; }
 .session-panel h1 { font-size: 21px; margin: 0 0 6px; letter-spacing: -.01em; }
-.meta-grid { display: flex; gap: 32px; flex-wrap: wrap; margin-top: 14px; }
-.meta-item { display: flex; flex-direction: column; gap: 3px; }
+/* A flex row of key/value pairs on desktop; a two-up grid on a phone, so the labels line up in
+   columns instead of reflowing into a ragged single file. */
+.meta-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 18px; margin-top: 14px; }
+.meta-item { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.meta-item .v { overflow-wrap: anywhere; }
 .meta-item .k { font-family: "IBM Plex Mono", monospace; font-size: 10px; letter-spacing: .09em; text-transform: uppercase; color: var(--ink-soft); }
 .meta-item .v { font-size: 13.5px; font-weight: 500; }
 .meta-item .v a { color: var(--focus); }
-.panel-actions { display: flex; flex-direction: column; gap: 8px; align-items: flex-end; }
+/* Row-wrapped on a phone so the actions sit under the session meta rather than in a narrow
+   right-hand column; a right-aligned stack again from --bp-md. */
+.panel-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .panel-actions form { margin: 0; }
-.flag-banner { display: flex; align-items: center; gap: 10px; background: var(--amber-dim); color: #7A5313; border: 1px solid #E4C486; border-radius: 8px; padding: 10px 16px; font-size: 13px; margin-bottom: 20px; }
+.flag-banner { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; background: var(--amber-dim); color: #7A5313; border: 1px solid #E4C486; border-radius: 8px; padding: 10px 14px; font-size: 13px; margin-bottom: 20px; }
 .flag-banner b { font-weight: 600; }
 .flag-banner form { margin-left: auto; }
 
-.section-head { display: flex; justify-content: space-between; align-items: center; margin: 8px 0 12px; }
+.section-head { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin: 8px 0 12px; }
 .section-head h2 { font-size: 15px; margin: 0; font-weight: 600; }
 
 /* Candidate table specifics */
@@ -240,12 +292,14 @@ tbody tr.row-past:hover { background: var(--row-hover); }
 
 /* Row action kebab menu */
 .row-actions { position: relative; text-align: right; }
-.kebab { background: transparent; border: 1px solid transparent; color: var(--ink-soft); padding: 6px 9px; border-radius: 5px; }
+.kebab { background: transparent; border: 1px solid transparent; color: var(--ink-soft); padding: 8px 11px; border-radius: 5px; }
 .kebab:hover { background: var(--ghost-hover); border-color: var(--line-strong); }
-.menu { position: absolute; top: 38px; right: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 10px 28px rgba(20, 24, 26, .14); width: 260px; padding: 6px; font-size: 13px; text-align: left; z-index: 5; display: none; }
+/* max-width keeps a right-anchored row menu inside the viewport on a narrow screen — without it the
+   fixed 260px hangs off the edge of a phone and its items can't be reached. */
+.menu { position: absolute; top: 38px; right: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 10px 28px rgba(20, 24, 26, .14); width: 260px; max-width: calc(100vw - 32px); padding: 6px; font-size: 13px; text-align: left; z-index: 5; display: none; }
 .menu.open { display: block; }
 .menu form { margin: 0; }
-.menu button.item, .menu a.item { all: unset; display: block; width: 100%; padding: 8px 10px; border-radius: 5px; cursor: pointer; font-size: 13px; color: var(--ink); box-sizing: border-box; font-family: inherit; }
+.menu button.item, .menu a.item { all: unset; display: block; width: 100%; padding: 10px; border-radius: 5px; cursor: pointer; font-size: 14px; color: var(--ink); box-sizing: border-box; font-family: inherit; }
 .menu button.item:hover, .menu a.item:hover { background: var(--paper); }
 .menu .danger { color: var(--brick); }
 .menu button.disabled, .menu button:disabled { color: #B8BEB9; cursor: not-allowed; }
@@ -259,31 +313,43 @@ tbody tr.row-past:hover { background: var(--row-hover); }
 .help-menu .kebab, .user-menu .kebab { background: var(--panel-2); color: #EDEFEC; border-radius: 99px; padding: 6px 12px; font-family: "IBM Plex Mono", monospace; font-size: 11.5px; display: inline-flex; align-items: center; gap: 6px; }
 .help-menu .kebab:hover, .user-menu .kebab:hover { background: #2A3338; border-color: transparent; }
 
-footer.roster { margin-top: 36px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 20px 24px; }
+footer.roster { margin-top: 28px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
 .roster-list { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
 .ve-chip { font-family: "IBM Plex Mono", monospace; font-size: 12px; background: var(--paper); border: 1px solid var(--line); padding: 6px 12px; border-radius: 99px; display: inline-flex; align-items: center; gap: 8px; }
 .ve-chip form { margin: 0; }
 .ve-chip .x { color: var(--ink-soft); cursor: pointer; background: none; border: none; font: inherit; padding: 0; }
 
-/* Form field */
-.field { display: flex; flex-direction: column; gap: 6px; }
+/* Form field.
+   16px is not a style choice — iOS Safari auto-zooms the viewport on focusing any control whose
+   font-size is below 16px, and the page never zooms back out. Every control the user can focus is
+   therefore 16px on mobile and drops to the design's 14px at --bp-md, where no such behaviour
+   exists. Same reason .filter-select and .menu-input below are sized the way they are. */
+.field { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .field label { font-family: "IBM Plex Mono", monospace; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--ink-soft); }
-.field input, .field select, .field textarea { font-family: "IBM Plex Mono", monospace; font-size: 14px; padding: 9px 10px; border: 1px solid var(--line-strong); border-radius: 5px; background: var(--surface); color: var(--ink); }
+.field input, .field select, .field textarea { font-family: "IBM Plex Mono", monospace; font-size: 16px; padding: 10px; max-width: 100%; border: 1px solid var(--line-strong); border-radius: 5px; background: var(--surface); color: var(--ink); }
 .field input:focus, .field select:focus, .field textarea:focus { border-color: var(--focus); }
+
+/* Controls inside a dropdown .menu (the Sessions date-range preset/custom-range inputs). Replaces
+   the repeated inline style="" those carried, which no media query could reach to fix the iOS
+   zoom above. */
+.menu-input { width: 100%; font-family: "IBM Plex Mono", monospace; font-size: 16px; padding: 8px; border: 1px solid var(--line-strong); border-radius: 5px; background: var(--surface); color: var(--ink); }
+.menu-input + .menu-input { margin-top: 6px; }
 
 .vesm-alert { border-radius: 8px; padding: 10px 16px; font-size: 13px; margin-bottom: 20px; }
 .vesm-alert.success { background: var(--green-dim); color: var(--chip-green-text); border: 1px solid var(--green); }
 .vesm-alert.error { background: var(--brick-dim); color: var(--chip-brick-text); border: 1px solid var(--brick); }
 
-.modal-backdrop { display: none; position: fixed; inset: 0; background: rgba(20, 24, 26, .4); z-index: 20; align-items: center; justify-content: center; }
+/* overflow-y + padding matter on a phone: a confirmation modal taller than the viewport would
+   otherwise centre itself with its buttons off both ends and no way to scroll to them. */
+.modal-backdrop { display: none; position: fixed; inset: 0; background: rgba(20, 24, 26, .4); z-index: 20; align-items: center; justify-content: center; padding: 16px; overflow-y: auto; }
 .modal-backdrop.open { display: flex; }
 .modal { background: var(--surface); border-radius: 10px; padding: 22px 24px; width: 340px; max-width: calc(100vw - 32px); box-shadow: 0 20px 48px rgba(20, 24, 26, .25); }
 .modal h3 { margin: 0 0 14px; font-size: 15px; }
 .modal .field { margin-bottom: 14px; }
 
 /* Public auth pages (Login/AccessDenied/Logout/ExternalLoginCallback) */
-.auth-wrap { display: flex; justify-content: center; padding-top: 48px; }
-.auth-card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 32px 30px; width: 360px; max-width: 100%; }
+.auth-wrap { display: flex; justify-content: center; padding-top: 24px; }
+.auth-card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 24px 20px; width: 360px; max-width: 100%; }
 .auth-card h1 { font-size: 20px; margin: 0 0 22px; letter-spacing: -.01em; }
 .auth-card .field { margin-bottom: 16px; }
 .auth-card .btn-primary { width: 100%; }
@@ -305,3 +371,126 @@ footer.roster { margin-top: 36px; background: var(--surface); border: 1px solid 
 .policy li { margin-bottom: 4px; }
 .policy .policy-note { background: var(--chip-neutral-bg); border-radius: 8px; padding: 12px 16px; font-size: 13px; color: var(--ink-soft); }
 .modal .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }
+
+/* ============================================================================================
+   Responsive layer
+   ============================================================================================
+   Everything above this line is the mobile layout — that is the base, and it is what a phone gets
+   with no media query evaluated at all. This section adds the two layers on top:
+
+     1. the card-table treatment, which only exists below the breakpoint, and
+     2. the "Desktop layer", which restores the original single-row chassis and the roomier
+        desktop spacing/type scale.
+
+   The breakpoint is 768px, written as max-width: 767.98px / min-width: 768px so the two never
+   both match (a fractional viewport width would satisfy both at a flat 768). There is deliberately
+   no CSS custom property for it — custom properties can't be used in a media query condition, so
+   a --bp-md token would be a decoration that the queries themselves couldn't reference. Referred
+   to as --bp-md in the comments above purely as a name for this 768px line.
+   ============================================================================================ */
+
+/* ---- 1. Card tables (below the breakpoint only) ------------------------------------------- */
+@media (max-width: 767.98px) {
+  /* The <table> stops being a table: thead is dropped (its labels move onto each cell via
+     data-label) and every row becomes a self-contained card. Cells keep their source order, so
+     the card reads top-to-bottom in the same order the columns ran left-to-right. */
+  table.cards { border: none; background: transparent; }
+  table.cards thead { display: none; }
+  table.cards tbody, table.cards tr, table.cards td { display: block; }
+  table.cards tr { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; margin-bottom: 12px; padding: 4px 0; }
+  table.cards tr:hover, table.cards tr.row-past:hover { background: var(--surface); }
+  table.cards tr.row-past { background: var(--paper); }
+
+  /* Two columns: the label from the <th>, then the value. minmax(0,1fr) rather than 1fr so a long
+     unbroken value (an email, a URL) shrinks instead of widening the card past the screen. */
+  table.cards td { display: grid; grid-template-columns: 38% minmax(0, 1fr); gap: 12px; align-items: start; padding: 7px 14px; border-bottom: none; font-size: 13.5px; overflow-wrap: anywhere; }
+  table.cards td::before { content: attr(data-label); font-family: "IBM Plex Mono", monospace; font-size: 10.5px; letter-spacing: .09em; line-height: 1.7; text-transform: uppercase; color: var(--ink-soft); }
+  table.cards tbody tr:last-child td { border-bottom: none; }
+  /* Every element child is pinned to the value column. Grid auto-placement would otherwise send the
+     *second* child of a cell back to column 1, directly under the label — which is what a two-line
+     cell like the Sessions list's title + sub-line actually is, so without this the sub-line renders
+     in the label gutter. Text-only cells still auto-place correctly into column 2.
+     justify-self keeps a pill-shaped child (.chip, .days-critical) at its natural width — a grid
+     item stretches to fill its column by default, which turns every status chip into a full-width
+     bar. */
+  table.cards td > * { grid-column: 2; min-width: 0; justify-self: start; }
+
+  /* A cell with no matching header (the View / ⋮ action columns) drops the empty label gutter.
+     inline-flex rather than flex so consecutive action cells sit side by side on one final row
+     instead of each taking a row of its own. */
+  table.cards td.is-unlabelled { display: inline-flex; align-items: center; gap: 10px; padding: 7px 14px; vertical-align: middle; }
+  table.cards td.is-unlabelled::before { content: none; }
+  table.cards td.is-unlabelled ~ td.is-unlabelled { padding-left: 0; }
+  /* A cell that rendered empty carries no information as a card row — the desktop table needs the
+     placeholder to keep the grid aligned, a card does not. */
+  table.cards td.is-blank { display: none; }
+  /* The row-action menu anchors to the card, not to a narrow last cell. */
+  table.cards td.row-actions { position: static; text-align: left; }
+  table.cards tr { position: relative; }
+  table.cards td.row-actions .menu { top: auto; }
+  /* The colspan "nothing matches this filter" row is a message, not data. */
+  table.cards td[colspan] { display: block; padding: 16px 14px; text-align: center; color: var(--ink-soft); }
+  table.cards td[colspan]::before { content: none; }
+
+  /* Scroll-mode tables keep their columns and scroll sideways. The min-width is what makes them
+     scroll rather than compress every column into unreadable slivers. */
+  .table-scroll > table { min-width: 680px; }
+  /* A hint that there is more to the right, so the cut-off column doesn't read as a broken layout. */
+  .table-scroll { border: 1px solid var(--line); border-radius: 8px; }
+  .table-scroll > table { border: none; border-radius: 0; }
+
+  .pagination { flex-direction: column; align-items: stretch; gap: 10px; }
+  .pagination-controls { justify-content: space-between; }
+}
+
+/* ---- 2. Desktop layer (the original design, from the breakpoint up) ------------------------ */
+@media (min-width: 768px) {
+  header.chassis { flex-wrap: nowrap; gap: 28px; height: 56px; padding: 0 28px; }
+  .vesm .nav-toggle { display: none; }
+
+  nav.chassis-nav { display: flex; flex-basis: auto; flex-direction: row; align-items: center; gap: 4px; flex: 1; padding-bottom: 0; }
+  nav.chassis-nav a { font-size: 13px; padding: 8px 12px; }
+
+  .nav-group, .user-menu, .help-menu { flex-basis: auto; display: inline-flex; flex-direction: row; align-items: center; }
+  .nav-group { position: relative; }
+  .nav-group > .kebab { flex: none; font-size: 13px; padding: 8px 12px; }
+
+  /* Back to floating dropdowns — undoing the inline/accordion form the mobile panel needs. */
+  .nav-group .menu, .user-menu .menu, .help-menu .menu { position: absolute; width: 260px; margin: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 10px 28px rgba(20, 24, 26, .14); padding: 6px; }
+  .nav-group .menu { top: 38px; left: 0; right: auto; }
+  .user-menu .menu, .help-menu .menu { top: 38px; right: 0; left: auto; }
+  .nav-group .menu .item, .user-menu .menu .item, .help-menu .menu .item { color: var(--ink); padding: 8px 10px; }
+  .nav-group .menu .item:hover, .user-menu .menu .item:hover, .help-menu .menu .item:hover { background: var(--paper); }
+  .nav-group .menu a.item.active { font-weight: 600; background: var(--paper); color: var(--ink); }
+  .nav-group .menu hr, .user-menu .menu hr, .help-menu .menu hr { border-top-color: var(--line); }
+
+  .who { display: flex; flex-basis: auto; flex-wrap: nowrap; padding-bottom: 0; }
+
+  main.vesm-main { padding: 36px 28px 80px; }
+  main.vesm-main.wide { padding: 32px 28px 100px; }
+  .vesm-footer { padding: 0 28px 32px; }
+
+  .vesm button, .vesm .btn { font-size: 13px; padding: 9px 16px; }
+  .btn-ghost { padding: 9px 10px; }
+  .btn-sm { padding: 6px 11px; font-size: 12px; }
+  .kebab { padding: 6px 9px; }
+
+  .menu button.item, .menu a.item { font-size: 13px; padding: 8px 10px; }
+  .menu label.item { font-size: 13px; padding: 8px 10px; gap: 8px; }
+
+  .field input, .field select, .field textarea { font-size: 14px; padding: 9px 10px; }
+  .menu-input { font-size: 12px; padding: 6px 8px; }
+  .filter-select { font-size: 12px; padding: 7px 13px; }
+  .filters a.filter-pill { padding: 7px 13px; }
+  .filter-dropdown > .kebab { padding: 7px 13px; }
+  .filter-dropdown > .menu { top: 40px; width: 200px; }
+
+  .session-panel { padding: 22px 26px; gap: 24px; margin-bottom: 28px; }
+  .meta-grid { display: flex; gap: 32px; flex-wrap: wrap; }
+  .panel-actions { flex-direction: column; flex-wrap: nowrap; align-items: flex-end; }
+
+  .auth-wrap { padding-top: 48px; }
+  .auth-card { padding: 32px 30px; }
+
+  footer.roster { margin-top: 36px; padding: 20px 24px; }
+}
