@@ -38,6 +38,34 @@ public class EmailTemplateTriggersTests
         Assert.False(string.IsNullOrWhiteSpace(trigger.Description));
     }
 
+    /// <summary>
+    /// Every template belongs to exactly one phase, and the enum's declaration order is the display
+    /// order the page relies on.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(SeededKeyData))]
+    public void EverySeededKey_HasAPhase(string key)
+    {
+        Assert.Contains(EmailTemplateTriggers.For(key)!.Phase, Enum.GetValues<EmailTemplatePhase>());
+    }
+
+    [Fact]
+    public void PhasesReadInTheOrderThingsActuallyHappen()
+    {
+        Assert.True((int)EmailTemplatePhase.AtRegistration < (int)EmailTemplatePhase.PreSession);
+        Assert.True((int)EmailTemplatePhase.PreSession < (int)EmailTemplatePhase.PostSession);
+    }
+
+    /// <summary>Anything gated on the FCC entering an application is necessarily post-session, whatever the template name suggests.</summary>
+    [Theory]
+    [InlineData("PaymentReminder5Day")]
+    [InlineData("PaymentExpirationNotice")]
+    [InlineData("FelonyDisclosureInstructions")]
+    public void FccGatedAndSessionCompletionEmails_ArePostSession(string key)
+    {
+        Assert.Equal(EmailTemplatePhase.PostSession, EmailTemplateTriggers.For(key)!.Phase);
+    }
+
     [Fact]
     public void UnknownKey_ReturnsNull_SoThePageShowsNothingRatherThanInventingOne()
     {

@@ -43,8 +43,18 @@ else if (Model.Templates.Count == 0)
 }
 else
 {
-    @foreach (var template in Model.Templates)
+    @* Grouped by where each email falls in a session's life, in the order those things actually
+       happen. A template with no registry entry lands in the trailing "Other" group rather than
+       being hidden — an unrecognised Key is still editable. *@
+    @foreach (var group in Model.GroupedTemplates)
     {
+        <div class="template-phase">
+            <h2>@group.Label</h2>
+            <p class="session-sub">@group.Blurb</p>
+        </div>
+
+        @foreach (var template in group.Templates)
+        {
         <div class="session-panel" style="display:block; margin-bottom:20px;">
             <div class="section-head">
                 <h2 class="mono">@template.Key</h2>
@@ -53,6 +63,18 @@ else
                     <span class="session-sub">Last updated @EasternTimeFormatter.Format(template.UpdatedUtc.Value, "MMM d, yyyy h:mm tt")</span>
                 }
             </div>
+            @* What actually causes this email to go out. Two of these are genuinely surprising —
+               PaymentExpirationNotice goes to the team rather than the candidate, and
+               FelonyDisclosureInstructions has no button — so this is the difference between editing
+               a template knowingly and guessing. See EmailTemplateTriggers. *@
+            @if (VeSessionManager.Web.Pages.Admin.EmailTemplatesModel.TriggerFor(template.Key) is { } trigger)
+            {
+                <div class="template-trigger">
+                    <span class="chip @(trigger.Cadence == "Automatic" ? "chip-green" : "chip-neutral")">@trigger.Cadence</span>
+                    <span class="chip chip-neutral">@trigger.Recipient</span>
+                    <p>@trigger.Description</p>
+                </div>
+            }
             @* Chips are now click-to-insert (see email-template-editor.js) — typing a placeholder by
                hand is the easiest thing to get wrong here, and a typo only surfaces as a Worker log
                warning after a real send. Rendered as buttons so they're keyboard-reachable. *@
@@ -86,6 +108,7 @@ else
                 <button type="submit" class="btn-primary btn-sm" style="margin-top:8px;">Save</button>
             </form>
         </div>
+        }
     }
 }
 

@@ -342,6 +342,13 @@ footer.roster { margin-top: 28px; background: var(--surface); border: 1px solid 
 .menu-input { width: 100%; font-family: "IBM Plex Mono", monospace; font-size: 16px; padding: 8px; border: 1px solid var(--line-strong); border-radius: 5px; background: var(--surface); color: var(--ink); }
 .menu-input + .menu-input { margin-top: 6px; }
 
+/* Phase heading above each group of email templates (at registration / pre-session /
+   post-session). */
+.template-phase { margin: 28px 0 12px; }
+.template-phase:first-of-type { margin-top: 4px; }
+.template-phase h2 { font-size: 15px; margin: 0; font-weight: 600; }
+.template-phase p { margin: 4px 0 0; max-width: 70ch; }
+
 /* "When does this fire?" summary above each email template. Chips reuse the existing status-chip
    component rather than introducing another badge style. */
 .template-trigger { margin: 0 0 14px; }

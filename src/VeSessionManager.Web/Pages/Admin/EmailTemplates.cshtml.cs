@@ -93,6 +93,27 @@ public class EmailTemplatesModel(AppDbContext dbContext, UserManager<User> userM
     }
 
     public static IReadOnlyList<string> PlaceholdersFor(string key) => EmailTemplatePlaceholders.ForEditor(key);
+    /// <summary>
+    /// Templates grouped by where they fall in a session's life, in the order those things happen.
+    /// A Key with no trigger registry entry falls into a trailing "Other" group rather than being
+    /// dropped — an unrecognised template must still be editable.
+    /// </summary>
+    public IReadOnlyList<TemplateGroup> GroupedTemplates => [.. Templates
+        .GroupBy(t => EmailTemplateTriggers.For(t.Key)?.Phase)
+        // null (unknown Key) sorts last; otherwise enum declaration order is display order.
+        .OrderBy(g => g.Key is null ? int.MaxValue : (int)g.Key)
+        .Select(g => new TemplateGroup(
+            g.Key?.Label() ?? "Other",
+            g.Key switch
+            {
+                EmailTemplatePhase.AtRegistration => "Sent around the point someone signs up for a session.",
+                EmailTemplatePhase.PreSession => "Sent between registration and the session itself.",
+                EmailTemplatePhase.PostSession => "Sent after the exam has been sat — including everything waiting on the FCC, which always comes afterwards.",
+                _ => "No trigger recorded for these yet."
+            },
+            [.. g]))];
+
+    public record TemplateGroup(string Label, string Blurb, IReadOnlyList<TemplateRow> Templates);
 
     /// <summary>What causes this template to be sent — see EmailTemplateTriggers. Null for a Key with no registry entry, in which case the page shows nothing rather than inventing a description.</summary>
     public static EmailTemplateTrigger? TriggerFor(string key) => EmailTemplateTriggers.For(key);
