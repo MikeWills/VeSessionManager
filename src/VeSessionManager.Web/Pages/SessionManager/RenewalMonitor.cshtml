@@ -41,6 +41,10 @@ else
         <thead>
             <tr>
                 <th>Call sign</th>
+                @* A real column rather than tucked inside the row menu: the FRN is what you paste
+                   into FCC's own application search, and copying it should not require opening a
+                   dropdown first. *@
+                <th>FRN</th>
                 <th>Name</th>
                 <th>Class</th>
                 @if (Model.TeamId is null && Model.AvailableTeams.Count > 1)
@@ -57,13 +61,16 @@ else
         <tbody>
             @if (Model.Licenses.Count == 0)
             {
-                <tr><td colspan="9">Nothing on the watch list yet. Add a call sign to start tracking its expiration.</td></tr>
+                <tr><td colspan="10">Nothing on the watch list yet. Add a call sign to start tracking its expiration.</td></tr>
             }
             @foreach (var row in Model.Licenses)
             {
                 var days = row.DaysUntilExpiry(utcNow);
                 <tr>
                     <td class="mono session-title">@row.License.CallSign</td>
+                    @* select-all on click: an FRN is a 10-digit string with no word boundaries, so
+                       double-clicking to select it is fiddly and a mis-copy is silent. *@
+                    <td class="mono frn-cell" title="@(row.License.Frn is null ? "No FRN on the FCC record" : "Click to select, for FCC's application search")">@(row.License.Frn ?? "—")</td>
                     <td>@(row.License.LicenseeName ?? "—")</td>
                     <td>@(row.License.OperatorClass == LicenseClass.None ? "—" : row.License.OperatorClass.ToString())</td>
                     @if (Model.TeamId is null && Model.AvailableTeams.Count > 1)
@@ -93,15 +100,13 @@ else
                     <td class="row-actions">
                         <button type="button" class="kebab" aria-label="Actions">⋮</button>
                         <div class="menu">
-                            @if (row.License.Frn is { } frn)
-                            {
-                                <div class="item mono" style="cursor:default;">FRN @frn</div>
-                            }
+                            @* The rule lives inside the condition — a never-checked row would
+                               otherwise open its menu with a stray divider at the top. *@
                             @if (row.License.LastCheckedUtc is { } checkedUtc)
                             {
                                 <div class="item session-sub" style="cursor:default;">Checked @checkedUtc.ToString("MMM d, HH:mm") UTC</div>
+                                <hr />
                             }
-                            <hr />
                             <button type="button" class="item danger" data-open-modal="removeLicenseModal-@row.License.Id">Remove from watch list</button>
                         </div>
                     </td>

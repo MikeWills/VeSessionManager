@@ -110,6 +110,27 @@ Thresholds, confirmed with the VE team on 2026-08-05:
 - **2 years** — the grace period during which a licence is still renewable without re-testing, though
   it may not be operated.
 
+## Day counting is calendar days, in Eastern
+
+`DaysUntilExpiry` is the single definition, used by both the status derivation and the page's day
+pill so the number a human reads and the chip they see can never disagree.
+
+Two things it deliberately does **not** do, both of which it did originally and both of which were
+visible on the live page:
+
+- **It does not subtract instants.** An FCC expiration date carries no time of day and is stored as
+  midnight UTC, so `Math.Floor((expires - utcNow).TotalDays)` measures elapsed time to the *start* of
+  the expiry date. Viewed at 05:00 UTC on 5 August, a licence expiring on the 7th is 1.78 days away
+  and rendered as **"1 d"**. Nobody counts days that way.
+- **It does not treat the expiry as an instant for status either.** `utcNow >= expires` flipped a
+  licence to Expired at midnight *on* its expiration date — a full day early, showing a red chip on a
+  licence still legal to operate. A licence is valid **through** its expiration date, so `days == 0`
+  is current, and the grace period likewise runs through its final day.
+
+"Today" is taken in Eastern, not UTC: anything from ~8pm ET onward is already tomorrow in raw UTC, so
+a UTC-based "what day is it" silently drops a day every evening. Same rule the rest of the codebase
+follows (see CLAUDE.md).
+
 ## Refresh job
 
 `LicenseWatchJob` ticks every 4 hours; `LicenseWatchService` decides what is actually due

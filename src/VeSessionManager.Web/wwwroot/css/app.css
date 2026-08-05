@@ -342,6 +342,11 @@ footer.roster { margin-top: 28px; background: var(--surface); border: 1px solid 
 .menu-input { width: 100%; font-family: "IBM Plex Mono", monospace; font-size: 16px; padding: 8px; border: 1px solid var(--line-strong); border-radius: 5px; background: var(--surface); color: var(--ink); }
 .menu-input + .menu-input { margin-top: 6px; }
 
+/* FRN cell on the Renewal Monitor. user-select:all makes one click select the whole number —
+   a 10-digit string has no word boundaries, so double-click selection is fiddly and a partial
+   copy fails silently in FCC's search. */
+.frn-cell { user-select: all; -webkit-user-select: all; white-space: nowrap; }
+
 /* Phase heading above each group of email templates (at registration / pre-session /
    post-session). */
 .template-phase { margin: 28px 0 12px; }
