@@ -377,6 +377,53 @@ public class LicenseWatchServiceTests
         Assert.True(licence.ExpiredDateUtc > Now);
     }
 
+    /// <summary>
+    /// Reported from the live page: KA0MVW expires 7 Aug, the page was viewed on 5 Aug, and the pill
+    /// read "1 d". The original arithmetic subtracted instants and floored, measuring elapsed time to
+    /// the *start* of the expiry date — at 05:00 UTC on the 5th that is 1.78 days. Calendar-day
+    /// counting is what a human means.
+    /// </summary>
+    [Theory]
+    [InlineData("2026-08-05T05:00:00Z", 2)]  // early morning UTC, the reported case
+    [InlineData("2026-08-05T12:00:00Z", 2)]  // midday
+    [InlineData("2026-08-05T23:30:00Z", 2)]  // 7:30pm ET — still the 5th locally, though UTC agrees
+    [InlineData("2026-08-06T01:00:00Z", 2)]  // 9pm ET on the 5th: UTC has rolled over, Eastern has not
+    [InlineData("2026-08-07T12:00:00Z", 0)]  // expires today
+    [InlineData("2026-08-08T12:00:00Z", -1)] // expired yesterday
+    public void DaysUntilExpiry_CountsCalendarDaysInEastern(string nowIso, int expected)
+    {
+        var licence = new WatchedLicense
+        {
+            CallSign = "KA0MVW",
+            LastCheckedUtc = Now,
+            ExpiredDateUtc = new DateTime(2026, 8, 7, 0, 0, 0, DateTimeKind.Utc)
+        };
+
+        var utcNow = DateTime.Parse(nowIso, null, System.Globalization.DateTimeStyles.AdjustToUniversal | System.Globalization.DateTimeStyles.AssumeUniversal);
+
+        Assert.Equal(expected, licence.DaysUntilExpiry(utcNow));
+    }
+
+    /// <summary>
+    /// A licence is valid THROUGH its expiration date. Comparing raw instants flipped it to Expired
+    /// at midnight on that date — a full day early, and visible to the user as a red "Expired" chip
+    /// on a licence they could still legally operate.
+    /// </summary>
+    [Fact]
+    public void ExpiresToday_IsStillCurrent_NotExpired()
+    {
+        var licence = new WatchedLicense
+        {
+            CallSign = "KA0MVW",
+            LastCheckedUtc = Now,
+            ExpiredDateUtc = new DateTime(2026, 8, 5, 0, 0, 0, DateTimeKind.Utc)
+        };
+
+        // Now is midday UTC on 5 Aug — the expiry date itself.
+        Assert.Equal(WatchedLicenseStatus.ExpiringSoon, licence.DeriveStatus(Now));
+        Assert.Equal(0, licence.DaysUntilExpiry(Now));
+    }
+
     [Fact]
     public void RenewedHighlight_FadesBackToActive()
     {

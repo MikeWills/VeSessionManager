@@ -202,9 +202,8 @@ public class RenewalMonitorModel(
         /// <summary>Round-trip value for the client-side table sorter — "Apr 2" does not sort against "Mar 30" as text.</summary>
         public string ExpiresSortValue => License.ExpiredDateUtc?.ToString("o") ?? "";
 
-        /// <summary>Signed, so an already-expired licence reads as a negative number rather than silently clamping to zero.</summary>
-        public int? DaysUntilExpiry(DateTime utcNow) =>
-            License.ExpiredDateUtc is { } expires ? (int)Math.Floor((expires - utcNow).TotalDays) : null;
+        /// <summary>Delegates to the shared definition in WatchedLicenseStatusExtensions — a second copy here is exactly how the pill and the status chip would come to disagree.</summary>
+        public int? DaysUntilExpiry(DateTime utcNow) => License.DaysUntilExpiry(utcNow);
 
         public string RenewalDisplay => License.RenewalPendingSinceUtc is { } since
             ? $"Filed, seen {since:MMM d}"
