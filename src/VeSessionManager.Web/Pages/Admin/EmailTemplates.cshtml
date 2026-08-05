@@ -53,19 +53,47 @@ else
                     <span class="session-sub">Last updated @EasternTimeFormatter.Format(template.UpdatedUtc.Value, "MMM d, yyyy h:mm tt")</span>
                 }
             </div>
+            @* Chips are now click-to-insert (see email-template-editor.js) — typing a placeholder by
+               hand is the easiest thing to get wrong here, and a typo only surfaces as a Worker log
+               warning after a real send. Rendered as buttons so they're keyboard-reachable. *@
             <div class="roster-list" style="margin-bottom:12px;">
                 @foreach (var placeholder in VeSessionManager.Web.Pages.Admin.EmailTemplatesModel.PlaceholdersFor(template.Key))
                 {
-                    <span class="chip chip-neutral">{{@placeholder}}</span>
+                    <button type="button" class="chip chip-neutral placeholder-chip" data-token="{{@placeholder}}"
+                            title="Insert this placeholder">{{@placeholder}}</button>
                 }
             </div>
             <form method="post" asp-page-handler="Update">
                 <input type="hidden" name="templateId" value="@template.Id" />
                 <input type="hidden" name="teamId" value="@Model.TeamId" />
                 <div class="field"><label for="subject-@template.Id">Subject</label><input id="subject-@template.Id" name="subject" value="@template.Subject" required /></div>
-                <div class="field"><label for="body-@template.Id">Body</label><textarea id="body-@template.Id" name="body" rows="8" required>@template.Body</textarea></div>
+
+                @* The textarea remains the field that posts, in both tabs — Quill is a second view
+                   onto it, never a replacement. Without JS the page degrades to exactly what it was
+                   before: a plain HTML textarea. *@
+                <div class="field template-editor">
+                    <label for="body-@template.Id">Body</label>
+                    <div class="editor-tabs" role="tablist">
+                        <button type="button" class="editor-tab" role="tab" data-mode="visual" aria-selected="true">Visual</button>
+                        <button type="button" class="editor-tab" role="tab" data-mode="html" aria-selected="false">HTML</button>
+                    </div>
+                    <div class="editor-visual" data-editor-for="body-@template.Id">
+                        <div class="editor-surface"></div>
+                    </div>
+                    <textarea id="body-@template.Id" name="body" rows="12" required>@template.Body</textarea>
+                </div>
+
                 <button type="submit" class="btn-primary btn-sm" style="margin-top:8px;">Save</button>
             </form>
         </div>
     }
+}
+
+@section Head {
+    <link rel="stylesheet" href="~/lib/quill/quill.snow.css" />
+}
+
+@section Scripts {
+    <script src="~/lib/quill/quill.js"></script>
+    <script src="~/js/email-template-editor.js" asp-append-version="true"></script>
 }

@@ -8,6 +8,13 @@ that window, or immediately if it's phase-numbered work already summarized in "C
 design rationale for any entry still lives in its linked `/docs/*.md` file, not here or in
 CLAUDE.md — this file, like CLAUDE.md's Change Log, is pointers only.
 
+- **VE Roster restricted to admin roles (2026-08-01).** See `docs/admin-auth.md`. SessionManager and
+  TeamLead dropped from `VeRoster.cshtml.cs`'s `[Authorize]` — the page is a full VE contact roster
+  *and* a per-VE session-count leaderboard, and a visible count-per-person invites comparison between
+  volunteers. Session Detail's per-session VE chips are deliberately untouched (operational context
+  for the session being run, not a roster). **The `[Authorize]` attribute and the `_AppLayout.cshtml`
+  nav gate must change together** — the attribute enforces, the nav gate only avoids a link that
+  403s; same rule Unmatched Payments already follows.
 - **Admin → Team Maintenance: team-level "Refresh now" + ingestion schedule + Worker-health banner
   (2026-07-31).** See `docs/team-maintenance.md` (issues #77/#73). New TeamAdmin/SystemAdmin page,
   operations to Team Settings' configuration. Closes the gap where `ManualCandidateRefreshService`'s
