@@ -67,6 +67,28 @@ public class Team
     public string? SmtpPassword { get; set; }
     public bool? SmtpUseStartTls { get; set; }
 
+    /// <summary>
+    /// This team's logo, embedded in outgoing email wherever a template uses <c>{{Logo}}</c>.
+    /// Null when no logo has been uploaded, in which case <c>{{Logo}}</c> renders to nothing and
+    /// templates carrying it stay perfectly valid.
+    ///
+    /// <para><b>Stored in the database rather than on disk, deliberately.</b> `deploy.yml` runs
+    /// `rsync --delete` over the app directory on every release — that is precisely why the SQLite
+    /// file lives outside it — so an uploads folder under wwwroot would be wiped by the next deploy.
+    /// As a column it is per-team data sitting beside the other per-team settings, and it is backed
+    /// up by whatever backs up the database.</para>
+    ///
+    /// <para>Not encrypted, unlike the credential columns above: a logo is public branding that ends
+    /// up in every candidate's inbox, so <see cref="Data.EncryptedStringConverter"/> would add cost
+    /// and key-ring risk protecting something that is published by design.</para>
+    /// </summary>
+    public byte[]? LogoBytes { get; set; }
+
+    /// <summary>MIME type of <see cref="LogoBytes"/> — only <c>image/png</c> and <c>image/jpeg</c> are accepted on upload. Needed at send time to label the MIME part correctly.</summary>
+    public string? LogoContentType { get; set; }
+
+    public DateTime? LogoUpdatedUtc { get; set; }
+
     /// <summary>How many days an Unpaid Payment's Square link stays live before SquarePaymentLinkPurgeService
     /// deletes it — a genuine per-team business setting, not a credential, so unlike every field
     /// above it stores a real default instead of null-means-unset. See docs/payment-link-purge.md.</summary>

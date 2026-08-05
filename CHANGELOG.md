@@ -15,6 +15,19 @@ CLAUDE.md — this file, like CLAUDE.md's Change Log, is pointers only.
   for the session being run, not a roster). **The `[Authorize]` attribute and the `_AppLayout.cshtml`
   nav gate must change together** — the attribute enforces, the nav gate only avoids a link that
   403s; same rule Unmatched Payments already follows.
+- **VEC matching moves from `Vec.Name` to `Vec.ExamToolsCode` (2026-08-01).** See
+  `docs/vec-examtools-code.md`. Ingestion matched ExamTools' per-session `vec` code against the VEC's
+  *name*, which worked only because ARRL reports `"arrl"` — GLAARG reports **`lagroup`**, so a
+  correctly-named "GLAARG" row would have skipped every one of its sessions forever, with nothing but
+  one `[WRN]` line per poll to show for it (found by reading the live Worker log, not by any alert).
+  New nullable `Vec.ExamToolsCode`; null means "same as the name," so existing rows are untouched and
+  the common case stays blank. Ingestion matches `(v.ExamToolsCode ?? v.Name).ToLower()` — spelled
+  out in the query, not via the new `Vec.MatchCode` helper, so EF can translate it. Duplicate
+  detection is against that same coalesce (a code colliding with another VEC's *name* is rejected
+  too, `VecActionResult.DuplicateExamToolsCode`). Migration `VecExamToolsCode` is one nullable column
+  + `IX_Vecs_ExamToolsCode`, clean down-path. Codes confirmed live: `arrl`, `lagroup`, `sandarc` —
+  read from `GET /api/teams/team`'s `teamDoc.vecs` (the only place they're exposed; it lists the
+  calling VE's own teams, so it is not a global VEC directory).
 - **Admin → Team Maintenance: team-level "Refresh now" + ingestion schedule + Worker-health banner
   (2026-07-31).** See `docs/team-maintenance.md` (issues #77/#73). New TeamAdmin/SystemAdmin page,
   operations to Team Settings' configuration. Closes the gap where `ManualCandidateRefreshService`'s

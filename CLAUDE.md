@@ -100,6 +100,16 @@ cap and a newer entry needs to be added; oldest goes first.
   landed once the current value passes that anchor. FCC's own `data.fcc.gov` License View API is
   Akamai-403 from this deployment, same as `wireless2`. Tracking **VEs'** licences is a deliberately
   separate, not-yet-built feature.
+- **Team logo in emails via `{{Logo}}` (2026-08-05).** See `docs/email-logo.md`. Per-team PNG/JPEG
+  uploaded on Team Settings, stored as a **DB column** (an uploads folder under `wwwroot` would be
+  wiped by `deploy.yml`'s `rsync --delete`) and embedded as a **CID linked resource**, not a hosted
+  URL — Gmail and Outlook block remote images by default, so a hosted logo is invisible until the
+  recipient clicks "show images". **`{{Logo}}` is the one body placeholder that is NOT HTML-encoded**,
+  and that exemption is safe only because the value is built in the renderer from a constant out of
+  app-owned data — nothing registrant-controlled may ever join that branch. Format is decided from
+  the file's magic numbers, never the browser-declared content type; SVG is excluded outright.
+  A template carrying the placeholder stays valid for a team with no logo (renders to nothing), and
+  a template without it attaches nothing.
 - **WYSIWYG editor for email templates (2026-08-05).** See `docs/email-template-editor.md`. Quill
   2.0.3 vendored under `wwwroot/lib/quill`, loaded only by Admin → Email Templates via a new `Head`
   section on `_AppLayout`. **The `<textarea name="body">` is still the field that posts** — the editor
@@ -192,19 +202,6 @@ cap and a newer entry needs to be added; oldest goes first.
   stamped **before** the send so a failing SMTP server can't be driven as a mail-bombing loop.
   Migration `PasswordResetAndSystemEmail` is nullable adds only. **Never live-verified — no SMTP has
   ever been configured on any deployment.**
-- **VEC matching moves from `Vec.Name` to `Vec.ExamToolsCode` (2026-08-01).** See
-  `docs/vec-examtools-code.md`. Ingestion matched ExamTools' per-session `vec` code against the VEC's
-  *name*, which worked only because ARRL reports `"arrl"` — GLAARG reports **`lagroup`**, so a
-  correctly-named "GLAARG" row would have skipped every one of its sessions forever, with nothing but
-  one `[WRN]` line per poll to show for it (found by reading the live Worker log, not by any alert).
-  New nullable `Vec.ExamToolsCode`; null means "same as the name," so existing rows are untouched and
-  the common case stays blank. Ingestion matches `(v.ExamToolsCode ?? v.Name).ToLower()` — spelled
-  out in the query, not via the new `Vec.MatchCode` helper, so EF can translate it. Duplicate
-  detection is against that same coalesce (a code colliding with another VEC's *name* is rejected
-  too, `VecActionResult.DuplicateExamToolsCode`). Migration `VecExamToolsCode` is one nullable column
-  + `IX_Vecs_ExamToolsCode`, clean down-path. Codes confirmed live: `arrl`, `lagroup`, `sandarc` —
-  read from `GET /api/teams/team`'s `teamDoc.vecs` (the only place they're exposed; it lists the
-  calling VE's own teams, so it is not a global VEC directory).
 - **One-time historical session import + VE-roster re-poll fix (2026-07-31).** See
   `docs/historical-import.md` (issue #67 part 2). Admin picks a date range on Team Maintenance; a
   `HistoricalImportRequest` row is queued and the Worker's new `HistoricalImportJob` walks it **one

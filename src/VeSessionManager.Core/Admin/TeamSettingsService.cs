@@ -136,6 +136,72 @@ public class TeamSettingsService(AppDbContext dbContext, TimeProvider timeProvid
         return await SaveTeamUpdateAsync(team, "TeamSmtpCredentialsUpdated", userId, cancellationToken);
     }
 
+    /// <summary>Largest logo accepted. A logo is a small branding image; anything approaching this is a photo pasted in by mistake, and every byte here is added to every email the team ever sends.</summary>
+    public const int MaxLogoBytes = 200 * 1024;
+
+    /// <summary>
+    /// Stores (or, with null <paramref name="content"/>, clears) the team's email logo.
+    ///
+    /// <para><b>The content type is derived from the bytes, never from the upload's declared
+    /// type.</b> A browser-supplied Content-Type is attacker-controlled and trivially spoofed, so
+    /// trusting it would let anything at all be stored and then served to mail clients under an
+    /// image label. The two magic-number checks below are the whole allowlist: PNG and JPEG. SVG is
+    /// deliberately excluded — mail clients broadly do not render it, and an SVG is an executable
+    /// document that would be a stored-XSS vector anywhere it were ever served back.</para>
+    /// </summary>
+    public async Task<TeamActionResult> UpdateLogoAsync(int teamId, byte[]? content, int userId, CancellationToken cancellationToken)
+    {
+        var team = await dbContext.Teams.FirstOrDefaultAsync(t => t.Id == teamId, cancellationToken);
+        if (team is null)
+        {
+            return TeamActionResult.NotFound;
+        }
+
+        if (content is null || content.Length == 0)
+        {
+            team.LogoBytes = null;
+            team.LogoContentType = null;
+            team.LogoUpdatedUtc = null;
+            return await SaveTeamUpdateAsync(team, "TeamLogoCleared", userId, cancellationToken);
+        }
+
+        if (content.Length > MaxLogoBytes)
+        {
+            return TeamActionResult.LogoTooLarge;
+        }
+
+        var contentType = SniffImageContentType(content);
+        if (contentType is null)
+        {
+            return TeamActionResult.LogoUnsupportedFormat;
+        }
+
+        team.LogoBytes = content;
+        team.LogoContentType = contentType;
+        team.LogoUpdatedUtc = timeProvider.GetUtcNow().UtcDateTime;
+        return await SaveTeamUpdateAsync(team, "TeamLogoUpdated", userId, cancellationToken);
+    }
+
+    /// <summary>Returns the MIME type implied by the file's own leading bytes, or null when it is neither PNG nor JPEG.</summary>
+    private static string? SniffImageContentType(byte[] content)
+    {
+        // PNG: 89 50 4E 47 0D 0A 1A 0A
+        if (content.Length >= 8 &&
+            content[0] == 0x89 && content[1] == 0x50 && content[2] == 0x4E && content[3] == 0x47 &&
+            content[4] == 0x0D && content[5] == 0x0A && content[6] == 0x1A && content[7] == 0x0A)
+        {
+            return "image/png";
+        }
+
+        // JPEG: FF D8 FF — every JPEG variant (JFIF, Exif) shares this SOI + marker prefix.
+        if (content.Length >= 3 && content[0] == 0xFF && content[1] == 0xD8 && content[2] == 0xFF)
+        {
+            return "image/jpeg";
+        }
+
+        return null;
+    }
+
     public async Task<TeamActionResult> UpdatePurgeSettingsAsync(int teamId, int purgeUnpaidLinkDays, int userId, CancellationToken cancellationToken)
     {
         var team = await dbContext.Teams.FirstOrDefaultAsync(t => t.Id == teamId, cancellationToken);
@@ -203,5 +269,11 @@ public enum TeamActionResult
 {
     Success,
     NotFound,
-    DuplicateName
+    DuplicateName,
+
+    /// <summary>Uploaded logo exceeded <see cref="TeamSettingsService.MaxLogoBytes"/>.</summary>
+    LogoTooLarge,
+
+    /// <summary>Uploaded logo's own bytes were neither PNG nor JPEG, whatever the browser declared.</summary>
+    LogoUnsupportedFormat
 }

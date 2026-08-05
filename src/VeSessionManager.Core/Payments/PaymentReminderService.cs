@@ -148,7 +148,7 @@ public class PaymentReminderService(
 
                 await emailSender.SendAsync(
                     credentials,
-                    new EmailMessage(payment.Candidate.Email!, emailSettings.FromAddress, emailSettings.FromDisplayName, emailSettings.ReplyToAddress, rendered.Subject, rendered.Body),
+                    new EmailMessage(payment.Candidate.Email!, emailSettings.FromAddress, emailSettings.FromDisplayName, emailSettings.ReplyToAddress, rendered.Subject, rendered.Body, rendered.InlineLogo),
                     cancellationToken);
 
                 payment.PaymentReminderSentUtc = now;
@@ -223,7 +223,7 @@ public class PaymentReminderService(
 
                 await emailSender.SendAsync(
                     credentials,
-                    new EmailMessage(emailSettings.AdminNotificationEmail, emailSettings.FromAddress, emailSettings.FromDisplayName, emailSettings.ReplyToAddress, rendered.Subject, rendered.Body),
+                    new EmailMessage(emailSettings.AdminNotificationEmail, emailSettings.FromAddress, emailSettings.FromDisplayName, emailSettings.ReplyToAddress, rendered.Subject, rendered.Body, rendered.InlineLogo),
                     cancellationToken);
 
                 // "Stop further reminders for that payment" (spec) — ExpiredUnpaid = true removes

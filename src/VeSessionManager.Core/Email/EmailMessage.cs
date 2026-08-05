@@ -7,4 +7,7 @@ public record EmailMessage(
     string? FromDisplayName,
     string ReplyToAddress,
     string Subject,
-    string HtmlBody);
+    string HtmlBody,
+    /// <summary>Attached as a linked resource when present, so the body can reference it as
+    /// <c>cid:</c>. Optional, so every existing call site is unaffected.</summary>
+    InlineImage? InlineLogo = null);
