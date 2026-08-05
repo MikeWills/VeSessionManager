@@ -100,6 +100,17 @@ cap and a newer entry needs to be added; oldest goes first.
   landed once the current value passes that anchor. FCC's own `data.fcc.gov` License View API is
   Akamai-403 from this deployment, same as `wireless2`. Tracking **VEs'** licences is a deliberately
   separate, not-yet-built feature.
+- **WYSIWYG editor for email templates (2026-08-05).** See `docs/email-template-editor.md`. Quill
+  2.0.3 vendored under `wwwroot/lib/quill`, loaded only by Admin → Email Templates via a new `Head`
+  section on `_AppLayout`. **The `<textarea name="body">` is still the field that posts** — the editor
+  is a second view onto it and the HTML tab stays authoritative, so the server contract is unchanged
+  and the page degrades to its old plain-textarea self without JS. Three traps, all measured rather
+  than assumed: `root.innerHTML` renders bullets as `<ol data-list="bullet">` (**an email client shows
+  them numbered**), `getSemanticHTML()` turns every space into `&nbsp;` (**which stops lines
+  wrapping on a phone**), and Quill's default alignment emits a *class*, which does nothing in an
+  inbox — so alignment is registered as an inline-style attributor. Placeholder chips are now
+  click-to-insert. Toolbar deliberately stops at headings/alignment: colour and font-size are where
+  users produce mail that renders differently in every client.
 - **Mobile-first responsive pass over the whole site (2026-08-05).** See `docs/responsive-ui.md`.
   `app.css` had **zero media queries** — the site was desktop-only by construction, not merely
   unpolished. It is now mobile-first (base layer = phone; a `min-width: 768px` "Desktop layer"
@@ -181,13 +192,6 @@ cap and a newer entry needs to be added; oldest goes first.
   stamped **before** the send so a failing SMTP server can't be driven as a mail-bombing loop.
   Migration `PasswordResetAndSystemEmail` is nullable adds only. **Never live-verified — no SMTP has
   ever been configured on any deployment.**
-- **VE Roster restricted to admin roles (2026-08-01).** See `docs/admin-auth.md`. SessionManager and
-  TeamLead dropped from `VeRoster.cshtml.cs`'s `[Authorize]` — the page is a full VE contact roster
-  *and* a per-VE session-count leaderboard, and a visible count-per-person invites comparison between
-  volunteers. Session Detail's per-session VE chips are deliberately untouched (operational context
-  for the session being run, not a roster). **The `[Authorize]` attribute and the `_AppLayout.cshtml`
-  nav gate must change together** — the attribute enforces, the nav gate only avoids a link that
-  403s; same rule Unmatched Payments already follows.
 - **VEC matching moves from `Vec.Name` to `Vec.ExamToolsCode` (2026-08-01).** See
   `docs/vec-examtools-code.md`. Ingestion matched ExamTools' per-session `vec` code against the VEC's
   *name*, which worked only because ARRL reports `"arrl"` — GLAARG reports **`lagroup`**, so a

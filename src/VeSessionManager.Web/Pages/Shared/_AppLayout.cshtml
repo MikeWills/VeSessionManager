@@ -65,6 +65,9 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="~/css/app.css" asp-append-version="true" />
+    @* For page-specific stylesheets that shouldn't load site-wide — currently only Quill's, on the
+       Email Templates page. Mirrors the existing Scripts section at the bottom. *@
+    @await RenderSectionAsync("Head", required: false)
 </head>
 <body class="vesm">
     <header class="chassis">
