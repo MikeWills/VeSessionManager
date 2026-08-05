@@ -31,13 +31,13 @@ public class PaymentUniqueIndexSqliteTests
     }
 
     /// <summary>Seeds Vec/User/FeeConfiguration/Team/Session and returns a saved Candidate.</summary>
-    internal static async Task<Candidate> SeedCandidateAsync(AppDbContext dbContext, string applicantId, Session? session = null)
+    internal static async Task<Candidate> SeedCandidateAsync(AppDbContext dbContext, string applicantId, Session? session = null, int? existingTeamId = null)
     {
         if (session is null)
         {
             var vec = new Vec { Name = $"VEC-{applicantId}" };
             var user = new User { Name = "System", Email = $"system-{applicantId}@localhost", Role = UserRole.SystemAdmin };
-            var team = new Team { Name = $"TEAM-{applicantId}", CreatedUtc = Now };
+            Team? team = existingTeamId is null ? new Team { Name = $"TEAM-{applicantId}", CreatedUtc = Now } : null;
             session = new Session
             {
                 ExamToolsSessionId = $"session-{applicantId}",
@@ -45,7 +45,6 @@ public class PaymentUniqueIndexSqliteTests
                 ScheduledStartUtc = Now.AddDays(4),
                 DurationMinutes = 60,
                 Vec = vec,
-                Team = team,
                 FeeConfiguration = new FeeConfiguration
                 {
                     Vec = vec,
@@ -58,6 +57,8 @@ public class PaymentUniqueIndexSqliteTests
                 Status = SessionStatus.Active,
                 CreatedUtc = Now
             };
+
+            if (team is not null) session.Team = team; else session.TeamId = existingTeamId!.Value;
         }
 
         var candidate = new Candidate
@@ -159,6 +160,25 @@ public class PaymentUniqueIndexSqliteTests
     private const string MigrationBeforeTheIndex = "20260801154402_PasswordResetAndSystemEmail";
 
     /// <summary>
+    /// Inserts a Team with raw SQL, naming only the columns that existed at
+    /// <see cref="MigrationBeforeTheIndex"/>.
+    ///
+    /// <para><b>Why not just use the model.</b> These two tests deliberately run against a
+    /// *historical* schema, but the DbContext is always the *current* model — so the moment anyone
+    /// adds a column to Team, EF emits an INSERT naming it and SQLite rejects the whole test with
+    /// "table Teams has no column named X". That is exactly what happened when Team gained its logo
+    /// columns. Any table seeded by a migration test has the same hazard; this is the seam where it
+    /// bites first because Team is the most-extended entity.</para>
+    /// </summary>
+    private static async Task<int> SeedTeamViaSqlAsync(AppDbContext dbContext, string name)
+    {
+        await dbContext.Database.ExecuteSqlRawAsync(
+            "INSERT INTO Teams (Name, CreatedUtc, PurgeUnpaidLinkDays, ZoomBreakoutRoomCount) VALUES ({0}, {1}, 0, 0)",
+            name, Now);
+        return await dbContext.Teams.Select(t => t.Id).OrderByDescending(id => id).FirstAsync();
+    }
+
+    /// <summary>
     /// Both Web and Worker call Database.Migrate() at startup, so CreateIndex failing on a database
     /// that already holds duplicates is not "a migration didn't apply" — it is "the deployment will
     /// not boot". This walks the real upgrade path: migrate up to the migration *before* the index,
@@ -174,7 +194,8 @@ public class PaymentUniqueIndexSqliteTests
         await using var dbContext = new AppDbContext(options);
 
         await dbContext.GetService<IMigrator>().MigrateAsync(MigrationBeforeTheIndex);
-        var candidate = await SeedCandidateAsync(dbContext, "applicant-1");
+        var teamId = await SeedTeamViaSqlAsync(dbContext, "TEAM-applicant-1");
+        var candidate = await SeedCandidateAsync(dbContext, "applicant-1", existingTeamId: teamId);
 
         // Two provably inert duplicates: Unpaid, never linked, never given a Square order id.
         dbContext.Payments.AddRange(
@@ -206,7 +227,8 @@ public class PaymentUniqueIndexSqliteTests
         await using var dbContext = new AppDbContext(options);
 
         await dbContext.GetService<IMigrator>().MigrateAsync(MigrationBeforeTheIndex);
-        var candidate = await SeedCandidateAsync(dbContext, "applicant-1");
+        var teamId = await SeedTeamViaSqlAsync(dbContext, "TEAM-applicant-1");
+        var candidate = await SeedCandidateAsync(dbContext, "applicant-1", existingTeamId: teamId);
 
         var first = NewPayment(candidate.Id, PaymentReason.InitialExam);
         var duplicate = NewPayment(candidate.Id, PaymentReason.InitialExam);

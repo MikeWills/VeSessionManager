@@ -33,10 +33,48 @@ public partial class EmailTemplateRenderer(AppDbContext dbContext, ILogger<Email
             return null;
         }
 
+        // Only load the logo when the body actually asks for it — a template without {{Logo}} should
+        // never pay the size cost of an attachment on every send.
+        InlineImage? logo = null;
+        var effectivePlaceholders = placeholders;
+        if (LogoPlaceholderPattern().IsMatch(template.Body))
+        {
+            var team = await dbContext.Teams.FirstOrDefaultAsync(t => t.Id == teamId, cancellationToken);
+            if (team?.LogoBytes is { Length: > 0 } bytes)
+            {
+                logo = new InlineImage(InlineImage.TeamLogoContentId, team.LogoContentType ?? "image/png", bytes);
+            }
+
+            // Present either way. With a logo it becomes the <img> tag; without one it becomes an
+            // empty string, so a template carrying {{Logo}} stays valid for a team that has not
+            // uploaded one — rather than emitting a literal "{{Logo}}" into a candidate's inbox,
+            // which is what the unknown-placeholder path would otherwise do.
+            effectivePlaceholders = new Dictionary<string, string>(placeholders)
+            {
+                [LogoPlaceholder] = logo is null
+                    ? string.Empty
+                    : $"<img src=\"cid:{InlineImage.TeamLogoContentId}\" alt=\"\" style=\"max-width:220px;height:auto;border:0;\" />"
+            };
+        }
+
         return new RenderedEmail(
-            Substitute(template.Subject, placeholders, templateKey, "Subject", encodeHtml: false),
-            Substitute(template.Body, placeholders, templateKey, "Body", encodeHtml: true));
+            Substitute(template.Subject, effectivePlaceholders, templateKey, "Subject", encodeHtml: false),
+            Substitute(template.Body, effectivePlaceholders, templateKey, "Body", encodeHtml: true),
+            logo);
     }
+
+    /// <summary>
+    /// The one placeholder whose value is HTML rather than text, and is therefore substituted
+    /// **without** encoding.
+    ///
+    /// <para><b>This is a deliberate, narrow exception to the encoding rule in this class's summary,
+    /// and the reason it is safe is that the value is built here, from a constant, out of app-owned
+    /// data — not supplied by a caller and never derived from registrant input.</b> Every other
+    /// placeholder ultimately traces back to ExamTools' public registration intake, which is exactly
+    /// why they are encoded. Nothing registrant-controlled may ever be added to this set: doing so
+    /// would inject attacker-authored markup straight into a real HTML email.</para>
+    /// </summary>
+    private const string LogoPlaceholder = "Logo";
 
     private string Substitute(string text, IReadOnlyDictionary<string, string> placeholders, string templateKey, string field, bool encodeHtml) =>
         PlaceholderPattern().Replace(text, match =>
@@ -44,7 +82,8 @@ public partial class EmailTemplateRenderer(AppDbContext dbContext, ILogger<Email
             var name = match.Groups[1].Value;
             if (placeholders.TryGetValue(name, out var value))
             {
-                return encodeHtml ? WebUtility.HtmlEncode(value) : value;
+                var raw = !encodeHtml || name == LogoPlaceholder;
+                return raw ? value : WebUtility.HtmlEncode(value);
             }
 
             logger.LogWarning("EmailTemplate {TemplateKey}.{Field} references unknown placeholder '{Placeholder}' — left unsubstituted, check for a typo",
@@ -54,4 +93,7 @@ public partial class EmailTemplateRenderer(AppDbContext dbContext, ILogger<Email
 
     [GeneratedRegex(@"\{\{(\w+)\}\}")]
     private static partial Regex PlaceholderPattern();
+
+    [GeneratedRegex(@"\{\{Logo\}\}")]
+    private static partial Regex LogoPlaceholderPattern();
 }

@@ -36,7 +36,25 @@ public class SmtpEmailSender(SystemSettingsService systemSettingsService, ILogge
         mimeMessage.ReplyTo.Add(MailboxAddress.Parse(effectiveMessage.ReplyToAddress));
         mimeMessage.To.Add(MailboxAddress.Parse(effectiveMessage.ToAddress));
         mimeMessage.Subject = effectiveMessage.Subject;
-        mimeMessage.Body = new BodyBuilder { HtmlBody = effectiveMessage.HtmlBody }.ToMessageBody();
+        var bodyBuilder = new BodyBuilder { HtmlBody = effectiveMessage.HtmlBody };
+
+        if (effectiveMessage.InlineLogo is { } logo)
+        {
+            // LinkedResources, not Attachments: a linked resource is referenced from the HTML by
+            // cid: and is not offered to the recipient as a downloadable file. Adding it as a plain
+            // attachment would both fail to render inline and put a stray "logo.png" paperclip on
+            // every email.
+            var resource = bodyBuilder.LinkedResources.Add(
+                logo.ContentId,
+                logo.Content,
+                ContentType.Parse(logo.ContentType));
+
+            // Must match the cid: the renderer wrote into the <img> tag exactly, or the client
+            // silently shows a broken image. Add() sets a generated id, so it is overwritten here.
+            resource.ContentId = logo.ContentId;
+        }
+
+        mimeMessage.Body = bodyBuilder.ToMessageBody();
 
         using var client = new SmtpClient();
         var secureSocketOptions = credentials.UseStartTls ? SecureSocketOptions.StartTls : SecureSocketOptions.Auto;

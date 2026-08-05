@@ -92,7 +92,7 @@ public class EmailTemplatesModel(AppDbContext dbContext, UserManager<User> userM
         return RedirectToPage(new { teamId = existingTemplate.TeamId });
     }
 
-    public static IReadOnlyList<string> PlaceholdersFor(string key) => EmailTemplatePlaceholders.For(key);
+    public static IReadOnlyList<string> PlaceholdersFor(string key) => EmailTemplatePlaceholders.ForEditor(key);
 
     public record TemplateRow(int Id, string Key, string Subject, string Body, DateTime? UpdatedUtc);
 }

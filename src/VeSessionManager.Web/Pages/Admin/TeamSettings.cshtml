@@ -99,6 +99,38 @@ else
             <button type="submit" class="btn-primary btn-sm" style="margin-top:8px;">Save</button>
         </form>
 
+        <div class="section-head" style="margin-top:28px;"><h2>Email logo</h2></div>
+        @* enctype is required — without it the browser posts only the file NAME and the handler
+           sees an empty upload. The preview is a data URI rather than a served route: the image is
+           small, this page is admin-only, and it avoids adding a public endpoint that hands out
+           team images. *@
+        <form method="post" asp-page-handler="UpdateLogo" enctype="multipart/form-data">
+            <input type="hidden" name="TeamId" value="@Model.TeamId" />
+            @if (Model.Team.LogoBytes is { Length: > 0 } logo)
+            {
+                <div style="margin-bottom:12px;">
+                    <img src="data:@(Model.Team.LogoContentType ?? "image/png");base64,@Convert.ToBase64String(logo)"
+                         alt="Current team logo" style="max-width:220px;height:auto;border:1px solid var(--line);border-radius:5px;padding:6px;background:#fff;" />
+                    <p class="session-sub" style="margin:6px 0 0;">@(logo.Length / 1024)KB @(Model.Team.LogoContentType)@(Model.Team.LogoUpdatedUtc is { } up ? $" · updated {EasternTimeFormatter.Format(up, "MMM d, yyyy")}" : "")</p>
+                </div>
+            }
+            <div class="field" style="max-width:400px;">
+                <label for="logoFile">PNG or JPEG, up to 200KB</label>
+                <input id="logoFile" name="logoFile" type="file" accept="image/png,image/jpeg" />
+            </div>
+            <p class="session-sub" style="margin:8px 0 0;max-width:520px;">
+                Add <span class="mono">{{Logo}}</span> to any email template to place it. Templates without that placeholder are unaffected, and a team with no logo renders it as nothing &mdash; so the placeholder is always safe to leave in.
+            </p>
+            <button type="submit" class="btn-primary btn-sm" style="margin-top:8px;">Upload logo</button>
+        </form>
+        @if (Model.Team.LogoBytes is { Length: > 0 })
+        {
+            <form method="post" asp-page-handler="RemoveLogo" style="margin-top:8px;">
+                <input type="hidden" name="TeamId" value="@Model.TeamId" />
+                <button type="submit" class="btn-danger btn-sm">Remove logo</button>
+            </form>
+        }
+
         <div class="section-head" style="margin-top:28px;"><h2>SMTP</h2></div>
         <form method="post" asp-page-handler="UpdateSmtp">
             <input type="hidden" name="TeamId" value="@Model.TeamId" />

@@ -125,6 +125,53 @@ public class TeamSettingsModel(AppDbContext dbContext, UserManager<User> userMan
         return RedirectToPage(new { teamId = auth.Value.Team.Id });
     }
 
+    /// <summary>
+    /// Stores the team's email logo. The file is read into memory rather than streamed to disk:
+    /// it is capped at 200KB, it is destined for a database column, and there is nowhere on disk to
+    /// put it that would survive a deploy (see Team.LogoBytes).
+    /// </summary>
+    public async Task<IActionResult> OnPostUpdateLogoAsync(IFormFile? logoFile)
+    {
+        var auth = await AuthorizeAsync();
+        if (auth is null) return Forbid();
+
+        if (logoFile is null || logoFile.Length == 0)
+        {
+            TempData["ErrorMessage"] = "Choose an image file to upload.";
+            return RedirectToPage(new { teamId = auth.Value.Team.Id });
+        }
+
+        // Checked before reading so an oversized upload is rejected without buffering it; the
+        // service re-checks the actual byte count, which is the authoritative test.
+        if (logoFile.Length > TeamSettingsService.MaxLogoBytes)
+        {
+            TempData["ErrorMessage"] = $"That image is {logoFile.Length / 1024}KB. The limit is {TeamSettingsService.MaxLogoBytes / 1024}KB — every email the team sends carries a copy.";
+            return RedirectToPage(new { teamId = auth.Value.Team.Id });
+        }
+
+        using var buffer = new MemoryStream();
+        await logoFile.CopyToAsync(buffer, HttpContext.RequestAborted);
+
+        var result = await teamSettingsService.UpdateLogoAsync(auth.Value.Team.Id, buffer.ToArray(), auth.Value.User.Id, HttpContext.RequestAborted);
+        if (result == TeamActionResult.LogoUnsupportedFormat)
+        {
+            TempData["ErrorMessage"] = "That file isn't a PNG or JPEG. Mail clients don't reliably render anything else.";
+            return RedirectToPage(new { teamId = auth.Value.Team.Id });
+        }
+
+        SetStatus(result, "Logo updated.");
+        return RedirectToPage(new { teamId = auth.Value.Team.Id });
+    }
+
+    public async Task<IActionResult> OnPostRemoveLogoAsync()
+    {
+        var auth = await AuthorizeAsync();
+        if (auth is null) return Forbid();
+
+        var result = await teamSettingsService.UpdateLogoAsync(auth.Value.Team.Id, null, auth.Value.User.Id, HttpContext.RequestAborted);
+        SetStatus(result, "Logo removed.");
+        return RedirectToPage(new { teamId = auth.Value.Team.Id });
+    }
     public async Task<IActionResult> OnPostUpdatePurgeSettingsAsync(int purgeUnpaidLinkDays)
     {
         var auth = await AuthorizeAsync();

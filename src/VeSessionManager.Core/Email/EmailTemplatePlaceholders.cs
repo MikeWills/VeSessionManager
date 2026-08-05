@@ -21,5 +21,20 @@ public static class EmailTemplatePlaceholders
         ["ArrlYouthProgramInstructions"] = ["CandidateName", "CallSign"],
     };
 
+    /// <summary>
+    /// Tokens available in <b>every</b> template regardless of Key, because they are substituted by
+    /// EmailTemplateRenderer itself from team-level data rather than supplied per send by
+    /// CandidateNotificationService/PaymentReminderService.
+    ///
+    /// <para>Deliberately separate from <see cref="ByKey"/> rather than merged into it: ByKey means
+    /// "what the calling service passes in", and EmailTemplatePlaceholdersTests asserts its exact
+    /// contents to catch drift against that code. Folding a renderer-provided token in would break
+    /// that invariant and make the drift test meaningless.</para>
+    /// </summary>
+    public static readonly IReadOnlyList<string> Universal = ["Logo"];
+
     public static IReadOnlyList<string> For(string key) => ByKey.TryGetValue(key, out var list) ? list : [];
+
+    /// <summary>What the Email Templates admin page offers as insertable chips — the caller-provided tokens for this Key plus the universal ones.</summary>
+    public static IReadOnlyList<string> ForEditor(string key) => [.. For(key), .. Universal];
 }
