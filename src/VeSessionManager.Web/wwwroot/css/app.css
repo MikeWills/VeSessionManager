@@ -342,6 +342,12 @@ footer.roster { margin-top: 28px; background: var(--surface); border: 1px solid 
 .menu-input { width: 100%; font-family: "IBM Plex Mono", monospace; font-size: 16px; padding: 8px; border: 1px solid var(--line-strong); border-radius: 5px; background: var(--surface); color: var(--ink); }
 .menu-input + .menu-input { margin-top: 6px; }
 
+/* "When does this fire?" summary above each email template. Chips reuse the existing status-chip
+   component rather than introducing another badge style. */
+.template-trigger { margin: 0 0 14px; }
+.template-trigger .chip { margin-right: 6px; }
+.template-trigger p { font-size: 13px; line-height: 1.55; color: var(--ink-soft); margin: 8px 0 0; max-width: 70ch; }
+
 /* Email template editor (Admin → Email Templates). Quill provides the editing surface; everything
    here is the chrome around it plus the theming Quill's Snow skin doesn't do — Snow is light-only,
    and this app has a theme toggle, so every hard-coded light value it ships needs an override

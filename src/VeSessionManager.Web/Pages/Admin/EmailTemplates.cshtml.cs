@@ -94,5 +94,8 @@ public class EmailTemplatesModel(AppDbContext dbContext, UserManager<User> userM
 
     public static IReadOnlyList<string> PlaceholdersFor(string key) => EmailTemplatePlaceholders.ForEditor(key);
 
+    /// <summary>What causes this template to be sent — see EmailTemplateTriggers. Null for a Key with no registry entry, in which case the page shows nothing rather than inventing a description.</summary>
+    public static EmailTemplateTrigger? TriggerFor(string key) => EmailTemplateTriggers.For(key);
+
     public record TemplateRow(int Id, string Key, string Subject, string Body, DateTime? UpdatedUtc);
 }
