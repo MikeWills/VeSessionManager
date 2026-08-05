@@ -96,6 +96,7 @@
     </div>
 </div>
 
+<div class="table-scroll">
 <table class="cards" data-sortable="candidate-payments">
     <thead>
         <tr>
@@ -167,6 +168,7 @@
         }
     </tbody>
 </table>
+</div>
 
 <div class="section-head">
     <div><h2>Email history</h2></div>
@@ -195,6 +197,7 @@ else
             <h2>Other sessions with this FRN</h2>
         </div>
     </div>
+    <div class="table-scroll">
     <table class="cards" data-sortable="other-attempts">
         <thead>
             <tr>
@@ -214,6 +217,7 @@ else
             }
         </tbody>
     </table>
+    </div>
 }
 
 @if (Model.CanEdit && !c.IsWithdrawn)

@@ -83,6 +83,7 @@
    screen would look like — but not be — a sort of the whole result set. Each href is the next
    state in the ascending → descending → unsorted cycle; the ▲/▼ arrow is driven by aria-sort, the
    same CSS the client-sorted tables use. *@
+<div class="table-scroll">
 <table class="cards">
     <thead>
         <tr>
@@ -177,6 +178,7 @@
         }
     </tbody>
 </table>
+</div>
 
 @* One confirmation modal per deletable row — matches the per-item modal pattern the Detail page
    already uses for candidate refund/FRN. Bounded by page size (max 100). *@

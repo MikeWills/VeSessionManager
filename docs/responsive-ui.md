@@ -46,17 +46,30 @@ Two things inside the panel are easy to get wrong:
 - The chassis dropdowns become inline accordions rather than floating menus. A `position: absolute`
   dropdown inside a stacked panel overlays the links beneath it.
 
-## Tables: two treatments, chosen per page
+## Tables: two treatments that stack
 
-| Treatment | Applied to | How |
+Every data table in the app — all fifteen, Session Manager and Admin alike — carries **both**:
+
+| Treatment | What it does | When it applies |
 |---|---|---|
-| `table.cards` | Session Manager screens — Sessions, Session Detail, Applicant Status, Candidate Detail, Unmatched Payments, VE Roster | Each row restacks into a labelled card below the breakpoint |
-| `.table-scroll` wrapper | Admin/reference screens — Audit Log, Job History, Users, VECs, Fees, Teams, Team Maintenance | Table keeps its columns and scrolls sideways inside the wrapper |
+| `class="cards"` on the `<table>` | Each row restacks into a labelled card | Below 768px |
+| `.table-scroll` wrapper `<div>` | Table scrolls sideways inside the wrapper instead of forcing the page to | Any width where the table is wider than its container |
 
-The split is by *who opens the page on a phone*: a Session Manager running a session needs the SM
-screens to read well one-handed; the admin tables are configuration screens. **Promoting an admin
-table to cards later is a one-word markup change** — add `class="cards"` — which is why the labels
-are generated rather than hand-written. That was an explicit request during this work.
+These are not alternatives, and the reason is a band that is easy to miss. Cards only exist below
+768px, so between 768px and roughly 1100px — a tablet, a split-screen window, a small laptop — a
+16-column table is a real table again with nothing catching its overflow. The first version of this
+work shipped with the SM tables unwrapped and had exactly that bug. The wrapper covers that band;
+cards cover below it.
+
+> **`min-width` must be scoped `:not(.cards)`.** The wrapper's `min-width: 680px` floor is what makes
+> a table scroll rather than compress its columns into slivers — but in card mode the table is
+> block-level, and a 680px floor pushes it straight off the side of a phone, reintroducing the exact
+> horizontal page scroll this all exists to remove.
+
+Admin tables were initially left on scroll-only, on the theory that configuration screens are rarely
+opened on a phone. That turned out to be wrong in practice — the real use case is fixing something
+quickly while away from a computer — and they moved to cards on 2026-08-05. Because the labels are
+generated rather than hand-written, that change was one word per table.
 
 ### Labels come from the `<th>` at runtime
 
@@ -128,6 +141,11 @@ scrolls sideways) and `wrapper.scrollWidth > wrapper.clientWidth` (the table doe
 
 One escaping trap: if the harness is injected via `srcdoc` or a JS string, its own `</script>` ends
 the host page's script block early. Write the harness to its own file and use `src=` instead.
+
+The harness can be pointed at any page shape. The admin pass used a Users-table harness rendered at
+390px **and 900px**, asserting `pageOverflowsHorizontally === false` at both while
+`wrapper.scrollWidth > wrapper.clientWidth` only at 900px — which is precisely the tablet-band
+regression described under "Tables" above.
 
 ### What is *not* verified
 
