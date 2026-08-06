@@ -17,7 +17,7 @@
     <input type="hidden" name="applied" value="true" />
 
     <div class="filter-dropdown">
-        <button type="button" class="kebab @(Model.Status.Count > 0 ? "active" : "")">Status: @Model.StatusSummaryLabel ▾</button>
+        <button type="button" class="kebab @(Model.Status.Count > 0 ? "active" : "")">Status: @Model.StatusSummaryLabel <i class="bi bi-caret-down-fill" aria-hidden="true"></i></button>
         <div class="menu">
             <label class="item"><input type="checkbox" name="status" value="Active" @(Model.Status.Contains("Active") ? "checked" : "") /> Active</label>
             <label class="item"><input type="checkbox" name="status" value="RescheduleFlagged" @(Model.Status.Contains("RescheduleFlagged") ? "checked" : "") /> Reschedule flagged</label>
@@ -33,7 +33,7 @@
     </div>
 
     <div class="filter-dropdown">
-        <button type="button" class="kebab @(Model.DateRangeSummaryLabel != "Any time" ? "active" : "")">Date range: @Model.DateRangeSummaryLabel ▾</button>
+        <button type="button" class="kebab @(Model.DateRangeSummaryLabel != "Any time" ? "active" : "")">Date range: @Model.DateRangeSummaryLabel <i class="bi bi-caret-down-fill" aria-hidden="true"></i></button>
         <div class="menu" style="width:240px;">
             <label class="item" style="display:block;">
                 <span style="display:block; margin-bottom:4px;">Preset</span>
@@ -64,7 +64,7 @@
     @if (Model.AvailableTeams.Count > 1)
     {
         <div class="filter-dropdown">
-            <button type="button" class="kebab @(Model.TeamId is not null ? "active" : "")">Team: @Model.TeamSummaryLabel ▾</button>
+            <button type="button" class="kebab @(Model.TeamId is not null ? "active" : "")">Team: @Model.TeamSummaryLabel <i class="bi bi-caret-down-fill" aria-hidden="true"></i></button>
             <div class="menu">
                 <label class="item"><input type="radio" name="teamId" value="" @(Model.TeamId is null ? "checked" : "") /> All teams</label>
                 @foreach (var team in Model.AvailableTeams)
@@ -122,7 +122,7 @@
                         @session.TitleLine
                         @if (session.RescheduleFlagged)
                         {
-                            <span class="flag" title="Reschedule flagged for review">⚑</span>
+                            <span class="flag" title="Reschedule flagged for review"><i class="bi bi-flag-fill" aria-hidden="true"></i></span>
                         }
                     </div>
                     <div class="session-sub">@session.SubLine</div>
@@ -133,14 +133,14 @@
                 <td class="count">@session.CandidateCount</td>
                 <td><span class="chip @session.StatusChipClass">@session.StatusChipLabel</span></td>
                 <td><span class="chip @session.VecSubmissionChipClass">@session.VecSubmissionChipLabel</span></td>
-                <td><a class="view-link" asp-page="./Detail" asp-route-id="@session.Id">View →</a></td>
+                <td><a class="view-link" asp-page="./Detail" asp-route-id="@session.Id">View <i class="bi bi-arrow-right" aria-hidden="true"></i></a></td>
                 @* Row action menu (requested 2026-07-30) — same kebab/menu component the candidate
                    roster on the Detail page uses. Every item posts the session id and is re-authorized
                    server-side; the Can* flags only decide what's worth rendering. *@
                 <td class="row-actions">
                     @if (session.HasAnyAction)
                     {
-                        <button type="button" class="kebab">⋮</button>
+                        <button type="button" class="kebab"><i class="bi bi-three-dots-vertical" aria-hidden="true"></i></button>
                         <div class="menu">
                             @if (session.CanMarkSubmitted)
                             {
@@ -212,12 +212,12 @@
         <div class="pagination-controls filters">
             @if (Model.PageNumber > 1)
             {
-                <a class="filter-pill" href="@Model.BuildPageUrl(Model.PageNumber - 1)">← Prev</a>
+                <a class="filter-pill" href="@Model.BuildPageUrl(Model.PageNumber - 1)"><i class="bi bi-arrow-left" aria-hidden="true"></i> Prev</a>
             }
             <span class="pagination-page">Page @Model.PageNumber of @Model.TotalPages</span>
             @if (Model.PageNumber < Model.TotalPages)
             {
-                <a class="filter-pill" href="@Model.BuildPageUrl(Model.PageNumber + 1)">Next →</a>
+                <a class="filter-pill" href="@Model.BuildPageUrl(Model.PageNumber + 1)">Next <i class="bi bi-arrow-right" aria-hidden="true"></i></a>
             }
         </div>
     }

@@ -22,7 +22,7 @@
 {
     <form method="get" id="applicantFilters" class="filters" style="margin-bottom:16px; align-items:flex-start;">
         <div class="filter-dropdown">
-            <button type="button" class="kebab @(Model.TeamId is not null ? "active" : "")">Team: @Model.TeamSummaryLabel ▾</button>
+            <button type="button" class="kebab @(Model.TeamId is not null ? "active" : "")">Team: @Model.TeamSummaryLabel <i class="bi bi-caret-down-fill" aria-hidden="true"></i></button>
             <div class="menu">
                 <label class="item">
                     <input type="radio" name="teamId" value="" @(Model.TeamId is null ? "checked" : "") />
@@ -90,7 +90,7 @@ else
                         @if (!string.IsNullOrWhiteSpace(row.LicenseUrl))
                         {
                             <a href="@row.LicenseUrl" target="_blank" rel="noopener"
-                               title="This candidate's current FCC licence in ULS — for an upgrade, the licence they already hold while this exam is still pending">↗</a>
+                               title="This candidate's current FCC licence in ULS — for an upgrade, the licence they already hold while this exam is still pending"><i class="bi bi-arrow-up-right" aria-hidden="true"></i></a>
                         }
                     </td>
                     <td data-sort-value="@row.SessionDateSortValue"><a asp-page="./Detail" asp-route-id="@row.SessionId">@row.SessionDateLine</a></td>
@@ -144,7 +144,7 @@ else
                         @row.CallSign
                         @if (!string.IsNullOrWhiteSpace(row.LicenseUrl))
                         {
-                            <a href="@row.LicenseUrl" target="_blank" rel="noopener" title="This licence in FCC ULS">↗</a>
+                            <a href="@row.LicenseUrl" target="_blank" rel="noopener" title="This licence in FCC ULS"><i class="bi bi-arrow-up-right" aria-hidden="true"></i></a>
                         }
                     </td>
                     <td class="mono">@row.LicenseClassLine</td>

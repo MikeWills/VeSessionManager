@@ -20,7 +20,7 @@
     @if (Model.AvailableTeams.Count > 1)
     {
         <div class="filter-dropdown">
-            <button type="button" class="kebab @(Model.TeamId is not null ? "active" : "")">Team: @Model.TeamSummaryLabel ▾</button>
+            <button type="button" class="kebab @(Model.TeamId is not null ? "active" : "")">Team: @Model.TeamSummaryLabel <i class="bi bi-caret-down-fill" aria-hidden="true"></i></button>
             <div class="menu">
                 <label class="item"><input type="radio" name="teamId" value="" @(Model.TeamId is null ? "checked" : "") /> All teams</label>
                 @foreach (var team in Model.AvailableTeams)
@@ -34,7 +34,7 @@
     }
 
     <div class="filter-dropdown">
-        <button type="button" class="kebab @(Model.DateRangeSummaryLabel != "Any time" ? "active" : "")">Date range: @Model.DateRangeSummaryLabel ▾</button>
+        <button type="button" class="kebab @(Model.DateRangeSummaryLabel != "Any time" ? "active" : "")">Date range: @Model.DateRangeSummaryLabel <i class="bi bi-caret-down-fill" aria-hidden="true"></i></button>
         <div class="menu" style="width:240px;">
             <label class="item" style="display:block;">
                 <span style="display:block; margin-bottom:4px;">Preset</span>

@@ -8,7 +8,7 @@
 }
 
 <div class="crumb">
-    <a asp-page="./Index">← Sessions</a> /
+    <a asp-page="./Index"><i class="bi bi-arrow-left" aria-hidden="true"></i> Sessions</a> /
     <a asp-page="./Detail" asp-route-id="@c.SessionId">@c.SessionBreadcrumbLabel</a> /
     @c.DisplayName
 </div>
@@ -25,7 +25,7 @@
                     @(c.CallSign ?? "—")
                     @if (c.FccLicenseUrl is not null)
                     {
-                        <a href="@c.FccLicenseUrl" target="_blank" rel="noopener">(FCC license ↗)</a>
+                        <a href="@c.FccLicenseUrl" target="_blank" rel="noopener">(FCC license <i class="bi bi-arrow-up-right" aria-hidden="true"></i>)</a>
                     }
                 </span>
             </div>
@@ -44,7 +44,7 @@
             }
             <div class="meta-item">
                 <span class="k">Tested</span>
-                <span class="v"><span class="tested-check @(c.Tested ? "on" : "")">@(c.Tested ? "✓" : "·")</span></span>
+                <span class="v"><span class="tested-check @(c.Tested ? "on" : "")">@if (c.Tested) { <i class="bi bi-check-lg" aria-hidden="true"></i> } else { <text>·</text> }</span></span>
             </div>
             @if (c.LicenseClassLine is not null)
             {
@@ -60,7 +60,7 @@
     {
         <div class="panel-actions">
             <div class="row-actions">
-                <button type="button" class="kebab">⋮</button>
+                <button type="button" class="kebab"><i class="bi bi-three-dots-vertical" aria-hidden="true"></i></button>
                 <div class="menu">
                     <button type="button" class="item" data-open-modal="frnModal">Add / edit FRN</button>
                     <form method="post" asp-page-handler="ResendConfirmation">
@@ -104,7 +104,7 @@
             <th>Amount</th>
             <th>Status</th>
             <th>Paid</th>
-            @* Just an "Open link ↗" anchor or an em dash — nothing meaningful to order by. *@
+            @* Just an "Open link <i class="bi bi-arrow-up-right" aria-hidden="true"></i>" anchor or an em dash — nothing meaningful to order by. *@
             <th data-sort="none">Payment link</th>
             <th></th>
         </tr>
@@ -144,7 +144,7 @@
                 <td>
                     @if (payment.PaymentLinkUrl is not null)
                     {
-                        <a href="@payment.PaymentLinkUrl" target="_blank" rel="noopener">Open link ↗</a>
+                        <a href="@payment.PaymentLinkUrl" target="_blank" rel="noopener">Open link <i class="bi bi-arrow-up-right" aria-hidden="true"></i></a>
                     }
                     else
                     {
@@ -154,7 +154,7 @@
                 <td class="row-actions">
                     @if (Model.CanEdit && !c.IsWithdrawn)
                     {
-                        <button type="button" class="kebab">⋮</button>
+                        <button type="button" class="kebab"><i class="bi bi-three-dots-vertical" aria-hidden="true"></i></button>
                         <div class="menu">
                             <form method="post" asp-page-handler="MarkPaid">
                                 <input type="hidden" name="paymentId" value="@payment.Id" />

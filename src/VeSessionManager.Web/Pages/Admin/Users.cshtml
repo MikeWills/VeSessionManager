@@ -24,7 +24,7 @@
 {
     <form method="get" id="userFilters" class="filters" style="margin-bottom:16px; align-items:flex-start;">
         <div class="filter-dropdown">
-            <button type="button" class="kebab @(Model.TeamId is not null ? "active" : "")">Team: @Model.TeamSummaryLabel ▾</button>
+            <button type="button" class="kebab @(Model.TeamId is not null ? "active" : "")">Team: @Model.TeamSummaryLabel <i class="bi bi-caret-down-fill" aria-hidden="true"></i></button>
             <div class="menu">
                 <label class="item"><input type="radio" name="teamId" value="" @(Model.TeamId is null ? "checked" : "") /> All teams</label>
                 @foreach (var team in Model.AvailableTeams)
@@ -83,7 +83,7 @@ else
                         }
                     </td>
                     <td class="row-actions">
-                        <button type="button" class="kebab" aria-label="Actions">⋮</button>
+                        <button type="button" class="kebab" aria-label="Actions"><i class="bi bi-three-dots-vertical" aria-hidden="true"></i></button>
                         <div class="menu">
                             <button type="button" class="item" data-open-modal="callSignModal-@u.Id">Set call sign</button>
                             <button type="button" class="item" data-open-modal="roleModal-@u.Id">Change role</button>
