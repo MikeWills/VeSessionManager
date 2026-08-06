@@ -35,8 +35,29 @@
                 <td class="count">@team.Id</td>
                 <td class="session-title">@team.Name</td>
                 <td data-sort-value="@team.CreatedUtc.ToString("o")">@EasternTimeFormatter.Format(team.CreatedUtc, "MMM d, yyyy")</td>
-                <td class="row-actions">
-                    <a class="view-link" asp-page="./TeamSettings" asp-route-teamId="@team.Id">Manage settings →</a>
+                @* Two icon links rather than one text link: Team Maintenance is per-team and was
+                   previously only reachable from the nav, where it has no team context — you had to
+                   go there and re-pick the team you were already looking at.
+
+                   Inline SVG rather than an icon font: the theme toggle in _AppLayout already does
+                   this, currentColor makes both themes work for free, and vendoring a whole icon
+                   library for two glyphs isn't worth the payload. *@
+                <td class="row-actions team-actions">
+                    <a class="icon-link" asp-page="./TeamSettings" asp-route-teamId="@team.Id"
+                       title="Settings for @team.Name" aria-label="Settings for @team.Name">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                            <circle cx="12" cy="12" r="3.2" stroke="currentColor" stroke-width="1.8" />
+                            <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.03 1.56V21a2 2 0 1 1-4 0v-.09A1.7 1.7 0 0 0 8.4 19.3a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.04 15a1.7 1.7 0 0 0-1.56-1.03H2.4a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.05 8.9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34H8.5a1.7 1.7 0 0 0 1.03-1.56V2.4a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1.03 1.56 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v.07a1.7 1.7 0 0 0 1.56 1.03h.09a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.56 1.03z"
+                                  stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+                        </svg>
+                    </a>
+                    <a class="icon-link" asp-page="./TeamMaintenance" asp-route-teamId="@team.Id"
+                       title="Maintenance for @team.Name" aria-label="Maintenance for @team.Name">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                            <path d="M14.7 6.3a4 4 0 0 0 5.3 5.3l-8 8a2.8 2.8 0 1 1-4-4l8-8a4 4 0 0 0-1.3-1.3z"
+                                  stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
+                        </svg>
+                    </a>
                 </td>
             </tr>
         }
