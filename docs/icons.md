@@ -52,10 +52,14 @@ context.
 - **Always `aria-hidden="true"`.** Every icon here is decorative — the surrounding text or the
   control's own `aria-label` carries the meaning. A screen reader announcing "caret down" after
   "Settings" is noise.
-- **An icon-only control needs its own `aria-label`** (see the Teams list's gear and maintenance
-  links, and the row kebabs).
-- **Inline SVG is still fine** where it already exists — the theme toggle and the Teams row actions.
-  Those predate the font and have no fallback risk, so there was no reason to churn them.
+- **An icon-only control needs its own `aria-label`** (see the row kebabs — the Teams list's says
+  which team it acts on, since a page full of identical "Actions" buttons tells a screen-reader user
+  nothing).
+- **Inline SVG is still fine** where it already exists — the theme toggle. It predates the font and
+  has no fallback risk, so there was no reason to churn it. The Teams row's gear and maintenance
+  SVGs were also on this list until 2026-08-06, when the row gained a third action and became a
+  labelled kebab menu like every other admin table; two glyphs had been defensible, three ambiguous
+  ones were not (an envelope for "email templates" reads as "send something").
 
 > **Do not put an icon inside a C# string literal.** `@(c.Tested ? "<i class=…>" : "·")` breaks the
 > Razor expression, because the markup's quotes terminate the string. Use a conditional block

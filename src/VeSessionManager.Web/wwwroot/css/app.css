@@ -346,9 +346,6 @@ footer.roster { margin-top: 28px; background: var(--surface); border: 1px solid 
    with no dark-mode override; the 34px box keeps them a real touch target on a phone, where these
    rows render as cards. Every one carries a title AND aria-label — an icon with neither is a
    guess for a sighted user and invisible to a screen reader. */
-.team-actions { display: flex; gap: 4px; align-items: center; }
-.vesm a.icon-link { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 5px; color: var(--ink-soft); text-decoration: none; }
-.vesm a.icon-link:hover { background: var(--ghost-hover); color: var(--ink); }
 
 /* Icons inherit colour and size from their context, so they need no per-site styling — only a small
    baseline nudge, since Bootstrap Icons sit high against IBM Plex at these sizes. */
