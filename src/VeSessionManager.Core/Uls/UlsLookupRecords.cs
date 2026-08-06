@@ -55,23 +55,35 @@ public sealed record UlsPendingApplication
     public string? UlsFileNumber { get; init; }
 
     /// <summary>
-    /// FCC application purpose code — what the applicant asked for. Renewals are what
-    /// <c>LicenseWatchService</c> keys off: <c>RO</c> (renewal only) and <c>RM</c>
-    /// (renewal/modification), versus <c>NE</c> new, <c>MD</c> modification, <c>AU</c>
-    /// administrative update.
-    /// <para><b>Unconfirmed against a live renewal.</b> The code list is FCC's documented one and the
-    /// field is documented as present on this endpoint, but no record carrying a pending *renewal*
-    /// has been observed yet — W1AW, the record the shape was verified on, had an empty
-    /// <c>pendingApplications</c>. Treated case-insensitively and matched against a set rather than
-    /// one literal, so an unexpected spelling degrades to "not a renewal" instead of throwing.</para>
+    /// What the applicant asked FCC for.
+    ///
+    /// <para><b>ExamTools returns the human-readable description, not FCC's raw code.</b> Observed
+    /// live on 2026-08-06: a real renewal came back as <c>"Renewal/Modification"</c>, not <c>"RM"</c>.
+    /// The original matcher tested only the two-letter codes, so <see cref="IsRenewal"/> was always
+    /// false and the whole request-through-issuance lifecycle never fired — a renewed licence just
+    /// slid from "Expiring soon" to "Active" with a new expiry, never reporting a renewal at all.</para>
+    ///
+    /// <para>Matching now accepts either form: the codes, in case another endpoint or a future shape
+    /// change returns them, and any description containing "renewal". A substring test is the right
+    /// shape here because FCC's descriptions combine purposes ("Renewal/Modification"), so an exact
+    /// list would have to enumerate every combination and would break on the next one.</para>
     /// </summary>
     public string? ApplicationPurpose { get; init; }
 
-    /// <summary>True when <see cref="ApplicationPurpose"/> is one of the renewal codes.</summary>
-    public bool IsRenewal =>
-        ApplicationPurpose is { } purpose &&
-        RenewalPurposeCodes.Contains(purpose.Trim(), StringComparer.OrdinalIgnoreCase);
+    /// <summary>True when <see cref="ApplicationPurpose"/> names a renewal, in code or description form.</summary>
+    public bool IsRenewal
+    {
+        get
+        {
+            if (string.IsNullOrWhiteSpace(ApplicationPurpose)) return false;
+            var purpose = ApplicationPurpose.Trim();
 
+            return RenewalPurposeCodes.Contains(purpose, StringComparer.OrdinalIgnoreCase)
+                || purpose.Contains("renewal", StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    /// <summary>FCC's two-letter purpose codes for renewals — kept alongside the description match, not replaced by it.</summary>
     private static readonly string[] RenewalPurposeCodes = ["RO", "RM"];
 
     /// <summary>When FCC received the application. Maps to Candidate.ApplicationDateEnteredUtc — verified to equal the value the old HD-Last-Action-Date rule produced for a real candidate.</summary>
