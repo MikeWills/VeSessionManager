@@ -38,18 +38,23 @@ public class LicenseWatchService(
     /// 2026-08-06). Six hours bounds the lag to a morning while still costing four lookups a day per
     /// licence against a third-party mirror.</para>
     ///
-    /// <para>Anchoring to a wall-clock ET slot the way UlsWatcherJob does — which exists precisely
-    /// because of that 02:00 run — would be tighter still, and is the obvious next step if four a
-    /// day ever proves too many.</para>
+    /// <para><b>Since 2026-08-06 the cadence is decided by the job's anchored 06:00 ET slot, not by
+    /// this number.</b> Its remaining job is to stop a second run on the same day (a Worker restart,
+    /// a manual trigger) redoing every lookup — six hours is comfortably shorter than the daily gap,
+    /// so the anchored run always finds every row due.</para>
     /// </summary>
     public static readonly TimeSpan RefreshInterval = TimeSpan.FromHours(6);
 
     /// <summary>
     /// Ceiling on lookups per run, so a team that pastes in several hundred call signs cannot turn
-    /// one tick into a burst against ExamTools. The remainder are simply picked up by the next run —
-    /// least-recently-checked first, so nothing can be starved indefinitely.
+    /// one run into a burst against ExamTools. The remainder are picked up next time,
+    /// least-recently-checked first, so nothing is starved indefinitely.
+    ///
+    /// <para>Raised from 100 when the job moved to one anchored run a day: "next time" used to mean
+    /// four hours, and now means tomorrow. 250 once a day is still a trivial load on the endpoint,
+    /// and covers any watch list a VE team is plausibly going to keep.</para>
     /// </summary>
-    public const int MaxLookupsPerRun = 100;
+    public const int MaxLookupsPerRun = 250;
 
     public async Task<LicenseWatchResult> RunAsync(CancellationToken cancellationToken)
     {

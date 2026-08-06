@@ -115,55 +115,42 @@ combination and would break on the next one.
 takes days to weeks, so nothing changes hour to hour". True of the licence, wrong about the feed.
 
 **FCC posts its daily changes at 02:00 ET.** The useful question is not how fast a licence changes,
-but how long after that nightly run this app notices — and at 20 hours the answer drifts. A renewal
-granted at 02:00 on 2026-08-06 was still not visible that morning, purely because the row had last
-been checked at 21:27 the previous evening and was not yet stale.
+but how long after that nightly run this app notices. The job originally ticked every four hours
+**from Worker start**, so its check times drifted with every restart — boot at 21:27 and it checks at
+21:27/01:27/05:27; restart at 06:10 and it becomes 06:10/10:10/14:10. Nobody could say when the next
+check was without knowing when the service last came up, and a renewal granted at 02:00 ET on
+2026-08-06 was still invisible that morning as a direct result.
 
-Six hours bounds the lag to a morning at four lookups per licence per day. Anchoring to a wall-clock
-ET slot the way `UlsWatcherJob` does — which exists *precisely* because of that 02:00 run — would be
-tighter still, and is the obvious next step if four a day ever proves too many.
+**It is now anchored to 06:00 ET, once a day** — after FCC's run, before anyone opens the page.
 
-## Status is derived, never stored
+Anchoring is not "fire a timer at 06:00 and hope the Worker is up". The job still ticks hourly, and
+each tick asks whether the most recent due slot has already run by looking at `JobRunHistory`. A
+Worker that boots at 08:47 finds today's 06:00 slot missed and runs it immediately; later ticks that
+day find it done and skip. Restarts and outages self-heal, and the schedule never drifts.
 
-`WatchedLicenseStatus` is computed at render time from the cached fields, for the same reason
-Session "Completed" is derived: a stored copy would need rewriting every time the clock crossed a
-threshold, and would be wrong in between.
+One anchored run is also **fewer** calls than the four-a-day it replaced — the data only changes once
+a night, so polling more often bought nothing.
 
-Order of the checks is load-bearing:
+Two consequences worth knowing:
 
-| Precedence | Status | Why it sits there |
-|---|---|---|
-| 1 | `NotYetChecked` / `NotFound` | With no ULS data every date test below is meaningless, not merely false |
-| 2 | `Cancelled` | A cancelled record **keeps its expiration date** — testing dates first reports a revoked licence as comfortably Active |
-| 3 | `RenewalPending` / `Renewed` | Once a renewal is filed, "expires in 12 days" is no longer the actionable fact |
-| 4 | `ExpiringSoon` / `ExpiredInGrace` / `ExpiredLapsed` | The date thresholds |
+- `RefreshInterval` (6h) no longer decides cadence. Its only remaining job is to stop a second run on
+  the same day — a restart, a manual trigger — redoing every lookup.
+- `MaxLookupsPerRun` rose from 100 to 250, because "the remainder is picked up next run" used to mean
+  four hours and now means tomorrow.
 
-Thresholds, confirmed with the VE team on 2026-08-05:
+The hour is a constant rather than a `SystemSettings` row, unlike `UlsWatcherJob`'s. That job is tuned
+per deployment because it drives candidate grant detection during live sessions; this one has a
+single job to do and no reason to differ between environments.
 
-- **90 days** — FCC's renewal window.
-- **2 years** — the grace period during which a licence is still renewable without re-testing, though
-  it may not be operated.
+### The slot arithmetic lives in Core, and now has tests
 
-## Day counting is calendar days, in Eastern
+`DailySlotSchedule` is shared by both watchers. It was previously an internal helper inside
+`UlsWatcherJob` with **no tests at all** — not through neglect, but because the test project
+references Core and not the Worker, so it was simply unreachable. Moving it is what made it testable.
 
-`DaysUntilExpiry` is the single definition, used by both the status derivation and the page's day
-pill so the number a human reads and the chip they see can never disagree.
-
-Two things it deliberately does **not** do, both of which it did originally and both of which were
-visible on the live page:
-
-- **It does not subtract instants.** An FCC expiration date carries no time of day and is stored as
-  midnight UTC, so `Math.Floor((expires - utcNow).TotalDays)` measures elapsed time to the *start* of
-  the expiry date. Viewed at 05:00 UTC on 5 August, a licence expiring on the 7th is 1.78 days away
-  and rendered as **"1 d"**. Nobody counts days that way.
-- **It does not treat the expiry as an instant for status either.** `utcNow >= expires` flipped a
-  licence to Expired at midnight *on* its expiration date — a full day early, showing a red chip on a
-  licence still legal to operate. A licence is valid **through** its expiration date, so `days == 0`
-  is current, and the grace period likewise runs through its final day.
-
-"Today" is taken in Eastern, not UTC: anything from ~8pm ET onward is already tomorrow in raw UTC, so
-a UTC-based "what day is it" silently drops a day every evening. Same rule the rest of the codebase
-follows (see CLAUDE.md).
+That matters because it crosses DST twice a year: 06:00 ET is 10:00 UTC in summer and 11:00 UTC in
+winter. Computing the slot in UTC, or assuming a fixed offset, shifts every run by an hour twice a
+year — and the failure is invisible, because the job still runs, just not when anyone thinks.
 
 ## Refresh job
 

@@ -39,8 +39,8 @@ public class UlsWatcherJob(
             {
                 var (intervalHours, startHourEt) = await GetSettingsAsync(stoppingToken);
 
-                var nowEt = TimeZoneInfo.ConvertTimeFromUtc(timeProvider.GetUtcNow().UtcDateTime, UlsSchedule.EasternTimeZone);
-                var dueSlotUtc = LatestDueSlotUtc(nowEt, startHourEt, intervalHours);
+                var nowEt = DailySlotSchedule.NowEastern(timeProvider);
+                var dueSlotUtc = DailySlotSchedule.LatestDueSlotUtc(nowEt, startHourEt, intervalHours);
 
                 using var scope = scopeFactory.CreateScope();
                 var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -64,20 +64,6 @@ public class UlsWatcherJob(
             });
         }
         while (await timer.WaitForNextTickAsync(stoppingToken));
-    }
-
-    /// <summary>
-    /// The most recent scheduled slot (UTC) that is due as of nowEt — the latest hour matching
-    /// (hour - startHourEt) % intervalHours == 0 that isn't in the future. Rolls back across a
-    /// calendar-day boundary when needed (e.g. at 03:00 ET on an 08:00/20:00 schedule the due slot is
-    /// yesterday's 20:00 one) rather than reporting nothing due.
-    /// </summary>
-    internal static DateTime LatestDueSlotUtc(DateTime nowEt, int startHourEt, int intervalHours)
-    {
-        var hoursSinceStart = ((nowEt.Hour - startHourEt) % intervalHours + intervalHours) % intervalHours;
-        var slotEt = new DateTime(nowEt.Year, nowEt.Month, nowEt.Day, nowEt.Hour, 0, 0, DateTimeKind.Unspecified)
-            .AddHours(-hoursSinceStart);
-        return TimeZoneInfo.ConvertTimeToUtc(slotEt, UlsSchedule.EasternTimeZone);
     }
 
     private async Task<(int IntervalHours, int StartHourEt)> GetSettingsAsync(CancellationToken cancellationToken)
