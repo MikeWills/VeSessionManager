@@ -51,12 +51,21 @@ public class VolunteerExaminerReportServiceTests
         return feeConfiguration;
     }
 
+    /// <summary>
+    /// Defaults to a <b>completed</b> session, because that is what the report counts — the other
+    /// tests here are about grouping, date ranges and team scoping, and would all silently assert
+    /// zero if their sessions were merely scheduled. Pass <c>completed: false</c> for the cases that
+    /// are specifically about the completion rule.
+    /// </summary>
     private static async Task<Session> SeedSessionAsync(
         AppDbContext dbContext, Team team, Vec vec, FeeConfiguration feeConfiguration,
-        DateTime scheduledStartUtc, SessionStatus status = SessionStatus.Active, string? examToolsSessionId = null)
+        DateTime scheduledStartUtc, SessionStatus status = SessionStatus.Active, string? examToolsSessionId = null,
+        bool completed = true)
     {
         var session = new Session
         {
+            // The upstream-closed route, the one historical imports and normal ingestion both use.
+            ExamToolsClosedUtc = completed ? scheduledStartUtc.AddHours(3) : null,
             ExamToolsSessionId = examToolsSessionId ?? Guid.NewGuid().ToString(),
             Title = "Test Session",
             ScheduledStartUtc = scheduledStartUtc,
@@ -231,5 +240,91 @@ public class VolunteerExaminerReportServiceTests
             .GetSessionCountsAsync([teamA.Id, teamC.Id], fromUtc: null, toUtc: null, CancellationToken.None);
 
         Assert.Equal(["TEAMA", "TEAMC"], counts.Select(c => c.TeamName).OrderBy(n => n));
+    }
+
+    // ---- Completed sessions only (2026-08-06) ----------------------------------------------------
+    // "Sessions worked" counted every non-cancelled session, which includes ones still in the future:
+    // Status only ever leaves Active on cancellation, it is never set to Completed. A VE rostered onto
+    // next month's session already had it in their total.
+
+    [Fact]
+    public async Task ScheduledButNotYetHeldSession_IsNotCountedAsWorked()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        var vec = await SeedVecAsync(dbContext);
+        var feeConfiguration = await SeedFeeConfigurationAsync(dbContext, vec);
+        var held = await SeedSessionAsync(dbContext, team, vec, feeConfiguration, new DateTime(2026, 6, 1, 0, 0, 0, DateTimeKind.Utc));
+        var upcoming = await SeedSessionAsync(dbContext, team, vec, feeConfiguration, new DateTime(2026, 9, 1, 0, 0, 0, DateTimeKind.Utc), completed: false);
+        var ve = await SeedVeAsync(dbContext, team, "N2SPG", "Test VE");
+        Link(dbContext, held, ve);
+        Link(dbContext, upcoming, ve);
+        await dbContext.SaveChangesAsync();
+
+        var counts = await new VolunteerExaminerReportService(dbContext)
+            .GetSessionCountsAsync([team.Id], fromUtc: null, toUtc: null, CancellationToken.None);
+
+        Assert.Equal(1, Assert.Single(counts).SessionCount);
+    }
+
+    /// <summary>Both completion routes count — a Session Manager marking it, or ExamTools closing it.</summary>
+    [Fact]
+    public async Task ManuallyMarkedCompleteSession_CountsEvenWithoutTheExamToolsStamp()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        var vec = await SeedVecAsync(dbContext);
+        var feeConfiguration = await SeedFeeConfigurationAsync(dbContext, vec);
+        var session = await SeedSessionAsync(dbContext, team, vec, feeConfiguration, new DateTime(2026, 6, 1, 0, 0, 0, DateTimeKind.Utc), completed: false);
+        session.TestingCompletedUtc = new DateTime(2026, 6, 1, 15, 0, 0, DateTimeKind.Utc);
+        var ve = await SeedVeAsync(dbContext, team, "N2SPG", "Test VE");
+        Link(dbContext, session, ve);
+        await dbContext.SaveChangesAsync();
+
+        var counts = await new VolunteerExaminerReportService(dbContext)
+            .GetSessionCountsAsync([team.Id], fromUtc: null, toUtc: null, CancellationToken.None);
+
+        Assert.Equal(1, Assert.Single(counts).SessionCount);
+    }
+
+    /// <summary>
+    /// A VE whose only session is still upcoming drops off the roster report entirely rather than
+    /// showing a zero — the query groups over the rows that survive the filter.
+    /// </summary>
+    [Fact]
+    public async Task VeWithOnlyUpcomingSessions_DoesNotAppear()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        var vec = await SeedVecAsync(dbContext);
+        var feeConfiguration = await SeedFeeConfigurationAsync(dbContext, vec);
+        var upcoming = await SeedSessionAsync(dbContext, team, vec, feeConfiguration, new DateTime(2026, 9, 1, 0, 0, 0, DateTimeKind.Utc), completed: false);
+        var ve = await SeedVeAsync(dbContext, team, "N2SPG", "Test VE");
+        Link(dbContext, upcoming, ve);
+        await dbContext.SaveChangesAsync();
+
+        var counts = await new VolunteerExaminerReportService(dbContext)
+            .GetSessionCountsAsync([team.Id], fromUtc: null, toUtc: null, CancellationToken.None);
+
+        Assert.Empty(counts);
+    }
+
+    /// <summary>A cancelled session is excluded even though ingestion stamped it closed upstream.</summary>
+    [Fact]
+    public async Task CancelledSession_IsStillExcluded_EvenWhenClosedUpstream()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        var vec = await SeedVecAsync(dbContext);
+        var feeConfiguration = await SeedFeeConfigurationAsync(dbContext, vec);
+        var cancelled = await SeedSessionAsync(dbContext, team, vec, feeConfiguration, new DateTime(2026, 6, 1, 0, 0, 0, DateTimeKind.Utc), SessionStatus.Cancelled);
+        var ve = await SeedVeAsync(dbContext, team, "N2SPG", "Test VE");
+        Link(dbContext, cancelled, ve);
+        await dbContext.SaveChangesAsync();
+
+        var counts = await new VolunteerExaminerReportService(dbContext)
+            .GetSessionCountsAsync([team.Id], fromUtc: null, toUtc: null, CancellationToken.None);
+
+        Assert.Empty(counts);
     }
 }
