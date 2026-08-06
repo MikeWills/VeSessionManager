@@ -142,4 +142,77 @@ public class JobRunHistoryLoggerTests
         Assert.NotNull(history.CompletedUtc); // the completion half actually persisted
         Assert.Empty(await dbContext.Payments.ToListAsync()); // the poisoned row never got written
     }
+
+    // ---- Result summary (2026-08-05) ------------------------------------------------------------
+    // Success/ErrorMessage alone made three very different outcomes identical on the ops dashboard:
+    // sent five, sent none because nothing qualified, and sent none because every attempt failed.
+    // The third is the dangerous one, and it looked green.
+
+    private sealed record FakeResult(int Sent, int Failed)
+    {
+        public override string ToString() => $"sent {Sent}, failed {Failed}";
+    }
+
+    private sealed class FakeJobService
+    {
+        public Task<FakeResult> RunAsync(CancellationToken cancellationToken) => Task.FromResult(new FakeResult(3, 0));
+    }
+
+    [Fact]
+    public async Task RunAsync_WithAResult_RecordsTheJobsOwnSummary()
+    {
+        await using var dbContext = CreateContext();
+        var sut = new JobRunHistoryLogger(dbContext, NullLogger<JobRunHistoryLogger>.Instance);
+
+        await sut.RunAsync("TestJob", _ => Task.FromResult(new FakeResult(0, 1)), 1, CancellationToken.None);
+
+        var history = Assert.Single(dbContext.JobRunHistories);
+        Assert.True(history.Success);
+        Assert.Equal("sent 0, failed 1", history.ResultSummary);
+    }
+
+    /// <summary>
+    /// The binding this whole feature rests on, tested rather than assumed.
+    ///
+    /// <para>Every real call site passes a <b>method group</b> (<c>purgeService.RunAsync</c>), not a
+    /// lambda. A method returning <c>Task&lt;T&gt;</c> converts to BOTH <c>Func&lt;CT, Task&gt;</c>
+    /// and <c>Func&lt;CT, Task&lt;T&gt;&gt;</c>, so if overload resolution picked the void overload
+    /// every summary would silently stay null: it would still compile, the test above would still
+    /// pass, and the dashboard would be exactly as uninformative as before.</para>
+    /// </summary>
+    [Fact]
+    public async Task RunAsync_MethodGroupCallSite_BindsToTheResultOverload()
+    {
+        await using var dbContext = CreateContext();
+        var sut = new JobRunHistoryLogger(dbContext, NullLogger<JobRunHistoryLogger>.Instance);
+        var service = new FakeJobService();
+
+        // Deliberately written the way the real jobs write it.
+        await sut.RunAsync("TestJob", service.RunAsync, 1, CancellationToken.None);
+
+        var history = Assert.Single(dbContext.JobRunHistories);
+        Assert.Equal("sent 3, failed 0", history.ResultSummary);
+    }
+
+    [Fact]
+    public async Task RunAsync_WithoutAResult_LeavesTheSummaryNull()
+    {
+        await using var dbContext = CreateContext();
+        var sut = new JobRunHistoryLogger(dbContext, NullLogger<JobRunHistoryLogger>.Instance);
+
+        await sut.RunAsync("TestJob", _ => Task.CompletedTask, null, CancellationToken.None);
+
+        Assert.Null(Assert.Single(dbContext.JobRunHistories).ResultSummary);
+    }
+
+    [Fact]
+    public async Task RunAsync_OverlongSummary_IsTruncated()
+    {
+        await using var dbContext = CreateContext();
+        var sut = new JobRunHistoryLogger(dbContext, NullLogger<JobRunHistoryLogger>.Instance);
+
+        await sut.RunAsync("TestJob", _ => Task.FromResult(new string('x', 5000)), 1, CancellationToken.None);
+
+        Assert.Equal(500, Assert.Single(dbContext.JobRunHistories).ResultSummary!.Length);
+    }
 }

@@ -22,13 +22,17 @@
             <th>Started</th>
             <th>Completed</th>
             <th>Status</th>
+            @* What the run actually did. Without it, "sent 5", "sent 0 because
+               nothing qualified" and "sent 0 because every attempt failed" are the
+               same green row. *@
+            <th>Result</th>
             <th>Error</th>
         </tr>
     </thead>
     <tbody>
         @if (Model.Runs.Count == 0)
         {
-            <tr><td colspan="6">No job runs recorded yet.</td></tr>
+            <tr><td colspan="7">No job runs recorded yet.</td></tr>
         }
         @foreach (var run in Model.Runs)
         {
@@ -50,6 +54,7 @@
                         <span class="chip chip-brick">Failed</span>
                     }
                 </td>
+                <td class="session-sub">@(run.ResultSummary ?? "")</td>
                 <td>@run.ErrorMessage</td>
             </tr>
         }
