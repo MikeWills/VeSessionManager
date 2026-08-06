@@ -355,8 +355,22 @@ footer.roster { margin-top: 28px; background: var(--surface); border: 1px solid 
 .withdrawn-roster { margin-top: 14px; }
 .withdrawn-roster > summary { font-family: "IBM Plex Mono", monospace; font-size: 12px; letter-spacing: .04em; color: var(--ink-soft); cursor: pointer; padding: 8px 2px; list-style: none; display: flex; align-items: center; gap: 8px; }
 .withdrawn-roster > summary::-webkit-details-marker { display: none; }
-/* Own marker, so it points the right way in both states without relying on the UA default. */
-.withdrawn-roster > summary::before { content: "B8"; font-size: 10px; transition: transform .12s ease; }
+/* Own marker, so it points the right way in both states without relying on the UA default.
+
+   Drawn with borders rather than a glyph. It was originally content: "B8" (BLACK RIGHT-POINTING
+   SMALL TRIANGLE), which IBM Plex Mono does not ship — so it rendered as a tofu box showing the
+   codepoint. The sort arrows get away with "B2"/"BC" because those ARE in the font, which is
+   exactly what made the omission easy to miss. A border triangle depends on no font at all, and
+   currentColor keeps it right in both themes. */
+.withdrawn-roster > summary::before {
+  content: "";
+  width: 0;
+  height: 0;
+  border-left: 5px solid currentColor;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid transparent;
+  transition: transform .12s ease;
+}
 .withdrawn-roster[open] > summary::before { transform: rotate(90deg); }
 .withdrawn-roster > summary:hover { color: var(--ink); }
 .withdrawn-roster > .session-sub { margin: 0 0 10px; max-width: 70ch; }
