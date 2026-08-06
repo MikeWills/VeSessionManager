@@ -419,6 +419,16 @@ To pick up updates: `/plugin marketplace update claude-tools`
   markup, served over a throwaway local HTTP server, loaded in a sized iframe); it needs no login and
   can assert on `scrollWidth` vs `clientWidth`. Recipe and the `</script>` escaping trap in
   `docs/responsive-ui.md`.
+- **Never use a bare Unicode symbol for a UI affordance — use Bootstrap Icons** (`<i class="bi bi-*"
+  aria-hidden="true">`, or the font's codepoint in a CSS `content:`). A symbol character renders only
+  if the device happens to have a font containing it, and **that differs per device**: IBM Plex Mono
+  ships `B2`/`BC` but not `B8`, so the withdrawn-roster marker looked correct on the dev
+  machine and rendered as a **tofu box on an iPhone** (2026-08-06). The sort arrows two rules away
+  used plain triangles and were fine, which is what made it look like a proven technique. Icons are
+  self-hosted at `wwwroot/lib/bootstrap-icons` because the CSP allows `font-src 'self'` only — a CDN
+  reference is blocked. See `docs/icons.md`. **Two traps when editing:** an icon inside a C# string
+  literal (`@(x ? "<i …>" : "·")`) breaks the Razor expression, and a bulk replace will also rewrite
+  arrows sitting in Razor comment prose.
 - (Environment-specific quirks and gotchas go here as they're discovered — e.g. API quirks, IIS behavior, network/DMZ restrictions, auth issues)
 
 ## Definition of Done

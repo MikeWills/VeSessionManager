@@ -98,7 +98,7 @@ else
                     <td class="mono">@row.RenewalDisplay</td>
                     <td class="session-sub">@(row.License.Note ?? "")</td>
                     <td class="row-actions">
-                        <button type="button" class="kebab" aria-label="Actions">⋮</button>
+                        <button type="button" class="kebab" aria-label="Actions"><i class="bi bi-three-dots-vertical" aria-hidden="true"></i></button>
                         <div class="menu">
                             @* The rule lives inside the condition — a never-checked row would
                                otherwise open its menu with a stray divider at the top. *@

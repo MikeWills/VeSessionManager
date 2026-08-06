@@ -64,6 +64,9 @@
     <title>@ViewData["Title"] - VeSessionManager</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    @* Self-hosted: the CSP allows font-src 'self' only (plus Google Fonts), and a CDN
+       reference would be blocked. Loaded before app.css so the design system can override it. *@
+    <link rel="stylesheet" href="~/lib/bootstrap-icons/bootstrap-icons.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/app.css" asp-append-version="true" />
     @* For page-specific stylesheets that shouldn't load site-wide — currently only Quill's, on the
        Email Templates page. Mirrors the existing Scripts section at the bottom. *@
@@ -98,7 +101,7 @@
                     {
                         <span class="nav-badge">@badges.ApplicantsPendingGrant</span>
                     }
-                    ▾
+                    <i class="bi bi-caret-down-fill" aria-hidden="true"></i>
                 </button>
                 <div class="menu">
                     <a class="item @(activeNav == "ApplicantStatus" ? "active" : "")" asp-page="/SessionManager/ApplicantStatus">Applicant Status</a>
@@ -114,7 +117,7 @@
             @if (currentUser?.Role is UserRole.SystemAdmin or UserRole.TeamAdmin)
             {
                 <div class="nav-group">
-                    <button type="button" class="kebab @(vesGroupActive ? "active" : "")">VEs ▾</button>
+                    <button type="button" class="kebab @(vesGroupActive ? "active" : "")">VEs <i class="bi bi-caret-down-fill" aria-hidden="true"></i></button>
                     <div class="menu">
                         <a class="item @(activeNav == "VeRoster" ? "active" : "")" asp-page="/SessionManager/VeRoster">VE Roster</a>
                     </div>
@@ -135,7 +138,7 @@
             @if (currentUser?.Role is UserRole.SystemAdmin or UserRole.TeamAdmin)
             {
                 <div class="nav-group">
-                    <button type="button" class="kebab @(settingsGroupActive ? "active" : "")">Settings ▾</button>
+                    <button type="button" class="kebab @(settingsGroupActive ? "active" : "")">Settings <i class="bi bi-caret-down-fill" aria-hidden="true"></i></button>
                     <div class="menu">
                         @if (currentUser?.Role is UserRole.SystemAdmin)
                         {
@@ -165,7 +168,7 @@
         </nav>
         <div class="who">
             <div class="user-menu">
-                <button type="button" class="kebab"><span class="role">@roleLabel</span> @teamName ▾</button>
+                <button type="button" class="kebab"><span class="role">@roleLabel</span> @teamName <i class="bi bi-caret-down-fill" aria-hidden="true"></i></button>
                 <div class="menu">
                     <form method="post" asp-page="/Account/Logout">
                         <button type="submit" class="item">Log out</button>
@@ -173,7 +176,7 @@
                 </div>
             </div>
             <div class="help-menu">
-                <button type="button" class="kebab" aria-label="Help">Help ▾</button>
+                <button type="button" class="kebab" aria-label="Help">Help <i class="bi bi-caret-down-fill" aria-hidden="true"></i></button>
                 <div class="menu">
                     <a class="item" href="https://github.com/MikeWills/VeSessionManager/issues" target="_blank" rel="noopener noreferrer">Support</a>
                     <button type="button" class="item" disabled title="Coming soon">Documentation</button>

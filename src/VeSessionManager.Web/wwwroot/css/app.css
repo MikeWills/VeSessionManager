@@ -165,11 +165,11 @@ thead th.sortable:hover { color: var(--ink); }
 thead th.sortable a { text-decoration: none; color: inherit; display: inline-flex; align-items: center; }
 .sort-arrow { display: inline-block; width: 1em; margin-left: 5px; text-align: center; opacity: .3; font-size: 9px; vertical-align: 1px; }
 thead th.sortable:hover .sort-arrow { opacity: .6; }
-.sort-arrow::after { content: "\2195"; }
+.sort-arrow::after { font-family: bootstrap-icons; content: "\f127"; }
 thead th[aria-sort="ascending"], thead th[aria-sort="descending"] { color: var(--ink); }
 thead th[aria-sort="ascending"] .sort-arrow, thead th[aria-sort="descending"] .sort-arrow { opacity: 1; }
-thead th[aria-sort="ascending"] .sort-arrow::after { content: "\25B2"; }
-thead th[aria-sort="descending"] .sort-arrow::after { content: "\25BC"; }
+thead th[aria-sort="ascending"] .sort-arrow::after { content: "\f235"; }
+thead th[aria-sort="descending"] .sort-arrow::after { content: "\f229"; }
 
 tbody td { padding: 14px 16px; border-bottom: 1px solid var(--line); font-size: 13.5px; vertical-align: middle; }
 tbody tr:last-child td { border-bottom: none; }
@@ -350,27 +350,19 @@ footer.roster { margin-top: 28px; background: var(--surface); border: 1px solid 
 .vesm a.icon-link { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 5px; color: var(--ink-soft); text-decoration: none; }
 .vesm a.icon-link:hover { background: var(--ghost-hover); color: var(--ink); }
 
+/* Icons inherit colour and size from their context, so they need no per-site styling — only a small
+   baseline nudge, since Bootstrap Icons sit high against IBM Plex at these sizes. */
+.vesm .bi { line-height: 1; vertical-align: -0.08em; }
+
 /* Collapsed roster of withdrawn candidates (Session Detail). A native <details> — no JavaScript, no
    query parameter, no extra page load, and it simply is not rendered when the list is empty. */
 .withdrawn-roster { margin-top: 14px; }
 .withdrawn-roster > summary { font-family: "IBM Plex Mono", monospace; font-size: 12px; letter-spacing: .04em; color: var(--ink-soft); cursor: pointer; padding: 8px 2px; list-style: none; display: flex; align-items: center; gap: 8px; }
 .withdrawn-roster > summary::-webkit-details-marker { display: none; }
 /* Own marker, so it points the right way in both states without relying on the UA default.
-
-   Drawn with borders rather than a glyph. It was originally content: "B8" (BLACK RIGHT-POINTING
-   SMALL TRIANGLE), which IBM Plex Mono does not ship — so it rendered as a tofu box showing the
-   codepoint. The sort arrows get away with "B2"/"BC" because those ARE in the font, which is
-   exactly what made the omission easy to miss. A border triangle depends on no font at all, and
-   currentColor keeps it right in both themes. */
-.withdrawn-roster > summary::before {
-  content: "";
-  width: 0;
-  height: 0;
-  border-left: 5px solid currentColor;
-  border-top: 4px solid transparent;
-  border-bottom: 4px solid transparent;
-  transition: transform .12s ease;
-}
+   Was content: "B8", which IBM Plex Mono does not ship — it rendered as a tofu box on a phone.
+   The icon font removes that fallback lottery entirely. */
+.withdrawn-roster > summary::before { font-family: bootstrap-icons; content: "\f231"; font-size: 10px; transition: transform .12s ease; }
 .withdrawn-roster[open] > summary::before { transform: rotate(90deg); }
 .withdrawn-roster > summary:hover { color: var(--ink); }
 .withdrawn-roster > .session-sub { margin: 0 0 10px; max-width: 70ch; }

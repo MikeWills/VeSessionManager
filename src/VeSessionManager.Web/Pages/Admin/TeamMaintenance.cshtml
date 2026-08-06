@@ -21,7 +21,7 @@
        page targets exactly one team, so a merged view has nothing to act on. *@
     <form method="get" id="teamFilter" class="filters" style="margin-bottom:16px; align-items:flex-start;">
         <div class="filter-dropdown">
-            <button type="button" class="kebab @(Model.TeamId is not null ? "active" : "")">Team: @Model.TeamSummaryLabel ▾</button>
+            <button type="button" class="kebab @(Model.TeamId is not null ? "active" : "")">Team: @Model.TeamSummaryLabel <i class="bi bi-caret-down-fill" aria-hidden="true"></i></button>
             <div class="menu">
                 @foreach (var team in Model.AvailableTeams)
                 {

@@ -7,12 +7,12 @@
     Layout = "_AppLayout";
 }
 
-<div class="crumb"><a asp-page="./Index">← Sessions</a> / @Model.Session.BreadcrumbLabel</div>
+<div class="crumb"><a asp-page="./Index"><i class="bi bi-arrow-left" aria-hidden="true"></i> Sessions</a> / @Model.Session.BreadcrumbLabel</div>
 
 @if (Model.Session.RescheduleFlagged)
 {
     <div class="flag-banner">
-        <span>⚑</span>
+        <span><i class="bi bi-flag-fill" aria-hidden="true"></i></span>
         <span><b>Reschedule flagged for review</b> — this session's date changed while candidates were already registered.</span>
         @if (Model.CanEdit)
         {
@@ -33,7 +33,7 @@
                 <span class="v">
                     @if (Model.Session.ZoomJoinUrl is not null)
                     {
-                        <a href="@Model.Session.ZoomJoinUrl" target="_blank" rel="noopener">Join link ↗</a>
+                        <a href="@Model.Session.ZoomJoinUrl" target="_blank" rel="noopener">Join link <i class="bi bi-arrow-up-right" aria-hidden="true"></i></a>
                     }
                     else
                     {
@@ -46,7 +46,7 @@
                 <span class="v">
                     @if (Model.Session.DiscordEventUrl is not null)
                     {
-                        <a href="@Model.Session.DiscordEventUrl" target="_blank" rel="noopener">View ↗</a>
+                        <a href="@Model.Session.DiscordEventUrl" target="_blank" rel="noopener">View <i class="bi bi-arrow-up-right" aria-hidden="true"></i></a>
                     }
                     else
                     {
@@ -108,7 +108,7 @@
     @if (Model.CanEdit)
     {
         <form method="post" asp-page-handler="RefreshCandidates">
-            <button type="submit" class="btn-secondary btn-sm">↻ Refresh candidates</button>
+            <button type="submit" class="btn-secondary btn-sm"><i class="bi bi-arrow-clockwise" aria-hidden="true"></i> Refresh candidates</button>
         </form>
     }
 </div>
@@ -133,7 +133,7 @@
         {
             <tr>
                 @* Explicit sort values throughout: each of these cells renders more than one piece
-                   of text (call sign + FRN sub-line, refund/mismatch tags, a ✓/· glyph), and the
+                   of text (call sign + FRN sub-line, refund/mismatch tags, a <i class="bi bi-check-lg" aria-hidden="true"></i>/· glyph), and the
                    concatenation of all of it is not what the column means. *@
                 <td data-sort-value="@candidate.DisplayName">
                     <div class="cand-name">
@@ -170,7 +170,7 @@
                         <span class="mismatch-tag" title="Matched via Square anyway — this team's real-world payments don't always equal the amount owed (e.g. the ARRL youth rate) until confirmed at test time.">@candidate.AmountMismatchLine</span>
                     }
                 </td>
-                <td data-sort-value="@(candidate.Tested ? 1 : 0)"><span class="tested-check @(candidate.Tested ? "on" : "")">@(candidate.Tested ? "✓" : "·")</span></td>
+                <td data-sort-value="@(candidate.Tested ? 1 : 0)"><span class="tested-check @(candidate.Tested ? "on" : "")">@if (candidate.Tested) { <i class="bi bi-check-lg" aria-hidden="true"></i> } else { <text>·</text> }</span></td>
                 <td class="row-actions">
                     @if (!Model.CanEdit)
                     {
@@ -178,11 +178,11 @@
                     }
                     else if (candidate.IsWithdrawn)
                     {
-                        <button class="kebab" disabled style="opacity:.35">⋮</button>
+                        <button class="kebab" disabled style="opacity:.35"><i class="bi bi-three-dots-vertical" aria-hidden="true"></i></button>
                     }
                     else
                     {
-                        <button type="button" class="kebab">⋮</button>
+                        <button type="button" class="kebab"><i class="bi bi-three-dots-vertical" aria-hidden="true"></i></button>
                         <div class="menu">
                             <button type="button" class="item" data-open-modal="emailHistoryModal-@candidate.Id">Email history</button>
                             <form method="post" asp-page-handler="ResendConfirmation">
@@ -251,7 +251,7 @@
                         <td class="cand-name"><span class="no-show">@candidate.DisplayName</span></td>
                         <td>@candidate.StatusLabel</td>
                         <td><span class="chip @candidate.PaymentChipClass">@candidate.PaymentChipLabel</span></td>
-                        <td><span class="tested-check@(candidate.Tested ? " on" : "")">@(candidate.Tested ? "✓" : "·")</span></td>
+                        <td><span class="tested-check@(candidate.Tested ? " on" : "")">@if (candidate.Tested) { <i class="bi bi-check-lg" aria-hidden="true"></i> } else { <text>·</text> }</span></td>
                     </tr>
                 }
             </tbody>
@@ -284,7 +284,7 @@
                 {
                     <form method="post" asp-page-handler="RemoveVe">
                         <input type="hidden" name="volunteerExaminerId" value="@ve.Id" />
-                        <button type="submit" class="x" title="Remove from roster">✕</button>
+                        <button type="submit" class="x" title="Remove from roster"><i class="bi bi-x-lg" aria-hidden="true"></i></button>
                     </form>
                 }
             </span>
