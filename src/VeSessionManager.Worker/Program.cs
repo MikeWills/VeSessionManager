@@ -47,8 +47,16 @@ builder.Services.Configure<AppOptions>(builder.Configuration.GetSection(AppOptio
 // value deliberately — it just cannot diverge by accident. Square/ExamTools used to be written out
 // in every appsettings file, which is how Web ended up on Sandbox/examtools.dev while the Worker ran
 // Production/alpha.exam.tools (T04). See src/Shared/appsettings.Shared.json.
-builder.Configuration.AddJsonFile("appsettings.Shared.json", optional: false, reloadOnChange: true);
-builder.Configuration.AddJsonFile($"appsettings.Shared.{builder.Environment.EnvironmentName}.json", optional: true, reloadOnChange: true);
+// **Resolved against AppContext.BaseDirectory, not the content root.** The file is linked into each
+// host from src/Shared and copied to the build output, so it sits beside the DLL — which is the
+// content root for a published deployment, but NOT for `dotnet run`, where the content root is the
+// project directory instead. Loading it by bare name therefore worked on the server and threw
+// FileNotFoundException on every developer machine (found 2026-08-06, the first local run since the
+// shared file landed). Kept `optional: false` deliberately: this file existing is what stops the two
+// hosts drifting, so a missing one must fail loudly rather than silently reinstate T04.
+var sharedConfigDirectory = AppContext.BaseDirectory;
+builder.Configuration.AddJsonFile(Path.Combine(sharedConfigDirectory, "appsettings.Shared.json"), optional: false, reloadOnChange: true);
+builder.Configuration.AddJsonFile(Path.Combine(sharedConfigDirectory, $"appsettings.Shared.{builder.Environment.EnvironmentName}.json"), optional: true, reloadOnChange: true);
 builder.Configuration.AddJsonFile($"appsettings.{builder.Environment.EnvironmentName}.json", optional: true, reloadOnChange: true);
 
 builder.Services.Configure<ExamToolsOptions>(builder.Configuration.GetSection(ExamToolsOptions.SectionName));
