@@ -51,7 +51,7 @@ public class SquarePaymentLinkPurgeService(
             return result;
         }
 
-        var credentials = new SquareCredentials(team.Id, team.SquareAccessToken!, team.SquareLocationId ?? "");
+        var credentials = team.ToSquareCredentials();
 
         foreach (var payment in payments)
         {

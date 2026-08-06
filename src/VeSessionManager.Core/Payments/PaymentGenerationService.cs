@@ -148,7 +148,7 @@ public class PaymentGenerationService(
         }
 
         var credentials = team.IsSquareConfigured
-            ? new SquareCredentials(team.Id, team.SquareAccessToken!, team.SquareLocationId ?? "")
+            ? team.ToSquareCredentials()
             : null;
 
         foreach (var payment in paymentsNeedingLink)
@@ -207,7 +207,7 @@ public class PaymentGenerationService(
                 // Generate the link inline for responsive admin UX; if it fails, RunAsync's scan
                 // picks this Payment up on the next poll (PaymentLinkUrl is still null) — same
                 // retry-safety as the rest of this service.
-                var credentials = new SquareCredentials(team.Id, team.SquareAccessToken!, team.SquareLocationId ?? "");
+                var credentials = team.ToSquareCredentials();
                 await GenerateLinkAsync(credentials, payment, candidate.Session.Title, cancellationToken);
                 await dbContext.SaveChangesAsync(cancellationToken);
             }

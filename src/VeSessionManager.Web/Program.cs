@@ -58,7 +58,6 @@ builder.Configuration.AddJsonFile("appsettings.Shared.json", optional: false, re
 builder.Configuration.AddJsonFile($"appsettings.Shared.{builder.Environment.EnvironmentName}.json", optional: true, reloadOnChange: true);
 builder.Configuration.AddJsonFile($"appsettings.{builder.Environment.EnvironmentName}.json", optional: true, reloadOnChange: true);
 
-builder.Services.Configure<SquareOptions>(builder.Configuration.GetSection(SquareOptions.SectionName));
 // Singleton: the Square SDK client owns its own HttpClient, same reasoning as the Worker's own
 // registration — CandidateActionService.CreateRetestPaymentAsync needs PaymentGenerationService,
 // which needs this, for the "create retest payment" admin action.
@@ -66,9 +65,9 @@ builder.Services.AddSingleton<ISquareClient, SquareClient>();
 builder.Services.AddScoped<PaymentGenerationService>();
 // Backs the public, unauthenticated youth-rate confirmation page (Pages/Public/YouthConfirm).
 builder.Services.AddScoped<YouthPaymentConfirmationService>();
-// WebhookSignatureKey/WebhookNotificationUrl live on Team (multi-team, each team verifies against
-// its own key via the /webhooks/square/{teamId} route) — nothing else in this project needs
-// SquareOptions:Environment beyond what SquareClient itself reads above.
+// Every Square value lives on Team (multi-team) — credentials, the environment they were issued
+// for, and WebhookSignatureKey/WebhookNotificationUrl, each team verifying against its own key via
+// the /webhooks/square/{teamId} route. There is no Square configuration section to bind.
 builder.Services.AddScoped<SquareWebhookHandler>();
 // Unmatched-order auto/manual matching + "complete the Square order once paid and the session's
 // done" — used by SquareWebhookHandler above and by SessionActionService below.

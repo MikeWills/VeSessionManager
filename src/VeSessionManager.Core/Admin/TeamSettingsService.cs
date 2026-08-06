@@ -94,7 +94,7 @@ public class TeamSettingsService(AppDbContext dbContext, TimeProvider timeProvid
         return await SaveTeamUpdateAsync(team, "TeamDiscordSettingsUpdated", userId, cancellationToken);
     }
 
-    public async Task<TeamActionResult> UpdateSquareAsync(int teamId, string? accessToken, string? locationId, string? webhookSignatureKey, string? webhookNotificationUrl, int userId, CancellationToken cancellationToken)
+    public async Task<TeamActionResult> UpdateSquareAsync(int teamId, string? accessToken, string? locationId, string? webhookSignatureKey, string? webhookNotificationUrl, SquareApiEnvironment environment, int userId, CancellationToken cancellationToken)
     {
         var team = await dbContext.Teams.FirstOrDefaultAsync(t => t.Id == teamId, cancellationToken);
         if (team is null)
@@ -103,6 +103,7 @@ public class TeamSettingsService(AppDbContext dbContext, TimeProvider timeProvid
         }
 
         team.SquareLocationId = locationId;
+        team.SquareEnvironment = environment;
         team.SquareWebhookNotificationUrl = webhookNotificationUrl;
         if (accessToken is not null)
         {

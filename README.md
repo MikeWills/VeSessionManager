@@ -145,9 +145,10 @@ signature verification, since verification needs that team's own key), so
 `https://<host>/webhooks/square/1` for the seeded team). If you don't have a Square Developer
 account/app yet, see [`docs/square-payments.md`](docs/square-payments.md#account-setup-one-time)
 for how to create one, get sandbox credentials, and register the webhook subscription against
-the team-specific URL. Only `Square:Environment` (`Sandbox` locally, `Production` in
-`appsettings.Production.json`) remains a whole-deployment `appsettings.json` setting, since
-sandbox-vs-production is an environment choice, not a per-team one. **Square is optional** too,
+the team-specific URL. **Sandbox-vs-Production is per-team as well** (`SquareEnvironment`, Sandbox by
+default) — a Square access token only authenticates against the environment it was issued for, so it
+travels with the credentials rather than sitting in `appsettings.json`; that also lets a test team
+stay on Sandbox while a real team runs on Production. **Square is optional** too,
 same pattern as Zoom/Discord: without a team's `SquareAccessToken` set, payment-link generation
 is skipped quietly for that team (Payment rows still get created, `Unpaid`, just without a link
 until Square is configured) rather than erroring every poll. See

@@ -43,7 +43,10 @@ bounded.
   `appsettings.Production.json`. The base file mattered too: the drift starts there, so Development and
   Test were also resolving `examtools.dev` in Web while the Worker used `alpha.exam.tools` — fixing only
   Production would have left that. Verified by resolving the layered config for all three environments;
-  Web and Worker now agree in each. Original finding below. *(optimization B4)*
+  Web and Worker now agree in each. **Follow-up the same day: the Square half no longer exists** —
+  Sandbox-vs-Production moved onto `Team.SquareEnvironment` and `SquareOptions` was deleted, so there
+  is no Square config left for the two hosts to disagree about; only `ExamTools:BaseUrl` still relies
+  on the mirroring (now via the shared config file). Original finding below. *(optimization B4)*
   - Files: `src/VeSessionManager.Web/appsettings.Production.json` (and Test), cf. `SquareOptions.cs:8`, `ExamToolsOptions.cs:8`
   - Problem: Web binds and *uses* both option sets (retest payment links, manual candidate refresh), but no Web appsettings has the sections — prod Web silently falls back to `Square:Environment = "Sandbox"` and `ExamTools:BaseUrl = "https://examtools.dev"` while the Worker uses Production/`alpha.exam.tools`. A Web-initiated Square/ExamTools call in prod targets the wrong environment.
   - Fix: mirror the Worker's `Square`/`ExamTools` sections into Web's `appsettings.Production.json` (and Test where applicable). Verify no secrets involved (these sections are host/environment only — credentials are per-Team).

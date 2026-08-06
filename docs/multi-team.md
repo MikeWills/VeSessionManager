@@ -82,8 +82,11 @@ each with its own migration:
   `IDiscordEventClient.IsConfigured` stays client-level (bot-token readiness); a session's Discord
   attempt needs **both** `discordEventClient.IsConfigured && team.IsDiscordConfigured` true.
 - **Square** — `Team.SquareAccessToken`/`SquareLocationId`/`SquareWebhookSignatureKey`/
-  `SquareWebhookNotificationUrl`. Only `Square:Environment` (Sandbox/Production, a
-  whole-deployment choice) stays in `appsettings.json`. `PaymentGenerationService` per-team.
+  `SquareWebhookNotificationUrl`, and (since 2026-08-06) `SquareEnvironment` too. Sandbox-vs-Production
+  was originally left behind in `appsettings.json` as "a whole-deployment choice"; that was wrong —
+  a token authenticates against exactly one environment's host, so the global switch made
+  "real team on Production, test team on Sandbox" impossible on one deployment. `SquareOptions` is
+  gone; nothing Square-related remains in config. `PaymentGenerationService` per-team.
   **Webhook route changed to `/webhooks/square/{teamId}`** — the URL identifies the team *before*
   signature verification (which needs that team's own `WebhookSignatureKey`), exactly the design
   problem flagged as needing "genuinely new design" before this fast-follow started.

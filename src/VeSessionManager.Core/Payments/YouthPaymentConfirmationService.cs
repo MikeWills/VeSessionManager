@@ -98,7 +98,7 @@ public class YouthPaymentConfirmationService(
             return new YouthConfirmationResult(YouthConfirmationOutcome.SquareNotConfigured);
         }
 
-        var credentials = new SquareCredentials(team.Id, team.SquareAccessToken!, team.SquareLocationId ?? "");
+        var credentials = team.ToSquareCredentials();
 
         if (payment.SquarePaymentLinkId is not null)
         {

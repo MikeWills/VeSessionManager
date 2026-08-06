@@ -1,4 +1,5 @@
 @page
+@using VeSessionManager.Core.Entities
 @model VeSessionManager.Web.Pages.Admin.TeamSettingsModel
 @{
     ViewData["Title"] = "Team Settings";
@@ -83,6 +84,15 @@ else
         <form method="post" asp-page-handler="UpdateSquare">
             <input type="hidden" name="TeamId" value="@Model.TeamId" />
             <div class="meta-grid">
+                @* First field, before the token: the token is issued FOR an environment and fails
+                   against the other, so choosing it after pasting credentials is backwards. *@
+                <div class="field" style="max-width:220px;">
+                    <label for="squareEnvironment">Environment</label>
+                    <select id="squareEnvironment" name="environment">
+                        <option value="@((int)SquareApiEnvironment.Sandbox)" selected="@(Model.Team.SquareEnvironment == SquareApiEnvironment.Sandbox)">Sandbox (test money)</option>
+                        <option value="@((int)SquareApiEnvironment.Production)" selected="@(Model.Team.SquareEnvironment == SquareApiEnvironment.Production)">Production (real money)</option>
+                    </select>
+                </div>
                 <div class="field" style="max-width:220px;"><label for="squareAccessToken">Access token</label><input id="squareAccessToken" name="accessToken" type="password" placeholder="@(Model.Team.IsSquareConfigured ? "•••••••• (unchanged)" : "Not set")" /></div>
                 <div class="field" style="max-width:220px;"><label for="squareLocationId">Location ID</label><input id="squareLocationId" name="locationId" value="@Model.Team.SquareLocationId" /></div>
                 <div class="field" style="max-width:220px;"><label for="squareWebhookKey">Webhook signature key</label><input id="squareWebhookKey" name="webhookSignatureKey" type="password" placeholder="@(Model.Team.IsSquareWebhookConfigured ? "•••••••• (unchanged)" : "Not set")" /></div>
