@@ -274,10 +274,20 @@ public class LicenseWatchServiceTests
 
     /// <summary>An unrecognised purpose code degrades to "not a renewal" rather than throwing — the code list is FCC's documented one but has not been seen live.</summary>
     [Theory]
+    // Codes, kept for other endpoints / future shape changes.
     [InlineData("RO", true)]
     [InlineData("rm", true)]
     [InlineData(" RO ", true)]
+    // Descriptions — what ExamTools actually returns. "Renewal/Modification" is a REAL value,
+    // observed live on 2026-08-06 for KA0MVW; the original code-only matcher scored it false and
+    // silently disabled renewal detection entirely.
+    [InlineData("Renewal/Modification", true)]
+    [InlineData("Renewal Only", true)]
+    [InlineData("renewal/modification", true)]
     [InlineData("NE", false)]
+    [InlineData("New", false)]
+    [InlineData("Modification", false)]
+    [InlineData("Administrative Update", false)]
     [InlineData("", false)]
     [InlineData(null, false)]
     public void RenewalPurposeCodes_AreMatchedLenientlyAndSafely(string? purpose, bool expected)

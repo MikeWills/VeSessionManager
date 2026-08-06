@@ -27,11 +27,22 @@ public class LicenseWatchService(
     ILogger<LicenseWatchService> logger)
 {
     /// <summary>
-    /// How stale a row may be before it is refreshed. A licence term is ten years and a renewal
-    /// takes days to weeks, so nothing here changes hour to hour — daily is already generous, and
-    /// the endpoint is a third party's undocumented mirror that this app should lean on gently.
+    /// How stale a row may be before it is refreshed.
+    ///
+    /// <para><b>Six hours, not twenty.</b> The original 20 hours came from "a licence term is ten
+    /// years and a renewal takes days to weeks, so nothing changes hour to hour" — true of the
+    /// licence, wrong about the feed. FCC posts its daily changes at <b>02:00 ET</b>, so the useful
+    /// question is not how fast a licence changes but how long after that nightly run this app
+    /// notices. At 20 hours the answer drifts: a renewal granted at 02:00 sat invisible until the
+    /// following evening simply because the row had last been checked at 21:27 (observed
+    /// 2026-08-06). Six hours bounds the lag to a morning while still costing four lookups a day per
+    /// licence against a third-party mirror.</para>
+    ///
+    /// <para>Anchoring to a wall-clock ET slot the way UlsWatcherJob does — which exists precisely
+    /// because of that 02:00 run — would be tighter still, and is the obvious next step if four a
+    /// day ever proves too many.</para>
     /// </summary>
-    public static readonly TimeSpan RefreshInterval = TimeSpan.FromHours(20);
+    public static readonly TimeSpan RefreshInterval = TimeSpan.FromHours(6);
 
     /// <summary>
     /// Ceiling on lookups per run, so a team that pastes in several hundred call signs cannot turn

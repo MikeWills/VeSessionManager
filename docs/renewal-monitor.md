@@ -77,17 +77,51 @@ Three details in `ApplyRenewalState` that each exist for a reason:
   withdrawn, re-filed), and the row returns to reporting its real expiry rather than a stale
   "pending".
 
-### The one unverified assumption
+### The assumption that was wrong (resolved 2026-08-06)
 
-`application_purpose` is matched against `RO` (renewal only) and `RM` (renewal/modification). Those
-are FCC's documented purpose codes and the field is documented as present on this endpoint, but **no
-record carrying a pending renewal has been observed live** — W1AW, the record the shape was verified
-against, had an empty `pendingApplications`.
+`application_purpose` was originally matched against FCC's two-letter codes, `RO` and `RM`. That was
+documented at the time as **the one unverified thing in the feature**, because no record carrying a
+pending renewal had ever been observed — W1AW, the record the shape was verified against, had an
+empty `pendingApplications`.
 
-It is coded defensively: a case-insensitive, trimmed match against a set, so an unexpected spelling
-degrades to "not a renewal" rather than throwing or producing a false positive. If renewal detection
-ever appears not to fire, this is the first thing to check — one live lookup of a call sign with a
-renewal in flight would settle it.
+It was wrong. A real renewal, observed live on 2026-08-06:
+
+```jsonc
+"pendingApplications": [{
+  "application_purpose": "Renewal/Modification",   // NOT "RM"
+  "uls_filenumber": "0012140898",
+  "receipt_date": "2026-08-04T08:00:00.000Z"
+}]
+```
+
+**ExamTools returns FCC's human-readable description, not the raw code.** So `IsRenewal` was always
+false and the entire request-through-issuance lifecycle never fired. The failure was quiet in the
+worst way: the licence still picked up its new expiration date on the next refresh, so the row simply
+slid from "Expiring soon" to "Active" with a 2036 date, never once reporting a renewal.
+
+Matching now accepts **either form** — the codes, in case another endpoint or a future shape change
+returns them, and any description containing "renewal". A substring test is the right shape because
+FCC combines purposes ("Renewal/Modification"), so an exact list would have to enumerate every
+combination and would break on the next one.
+
+> The lesson is not "check assumptions" in the abstract. It is that this one was **knowable** — it
+> needed one lookup of a call sign with a renewal in flight, which nobody had. When a feature rests
+> on a value that has never been seen, the honest options are to find a real sample or to make the
+> match tolerant enough that being wrong degrades rather than disables.
+
+## Refresh cadence follows FCC's clock, not the licence's
+
+`RefreshInterval` was originally 20 hours, justified as "a licence term is ten years and a renewal
+takes days to weeks, so nothing changes hour to hour". True of the licence, wrong about the feed.
+
+**FCC posts its daily changes at 02:00 ET.** The useful question is not how fast a licence changes,
+but how long after that nightly run this app notices — and at 20 hours the answer drifts. A renewal
+granted at 02:00 on 2026-08-06 was still not visible that morning, purely because the row had last
+been checked at 21:27 the previous evening and was not yet stale.
+
+Six hours bounds the lag to a morning at four lookups per licence per day. Anchoring to a wall-clock
+ET slot the way `UlsWatcherJob` does — which exists *precisely* because of that 02:00 run — would be
+tighter still, and is the obvious next step if four a day ever proves too many.
 
 ## Status is derived, never stored
 
