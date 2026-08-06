@@ -17,28 +17,47 @@ Account-dashboard setup only the account owner can do — not runnable from this
 
 1. Sign into the [Square Developer Dashboard](https://developer.squareup.com/) → **+ New
    Application** → name it (e.g. "VE Session Manager") → **Create Application**.
-2. **Credentials** tab, **Sandbox** mode → **Show** the Sandbox Access Token → this is
-   `Square:AccessToken` for local dev (`Square:Environment = Sandbox`). There's a separate
-   **Production** mode token for real payments — see the note below before using it.
+2. **Credentials** tab, **Sandbox** mode → **Show** the Sandbox Access Token → this is the team's
+   **Access token**, with **Environment** set to **Sandbox**. There's a separate **Production** mode
+   token for real payments — see the note below before using it.
 3. **Locations** tab → copy the Test Location ID (sandbox) or Live Location ID (production) →
-   this is `Square:LocationId`.
+   this is the team's **Location ID**. It must come from the same mode as the token.
 4. **Webhooks** → **Subscriptions** → **Add subscription** → name it, enter the notification URL
    (must be HTTPS and publicly reachable — see the local-testing note below), pick an API version,
-   check the **payment.updated** event → **Save**. This is `Square:WebhookNotificationUrl` —
+   check the **payment.updated** event → **Save**. This is the team's **Webhook notification URL** —
    **must match exactly**, since it's a literal input to the HMAC signature, not just where Square
    happens to POST.
 5. Open the subscription you just created → **Endpoint Details** → **Show** the Signature Key →
-   this is `Square:WebhookSignatureKey`.
+   this is the team's **Webhook signature key**.
 
-**Sandbox vs Production:** Sandbox uses fake test cards and never touches real money — safe for
-end-to-end testing. Moving to `Square:Environment = Production` needs the application activated
-in the dashboard with a real linked bank account; do that deliberately, not as a side effect of
-flipping a config value.
+**All of those values live on the `Team`, not in appsettings** — each team has its own Square
+merchant account, so they are entered per team under **Admin → Team Settings → Square**. The secrets
+among them (access token, webhook signature key) are encrypted at rest; see
+`docs/credential-encryption.md`.
+
+**Sandbox vs Production is a per-team setting too (2026-08-06).** It used to be one deployment-wide
+`Square:Environment` config value, which was wrong for the same reason the credentials were: a Square
+access token is *issued for* one environment and only authenticates against that environment's host.
+A single global switch therefore forced every team onto the same one — so a deployment could not run
+a real team on Production while a test team (WX0MIK) stayed on Sandbox, and pointing the switch at
+Production made every team's Sandbox token start failing. The environment now travels with the
+credentials it belongs to, as `Team.SquareEnvironment`, and `SquareOptions` is gone entirely.
+
+Sandbox uses fake test cards and never touches real money — safe for end-to-end testing. Moving a
+team to Production needs the application activated in the dashboard with a real linked bank account;
+do that deliberately, not as a side effect of flipping a setting.
+
+**New teams default to Sandbox, and the `TeamSquareEnvironment` migration puts *every existing* team
+there too** — the old value was deployment config, so there was nothing in the database to carry
+forward. **After deploying that migration, set each live team back to Production in Team Settings.**
+Until then their payment links simply fail to generate: a Production token is rejected by the Sandbox
+host, which surfaces as failed link generation in Job History. That direction of failure is the point
+— defaulting to Production instead would have made a misconfiguration invisible *and* billable.
 
 **Local webhook testing:** Square requires HTTPS and a publicly reachable URL — `localhost` won't
 work as a notification URL. Use a tunnel (e.g. `ngrok http https://localhost:5158`) and register
 *that* URL as the subscription's notification URL for local testing; update
-`Square:WebhookNotificationUrl` to match whenever the tunnel URL changes (it's not stable across
+the team's webhook notification URL to match whenever the tunnel URL changes (it's not stable across
 restarts unless the tunnel tool is configured for a fixed subdomain).
 
 ## Payment Links (Checkout API)

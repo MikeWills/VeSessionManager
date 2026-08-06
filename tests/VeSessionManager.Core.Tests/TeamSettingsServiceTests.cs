@@ -4,6 +4,7 @@ using VeSessionManager.Core.Admin;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Email;
 using VeSessionManager.Core.Entities;
+using VeSessionManager.Core.Square;
 using Xunit;
 
 namespace VeSessionManager.Core.Tests;
@@ -251,7 +252,7 @@ public class TeamSettingsServiceTests
         team.SquareWebhookSignatureKey = "original-key";
         await dbContext.SaveChangesAsync();
 
-        await CreateService(dbContext).UpdateSquareAsync(team.Id, null, "loc-1", null, "https://host/webhooks/square/1", user.Id, CancellationToken.None);
+        await CreateService(dbContext).UpdateSquareAsync(team.Id, null, "loc-1", null, "https://host/webhooks/square/1", SquareApiEnvironment.Sandbox, user.Id, CancellationToken.None);
 
         var updated = await dbContext.Teams.SingleAsync();
         Assert.Equal("original-token", updated.SquareAccessToken);
@@ -330,5 +331,67 @@ public class TeamSettingsServiceTests
             999, "a@example.org", null, "b@example.org", "https://example.org/privacy", "c@example.org", user.Id, CancellationToken.None);
 
         Assert.Equal(TeamActionResult.NotFound, result);
+    }
+
+    // ---- Square environment (2026-08-06) ---------------------------------------------------------
+    // Moved off a global SquareOptions setting because a token is issued FOR an environment and only
+    // authenticates against that host — so one global switch made "real team on Production, test team
+    // on Sandbox" impossible.
+
+    [Fact]
+    public async Task NewTeam_DefaultsToSandbox_SoItCannotTakeRealMoneyUnasked()
+    {
+        await using var dbContext = CreateContext();
+        await SeedTeamAsync(dbContext, "FRESH");
+
+        Assert.Equal(SquareApiEnvironment.Sandbox, (await dbContext.Teams.SingleAsync()).SquareEnvironment);
+    }
+
+    [Theory]
+    [InlineData(SquareApiEnvironment.Production)]
+    [InlineData(SquareApiEnvironment.Sandbox)]
+    public async Task UpdateSquare_StoresTheChosenEnvironment(SquareApiEnvironment environment)
+    {
+        await using var dbContext = CreateContext();
+        var user = await SeedUserAsync(dbContext);
+        var team = await SeedTeamAsync(dbContext);
+
+        await CreateService(dbContext).UpdateSquareAsync(team.Id, "tok", "loc", "key", "https://host/webhooks/square/1", environment, user.Id, CancellationToken.None);
+
+        Assert.Equal(environment, (await dbContext.Teams.SingleAsync()).SquareEnvironment);
+    }
+
+    /// <summary>Two teams on one deployment can differ — the case a single global setting made impossible.</summary>
+    [Fact]
+    public async Task TwoTeams_CanUseDifferentEnvironments()
+    {
+        await using var dbContext = CreateContext();
+        var user = await SeedUserAsync(dbContext);
+        var live = await SeedTeamAsync(dbContext, "LIVE");
+        var test = await SeedTeamAsync(dbContext, "TESTTEAM");
+
+        var service = CreateService(dbContext);
+        await service.UpdateSquareAsync(live.Id, "tok", "loc", "key", "https://host/webhooks/square/1", SquareApiEnvironment.Production, user.Id, CancellationToken.None);
+        await service.UpdateSquareAsync(test.Id, "tok", "loc", "key", "https://host/webhooks/square/2", SquareApiEnvironment.Sandbox, user.Id, CancellationToken.None);
+
+        Assert.Equal(SquareApiEnvironment.Production, (await dbContext.Teams.FindAsync(live.Id))!.SquareEnvironment);
+        Assert.Equal(SquareApiEnvironment.Sandbox, (await dbContext.Teams.FindAsync(test.Id))!.SquareEnvironment);
+    }
+
+    /// <summary>The credentials handed to SquareClient carry the environment, so the client cannot use a different one.</summary>
+    [Fact]
+    public async Task ToSquareCredentials_CarriesTheTeamsEnvironment()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        team.SquareAccessToken = "tok";
+        team.SquareLocationId = "loc";
+        team.SquareEnvironment = SquareApiEnvironment.Production;
+
+        var credentials = team.ToSquareCredentials();
+
+        Assert.Equal(SquareApiEnvironment.Production, credentials.Environment);
+        Assert.Equal("tok", credentials.AccessToken);
+        Assert.Equal("loc", credentials.LocationId);
     }
 }

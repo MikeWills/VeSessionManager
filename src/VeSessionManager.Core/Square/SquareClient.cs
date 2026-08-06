@@ -4,6 +4,8 @@ using Microsoft.Extensions.Options;
 using Square;
 using Square.Checkout_;
 
+using VeSessionManager.Core.Entities;
+
 namespace VeSessionManager.Core.Square;
 
 /// <summary>
@@ -20,13 +22,11 @@ namespace VeSessionManager.Core.Square;
 /// </summary>
 public sealed class SquareClient : ISquareClient
 {
-    private readonly SquareOptions _options;
     private readonly ILogger<SquareClient> _logger;
     private readonly ConcurrentDictionary<int, global::Square.SquareClient> _clientsByTeamId = new();
 
-    public SquareClient(IOptions<SquareOptions> options, ILogger<SquareClient> logger)
+    public SquareClient(ILogger<SquareClient> logger)
     {
-        _options = options.Value;
         _logger = logger;
     }
 
@@ -154,7 +154,11 @@ public sealed class SquareClient : ISquareClient
     private global::Square.SquareClient GetOrCreateClient(SquareCredentials credentials) =>
         _clientsByTeamId.GetOrAdd(credentials.TeamId, _ =>
         {
-            var environment = _options.Environment.Equals("Production", StringComparison.OrdinalIgnoreCase)
+            // From the credentials, not deployment config: a token is issued for one environment and
+            // fails against the other, so a single global switch made a real team on Production and a
+            // test team on Sandbox mutually exclusive. The cache is already keyed by team, so nothing
+            // else had to change.
+            var environment = credentials.Environment == SquareApiEnvironment.Production
                 ? SquareEnvironment.Production
                 : SquareEnvironment.Sandbox;
 

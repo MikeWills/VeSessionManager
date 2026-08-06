@@ -192,7 +192,7 @@ public class SquarePaymentMatchingService(
 
         try
         {
-            var credentials = new SquareCredentials(team.Id, team.SquareAccessToken!, team.SquareLocationId ?? "");
+            var credentials = team.ToSquareCredentials();
             await squareClient.CompleteOrderAsync(credentials, payment.SquarePaymentReferenceId, cancellationToken);
             payment.SquareOrderCompletedUtc = timeProvider.GetUtcNow().UtcDateTime;
             await dbContext.SaveChangesAsync(cancellationToken);

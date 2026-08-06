@@ -209,6 +209,11 @@ public class AppDbContext(DbContextOptions<AppDbContext> options, IDataProtectio
             // Same reasoning — without this, existing teams would retroactively get 0 (no breakout
             // rooms) from the migration's AddColumn instead of the intended default of 2.
             b.Property(t => t.ZoomBreakoutRoomCount).HasDefaultValue(2);
+            // Sandbox is already 0, so this changes no value — it declares the SQL default so a
+            // schema built from the model (EnsureCreated, i.e. the SQLite tests) matches the one the
+            // migration actually produces. Without it a row inserted outside EF hits a NOT NULL
+            // failure on one and succeeds on the other, which is drift that only shows up in tests.
+            b.Property(t => t.SquareEnvironment).HasDefaultValue(SquareApiEnvironment.Sandbox);
 
             // Encrypted at rest (2026-07-30 security review) — genuine bearer secrets only, not the
             // usernames/ids/URLs alongside them (those stay plaintext, useful to read at a glance).

@@ -97,6 +97,20 @@ would be pure duplication — and goes straight to `CHANGELOG.md` instead. Non-p
 redesigns, hardening passes) start here and move to `CHANGELOG.md` once the section is at/over the
 cap and a newer entry needs to be added; oldest goes first.
 
+- **Square's Sandbox/Production environment moved onto `Team` (2026-08-06).** See
+  `docs/square-payments.md`. It was the last Square value still in `appsettings.json`, left there on
+  the reasoning that sandbox-vs-production is an environment choice rather than a per-team one — which
+  is wrong, because a Square access token is *issued for* one environment and only authenticates
+  against that host, so it belongs with the credentials it travels with. One global switch made
+  "real team on Production, test team (WX0MIK) on Sandbox" impossible on a single deployment, and on
+  beta it forced *every* team to Production. New `Team.SquareEnvironment`; `SquareOptions` deleted
+  outright, so nothing Square-related remains in config. `SquareClient` reads it off the credentials
+  record — new `Team.ToSquareCredentials()` replacing five hand-built copies. **Post-deploy step:
+  the `TeamSquareEnvironment` migration puts every existing team on Sandbox** (the old value was
+  config, so there was nothing to migrate from) — **set live teams back to Production in Team
+  Settings.** Until then their links fail to generate and show as failures in Job History; that
+  direction is deliberate, since defaulting to Production would make a misconfiguration invisible
+  *and* billable.
 - **Renewal Monitor: expiration + renewal tracking for an arbitrary watch list (2026-08-05).** See
   `docs/renewal-monitor.md`. Team-scoped list of any call sign at all — club members, family, people
   who never tested here — showing expiration and the renewal lifecycle. Screen only, no email, open
@@ -191,40 +205,11 @@ cap and a newer entry needs to be added; oldest goes first.
   `ExamResultSyncService.SyncSessionAsync` ignores `ResultSyncWindow` (making the window's documented
   escape hatch real for the first time), and the other four scan services gained a trailing optional
   `int? onlySessionId` filter. Team Maintenance's "Refresh now" stays team-wide and throttled.
-- **Payment work bounded by session age; post-import log noise fixed (2026-08-01).** See
-  `docs/historical-import.md`'s companion fixes 3 and 4. `PaymentGenerationService` filtered only on
-  `Session.Status == Active` (= "not cancelled", never "not finished"), so the historical import's
-  year of backfilled candidates produced **~1710 Unpaid payments** — inert only because that team had
-  no Square credentials, and one config change away from minting ~1710 live payment links and then
-  emailing those people. New `PaymentEligibilityWindow` (30 days on `ScheduledStartUtc`) bounds
-  creation, **link generation**, reminders and expiration. **A window, not `HasEnded`:** reminders key
-  off `ApplicationDateEnteredUtc`, which FCC sets *after* the session, so they legitimately target
-  ended sessions — a `HasEnded` guard would break the feature. Bounding *link generation* is what
-  makes leaving the existing 1710 rows in place safe. Separately, scheduling/notification queries
-  gained a `>= now - 1 day` bound: a past session can never satisfy
-  `ScheduledStartUtc == ZoomDiscordSyncedStartUtc`, so 794 sessions + 1991 candidates were being
-  loaded, filtered and log-counted every tick forever. Third case, same shape:
-  `VolunteerExaminerSyncService` settled a finished session only once it *had* a roster, so a 2023
-  session whose roster ExamTools 500s on retried hourly forever — new `RosterRetryWindow` (30 days)
-  settles it regardless.
-- **Self-service password reset + deployment-wide "system" email sender (2026-08-01).** See
-  `docs/password-reset.md`. There was **no password reset of any kind** — a local-account user who
-  forgot their password was locked out permanently, hand-editing `AspNetUsers` the only recovery
-  (OAuth users unaffected). New `PasswordResetService` + `/Account/ForgotPassword`/`ResetPassword`.
-  **Mail sends from new `SystemSettings.SystemSmtp*` fields, not a Team's** — a reset is addressed to
-  an app *user*, and a SystemAdmin may belong to no team; per-team SMTP still owns all candidate
-  mail. `IsSystemEmailConfigured` requires host **and** username (the `SmtpHost`-default gotcha
-  below). **Non-disclosure is the design constraint:** every request reports `Accepted` — unknown
-  address, deactivated (= locked out; there is no `IsActive` flag), OAuth-only (no password hash, or
-  mailbox access could downgrade an SSO login to a password login), and even an SMTP throw — so the
-  page is never an account-enumeration oracle; only `SystemEmailNotConfigured` is surfaced. Throttle
-  stamped **before** the send so a failing SMTP server can't be driven as a mail-bombing loop.
-  Migration `PasswordResetAndSystemEmail` is nullable adds only. **Never live-verified — no SMTP has
-  ever been configured on any deployment.**
+
 Everything through Phase 0-10's initial build (ExamTools ingestion, Zoom/Discord, Square, email
 notifications, FCC ULS watcher, payment reminders, VE tracking, VEC submission tracker, admin
-auth/config/candidate-actions, PII purge) plus the public privacy page has aged out to
-**`CHANGELOG.md`** — same one-line-pointer format, just the overflow.
+auth/config/candidate-actions, PII purge), the public privacy page, and everything dated 2026-08-01
+or earlier has aged out to **`CHANGELOG.md`** — same one-line-pointer format, just the overflow.
 
 ## Environment
 
@@ -343,7 +328,7 @@ To pick up updates: `/plugin marketplace update claude-tools`
 - **Razor `.cshtml` files are compiled into the assembly at build time in this app (no `AddRazorRuntimeCompilation()` configured)** — editing a `.cshtml` file while `dotnet run` is already running does **not** take effect; the process must be restarted, not just re-requested. Cost real debugging time once (a `_PublicLayout.cshtml` edit silently didn't apply until the dev server was relaunched).
 - **A job tick timed for "the evening" in US Eastern can land at/after UTC midnight** — EDT is UTC-4, EST is UTC-5, so anything from ~8pm ET onward is already tomorrow in raw UTC. `TimeProvider.GetUtcNow().UtcDateTime.DayOfWeek` (or any UTC-based "what day is it" check) is wrong for that window; convert through `TimeZoneInfo.ConvertTimeFromUtc(..., FccUlsSchedule.EasternTimeZone)` first (IANA id `"America/New_York"`, resolves cross-platform since .NET 6 — verified directly on this repo's target framework on both Windows and the Linux deploy target). Found live 2026-07-23 building `FccDailyWatcherJob`'s same-day retry; see `docs/fcc-uls-watcher.md`. Reuse `FccUlsSchedule.EasternTimeZone` for any future US-Eastern-anchored scheduling rather than re-resolving the id.
 - **Not every job here can safely reuse the "24h `PeriodicTimer` from Worker start, extra ticks are free" idiom** — that reasoning (used by `DayBeforeReminderJob`/`PaymentReminderJob`/`PiiPurgeJob`/`FccWeeklyCatchupJob`) assumes a missed tick is harmless because idempotent tracking catches it up next time. It breaks when the *data itself* — not just the job's own state — is only available in a narrow, non-retryable window, as with FCC's day-name files (see the same-day-retry entry above). Before adding a new job on this idiom, check whether the thing it polls has that same "one-shot window" property.
-- **Square webhook subscriptions are separate per Sandbox/Production, each with its own signature key** — an existing subscription registered under one mode receives zero delivery attempts for events in the other (not a 401, no attempt at all), and reusing one mode's `WebhookSignatureKey` against the other mode's subscription makes every delivery fail signature verification (401) even though the URL/event config is otherwise correct. Found live 2026-07-25 testing Team 2 (MARC)'s payment flow — the "Ve Session Manager" subscription had been created under Production while all local testing used Sandbox credentials/payment links. Fix: add (or move) the subscription under the correct mode's tab in the Square dashboard, then set `Team.SquareWebhookSignatureKey` to *that* subscription's own signature key, not the other mode's. See `docs/square-payments.md`.
+- **Square webhook subscriptions are separate per Sandbox/Production, each with its own signature key** — an existing subscription registered under one mode receives zero delivery attempts for events in the other (not a 401, no attempt at all), and reusing one mode's `WebhookSignatureKey` against the other mode's subscription makes every delivery fail signature verification (401) even though the URL/event config is otherwise correct. Found live 2026-07-25 testing Team 2 (MARC)'s payment flow — the "Ve Session Manager" subscription had been created under Production while all local testing used Sandbox credentials/payment links. Fix: add (or move) the subscription under the correct mode's tab in the Square dashboard, then set `Team.SquareWebhookSignatureKey` to *that* subscription's own signature key, not the other mode's. See `docs/square-payments.md`. **Which mode a team is in is now `Team.SquareEnvironment`, not a config value (2026-08-06)** — so this is per-team, and two teams on one deployment can legitimately be in different modes, each needing its own subscription. A team whose access token and environment disagree gets an auth failure from Square rather than a wrong-account charge.
 - **`Web` and `Worker` must register Data Protection with the exact same application name and key-ring path, or one process's writes silently become unreadable by the other.** `Team`'s credential columns (ExamTools/Zoom/Square/SMTP secrets) are encrypted at rest via `EncryptedStringConverter` (2026-07-30) — both `Program.cs` files call `AddDataProtection().SetApplicationName("VeSessionManager").PersistKeysToFileSystem(...)` with the same hardcoded app name and the same `DataProtection:KeyRingPath` config value. A drift here doesn't throw — `EncryptedStringConverter`'s legacy-plaintext fallback (needed for the migration path) means a value encrypted under a different key just looks like it was never migrated. See `docs/credential-encryption.md`. Also: **if the key-ring directory is ever lost, every encrypted credential becomes permanently unrecoverable** — it must be backed up with the same discipline as the DB file itself (see `docs/deployment.md`).
 - **A POST form on a filtered list page needs BOTH an explicit `action=` and `asp-antiforgery="true"` — each half fixes a bug the other half causes.** `asp-page-handler` builds the form action from the route only and **drops the query string**, so posting an action from a filtered/paged list silently redirects back to the unfiltered first page (found on the Sessions row-action menu, 2026-07-30). The fix is an explicit `action="@Model.BuildActionUrl("Handler")"`. But `FormTagHelper` only auto-emits the antiforgery token when *it* generated the action — with an explicit `action=` the token disappears, and every POST then 400s in the antiforgery middleware **before reaching the app, logging nothing server-side** (the symptom is a browser error page with a completely silent log, which reads like the request never happened). `asp-antiforgery="true"` restores it. Any future list page with row-level POST actions needs both, plus a `BuildActionUrl`-style helper so the redirect target keeps the same filter state.
 - **`wireless2.fcc.gov` (ULS's own web UI) returns Akamai "Access Denied" (HTTP 403) to automated requests, and has done so for at least one manual browser attempt too.** This is why `FccUlsLinks` ships the *licence* deep link (`UlsSearch/license.jsp?licKey=…`, whose shape is verified — ExamTools links to exactly it) but deliberately **not** an application deep link: the `applView.jsp?applID=…` shape has never been confirmed against a working response, and an unverified link would send a Session Manager to a dead page. `exam.tools`' own ULS mirror is unaffected and is what the app actually calls.

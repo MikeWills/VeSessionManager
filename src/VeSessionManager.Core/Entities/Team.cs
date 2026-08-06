@@ -48,8 +48,11 @@ public class Team
     public ulong? DiscordGuildId { get; set; }
 
     // Square credentials — nullable. This team's own separate Square merchant account (confirmed
-    // with the user — not shared across teams). Environment (Sandbox/Production) stays global, in
-    // SquareOptions — a whole-deployment choice, not per-team.
+    // with the user — not shared across teams), including which API environment those credentials are
+    // for: a token authenticates against one host only, so it travels with them (2026-08-06).
+    /// <summary>Which Square API this team's credentials are for. Sandbox by default — a token is issued for one environment and fails against the other, so this belongs with the credentials rather than in deployment config. See SquareApiEnvironment.</summary>
+    public SquareApiEnvironment SquareEnvironment { get; set; } = SquareApiEnvironment.Sandbox;
+
     public string? SquareAccessToken { get; set; }
     public string? SquareLocationId { get; set; }
     public string? SquareWebhookSignatureKey { get; set; }

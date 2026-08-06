@@ -101,12 +101,12 @@ public class TeamSettingsModel(AppDbContext dbContext, UserManager<User> userMan
         return RedirectToPage(new { teamId = auth.Value.Team.Id });
     }
 
-    public async Task<IActionResult> OnPostUpdateSquareAsync(string? accessToken, string? locationId, string? webhookSignatureKey, string? webhookNotificationUrl)
+    public async Task<IActionResult> OnPostUpdateSquareAsync(string? accessToken, string? locationId, string? webhookSignatureKey, string? webhookNotificationUrl, SquareApiEnvironment environment)
     {
         var auth = await AuthorizeAsync();
         if (auth is null) return Forbid();
 
-        var result = await teamSettingsService.UpdateSquareAsync(auth.Value.Team.Id, accessToken, locationId, webhookSignatureKey, webhookNotificationUrl, auth.Value.User.Id, CancellationToken.None);
+        var result = await teamSettingsService.UpdateSquareAsync(auth.Value.Team.Id, accessToken, locationId, webhookSignatureKey, webhookNotificationUrl, environment, auth.Value.User.Id, CancellationToken.None);
         SetStatus(result, "Square credentials updated.");
         return RedirectToPage(new { teamId = auth.Value.Team.Id });
     }

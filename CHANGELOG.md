@@ -8,6 +8,36 @@ that window, or immediately if it's phase-numbered work already summarized in "C
 design rationale for any entry still lives in its linked `/docs/*.md` file, not here or in
 CLAUDE.md — this file, like CLAUDE.md's Change Log, is pointers only.
 
+- **Payment work bounded by session age; post-import log noise fixed (2026-08-01).** See
+  `docs/historical-import.md`'s companion fixes 3 and 4. `PaymentGenerationService` filtered only on
+  `Session.Status == Active` (= "not cancelled", never "not finished"), so the historical import's
+  year of backfilled candidates produced **~1710 Unpaid payments** — inert only because that team had
+  no Square credentials, and one config change away from minting ~1710 live payment links and then
+  emailing those people. New `PaymentEligibilityWindow` (30 days on `ScheduledStartUtc`) bounds
+  creation, **link generation**, reminders and expiration. **A window, not `HasEnded`:** reminders key
+  off `ApplicationDateEnteredUtc`, which FCC sets *after* the session, so they legitimately target
+  ended sessions — a `HasEnded` guard would break the feature. Bounding *link generation* is what
+  makes leaving the existing 1710 rows in place safe. Separately, scheduling/notification queries
+  gained a `>= now - 1 day` bound: a past session can never satisfy
+  `ScheduledStartUtc == ZoomDiscordSyncedStartUtc`, so 794 sessions + 1991 candidates were being
+  loaded, filtered and log-counted every tick forever. Third case, same shape:
+  `VolunteerExaminerSyncService` settled a finished session only once it *had* a roster, so a 2023
+  session whose roster ExamTools 500s on retried hourly forever — new `RosterRetryWindow` (30 days)
+  settles it regardless.
+- **Self-service password reset + deployment-wide "system" email sender (2026-08-01).** See
+  `docs/password-reset.md`. There was **no password reset of any kind** — a local-account user who
+  forgot their password was locked out permanently, hand-editing `AspNetUsers` the only recovery
+  (OAuth users unaffected). New `PasswordResetService` + `/Account/ForgotPassword`/`ResetPassword`.
+  **Mail sends from new `SystemSettings.SystemSmtp*` fields, not a Team's** — a reset is addressed to
+  an app *user*, and a SystemAdmin may belong to no team; per-team SMTP still owns all candidate
+  mail. `IsSystemEmailConfigured` requires host **and** username (the `SmtpHost`-default gotcha
+  below). **Non-disclosure is the design constraint:** every request reports `Accepted` — unknown
+  address, deactivated (= locked out; there is no `IsActive` flag), OAuth-only (no password hash, or
+  mailbox access could downgrade an SSO login to a password login), and even an SMTP throw — so the
+  page is never an account-enumeration oracle; only `SystemEmailNotConfigured` is surfaced. Throttle
+  stamped **before** the send so a failing SMTP server can't be driven as a mail-bombing loop.
+  Migration `PasswordResetAndSystemEmail` is nullable adds only. **Never live-verified — no SMTP has
+  ever been configured on any deployment.**
 - **VE Roster restricted to admin roles (2026-08-01).** See `docs/admin-auth.md`. SessionManager and
   TeamLead dropped from `VeRoster.cshtml.cs`'s `[Authorize]` — the page is a full VE contact roster
   *and* a per-VE session-count leaderboard, and a visible count-per-person invites comparison between
