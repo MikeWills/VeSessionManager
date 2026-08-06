@@ -20,7 +20,23 @@ namespace VeSessionManager.Core.Jobs;
 /// </summary>
 public class JobRunHistoryLogger(AppDbContext dbContext, ILogger<JobRunHistoryLogger> logger)
 {
-    public async Task RunAsync(string jobName, Func<CancellationToken, Task> job, int? teamId, CancellationToken cancellationToken)
+    private const int MaxSummaryLength = 500;
+
+    /// <summary>
+    /// Runs a job that reports a result, recording the result's own summary on the history row.
+    ///
+    /// <para>Every result type in this codebase already overrides <c>ToString()</c> to produce the
+    /// exact one-line summary the Worker log prints ("sent 0, failed 1"), so this captures the text
+    /// that was already being written to a file nobody reads from the dashboard — rather than
+    /// inventing a second, drift-prone description of the same run.</para>
+    /// </summary>
+    public Task RunAsync<TResult>(string jobName, Func<CancellationToken, Task<TResult>> job, int? teamId, CancellationToken cancellationToken) =>
+        RunCoreAsync(jobName, async ct => (await job(ct))?.ToString(), teamId, cancellationToken);
+
+    public Task RunAsync(string jobName, Func<CancellationToken, Task> job, int? teamId, CancellationToken cancellationToken) =>
+        RunCoreAsync(jobName, async ct => { await job(ct); return null; }, teamId, cancellationToken);
+
+    private async Task RunCoreAsync(string jobName, Func<CancellationToken, Task<string?>> job, int? teamId, CancellationToken cancellationToken)
     {
         var jobLabel = teamId is null ? jobName : $"{jobName} (team {teamId})";
 
@@ -56,8 +72,13 @@ public class JobRunHistoryLogger(AppDbContext dbContext, ILogger<JobRunHistoryLo
         var failed = false;
         try
         {
-            await job(cancellationToken);
+            var summary = await job(cancellationToken);
             history.Success = true;
+            // Capped rather than left unbounded: these are one-liners today, but a future result
+            // type is one careless interpolation away from putting a wall of text in every row.
+            history.ResultSummary = summary is { Length: > MaxSummaryLength }
+                ? summary[..MaxSummaryLength]
+                : summary;
             logger.LogInformation("Finished job: {JobLabel} ({ElapsedMs}ms)", jobLabel, stopwatch.ElapsedMilliseconds);
         }
         catch (Exception ex)

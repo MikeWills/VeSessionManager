@@ -28,6 +28,40 @@ CLAUDE.md — this file, like CLAUDE.md's Change Log, is pointers only.
   + `IX_Vecs_ExamToolsCode`, clean down-path. Codes confirmed live: `arrl`, `lagroup`, `sandarc` —
   read from `GET /api/teams/team`'s `teamDoc.vecs` (the only place they're exposed; it lists the
   calling VE's own teams, so it is not a global VEC directory).
+- **One-time historical session import + VE-roster re-poll fix (2026-07-31).** See
+  `docs/historical-import.md` (issue #67 part 2). Admin picks a date range on Team Maintenance; a
+  `HistoricalImportRequest` row is queued and the Worker's new `HistoricalImportJob` walks it **one
+  calendar month per ExamTools call** with a 2s pause, saving progress counters after every chunk.
+  Queued-for-the-Worker rather than run inline because Web and Worker are separate processes — no
+  spinner, no half-import lost to an app recycle, no two processes polling ExamTools at once. Scope
+  is **sessions + candidates + VE roster only** — no payment links, no Zoom/Discord, no emails; the
+  `HasEnded` guards stay a backstop rather than the sole defence for a year of backdated data.
+  **`SessionIngestionService.ImportHistoricalRangeAsync` must never be collapsed into `RunAsync`:**
+  RunAsync cancels sessions absent from the feed, and a date-ranged feed excludes a team's entire
+  live schedule by construction. It also skips reschedule/`ExtId` handling and only syncs candidates
+  for sessions it creates, keeping `WithdrawMissingCandidates` away from historical rosters where a
+  short export would irreversibly clear PII. **Companion fix, needed before any of this was safe:**
+  `VolunteerExaminerSyncService` re-polled *every* `Status == Active` session every tick forever, so
+  importing a year would have added ~100 permanent hourly API calls. It now skips a session that is
+  done **and** already has a roster — done meaning `ExamToolsClosedUtc` (authoritative, and can
+  precede the scheduled end) or `TestingCompletedUtc` or `HasEnded` (the backstop for pre-2026-07-31
+  sessions carrying neither stamp). The roster half is not redundant: a session appearing and closing
+  inside one polling interval would otherwise lose its roster permanently; empty rosters keep
+  retrying so a failed sync self-heals. **Same bug class then fixed in `ExamResultSyncService`
+  (issue #81):** bounded to `ResultSyncWindow` (14 days), anchored on `ScheduledStartUtc` and **not**
+  `ExamToolsClosedUtc` — the import stamps the close field at *import* time, so anchoring there would
+  preserve the very burst the bound exists to stop. `ManualCandidateRefreshService` gained the
+  exam-result step it had always been missing (its own doc comment claimed otherwise) as the
+  on-demand escape hatch for a session graded later than the window; that also required registering
+  `ExamResultSyncService` in the **Web** project's DI for the first time. Migration
+  `HistoricalImportRequests` is one new table, clean `DROP TABLE` down-path. **Follow-up
+  (2026-08-01):** imported sessions are now marked **Submitted to the VEC** — they defaulted to
+  `NotSubmitted`, which dumped six months of backdated sessions into the submission tracker as
+  outstanding work, one manual Detail-page click each. The marking sits **outside** the create branch
+  on purpose (an import skips sessions it already has, so re-running a range is the supported way to
+  clear a pre-existing backlog); an already-Submitted session keeps its original date/user; and
+  `RunAsync` never does this — only the historical path may assume paperwork was filed. Note the
+  assumption: importing a range that overlaps genuinely unsubmitted sessions marks them submitted too.
 - **Admin → Team Maintenance: team-level "Refresh now" + ingestion schedule + Worker-health banner
   (2026-07-31).** See `docs/team-maintenance.md` (issues #77/#73). New TeamAdmin/SystemAdmin page,
   operations to Team Settings' configuration. Closes the gap where `ManualCandidateRefreshService`'s
