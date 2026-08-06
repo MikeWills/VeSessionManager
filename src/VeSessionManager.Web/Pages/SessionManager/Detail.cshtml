@@ -225,6 +225,41 @@
 </table>
 </div>
 
+@* Withdrawn candidates are kept out of the roster above but not hidden outright: they still hold a
+   record for statistics, and someone occasionally needs to confirm that a name they remember really
+   did move rather than vanish. A native <details> keeps that one tap away with no JavaScript, no
+   query parameter and no extra page load, and renders nothing at all when there are none. *@
+@if (Model.WithdrawnCandidates.Count > 0)
+{
+    <details class="withdrawn-roster">
+        <summary>@Model.WithdrawnCandidates.Count withdrawn or moved candidate(s)</summary>
+        <p class="session-sub">Left this session in ExamTools. Their personal details were cleared; the record is kept so session statistics stay accurate.</p>
+        <div class="table-scroll">
+        <table class="cards">
+            <thead>
+                <tr>
+                    <th>Candidate</th>
+                    <th>Application status</th>
+                    <th>Payment</th>
+                    <th>Tested</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var candidate in Model.WithdrawnCandidates)
+                {
+                    <tr class="row-past">
+                        <td class="cand-name"><span class="no-show">@candidate.DisplayName</span></td>
+                        <td>@candidate.StatusLabel</td>
+                        <td><span class="chip @candidate.PaymentChipClass">@candidate.PaymentChipLabel</span></td>
+                        <td><span class="tested-check@(candidate.Tested ? " on" : "")">@(candidate.Tested ? "✓" : "·")</span></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        </div>
+    </details>
+}
+
 <footer class="roster">
     <div class="section-head" style="margin:0">
         <div>
@@ -264,7 +299,7 @@
         <div class="modal">
             <h3>Delete session @Model.Session.BreadcrumbLabel?</h3>
             <p>
-                This permanently deletes this session, along with @Model.Candidates.Count candidate(s),
+                This permanently deletes this session, along with @Model.TotalCandidateCount candidate(s),
                 every payment record attached to them, and @Model.VeRoster.Count VE roster assignment(s).
                 <b>This cannot be undone.</b>
             </p>

@@ -350,6 +350,17 @@ footer.roster { margin-top: 28px; background: var(--surface); border: 1px solid 
 .vesm a.icon-link { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 5px; color: var(--ink-soft); text-decoration: none; }
 .vesm a.icon-link:hover { background: var(--ghost-hover); color: var(--ink); }
 
+/* Collapsed roster of withdrawn candidates (Session Detail). A native <details> — no JavaScript, no
+   query parameter, no extra page load, and it simply is not rendered when the list is empty. */
+.withdrawn-roster { margin-top: 14px; }
+.withdrawn-roster > summary { font-family: "IBM Plex Mono", monospace; font-size: 12px; letter-spacing: .04em; color: var(--ink-soft); cursor: pointer; padding: 8px 2px; list-style: none; display: flex; align-items: center; gap: 8px; }
+.withdrawn-roster > summary::-webkit-details-marker { display: none; }
+/* Own marker, so it points the right way in both states without relying on the UA default. */
+.withdrawn-roster > summary::before { content: "B8"; font-size: 10px; transition: transform .12s ease; }
+.withdrawn-roster[open] > summary::before { transform: rotate(90deg); }
+.withdrawn-roster > summary:hover { color: var(--ink); }
+.withdrawn-roster > .session-sub { margin: 0 0 10px; max-width: 70ch; }
+
 /* FRN cell on the Renewal Monitor. user-select:all makes one click select the whole number —
    a 10-digit string has no word boundaries, so double-click selection is fiddly and a partial
    copy fails silently in FCC's search. */
