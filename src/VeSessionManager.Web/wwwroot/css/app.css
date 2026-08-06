@@ -342,6 +342,14 @@ footer.roster { margin-top: 28px; background: var(--surface); border: 1px solid 
 .menu-input { width: 100%; font-family: "IBM Plex Mono", monospace; font-size: 16px; padding: 8px; border: 1px solid var(--line-strong); border-radius: 5px; background: var(--surface); color: var(--ink); }
 .menu-input + .menu-input { margin-top: 6px; }
 
+/* Icon-only row actions (Teams list: settings + maintenance). currentColor means both themes work
+   with no dark-mode override; the 34px box keeps them a real touch target on a phone, where these
+   rows render as cards. Every one carries a title AND aria-label — an icon with neither is a
+   guess for a sighted user and invisible to a screen reader. */
+.team-actions { display: flex; gap: 4px; align-items: center; }
+.vesm a.icon-link { display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 5px; color: var(--ink-soft); text-decoration: none; }
+.vesm a.icon-link:hover { background: var(--ghost-hover); color: var(--ink); }
+
 /* FRN cell on the Renewal Monitor. user-select:all makes one click select the whole number —
    a 10-digit string has no word boundaries, so double-click selection is fiddly and a partial
    copy fails silently in FCC's search. */
