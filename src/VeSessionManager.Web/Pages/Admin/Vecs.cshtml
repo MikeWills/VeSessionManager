@@ -35,16 +35,13 @@
         {
             <tr>
                 <td class="session-title">@vec.Name</td>
-                <td>
-                    @if (vec.ExamToolsCode is null)
-                    {
-                        <span class="chip chip-neutral">Same as name</span>
-                    }
-                    else
-                    {
-                        <code>@vec.ExamToolsCode</code>
-                    }
-                </td>
+                @* Always the code ingestion actually matches on, never "Same as name" (which stated
+                   how the row is stored rather than answering the question the column asks). A VEC
+                   with no override still HAS a code — it is just the name — and seeing it is what
+                   lets you compare it against what ExamTools reports. Whether it was set explicitly
+                   is still visible where it matters: the edit modal's field is empty for a derived
+                   one, with a placeholder saying so. *@
+                <td><code>@vec.MatchCode</code></td>
                 <td>
                     @if (vec.FeeSummary is null)
                     {
