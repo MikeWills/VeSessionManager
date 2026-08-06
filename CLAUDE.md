@@ -8,12 +8,11 @@ This is a Visual Studio project that is designed to automate many of the mundane
 - **Outstanding review findings live in [`docs/audit-2026-08-03-tasks.md`](docs/audit-2026-08-03-tasks.md)
   — check it before starting unrelated work.** A six-agent review (security, optimization/dead code,
   and traceability across four layers) produced 39 findings as self-contained tasks: problem, files,
-  fix, acceptance criteria. **13 are done, 26 remain.** The completed ones were the P0/P1 tier —
-  authorization, public-internet hardening, Worker resilience, the payment race, the PII purge gap.
-  What's left is led by **T12** (the Data Protection key ring sitting beside the SQLite database, so
-  one leaked backup carries both ciphertext and key) and **T04** (Web's Production config missing
-  `Square`/`ExamTools`, so Web-initiated calls fall back to Square *Sandbox* and `examtools.dev`),
-  then a long tail of quality work. That file also records what the review verified as **clean**, so
+  fix, acceptance criteria. **14 are done, 25 remain.** The completed ones were the P0/P1 tier —
+  authorization, public-internet hardening, Worker resilience, the payment race, the PII purge gap,
+  and the Square/ExamTools config drift (T04, done 2026-08-06 before live payment testing). What's
+  left is led by **T12** (the Data Protection key ring sitting beside the SQLite database, so one
+  leaked backup carries both ciphertext and key), then a long tail of quality work. That file also records what the review verified as **clean**, so
   those areas don't need re-auditing. This pointer is deliberately here rather than in the Change Log
   below, which rotates entries out to `CHANGELOG.md` and would eventually take the only reference
   with it.
