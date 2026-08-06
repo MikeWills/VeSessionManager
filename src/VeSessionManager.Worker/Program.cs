@@ -43,6 +43,14 @@ builder.Services.AddDataProtection()
 
 builder.Services.AddSingleton(TimeProvider.System);
 builder.Services.Configure<AppOptions>(builder.Configuration.GetSection(AppOptions.SectionName));
+// Shared configuration, loaded BEFORE this host's own appsettings so a host can still override a
+// value deliberately — it just cannot diverge by accident. Square/ExamTools used to be written out
+// in every appsettings file, which is how Web ended up on Sandbox/examtools.dev while the Worker ran
+// Production/alpha.exam.tools (T04). See src/Shared/appsettings.Shared.json.
+builder.Configuration.AddJsonFile("appsettings.Shared.json", optional: false, reloadOnChange: true);
+builder.Configuration.AddJsonFile($"appsettings.Shared.{builder.Environment.EnvironmentName}.json", optional: true, reloadOnChange: true);
+builder.Configuration.AddJsonFile($"appsettings.{builder.Environment.EnvironmentName}.json", optional: true, reloadOnChange: true);
+
 builder.Services.Configure<ExamToolsOptions>(builder.Configuration.GetSection(ExamToolsOptions.SectionName));
 // Singleton so the login cookie jar survives between poll cycles.
 builder.Services.AddSingleton<IExamToolsClient, ExamToolsClient>();

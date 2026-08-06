@@ -21,4 +21,10 @@
     <UserSecretsId>dotnet-VeSessionManager.Worker-7144504e-98be-4ccd-ab50-694b48bd088d</UserSecretsId>
   </PropertyGroup>
 
+
+  <!-- Shared config, linked rather than copied: the same physical files are used by both hosts, so
+       Square/ExamTools cannot drift between them again (see src/Shared/appsettings.Shared.json). -->
+  <ItemGroup>
+    <Content Include="../Shared/appsettings.Shared*.json" Link="%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>
