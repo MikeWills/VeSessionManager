@@ -70,6 +70,15 @@ which is "here's what was built and why, mostly historical.")
     fallback that used to be re-typed at every call site.
   - `AdminAccessScope.TryResolveManageableTeamId` — replaces the
     SystemAdmin-team-picker-vs-TeamAdmin-locked-to-own-team resolution.
+- **The per-team refresh pipeline is defined once, in `TeamPipeline`** (`Core/Ingestion`) — ingest,
+  VE roster, exam results, Zoom/Discord, payment links, confirmation emails, in that order. **Add a
+  new step there, not at a call site.** The order used to be written out three times (the Worker's
+  `SessionIngestionJob`, and twice in `ManualCandidateRefreshService` for the team-wide and
+  session-scoped buttons) and the copies drifted — exam-result sync was missing from the manual path
+  for weeks while its own doc comment claimed to mirror the job. Callers vary only by a job-name
+  prefix (`""` scheduled, `"Manual"` user-triggered) and an optional `onlySessionId`; two steps
+  switch *method* rather than take a filter when scoped to one session, and that branch is inside
+  the pipeline with the reasons attached.
 - **Before building an in-app admin action, check whether ExamTools already does it.** This app's
   own ingestion polling means an ExamTools-side change always wins eventually anyway, so a duplicate
   in-app action is pure redundant maintenance surface, not a safety net — "add walk-in candidate"

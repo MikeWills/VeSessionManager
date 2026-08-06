@@ -168,3 +168,31 @@ whole team's.
 ## Historical import
 
 See `docs/historical-import.md` — the third section of this page, and the other half of issue #67.
+
+## One pipeline definition, three callers (2026-08-05)
+
+The step order — ingest, VE roster, exam results, Zoom/Discord, payment links, confirmation emails —
+now lives only in `TeamPipeline`. It previously existed in three places: the Worker's
+`SessionIngestionJob`, and twice in `ManualCandidateRefreshService` (team-wide and session-scoped).
+
+The *steps* were never duplicated — all three called the same services — but the order and
+membership were, and they drifted: exam-result sync was missing from the manual path for weeks,
+"despite this class's own doc comment claiming to mirror SessionIngestionJob's pipeline". A step
+added to one copy simply did not exist in the others, and nothing failed.
+
+Callers now differ only in two arguments:
+
+- **`jobNamePrefix`** — `""` for the Worker's scheduled tick, `"Manual"` for a user-triggered
+  refresh, so the ops dashboard can tell them apart. Both manual scopes share it: the useful
+  distinction is manual-vs-scheduled, not which button.
+- **`onlySessionId`** — null runs the whole team; a session id restricts every step.
+
+> **Two steps switch method rather than take a filter**, which is why the pipeline branches instead
+> of just passing the id through. Ingestion uses `RefreshSessionCandidatesAsync`, because the
+> team-wide `RunAsync` cancels sessions missing from the feed and a single-session view looks like
+> mass cancellation. Exam results use `SyncSessionAsync`, which deliberately ignores
+> `ResultSyncWindow` — the Detail page's refresh is the documented on-demand path for a session
+> graded later than the window.
+
+`Team.LastIngestionRunUtc` is still stamped **only** by the Worker, outside the pipeline: a manual
+run is extra work on top of the schedule, not a replacement, so it must never delay the next poll.
