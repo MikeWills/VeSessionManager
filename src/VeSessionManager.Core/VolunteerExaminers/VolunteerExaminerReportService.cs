@@ -11,9 +11,28 @@ namespace VeSessionManager.Core.VolunteerExaminers;
 public class VolunteerExaminerReportService(AppDbContext dbContext)
 {
     /// <summary>
-    /// Counts non-cancelled sessions each VE is linked to, optionally restricted to a
-    /// ScheduledStartUtc range (either bound may be null for an open-ended range). A cancelled
-    /// session never happened, so it's excluded regardless of range.
+    /// Counts the sessions each VE has actually <b>worked</b> — completed ones only — optionally
+    /// restricted to a ScheduledStartUtc range (either bound may be null for an open-ended range).
+    ///
+    /// <para><b>"Completed" is not <c>Status</c>.</b> `Status` only ever leaves `Active` on
+    /// cancellation; it is never set to Completed, so a filter on `Status == Active` means "not
+    /// cancelled" and matches every session the team has ever scheduled — including ones still in
+    /// the future. That is what this counted until 2026-08-06, so a VE rostered onto next month's
+    /// session already had it in their worked total.</para>
+    ///
+    /// <para>Completion is derived the same way the Sessions list derives its "Completed" chip
+    /// (issue #71): finished by either route — a Session Manager marking it
+    /// (<see cref="Session.TestingCompletedUtc"/>) or ExamTools closing it upstream
+    /// (<see cref="Session.ExamToolsClosedUtc"/>). Kept deliberately identical so a session shown as
+    /// Completed on that list is exactly one counted here. Historical imports set
+    /// `ExamToolsClosedUtc` at creation, so a backfilled year counts normally.</para>
+    ///
+    /// <para><see cref="Session.HasEnded"/> is <i>not</i> used as a further backstop, though it is
+    /// the documented one elsewhere: its arithmetic is plain C# and won't translate to SQL, and
+    /// pulling every row back to filter in memory is the wrong trade for a page that already
+    /// aggregates in the database. The gap it would cover is narrow — a session that ran before
+    /// `ExamToolsClosedUtc` existed (2026-07-31) and was never marked complete. Those show as Active
+    /// on the Sessions list too, so excluding them here keeps the two consistent.</para>
     ///
     /// <para><paramref name="teamIds"/> follows the same convention as everywhere else in this app:
     /// **null means every team**, not "no teams" (see SessionAccessScope.ResolveViewableTeamIds).
@@ -26,7 +45,13 @@ public class VolunteerExaminerReportService(AppDbContext dbContext)
         IReadOnlyList<int>? teamIds, DateTime? fromUtc, DateTime? toUtc, CancellationToken cancellationToken)
     {
         var query = dbContext.SessionVolunteerExaminers
-            .Where(sve => (teamIds == null || teamIds.Contains(sve.Session.TeamId)) && sve.Session.Status == SessionStatus.Active);
+            .Where(sve => (teamIds == null || teamIds.Contains(sve.Session.TeamId))
+                // Not cancelled...
+                && sve.Session.Status == SessionStatus.Active
+                // ...and actually finished. Both halves are needed: Status rules out cancellations,
+                // and only these two fields distinguish a session that happened from one that is
+                // merely scheduled. See the remarks above before changing either.
+                && (sve.Session.TestingCompletedUtc != null || sve.Session.ExamToolsClosedUtc != null));
 
         if (fromUtc is not null)
         {

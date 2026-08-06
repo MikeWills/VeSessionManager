@@ -352,7 +352,12 @@ To pick up updates: `/plugin marketplace update claude-tools`
   months (found 2026-07-31, see `docs/historical-import.md`). It also makes the bug near-invisible:
   every screen shows those sessions as Completed, so the code reads as if it already filters them.
   For "is this session finished?", test `ExamToolsClosedUtc`/`TestingCompletedUtc` (plus `HasEnded`
-  as the backstop for rows predating `ExamToolsClosedUtc`), never `Status`.
+  as the backstop for rows predating `ExamToolsClosedUtc`), never `Status`. **Second instance found
+  2026-08-06:** the VE Roster's "sessions worked" count had the same filter, so a VE rostered onto a
+  *future* session already had it in their total — the bug is easy to reintroduce precisely because
+  `Status == SessionStatus.Active` reads like "currently running." When the answer must translate to
+  SQL, use `TestingCompletedUtc != null || ExamToolsClosedUtc != null` (what the Sessions list's
+  "Completed" chip derives); `HasEnded` is plain C# arithmetic and cannot be used query-side.
 - **`SessionAccessScope` has two team-resolution methods and picking the wrong one silently empties a page.** `ResolveViewableTeamIds(user, selectedTeamId)` returns the team-id *set* to filter by, where **null means every team** (SystemAdmin, unfiltered) — use it for any list that can render several teams merged. `TryResolveViewableTeamId` collapses to a *single* team and returns null for "no team context, show nothing" — only correct for a page that genuinely cannot render without one team chosen. Applicant Status and Unmatched Payments used the latter and so had no "All teams" and bounced to an empty page after every action (fixed 2026-07-30). Related trap in the same area: a guard written as `GetEffectiveTeamIds(user)?.Contains(id) ?? false` is **always false for a SystemAdmin** (that method returns null for them, meaning "all teams"), which is exactly how a SystemAdmin ended up 403ing on every unmatched-payment match.
 - **`[Required]` on a non-nullable `bool` is a client-side-only guard — it never fails server-side.**
   The checkbox tag helper posts a hidden `false`, and any bound value satisfies `Required` for a

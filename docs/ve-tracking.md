@@ -57,11 +57,32 @@ fields elsewhere) — full reconciliation every poll is correct and cheap at thi
 
 ## Report: session count per VE
 
-`VolunteerExaminerReportService.GetSessionCountsAsync(teamId, fromUtc, toUtc, ct)` — pure
-aggregation, no side effects, no UI yet (Phase 9's admin backend will call this directly once it
-exists). Counts non-cancelled sessions only; `fromUtc`/`toUtc` bound `Session.ScheduledStartUtc`
-inclusively and either may be `null` for an open-ended range. Results are ordered by count
-descending, then name.
+`VolunteerExaminerReportService.GetSessionCountsAsync(teamIds, fromUtc, toUtc, ct)` — pure
+aggregation, no side effects. Backs the VE Roster page's "Sessions worked" column.
+`fromUtc`/`toUtc` bound `Session.ScheduledStartUtc` inclusively and either may be `null` for an
+open-ended range. Results are ordered by count descending, then name.
+
+**Completed sessions only, and "completed" is not `Status` (fixed 2026-08-06).** This counted
+non-cancelled sessions, which is not the same thing at all: `Status` only ever leaves `Active` on
+cancellation and is never set to Completed, so the filter matched every session the team had ever
+scheduled — a VE rostered onto next month's session already had it in their worked total. It now
+requires `TestingCompletedUtc != null || ExamToolsClosedUtc != null`, the same derivation the
+Sessions list uses for its "Completed" chip (issue #71), so a session shown as Completed there is
+exactly one counted here. Historical imports stamp `ExamToolsClosedUtc` at creation, so a
+backfilled year still counts normally.
+
+`Session.HasEnded` is deliberately *not* used as a further backstop even though it is the documented
+one elsewhere: its arithmetic is plain C# and won't translate to SQL, and pulling every row back to
+filter in memory is the wrong trade for a query that otherwise aggregates in the database. The gap
+that leaves is narrow — a session that ran before `ExamToolsClosedUtc` existed (2026-07-31) and was
+never marked complete — and those show as Active on the Sessions list too, so the two stay
+consistent.
+
+**Consequence worth knowing:** a VE whose only linked sessions are upcoming no longer appears in the
+report at all, rather than appearing with a count of zero. The query groups over the rows that
+survive the filter, so there is nothing to group. That suits a "sessions worked" report; a future
+"all VEs, including new ones" view would need a different shape (an outer join from
+`VolunteerExaminers`), not a loosened filter here.
 
 **EF Core InMemory gotcha hit while building this:** `OrderBy` chained directly onto a
 `GroupBy(...).Select(...)` projection over a join could not be translated by the InMemory provider
