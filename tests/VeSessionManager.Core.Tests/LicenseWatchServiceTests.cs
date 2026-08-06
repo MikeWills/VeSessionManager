@@ -234,6 +234,65 @@ public class LicenseWatchServiceTests
         Assert.Equal(WatchedLicenseStatus.Renewed, licence.DeriveStatus(Now));
     }
 
+    /// <summary>
+    /// The real KA0MVW case, 2026-08-06: the renewal was granted between two polls, so this app never
+    /// saw the application pending beforehand. It previously recorded that as newly *pending*,
+    /// anchored against the already-updated expiry — which could then never be beaten, so the row sat
+    /// on "Renewal pending" until FCC dropped the application and fell through to plain Active,
+    /// never once reporting the renewal it had just watched land.
+    /// </summary>
+    [Fact]
+    public async Task RenewalGrantedBetweenPolls_IsConfirmed_NotReportedAsPending()
+    {
+        using var dbContext = CreateContext();
+        var oldExpiry = Now.AddDays(1);
+        await SeedAsync(dbContext, l =>
+        {
+            l.ExpiredDateUtc = oldExpiry;       // what we had stored
+            l.LastCheckedUtc = Now.AddDays(-1); // and never saw pending
+        });
+
+        // FCC has already granted it, and still lists the application.
+        var client = new FakeUlsLookupClient(new() { ["W1AW"] = Found(oldExpiry.AddYears(10), Renewal()) });
+
+        var result = await CreateService(dbContext, client).RunAsync(CancellationToken.None);
+
+        var licence = await dbContext.WatchedLicenses.SingleAsync();
+        Assert.Equal(WatchedLicenseStatus.Renewed, licence.DeriveStatus(Now));
+        Assert.Equal(Now, licence.RenewalConfirmedUtc);
+        Assert.Null(licence.RenewalPendingSinceUtc);
+        Assert.Equal(1, result.RenewalsConfirmed);
+    }
+
+    /// <summary>Even with no application listed at all — FCC having already tidied it away — an expiry that advanced is still a renewal.</summary>
+    [Fact]
+    public async Task ExpiryAdvancingWithNoApplicationListed_IsStillConfirmed()
+    {
+        using var dbContext = CreateContext();
+        var oldExpiry = Now.AddDays(1);
+        await SeedAsync(dbContext, l => l.ExpiredDateUtc = oldExpiry);
+        var client = new FakeUlsLookupClient(new() { ["W1AW"] = Found(oldExpiry.AddYears(10)) });
+
+        await CreateService(dbContext, client).RunAsync(CancellationToken.None);
+
+        Assert.Equal(WatchedLicenseStatus.Renewed, (await dbContext.WatchedLicenses.SingleAsync()).DeriveStatus(Now));
+    }
+
+    /// <summary>A first-ever check has nothing to compare against, so a pending application is still just pending — not a phantom renewal.</summary>
+    [Fact]
+    public async Task FirstEverCheck_WithAPendingApplication_IsPendingNotConfirmed()
+    {
+        using var dbContext = CreateContext();
+        await SeedAsync(dbContext);  // never checked, no stored expiry
+        var client = new FakeUlsLookupClient(new() { ["W1AW"] = Found(Now.AddDays(40), Renewal()) });
+
+        await CreateService(dbContext, client).RunAsync(CancellationToken.None);
+
+        var licence = await dbContext.WatchedLicenses.SingleAsync();
+        Assert.Equal(WatchedLicenseStatus.RenewalPending, licence.DeriveStatus(Now));
+        Assert.Null(licence.RenewalConfirmedUtc);
+    }
+
     [Fact]
     public async Task RenewalThatDisappearsWithoutTheExpiryMoving_IsTreatedAsAbandoned()
     {
