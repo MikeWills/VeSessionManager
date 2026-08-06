@@ -1,6 +1,8 @@
 using VeSessionManager.Core.Entities;
 using VeSessionManager.Core.Notifications;
 
+using VeSessionManager.Core.Jobs;
+
 namespace VeSessionManager.Worker;
 
 /// <summary>
@@ -14,7 +16,7 @@ namespace VeSessionManager.Worker;
 /// docs/multi-team.md).
 /// </summary>
 public class DayBeforeReminderJob(IServiceScopeFactory scopeFactory, IConfiguration configuration, ILogger<DayBeforeReminderJob> logger)
-    : PerTeamDailyJob(scopeFactory, configuration, logger, "DayBeforeReminder", "Jobs:DayBeforeReminderIntervalHours", 24)
+    : PerTeamDailyJob(scopeFactory, configuration, logger, JobSchedules.DayBeforeReminder)
 {
     protected override Task RunForTeamAsync(IServiceProvider scopedServices, Team team, CancellationToken cancellationToken) =>
         scopedServices.GetRequiredService<CandidateNotificationService>().SendDayBeforeRemindersAsync(team, cancellationToken);

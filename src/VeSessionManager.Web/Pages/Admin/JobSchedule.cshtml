@@ -1,0 +1,106 @@
+@page
+@using VeSessionManager.Core.Jobs
+@model VeSessionManager.Web.Pages.Admin.JobScheduleModel
+@{
+    ViewData["Title"] = "Job Schedule";
+    ViewData["ActiveNav"] = "AdminJobSchedule";
+    Layout = "_AppLayout";
+}
+
+<div class="page-head">
+    <div>
+        <p class="eyebrow">Deployment-wide</p>
+        <h1>Job Schedule</h1>
+    </div>
+    <a class="btn-secondary" asp-page="./JobRunHistory">Job History</a>
+</div>
+
+<p class="session-sub">
+    Every background job the Worker runs. <strong>Job History</strong> records what already happened;
+    this page is what happens next.
+</p>
+
+<div class="table-scroll">
+<table class="cards" data-sortable="job-schedule">
+    <thead>
+        <tr>
+            <th>Job</th>
+            <th>Runs</th>
+            <th>Last run</th>
+            <th>Next run</th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var job in Model.Jobs)
+        {
+            <tr>
+                <td class="session-title">
+                    @job.Descriptor.DisplayName
+                    <span class="session-sub">@job.Descriptor.Description</span>
+                </td>
+                <td>@job.CadenceSummary</td>
+                <td data-sort-value="@(job.LastRunUtc?.ToString("o") ?? "")">
+                    @if (job.LastRunUtc is { } lastRun)
+                    {
+                        @EasternTimeFormatter.Format(lastRun, "MMM d, h:mm tt")
+                        <span class="session-sub">
+                            @JobScheduleModel.DescribeRelative(lastRun, Model.NowUtc)@if (!job.LastRunSucceeded)
+                            {<text> · </text><span class="chip chip-brick">failed</span>}
+                        </span>
+                    }
+                    else
+                    {
+                        <span class="chip chip-neutral">Never</span>
+                    }
+                </td>
+                <td data-sort-value="@(job.NextRunUtc?.ToString("o") ?? "")">
+                    @switch (job.Confidence)
+                    {
+                        case NextRunConfidence.DueNow:
+                            @* An anchored job whose slot has not run yet. It is not waiting for the
+                               next slot — it catches up on its next hourly tick. *@
+                            <span class="chip chip-green">Due now</span>
+                            <span class="session-sub">catches up within the hour</span>
+                            break;
+
+                        case NextRunConfidence.Unknown:
+                            <span class="chip chip-neutral">Unknown</span>
+                            <span class="session-sub">never run, so there is nothing to count from</span>
+                            break;
+
+                        default:
+                            @EasternTimeFormatter.Format(job.NextRunUtc!.Value, "MMM d, h:mm tt")
+                            <span class="session-sub">
+                                @JobScheduleModel.DescribeRelative(job.NextRunUtc.Value, Model.NowUtc)@if (job.Confidence == NextRunConfidence.Estimated)
+                                {<text> · estimated</text>}
+                            </span>
+                            break;
+                    }
+                </td>
+            </tr>
+        }
+    </tbody>
+</table>
+</div>
+
+@* The distinction is load-bearing, not pedantry: half these jobs restart their cycle whenever the
+   Worker does, so their "next run" is only true until the next deploy. Saying so here is cheaper
+   than someone waiting on a time that quietly moved. *@
+<div class="session-panel">
+    <div class="section-head"><h2>About these times</h2></div>
+    <p>
+        <strong>Scheduled</strong> times are pinned to a wall-clock hour in US Eastern. The job checks
+        every hour whether its slot has run yet, so a restart or an outage doesn't shift the schedule —
+        a missed slot is picked up rather than skipped, which is what <em>Due now</em> means.
+    </p>
+    <p>
+        <strong>Estimated</strong> times are the last run plus the interval. Those jobs run on a timer
+        started when the Worker process did, so <em>deploying or restarting the Worker moves them</em>.
+        An estimate in the past means exactly that has happened — or that the Worker is currently down.
+    </p>
+    <p class="session-sub">
+        Intervals come from the same registry and configuration the Worker itself obeys
+        (<code>Core/Jobs/JobSchedules.cs</code>), so this page cannot drift from the real schedule.
+        Manual refreshes triggered from Team Maintenance are excluded — they say nothing about timing.
+    </p>
+</div>

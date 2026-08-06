@@ -97,6 +97,8 @@ builder.Services.Configure<DiscordOptions>(builder.Configuration.GetSection(Disc
 builder.Services.AddSingleton<IDiscordEventClient, DiscordEventClient>();
 builder.Services.AddScoped<SessionEventSchedulingService>();
 builder.Services.AddScoped<JobRunHistoryLogger>();
+// Backs Admin -> Job Schedule. Web-only: the Worker obeys the schedule, it has no need to report it.
+builder.Services.AddScoped<JobScheduleService>();
 // Resolved by ManualCandidateRefreshService since issue #81 — the manual pipeline now runs the
 // exam-result step too, which is the escape hatch for a session graded after
 // ExamResultSyncService.ResultSyncWindow has passed.

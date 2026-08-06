@@ -97,6 +97,18 @@ would be pure duplication — and goes straight to `CHANGELOG.md` instead. Non-p
 redesigns, hardening passes) start here and move to `CHANGELOG.md` once the section is at/over the
 cap and a newer entry needs to be added; oldest goes first.
 
+- **Job Schedule page: when every background job runs next (2026-08-06).** See
+  `docs/job-schedule.md`. "When does the next run happen?" was answerable only by reading the Worker's
+  source — Job History records what happened, never what will. New `JobSchedules` registry in Core is
+  the **one definition of every job's cadence, read by both hosts**: the Worker to schedule, Web to
+  report, so the page cannot drift the way `TeamPipeline`'s order once did. `Jobs:*` config moved to
+  `appsettings.Shared.json` for the same reason (Web resolves those keys now). Two cadence shapes are
+  reported differently on purpose — **anchored** jobs (ULS 08:00/20:00 ET, LicenseWatch 06:00 ET) state
+  a real time and show `Due now` when a slot is unrun, **interval** jobs are last-run-plus-interval and
+  labelled *estimated*, because their timer restarts with the Worker. Tests caught two bugs first:
+  `Max` over an empty filtered sequence **throws** rather than returning null (one perpetually-failing
+  job would have taken down the whole page — the nullable cast must be *inside* `Max`), and advancing
+  an anchored slot by adding hours to a UTC value is an hour off across DST.
 - **Square's Sandbox/Production environment moved onto `Team` (2026-08-06).** See
   `docs/square-payments.md`. It was the last Square value still in `appsettings.json`, left there on
   the reasoning that sandbox-vs-production is an environment choice rather than a per-team one — which
@@ -197,14 +209,6 @@ cap and a newer entry needs to be added; oldest goes first.
   hostname now 400s until both are updated**; the youth-rate attestation enforced server-side
   (`[Required]` on a non-nullable bool is client-side only — it always passes on the server); Square
   webhook body capped at 64KB.
-- **Session Detail's "Refresh candidates" narrowed from team-wide to session-scoped (2026-08-03).**
-  See `docs/team-maintenance.md`'s "session-scoped" section. The button ran the full team pipeline —
-  one click could mint payment links and send emails for every *other* session the team had. New
-  `ManualCandidateRefreshService.RunForSessionAsync`: `SessionIngestionService.RefreshSessionCandidatesAsync`
-  syncs one session's applicants (no session create/cancel — those need the full-feed diff),
-  `ExamResultSyncService.SyncSessionAsync` ignores `ResultSyncWindow` (making the window's documented
-  escape hatch real for the first time), and the other four scan services gained a trailing optional
-  `int? onlySessionId` filter. Team Maintenance's "Refresh now" stays team-wide and throttled.
 
 Everything through Phase 0-10's initial build (ExamTools ingestion, Zoom/Discord, Square, email
 notifications, FCC ULS watcher, payment reminders, VE tracking, VEC submission tracker, admin

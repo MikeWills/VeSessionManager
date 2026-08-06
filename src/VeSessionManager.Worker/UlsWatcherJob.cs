@@ -29,6 +29,12 @@ public class UlsWatcherJob(
     TimeProvider timeProvider,
     ILogger<UlsWatcherJob> logger) : BackgroundService
 {
+    /// <summary>
+    /// Shared schedule definition — the admin Job Schedule page reports this job's cadence from the
+    /// same descriptor, including the same config keys and defaults, so the two cannot disagree.
+    /// </summary>
+    private static readonly JobScheduleDescriptor UlsDescriptor = JobSchedules.For(JobSchedules.UlsWatcher);
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         using var timer = new PeriodicTimer(TimeSpan.FromHours(1));
@@ -77,7 +83,7 @@ public class UlsWatcherJob(
         }
 
         return (
-            configuration.GetValue("Jobs:UlsWatcherIntervalHours", 12),
-            configuration.GetValue("Jobs:UlsWatcherStartHourEt", 8));
+            configuration.GetValue(UlsDescriptor.IntervalConfigKey!, UlsDescriptor.DefaultIntervalHours!.Value),
+            configuration.GetValue("Jobs:UlsWatcherStartHourEt", UlsDescriptor.StartHourEt!.Value));
     }
 }

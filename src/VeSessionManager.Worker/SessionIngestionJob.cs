@@ -47,7 +47,8 @@ public class SessionIngestionJob(
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var intervalSeconds = configuration.GetValue("Jobs:SessionIngestionIntervalSeconds", 300);
+        var descriptor = JobSchedules.For(JobSchedules.SessionIngestion);
+        var intervalSeconds = configuration.GetValue(descriptor.IntervalConfigKey!, descriptor.DefaultIntervalSeconds!.Value);
         using var timer = new PeriodicTimer(TimeSpan.FromSeconds(intervalSeconds));
 
         do

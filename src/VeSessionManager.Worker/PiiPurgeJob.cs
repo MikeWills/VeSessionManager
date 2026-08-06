@@ -17,7 +17,8 @@ public class PiiPurgeJob(
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var intervalHours = configuration.GetValue("Jobs:PiiPurgeIntervalHours", 24);
+        var descriptor = JobSchedules.For(JobSchedules.PiiPurge);
+        var intervalHours = configuration.GetValue(descriptor.IntervalConfigKey!, descriptor.DefaultIntervalHours!.Value);
         using var timer = new PeriodicTimer(TimeSpan.FromHours(intervalHours));
 
         do

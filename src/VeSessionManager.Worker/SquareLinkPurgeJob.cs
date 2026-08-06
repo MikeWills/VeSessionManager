@@ -1,6 +1,8 @@
 using VeSessionManager.Core.Entities;
 using VeSessionManager.Core.Payments;
 
+using VeSessionManager.Core.Jobs;
+
 namespace VeSessionManager.Worker;
 
 /// <summary>
@@ -13,7 +15,7 @@ namespace VeSessionManager.Worker;
 /// docs/payment-link-purge.md).
 /// </summary>
 public class SquareLinkPurgeJob(IServiceScopeFactory scopeFactory, IConfiguration configuration, ILogger<SquareLinkPurgeJob> logger)
-    : PerTeamDailyJob(scopeFactory, configuration, logger, "SquareLinkPurge", "Jobs:SquareLinkPurgeIntervalHours", 24)
+    : PerTeamDailyJob(scopeFactory, configuration, logger, JobSchedules.SquareLinkPurge)
 {
     protected override Task RunForTeamAsync(IServiceProvider scopedServices, Team team, CancellationToken cancellationToken) =>
         scopedServices.GetRequiredService<SquarePaymentLinkPurgeService>().RunAsync(team, cancellationToken);

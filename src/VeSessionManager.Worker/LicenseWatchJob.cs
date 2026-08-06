@@ -28,8 +28,11 @@ public class LicenseWatchJob(
     TimeProvider timeProvider,
     ILogger<LicenseWatchJob> logger) : BackgroundService
 {
-    /// <summary>Eastern hour the daily refresh is anchored to — after FCC's 02:00 ET run, before the morning.</summary>
-    private const int StartHourEt = 6;
+    /// <summary>
+    /// Anchor hour and interval both come from the shared registry — the admin Job Schedule page
+    /// reports this job's timing from the same two values, so they cannot drift apart.
+    /// </summary>
+    private const int StartHourEt = JobSchedules.LicenseWatchStartHourEt;
 
     private const int IntervalHours = 24;
 
