@@ -64,6 +64,21 @@ The anchor is what makes step 2 an assertion rather than a guess. Without it the
 is "is the expiry in the future?", which is true for a licence renewed years early and would report
 a renewal that never happened.
 
+**Issuance is detected from the expiry advancing, not from having seen the application first.**
+That distinction was originally missing, and it broke the very first real renewal (2026-08-06).
+
+The state machine required a prior "pending" sighting before it would recognise a grant. A licence
+renewed *between two polls* therefore arrived with its new expiry already in place, was recorded as
+newly **pending**, and anchored against that already-updated value — which it could then never beat.
+The row sat on "Renewal pending" until FCC dropped the application, then fell through to plain
+Active, never once reporting the renewal it had just watched land. It reached the right end state by
+the wrong route, misreporting the whole way.
+
+So the first question asked on every refresh is now simply: **did the expiration date move forward
+since the last look?** If so, that is a renewal, whatever the application list says and whether or
+not this app ever saw it pending. The anchor test below is kept as a second line of defence, for an
+advance spread across a poll that returned no expiry at all.
+
 Three details in `ApplyRenewalState` that each exist for a reason:
 
 - **Confirmation is tested before the still-pending branch.** FCC does not necessarily drop the

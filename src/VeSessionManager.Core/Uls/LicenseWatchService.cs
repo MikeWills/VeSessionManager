@@ -158,8 +158,29 @@ public class LicenseWatchService(
     {
         var renewal = lookup.PendingApplications.FirstOrDefault(a => a.IsRenewal);
 
+        // The expiration date advancing since the last look IS issuance — whether or not this app
+        // ever saw the application pending. Checked first, and independently of RenewalPendingSinceUtc,
+        // because requiring a prior "pending" sighting made the state machine misreport any renewal it
+        // joined mid-stream: a licence renewed between two polls would be recorded as newly *pending*,
+        // anchored against its own already-updated expiry, and could then never satisfy the
+        // "expiry > anchor" test. It sat on "Renewal pending" until FCC dropped the application and
+        // then fell through to plain Active, never once reporting the renewal it had just watched land
+        // (found 2026-08-06 on a licence granted before it was first observed).
+        if (previousExpiry is { } before && licence.ExpiredDateUtc is { } after && after > before)
+        {
+            licence.RenewalConfirmedUtc = utcNow;
+            licence.RenewalPendingSinceUtc = null;
+            licence.RenewalFileNumber = null;
+            licence.ExpiredDateWhenRenewalFiledUtc = null;
+            result.RenewalsConfirmed++;
+            return;
+        }
+
         if (licence.RenewalPendingSinceUtc is not null)
         {
+            // Belt and braces alongside the previousExpiry test above: that one compares against the
+            // last poll, this one against the value when the renewal was first seen, which still
+            // catches an advance spread across a poll that returned no expiry at all.
             var filedAgainst = licence.ExpiredDateWhenRenewalFiledUtc;
             var issued = licence.ExpiredDateUtc is { } current &&
                          (filedAgainst is null || current > filedAgainst);
