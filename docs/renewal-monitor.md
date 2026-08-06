@@ -119,9 +119,13 @@ but how long after that nightly run this app notices — and at 20 hours the ans
 granted at 02:00 on 2026-08-06 was still not visible that morning, purely because the row had last
 been checked at 21:27 the previous evening and was not yet stale.
 
-Six hours bounds the lag to a morning at four lookups per licence per day. Anchoring to a wall-clock
-ET slot the way `UlsWatcherJob` does — which exists *precisely* because of that 02:00 run — would be
-tighter still, and is the obvious next step if four a day ever proves too many.
+Six hours bounds the lag to a morning at four lookups per licence per day — but it does not make the
+timing *predictable*, since the tick still starts wherever the Worker last restarted.
+
+**Anchoring to a wall-clock ET slot the way `UlsWatcherJob` does — which exists precisely because of
+that 02:00 run — would be both more predictable and cheaper**, replacing four opportunistic checks a
+day with one at a stated hour. Left as a deliberate open decision:
+[issue #118](https://github.com/MikeWills/VeSessionManager/issues/118).
 
 ## Status is derived, never stored
 

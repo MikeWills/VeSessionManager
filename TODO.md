@@ -118,6 +118,14 @@ should be filed, so they can be tracked, labelled, and closed by a PR. Listed he
 - [ ] [#64 — Per-team, per-integration enable/disable switches](https://github.com/MikeWills/VeSessionManager/issues/64)
   — **design complete**, all six open questions resolved 2026-07-31; ready to build. The issue carries
   the full decision record, including the "unconfigured ≠ disabled" problem that is the hard part.
+- [ ] [#118 — Anchor the Renewal Monitor refresh to an Eastern wall-clock slot](https://github.com/MikeWills/VeSessionManager/issues/118)
+  — **recommendation, deliberately undecided.** `LicenseWatchJob` ticks every 4h *from Worker start*,
+  so its check times drift with every restart. FCC posts daily changes at **02:00 ET**, so the real
+  question is how soon after that run this app looks — currently 0–6 hours depending on when the
+  Worker last restarted. `UlsWatcherJob` already anchors to an ET slot for exactly this reason.
+  Anchoring would be **both more predictable and cheaper** (one daily slot instead of four
+  opportunistic checks). Not urgent: #117 shortened the interval 20h → 6h, which already removes the
+  pathological case where a renewal stayed invisible most of a day.
 - [ ] [#107 — VE licence expiration tracking](https://github.com/MikeWills/VeSessionManager/issues/107)
   — the deferred half of the licence work (the Renewal Monitor shipped in v0.1.4 covers a hand-curated
   watch list; this covers the VE roster itself). **Most of the machinery already exists** — `expired_date`
