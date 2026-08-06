@@ -35,29 +35,28 @@
                 <td class="count">@team.Id</td>
                 <td class="session-title">@team.Name</td>
                 <td data-sort-value="@team.CreatedUtc.ToString("o")">@EasternTimeFormatter.Format(team.CreatedUtc, "MMM d, yyyy")</td>
-                @* Two icon links rather than one text link: Team Maintenance is per-team and was
-                   previously only reachable from the nav, where it has no team context — you had to
-                   go there and re-pick the team you were already looking at.
+                @* One kebab menu, matching Vecs.cshtml — the row-action pattern used across the
+                   admin tables. It was two bare icon links until 2026-08-06; a third entry made the
+                   icons ambiguous (an envelope for "email templates" reads as "send something"), and
+                   a labelled menu says what each one is.
 
-                   Inline SVG rather than an icon font: the theme toggle in _AppLayout already does
-                   this, currentColor makes both themes work for free, and vendoring a whole icon
-                   library for two glyphs isn't worth the payload. *@
-                <td class="row-actions team-actions">
-                    <a class="icon-link" asp-page="./TeamSettings" asp-route-teamId="@team.Id"
-                       title="Settings for @team.Name" aria-label="Settings for @team.Name">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                            <circle cx="12" cy="12" r="3.2" stroke="currentColor" stroke-width="1.8" />
-                            <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.03 1.56V21a2 2 0 1 1-4 0v-.09A1.7 1.7 0 0 0 8.4 19.3a1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.04 15a1.7 1.7 0 0 0-1.56-1.03H2.4a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.05 8.9a1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34H8.5a1.7 1.7 0 0 0 1.03-1.56V2.4a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1.03 1.56 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v.07a1.7 1.7 0 0 0 1.56 1.03h.09a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.56 1.03z"
-                                  stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
-                        </svg>
-                    </a>
-                    <a class="icon-link" asp-page="./TeamMaintenance" asp-route-teamId="@team.Id"
-                       title="Maintenance for @team.Name" aria-label="Maintenance for @team.Name">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                            <path d="M14.7 6.3a4 4 0 0 0 5.3 5.3l-8 8a2.8 2.8 0 1 1-4-4l8-8a4 4 0 0 0-1.3-1.3z"
-                                  stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" />
-                        </svg>
-                    </a>
+                   Everything per-team lives here, so this row is the one stop for a team's
+                   configuration: credentials and settings, its people, its own email templates, and
+                   the maintenance/refresh actions. Every one of those pages already takes a teamId,
+                   so arriving from here skips the team picker you would otherwise have to re-answer
+                   with the team already in front of you — no page changes were needed to add them,
+                   only the links.
+
+                   Ordered configure -> people -> content -> act, with Maintenance last because it
+                   is the only entry that *does* something rather than showing something. *@
+                <td class="row-actions">
+                    <button type="button" class="kebab" aria-label="Actions for @team.Name"><i class="bi bi-three-dots-vertical" aria-hidden="true"></i></button>
+                    <div class="menu">
+                        <a class="item" asp-page="./TeamSettings" asp-route-teamId="@team.Id">Settings</a>
+                        <a class="item" asp-page="./Users" asp-route-teamId="@team.Id">Users</a>
+                        <a class="item" asp-page="./EmailTemplates" asp-route-teamId="@team.Id">Email templates</a>
+                        <a class="item" asp-page="./TeamMaintenance" asp-route-teamId="@team.Id">Maintenance</a>
+                    </div>
                 </td>
             </tr>
         }

@@ -149,11 +149,13 @@
                         <a class="item @(activeNav == "AdminUsers" ? "active" : "")" asp-page="/Admin/Users">Users</a>
                         <a class="item @(activeNav == "AdminEmailTemplates" ? "active" : "")" asp-page="/Admin/EmailTemplates">Email Templates</a>
                         <hr>
-                        <a class="item @(activeNav == "AdminFees" ? "active" : "")" asp-page="/Admin/FeeConfigurations">Fees</a>
+                        @* Parent before child in each group: a fee configuration belongs to a VEC,
+                           the same way Team Settings/Maintenance belong to a Team above. *@
                         @if (currentUser?.Role is UserRole.SystemAdmin)
                         {
                             <a class="item @(activeNav == "AdminVecs" ? "active" : "")" asp-page="/Admin/Vecs">VECs</a>
                         }
+                        <a class="item @(activeNav == "AdminFees" ? "active" : "")" asp-page="/Admin/FeeConfigurations">Fees</a>
                         <hr>
                         <a class="item @(activeNav == "AdminAuditLog" ? "active" : "")" asp-page="/Admin/AuditLog">Audit Log</a>
                         <a class="item @(activeNav == "AdminJobHistory" ? "active" : "")" asp-page="/Admin/JobRunHistory">Job History</a>
