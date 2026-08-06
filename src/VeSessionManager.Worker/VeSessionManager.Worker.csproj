@@ -16,4 +16,10 @@
   <ItemGroup>
     <ProjectReference Include="..\VeSessionManager.Core\VeSessionManager.Core.csproj" />
   </ItemGroup>
+
+  <!-- Shared config, linked rather than copied: the same physical files are used by both hosts, so
+       Square/ExamTools cannot drift between them again (see src/Shared/appsettings.Shared.json). -->
+  <ItemGroup>
+    <Content Include="../Shared/appsettings.Shared*.json" Link="%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

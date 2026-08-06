@@ -13,6 +13,12 @@
     </div>
 </div>
 
+@* Straight to the handler, no JS: the beta box is behind Tailscale so its Worker log cannot be read
+   casually, and this is the quickest way to attach a run history to a bug report. *@
+<div class="filters" style="margin-bottom:16px;">
+    <a class="filter-pill" asp-page-handler="Export"><i class="bi bi-download" aria-hidden="true"></i> Export CSV</a>
+</div>
+
 <div class="table-scroll">
 <table class="cards" data-sortable="job-runs">
     <thead>
