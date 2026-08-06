@@ -60,12 +60,7 @@ public class SessionIngestionJob(
                 var jobRunHistoryLogger = scope.ServiceProvider.GetRequiredService<JobRunHistoryLogger>();
                 var systemSettingsService = scope.ServiceProvider.GetRequiredService<SystemSettingsService>();
                 var scheduleService = scope.ServiceProvider.GetRequiredService<IngestionScheduleService>();
-                var ingestionService = scope.ServiceProvider.GetRequiredService<SessionIngestionService>();
-                var veRosterSyncService = scope.ServiceProvider.GetRequiredService<VolunteerExaminerSyncService>();
-                var examResultSyncService = scope.ServiceProvider.GetRequiredService<ExamResultSyncService>();
-                var schedulingService = scope.ServiceProvider.GetRequiredService<SessionEventSchedulingService>();
-                var paymentGenerationService = scope.ServiceProvider.GetRequiredService<PaymentGenerationService>();
-                var notificationService = scope.ServiceProvider.GetRequiredService<CandidateNotificationService>();
+                var pipeline = scope.ServiceProvider.GetRequiredService<TeamPipeline>();
 
                 // Read fresh every tick (not once at startup like UlsWatcherJob's own interval) —
                 // the query is trivial (once per tick, not once per team) and means an admin's edit
@@ -80,42 +75,15 @@ public class SessionIngestionJob(
                         continue;
                     }
 
-                    await jobRunHistoryLogger.RunAsync(
-                        "SessionIngestion",
-                        ct => ingestionService.RunAsync(team, ct),
-                        team.Id,
-                        stoppingToken);
+                    // The step order lives in TeamPipeline, not here — it used to be written out
+                    // in this file and twice more in ManualCandidateRefreshService, and the copies
+                    // drifted. No job name prefix: these are the scheduled runs the "Manual" ones
+                    // are distinguished from.
+                    await pipeline.RunAsync(team, jobNamePrefix: string.Empty, onlySessionId: null, stoppingToken);
 
-                    await jobRunHistoryLogger.RunAsync(
-                        "VeRosterSync",
-                        ct => veRosterSyncService.RunAsync(team, ct),
-                        team.Id,
-                        stoppingToken);
-
-                    await jobRunHistoryLogger.RunAsync(
-                        "ExamResultSync",
-                        ct => examResultSyncService.RunAsync(team, ct),
-                        team.Id,
-                        stoppingToken);
-
-                    await jobRunHistoryLogger.RunAsync(
-                        "SessionEventScheduling",
-                        ct => schedulingService.RunAsync(team, ct),
-                        team.Id,
-                        stoppingToken);
-
-                    await jobRunHistoryLogger.RunAsync(
-                        "PaymentGeneration",
-                        ct => paymentGenerationService.RunAsync(team, ct),
-                        team.Id,
-                        stoppingToken);
-
-                    await jobRunHistoryLogger.RunAsync(
-                        "RegistrationConfirmation",
-                        ct => notificationService.SendRegistrationConfirmationsAsync(team, ct),
-                        team.Id,
-                        stoppingToken);
-
+                    // Deliberately NOT done by the manual refresh: a user-triggered run is extra
+                    // work on top of the schedule, not a replacement for it, so it must never delay
+                    // the next scheduled poll.
                     team.LastIngestionRunUtc = timeProvider.GetUtcNow().UtcDateTime;
                     await dbContext.SaveChangesAsync(stoppingToken);
                 }

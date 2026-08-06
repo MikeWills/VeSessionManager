@@ -47,6 +47,7 @@ builder.Services.Configure<ExamToolsOptions>(builder.Configuration.GetSection(Ex
 // Singleton so the login cookie jar survives between poll cycles.
 builder.Services.AddSingleton<IExamToolsClient, ExamToolsClient>();
 builder.Services.AddScoped<SessionIngestionService>();
+builder.Services.AddScoped<TeamPipeline>();
 // Stateless (no DB/HTTP dependency of its own) since surge logic was removed — safe as a singleton.
 builder.Services.AddSingleton<IngestionScheduleService>();
 // Auto-detects a candidate's graded exam result from ExamTools — reuses IExamToolsClient, no new

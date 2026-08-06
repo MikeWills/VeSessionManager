@@ -99,6 +99,7 @@ builder.Services.AddScoped<ExamResultSyncService>();
 // silently never resolves. Same client the Worker's refresh job uses.
 builder.Services.AddSingleton<IUlsLookupClient, ExamToolsUlsLookupClient>();
 builder.Services.AddScoped<LicenseWatchService>();
+builder.Services.AddScoped<TeamPipeline>();
 builder.Services.AddScoped<ManualCandidateRefreshService>();
 
 // Issues #77/#73: Admin → Team Maintenance (team-level "Refresh now" + ingestion schedule
