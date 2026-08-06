@@ -41,14 +41,19 @@
                    a labelled menu says what each one is.
 
                    Everything per-team lives here, so this row is the one stop for a team's
-                   configuration: credentials and settings, the maintenance/refresh actions, and that
-                   team's own email templates. All three pages take a teamId, so arriving from here
-                   skips the team picker you would otherwise have to re-answer with the team already
-                   in front of you. *@
+                   configuration: credentials and settings, its people, its own email templates, and
+                   the maintenance/refresh actions. Every one of those pages already takes a teamId,
+                   so arriving from here skips the team picker you would otherwise have to re-answer
+                   with the team already in front of you — no page changes were needed to add them,
+                   only the links.
+
+                   Ordered configure -> people -> content -> act, with Maintenance last because it
+                   is the only entry that *does* something rather than showing something. *@
                 <td class="row-actions">
                     <button type="button" class="kebab" aria-label="Actions for @team.Name"><i class="bi bi-three-dots-vertical" aria-hidden="true"></i></button>
                     <div class="menu">
                         <a class="item" asp-page="./TeamSettings" asp-route-teamId="@team.Id">Settings</a>
+                        <a class="item" asp-page="./Users" asp-route-teamId="@team.Id">Users</a>
                         <a class="item" asp-page="./EmailTemplates" asp-route-teamId="@team.Id">Email templates</a>
                         <a class="item" asp-page="./TeamMaintenance" asp-route-teamId="@team.Id">Maintenance</a>
                     </div>
