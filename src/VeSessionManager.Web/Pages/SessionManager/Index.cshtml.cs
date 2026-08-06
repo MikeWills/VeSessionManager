@@ -338,7 +338,10 @@ public class IndexModel(
             "extid" => Order(s => s.ExtId),
             "team" => Order(s => s.Team.Name),
             "vec" => Order(s => s.Vec.Name),
-            "candidates" => Order(s => s.Candidates.Count),
+            // Withdrawn candidates are excluded here and in the rendered count below, so this column
+            // agrees with the roster on Session Detail. A NotTested row is someone who left the
+            // session; counting them made a session look fuller than it is.
+            "candidates" => Order(s => s.Candidates.Count(c => c.ApplicationStatus != CandidateApplicationStatus.NotTested)),
             // Must stay in step with ToRow's chip and the Status filter above — all three encode
             // the same four states, and a mismatch between them was a real reported bug once.
             "status" => Order(s =>
@@ -623,7 +626,7 @@ public class IndexModel(
             string.Join(" · ", subParts),
             s.Vec.Name,
             s.Team.Name,
-            s.Candidates.Count,
+            s.Candidates.Count(c => c.ApplicationStatus != CandidateApplicationStatus.NotTested),
             s.RescheduleFlaggedForReview,
             statusClass, statusLabel,
             vecClass, vecLabel,

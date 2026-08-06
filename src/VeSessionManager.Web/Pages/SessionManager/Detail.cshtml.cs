@@ -49,7 +49,19 @@ public class DetailModel(
     public int Id { get; set; }
 
     public SessionSummary Session { get; private set; } = null!;
+    /// <summary>Candidates still on this session. Withdrawn ones are held separately — see <see cref="WithdrawnCandidates"/>.</summary>
     public IReadOnlyList<CandidateRow> Candidates { get; private set; } = [];
+
+    /// <summary>
+    /// Candidates who left this session — moved to another one in ExamTools, or withdrawn. They keep
+    /// a row for statistics, but their PII has been cleared, so all the roster can show is "Withdrew —
+    /// PII cleared": a nameless entry that read as clutter mixed in with real candidates, and inflated
+    /// the roster count (reported 2026-08-06).
+    /// </summary>
+    public IReadOnlyList<CandidateRow> WithdrawnCandidates { get; private set; } = [];
+
+    /// <summary>Every candidate row on this session, withdrawn included — what deleting the session would actually remove.</summary>
+    public int TotalCandidateCount => Candidates.Count + WithdrawnCandidates.Count;
     public IReadOnlyList<VeChip> VeRoster { get; private set; } = [];
     public bool CanEdit { get; private set; }
 
@@ -404,10 +416,11 @@ public class DetailModel(
             session.TestingCompletedUtc is not null,
             session.Status == SessionStatus.Cancelled);
 
-        Candidates = session.Candidates
-            .OrderBy(c => c.Name)
-            .Select(ToRow)
-            .ToList();
+        // Split rather than filtered: the withdrawn rows are still rendered, just behind a
+        // disclosure, and the delete warning still has to count them.
+        var rows = session.Candidates.OrderBy(c => c.Name).Select(ToRow).ToList();
+        Candidates = [.. rows.Where(r => !r.IsWithdrawn)];
+        WithdrawnCandidates = [.. rows.Where(r => r.IsWithdrawn)];
 
         VeRoster = session.SessionVolunteerExaminers
             .OrderBy(l => l.VolunteerExaminer.CallSign)
