@@ -104,8 +104,23 @@
     // A menu positioned against the viewport does not travel with the row it belongs to, so any
     // scroll closes it rather than leaving it stranded mid-page. Capture phase, because the scroll
     // that matters most is the table wrapper's own and that does not bubble.
-    window.addEventListener("scroll", closeAllMenus, true);
-    window.addEventListener("resize", closeAllMenus);
+    //
+    // ONLY the lifted ones. This originally closed every open menu, which made the Settings menu
+    // unusable on a phone: the chassis nav's dropdowns are position:static inside the collapsed
+    // panel, so they scroll with the page perfectly well, and closing them on the smallest scroll
+    // meant the menu shut before anyone could tap an item (reported 2026-08-06).
+    window.addEventListener("scroll", closeLiftedMenus, true);
+
+    // Resize only matters for the same lifted menus, whose coordinates go stale — and only when the
+    // WIDTH changes. On mobile, scrolling hides and shows the browser's URL bar, which fires resize
+    // with a changed height: the second reason the Settings menu kept collapsing, and the one that
+    // would have survived fixing the scroll handler alone.
+    var lastWidth = window.innerWidth;
+    window.addEventListener("resize", function () {
+      if (window.innerWidth === lastWidth) return;
+      lastWidth = window.innerWidth;
+      closeLiftedMenus();
+    });
 
     document.querySelectorAll("table.cards").forEach(labelCardTable);
     document.querySelectorAll("table[data-sortable]").forEach(initSortableTable);
@@ -160,6 +175,20 @@
       menu.classList.remove("open");
       // Always cleared, not just for lifted menus: leaving inline coordinates behind would override
       // the CSS the next time this same menu opens outside a scroll container.
+      menu.style.position = "";
+      menu.style.left = "";
+      menu.style.top = "";
+    });
+  }
+
+  /// Only the menus that were taken out of the document flow by liftMenuOutOfScrollContainer — the
+  /// inline `position: fixed` is exactly the marker for "this one no longer moves with its row".
+  /// Everything else (the chassis nav's accordions, any menu outside a .table-scroll) scrolls with
+  /// the page and must be left alone.
+  function closeLiftedMenus() {
+    document.querySelectorAll(".menu.open").forEach(function (menu) {
+      if (menu.style.position !== "fixed") return;
+      menu.classList.remove("open");
       menu.style.position = "";
       menu.style.left = "";
       menu.style.top = "";

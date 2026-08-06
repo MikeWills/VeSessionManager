@@ -46,6 +46,23 @@ Two things inside the panel are easy to get wrong:
 - The chassis dropdowns become inline accordions rather than floating menus. A `position: absolute`
   dropdown inside a stacked panel overlays the links beneath it.
 
+### Only viewport-positioned menus close on scroll
+
+A row menu inside `.table-scroll` is lifted to `position: fixed` so it can escape the wrapper's
+clipping, which means it no longer travels with its row — so any scroll has to close it.
+
+**That must not apply to the chassis nav's menus.** They are `position: static` inside the collapsed
+mobile panel and scroll with the page perfectly well. Closing every open menu on scroll made the
+Settings menu unusable on a phone: it shut on the smallest drag, before anyone could reach an item
+(reported 2026-08-06). The scroll handler now closes only menus carrying the inline
+`position: fixed` that marks a lifted one.
+
+> **Resize needed the same treatment, for a reason that is easy to miss.** On mobile, scrolling hides
+> and shows the browser's URL bar, and that fires `resize` with a changed *height*. So a handler that
+> closed menus on any resize reproduced the identical symptom — and would have survived fixing the
+> scroll handler alone. Resize now acts only when the **width** changes, which is orientation or a
+> real window resize, never the URL bar.
+
 ## Tables: two treatments that stack
 
 Every data table in the app — all fifteen, Session Manager and Admin alike — carries **both**:
