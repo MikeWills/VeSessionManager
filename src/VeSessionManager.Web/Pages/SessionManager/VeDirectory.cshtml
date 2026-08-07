@@ -102,7 +102,11 @@ else
                         {
                             @* Left unmerged by the phase 1 migration because the names disagreed —
                                possibly one person, possibly a reissued call sign. A human decides. *@
-                            <i class="bi bi-exclamation-triangle" aria-hidden="true" title="Another VE record shares this call sign — possibly the same person"></i>
+                            <a asp-page="/SessionManager/VeMerge" asp-route-id="@row.VolunteerExaminer.Id"
+                               title="Another VE record shares this call sign — possibly the same person">
+                                <i class="bi bi-exclamation-triangle" aria-hidden="true"></i>
+                                <span class="visually-hidden">Review possible duplicate</span>
+                            </a>
                         }
                     </td>
                     <td><a asp-page="/SessionManager/VeDetail" asp-route-id="@row.VolunteerExaminer.Id">@row.VolunteerExaminer.Name</a></td>

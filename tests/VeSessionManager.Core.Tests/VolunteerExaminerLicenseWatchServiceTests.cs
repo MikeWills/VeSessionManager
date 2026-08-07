@@ -239,6 +239,29 @@ public class VolunteerExaminerLicenseWatchServiceTests
 
         // Both still got their license state — a conflict is not a reason to skip the whole row.
         Assert.All(await dbContext.VolunteerExaminers.ToListAsync(), v => Assert.NotNull(v.LicenseLastCheckedUtc));
+
+        // And the proof is stored, not just logged: the merge screen is the one place this evidence
+        // matters, and a log line is invisible there.
+        var loser = await dbContext.VolunteerExaminers.SingleAsync(v => v.Frn == null);
+        Assert.Equal("0004511143", loser.ConflictingFrn);
+    }
+
+    /// <summary>Once the FRN is genuinely this person's, the note about a past collision must not linger and keep them flagged.</summary>
+    [Fact]
+    public async Task ResolvedConflict_ClearsTheStoredNote()
+    {
+        await using var dbContext = CreateContext();
+        var person = await SeedVeAsync(dbContext, "N2SPG");
+        person.ConflictingFrn = "0004511143";
+        await dbContext.SaveChangesAsync();
+
+        var client = new FakeUlsLookupClient(new() { ["N2SPG"] = Found(Now.AddYears(4), frn: "0004511143") });
+
+        await CreateService(dbContext, client).RunAsync(CancellationToken.None);
+
+        var refreshed = await dbContext.VolunteerExaminers.SingleAsync();
+        Assert.Equal("0004511143", refreshed.Frn);
+        Assert.Null(refreshed.ConflictingFrn);
     }
 
     /// <summary>

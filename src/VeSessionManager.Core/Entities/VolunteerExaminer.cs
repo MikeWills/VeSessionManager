@@ -106,6 +106,22 @@ public class VolunteerExaminer : ILicenseSnapshot
     public DateTime? LicenseCancellationDateUtc { get; set; }
 
     /// <summary>
+    /// The FRN FCC returned for this VE that could not be stored, because another record already
+    /// holds it. Unique per person, so a value here is <b>proof</b> that this record and that one
+    /// are the same human.
+    ///
+    /// <para>Exists because the proof was otherwise ephemeral: the sweep detected the collision,
+    /// wrote a warning to the log and moved on, so the merge screen — the one place the evidence
+    /// matters — could only see a shared call sign and had to say "needs checking" about something
+    /// already established. Not indexed and deliberately not unique: it is a note about a conflict,
+    /// not an identifier.</para>
+    ///
+    /// <para>Cleared when the conflict resolves, either because the merge happened or because the
+    /// other record released the FRN.</para>
+    /// </summary>
+    public string? ConflictingFrn { get; set; }
+
+    /// <summary>
     /// Set when this record was merged into another because they turned out to be the same person —
     /// proved by both resolving to one FRN, which is unique per person.
     ///

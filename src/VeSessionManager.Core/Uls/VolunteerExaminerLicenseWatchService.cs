@@ -157,12 +157,18 @@ public class VolunteerExaminerLicenseWatchService(
             // reaches the ops dashboard through the job result.
             if (frnOwners.TryGetValue(lookup.Frn, out var ownerId) && ownerId != volunteerExaminer.Id)
             {
+                // Stored, not just logged. This is the strongest evidence the app will ever have that
+                // two records are one person, and leaving it in a log line meant the merge screen —
+                // the one place it matters — could only see a shared call sign and had to call proven
+                // duplicates "needs checking".
+                volunteerExaminer.ConflictingFrn = lookup.Frn;
                 result.FrnConflicts++;
                 result.ConflictingFrnOwnerIds.Add((volunteerExaminer.Id, ownerId, lookup.Frn));
             }
             else
             {
                 volunteerExaminer.Frn = lookup.Frn;
+                volunteerExaminer.ConflictingFrn = null;
                 frnOwners[lookup.Frn] = volunteerExaminer.Id;
                 result.FrnsBackfilled++;
             }

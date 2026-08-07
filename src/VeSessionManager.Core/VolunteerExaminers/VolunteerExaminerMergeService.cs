@@ -271,6 +271,11 @@ public class VolunteerExaminerMergeService(
         }
 
         duplicate.Frn = null;
+
+        // The conflict is resolved by the merge itself: the FRN both records claimed now sits on one
+        // person, so the note recording that they collided has nothing left to say.
+        survivor.ConflictingFrn = null;
+        duplicate.ConflictingFrn = null;
         survivor.Notes = string.IsNullOrWhiteSpace(duplicate.Notes)
             ? survivor.Notes
             : string.IsNullOrWhiteSpace(survivor.Notes) ? duplicate.Notes : survivor.Notes + "\n\n" + duplicate.Notes;
