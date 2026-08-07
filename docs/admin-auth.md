@@ -38,10 +38,10 @@ filter the session list down to just one at a time:
   source of truth for which team(s) a TeamAdmin/SessionManager belongs to, replacing the old
   `User.TeamId`/`User.Team` (both removed). Migration `Phase14UserTeamMultiTeam` backfills one
   `UserTeam` row per existing single-team user before dropping the column.
-- `User.ManagedByUserId` (unchanged) — a TeamLead's assigned manager, still role-agnostic (the
-  manager can be a SessionManager *or* a TeamAdmin). A TeamLead's effective teams are now resolved
-  transitively through **all** of that manager's `UserTeam` rows, not a single `TeamId` — a TeamLead
-  managed by a multi-team SessionManager sees every one of that manager's teams.
+- `User.ManagedByUserId` — a TeamLead's assigned manager, role-agnostic (a SessionManager or a
+  TeamAdmin). **Informational only since 2026-08-07: it records who a lead reports to and
+  grants no access whatsoever.** It used to determine the lead's team scope transitively; see
+  "TeamLead scope" below for why that was removed.
 
 `SessionAccessScope` (`VeSessionManager.Core/Authorization/SessionAccessScope.cs`) is the actual
 mechanism, plain C# with no ASP.NET dependency so it's directly unit-tested
@@ -49,8 +49,8 @@ mechanism, plain C# with no ASP.NET dependency so it's directly unit-tested
 
 - `GetEffectiveTeamIds(User)` (plural, renamed from the old singular `GetEffectiveTeamId`) —
   SystemAdmin → `null` (no filter); TeamAdmin/SessionManager → their own `UserTeams` team ids;
-  TeamLead → `user.ManagedByUser?.UserTeams` team ids. Callers must have `UserTeams` (and, for a
-  TeamLead, `ManagedByUser.UserTeams`) eager-loaded — see the `CurrentUserLoader.GetUserWithManagerAsync`
+  TeamLead → `user.UserTeams` team ids, exactly like the other scoped roles. Callers must have
+  `UserTeams` eager-loaded — see `CurrentUserLoader.GetUserWithManagerAsync`
   gotcha below, now load-bearing for every role, not just TeamLead.
 - `Scope(IQueryable<Session>, User, int? selectedTeamId = null)` — SystemAdmin: unfiltered unless a
   specific team was requested (the session list's own team filter, issue #17); everyone else: every
@@ -288,3 +288,36 @@ would make the global list *harder* to reach, not easier.
 has one of them; otherwise the original eyebrow text renders unchanged. It has to be per-parent
 because the two parents differ — Teams admits TeamAdmin, VECs does not — and a blanket check would
 hand some viewers a link straight to a 403.
+
+
+## TeamLead scope: their own team, not their manager's (2026-08-07)
+
+A TeamLead used to be scoped **transitively** — `GetEffectiveTeamIds` returned
+`user.ManagedByUser?.UserTeams`, so a lead saw whatever teams their manager belonged to.
+
+That leaks across teams, and it was reported from the live site:
+
+> I could have a session for two different teams, but the team lead is only on one of the teams.
+
+A SessionManager or TeamAdmin can legitimately work across several teams. A team lead belongs to one.
+Inheriting the manager's whole set therefore handed the lead sight of every other team that manager
+covered — their sessions, their candidates, and the PII a lead is deliberately given for day-of
+check-in. Nothing in the UI hinted at it, because the Users page showed the lead's *own* (unused)
+team rows rather than what they were actually scoped by.
+
+This was not an oversight in one branch: a test asserted the inheritance as correct
+(`TeamLead_WhoseManagerBelongsToMultipleTeams_InheritsAllOfThem`), so the behaviour was deliberate
+and simply wrong about the real-world shape.
+
+**Now:** a TeamLead is scoped by their own `UserTeams`, identically to a TeamAdmin or SessionManager,
+and the Users page offers them **Manage teams** so they can be given one. The manager link stays as a
+reporting record and is validated only for "is this person a SessionManager or TeamAdmin".
+
+### What this changed in `SetManagerAsync`
+
+The old validation required the manager to share a team with the lead — a guard whose entire purpose
+was stopping a TeamAdmin widening a lead's scope through the manager link. With no access riding on
+that link there is nothing to widen, so the rule is gone. It was also actively harmful while it
+lasted: because a lead's own team was never consulted for scope, the check blocked legitimate
+reporting lines (a lead on WX0MIK could not be pointed at a manager on HRCC) while protecting
+nothing that the lead's own team assignment does not now protect directly.

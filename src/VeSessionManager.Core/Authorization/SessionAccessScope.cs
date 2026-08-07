@@ -14,28 +14,31 @@ namespace VeSessionManager.Core.Authorization;
 /// everything; TeamAdmin and SessionManager are equivalent here (both resolve to their own
 /// User.UserTeams) — the only difference between those two roles is settings/user-management
 /// access, a separate authorization surface Phase 9c will build, not this class's concern;
-/// TeamLead is scoped transitively through whichever manager (SessionManager or TeamAdmin) they're
-/// assigned to via ManagedByUserId, read-only.
+/// TeamLead is scoped by their OWN team assignment, same as the others, and is read-only.
+///
+/// <para><b>It used to be scoped transitively through ManagedByUser, and that was wrong (2026-08-07).</b>
+/// A manager can belong to several teams; a team lead belongs to one. Inheriting the manager's teams
+/// therefore handed a lead visibility of every other team that manager worked on - a lead on HRCC
+/// seeing WX0MIK's sessions and candidates because their SessionManager covers both. The manager link
+/// survives as a record of who a lead reports to; it grants nothing.</para>
 ///
 /// Multi-team (issue #19): a TeamAdmin/SessionManager can belong to more than one Team (User.UserTeams,
 /// replacing the old single nullable User.TeamId) — every method here now returns/checks a *set* of
-/// team ids rather than one scalar. Callers must have UserTeams loaded (and, for a TeamLead,
-/// ManagedByUser.UserTeams too) — same caller responsibility the old code already had for
-/// ManagedByUser itself.
+/// team ids rather than one scalar. Callers must have UserTeams loaded.
 /// </summary>
 public class SessionAccessScope
 {
     /// <summary>
     /// The teams a user's session visibility is scoped to: null means "no filter" (SystemAdmin
     /// only); an empty list means "not assigned to any team yet" (correctly sees nothing, not
-    /// everything). For a TeamLead, resolved transitively through ManagedByUser.UserTeams.
+    /// everything). Every non-SystemAdmin role, TeamLead included, reads its own UserTeams.
     /// </summary>
     public IReadOnlyList<int>? GetEffectiveTeamIds(User user) => user.Role switch
     {
         UserRole.SystemAdmin => null,
         UserRole.TeamAdmin => user.UserTeams.Select(ut => ut.TeamId).ToList(),
         UserRole.SessionManager => user.UserTeams.Select(ut => ut.TeamId).ToList(),
-        UserRole.TeamLead => user.ManagedByUser?.UserTeams.Select(ut => ut.TeamId).ToList() ?? [],
+        UserRole.TeamLead => user.UserTeams.Select(ut => ut.TeamId).ToList(),
         _ => []
     };
 
