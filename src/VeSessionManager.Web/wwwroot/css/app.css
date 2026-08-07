@@ -111,7 +111,6 @@ nav.chassis-nav a:hover { color: #fff; }
 
 .who { font-family: "IBM Plex Mono", monospace; font-size: 11.5px; color: #9AA39D; display: none; flex-basis: 100%; flex-wrap: wrap; align-items: center; gap: 8px; padding-bottom: 6px; }
 header.chassis.nav-open .who { display: flex; }
-.who .role { background: var(--panel-2); color: #EDEFEC; padding: 3px 8px; border-radius: 99px; letter-spacing: .05em; }
 
 .theme-toggle { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px; background: var(--panel-2); color: #EDEFEC; border: none; border-radius: 99px; cursor: pointer; padding: 0; }
 .theme-toggle:hover { background: #2A3338; }
@@ -327,6 +326,10 @@ tbody tr.row-past:hover { background: var(--row-hover); }
 .menu button.disabled, .menu button:disabled { color: #B8BEB9; cursor: not-allowed; }
 .menu button.disabled:hover, .menu button:disabled:hover { background: transparent; }
 .menu hr { border: none; border-top: 1px solid var(--line); margin: 6px 2px; }
+/* Non-interactive label at the top of a menu (the user menu's role + team scope). Deliberately sets
+   no colour here: the chassis menu is dark, so it inherits .who's muted grey. The desktop layer
+   recolours it for the light popover, where that grey is too faint against white. */
+.menu-head { padding: 8px 10px 4px; font-size: 11.5px; letter-spacing: .04em; }
 
 /* Help menu + user menu (chassis nav) — both reuse the row-actions kebab/menu component above,
    restyled to sit readably on the chassis's permanently-dark background rather than the light
@@ -572,6 +575,7 @@ footer.roster { margin-top: 28px; background: var(--surface); border: 1px solid 
   .btn-sm { padding: 6px 11px; font-size: 12px; }
   .kebab { padding: 6px 9px; }
 
+  .menu-head { color: var(--ink-soft); }
   .menu button.item, .menu a.item { font-size: 13px; padding: 8px 10px; }
   .menu label.item { font-size: 13px; padding: 8px 10px; gap: 8px; }
 
