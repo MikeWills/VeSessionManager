@@ -134,9 +134,9 @@ h1 { font-size: 24px; margin: 0 0 4px; letter-spacing: -.01em; }
 /* Search box in a filters bar (issue #135). Two classes on the input because `.vesm input` is
    class-plus-element (0,1,1) and beats a bare `.ve-search input`. 16px is not cosmetic: iOS Safari
    zooms on focus below that and never zooms back. */
-.ve-search { display: inline-flex; align-items: center; gap: 6px; padding: 0 12px; border: 1px solid var(--line-strong); border-radius: 99px; background: var(--surface); }
-.ve-search .bi { color: var(--ink-soft); font-size: 13px; }
-.vesm .ve-search input { border: none; background: none; padding: 9px 0; font-family: "IBM Plex Mono", monospace; font-size: 16px; color: var(--ink); width: 190px; }
+.ve-search { display: inline-flex; align-items: center; gap: 6px; padding: 0 14px; border: 1px solid var(--line-strong); border-radius: 99px; background: var(--surface); }
+.ve-search .bi { color: var(--ink-soft); font-size: 12px; }
+.vesm .ve-search input { border: none; background: none; padding: 6px 0; font-family: "IBM Plex Mono", monospace; font-size: 16px; color: var(--ink); width: 190px; }
 .vesm .ve-search input:focus { outline: none; }
 .ve-search:focus-within { border-color: var(--panel); }
 /* Label text for screen readers only — the magnifier icon carries no meaning on its own. */
@@ -549,6 +549,10 @@ footer.roster { margin-top: 28px; background: var(--surface); border: 1px solid 
   .nav-group, .user-menu, .help-menu { flex-basis: auto; display: inline-flex; flex-direction: row; align-items: center; }
   .nav-group { position: relative; }
   .nav-group > .kebab { flex: none; font-size: 13px; padding: 8px 12px; }
+
+  /* See the .ve-search block above: 16px is a mobile-only requirement, and keeping it here made the
+     search box taller than the filter pills either side of it. */
+  .vesm .ve-search input { font-size: 12px; padding: 9px 0; }
 
   /* Back to floating dropdowns — undoing the inline/accordion form the mobile panel needs. */
   .nav-group .menu, .user-menu .menu, .help-menu .menu { position: absolute; width: 260px; margin: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 10px 28px rgba(20, 24, 26, .14); padding: 6px; }
