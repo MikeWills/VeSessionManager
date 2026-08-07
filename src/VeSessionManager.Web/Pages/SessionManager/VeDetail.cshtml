@@ -1,0 +1,192 @@
+@page "{id:int}"
+@model VeSessionManager.Web.Pages.SessionManager.VeDetailModel
+@{
+    ViewData["Title"] = Model.Person.Name;
+    ViewData["ActiveNav"] = "VeDirectory";
+    Layout = "_AppLayout";
+}
+
+<div class="page-head">
+    <div>
+        <p class="eyebrow"><a asp-page="/SessionManager/VeDirectory">VE Directory</a></p>
+        <h1>@Model.Person.Name @if (Model.Person.CallSign is { } call) { <span class="mono">@call</span> }</h1>
+    </div>
+</div>
+
+<div class="ve-panel">
+    <h2>Contact details</h2>
+    <p class="session-sub">
+        Shared across every team this VE serves, and visible only to team admins and to the VE
+        themselves. This is their home address — not the address on their public FCC record.
+    </p>
+
+    <form method="post" asp-page-handler="Contact">
+        <div asp-validation-summary="ModelOnly" class="vesm-alert error"></div>
+
+        <div class="field">
+            <label asp-for="Contact.Name">Name</label>
+            <input asp-for="Contact.Name" />
+            <span asp-validation-for="Contact.Name"></span>
+        </div>
+
+        @* Read-only on purpose — see the page model. Changing it decides who receives future
+           self-service links, so it needs the phase 5 design, not this form. *@
+        <div class="field">
+            <label>Email</label>
+            <input value="@Model.Person.Email" disabled />
+            <span class="session-sub">Changing a VE's email will be handled with self-service sign-in (not built yet).</span>
+        </div>
+
+        <div class="field">
+            <label asp-for="Contact.Phone">Phone</label>
+            <input asp-for="Contact.Phone" />
+        </div>
+
+        <div class="field">
+            <label asp-for="Contact.AddressLine1">Address</label>
+            <input asp-for="Contact.AddressLine1" placeholder="Street address" />
+            <input asp-for="Contact.AddressLine2" placeholder="Apt, suite (optional)" />
+        </div>
+
+        <div class="field-row">
+            <div class="field"><label asp-for="Contact.City">City</label><input asp-for="Contact.City" /></div>
+            <div class="field"><label asp-for="Contact.State">State</label><input asp-for="Contact.State" /></div>
+            <div class="field"><label asp-for="Contact.PostalCode">ZIP</label><input asp-for="Contact.PostalCode" /></div>
+        </div>
+
+        <div class="field">
+            <label asp-for="Contact.DiscordUsername">Discord username</label>
+            <input asp-for="Contact.DiscordUsername" />
+        </div>
+
+        <div class="field">
+            <label asp-for="Contact.ContactPreference">Contact preference</label>
+            <select asp-for="Contact.ContactPreference">
+                <option value="@((int)VeSessionManager.Core.Entities.VeContactPreference.Email)">Email</option>
+                @* Text and Both are deliberately disabled until SMS exists — offering a preference
+                   the app cannot honour would quietly stop a VE being contacted at all. *@
+                <option value="@((int)VeSessionManager.Core.Entities.VeContactPreference.Text)" disabled>Text (not available yet)</option>
+                <option value="@((int)VeSessionManager.Core.Entities.VeContactPreference.Both)" disabled>Email and text (not available yet)</option>
+            </select>
+        </div>
+
+        <div class="field">
+            <label asp-for="Contact.Notes">Notes</label>
+            <textarea asp-for="Contact.Notes" rows="3"></textarea>
+            <span class="session-sub">Admin-facing only; never shown to the VE.</span>
+        </div>
+
+        <button type="submit" class="btn-primary btn-sm">Save contact details</button>
+    </form>
+</div>
+
+<div class="ve-panel">
+    <h2>Teams and tags</h2>
+    <p class="session-sub">
+        Tags are for reporting only and grant no access to this app. A VE with no tag is treated as a
+        guest. Membership itself comes from ExamTools — a VE joins a team by working one of its sessions.
+    </p>
+
+    @foreach (var view in Model.Memberships)
+    {
+        <div class="ve-panel-inset">
+            <div class="section-head" style="margin:0 0 8px;">
+                <h3 style="margin:0;">
+                    @view.Membership.Team.Name
+                    @if (!view.Membership.IsActive)
+                    {
+                        <span class="chip chip-brick">Retired</span>
+                    }
+                </h3>
+                <form method="post" asp-page-handler="MembershipActive">
+                    <input type="hidden" name="membershipId" value="@view.Membership.Id" />
+                    <input type="hidden" name="isActive" value="@((!view.Membership.IsActive).ToString().ToLowerInvariant())" />
+                    <button type="submit" class="btn-secondary btn-sm">
+                        @(view.Membership.IsActive ? "Retire from team" : "Reactivate")
+                    </button>
+                </form>
+            </div>
+
+            @if (view.TeamTags.Count == 0)
+            {
+                <p class="session-sub">This team has no tags defined yet.</p>
+            }
+            else
+            {
+                <form method="post" asp-page-handler="Tags">
+                    <input type="hidden" name="membershipId" value="@view.Membership.Id" />
+                    @foreach (var tag in view.TeamTags)
+                    {
+                        <label class="inline-check">
+                            <input type="checkbox" name="tagIds" value="@tag.Id" @(view.SelectedTagIds.Contains(tag.Id) ? "checked" : "") />
+                            <span>@tag.Name</span>
+                        </label>
+                    }
+                    <button type="submit" class="btn-secondary btn-sm">Save tags</button>
+                </form>
+            }
+        </div>
+    }
+</div>
+
+<div class="ve-panel">
+    <h2>VEC accreditations</h2>
+    <p class="session-sub">
+        Hand-entered — no VEC publishes this to the app, so nothing here is verified.
+    </p>
+
+    <div class="table-scroll">
+    <table class="cards">
+        <thead><tr><th>VEC</th><th>Number</th><th>Expires</th><th></th></tr></thead>
+        <tbody>
+            @if (Model.Person.VecAccreditations.Count == 0)
+            {
+                <tr><td colspan="4">No accreditations recorded.</td></tr>
+            }
+            @foreach (var accreditation in Model.Person.VecAccreditations.OrderBy(a => a.Vec.Name))
+            {
+                <tr>
+                    <td>@accreditation.Vec.Name</td>
+                    <td class="mono">@(accreditation.AccreditationNumber ?? "—")</td>
+                    <td>@(accreditation.ExpiresUtc?.ToString("MMM d, yyyy") ?? "No expiry recorded")</td>
+                    <td>
+                        <form method="post" asp-page-handler="RemoveAccreditation">
+                            <input type="hidden" name="accreditationId" value="@accreditation.Id" />
+                            <button type="submit" class="btn-secondary btn-sm">Remove</button>
+                        </form>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+    </div>
+
+    <form method="post" asp-page-handler="AddAccreditation" class="field-row" style="margin-top:12px;">
+        <div class="field">
+            <label for="vecId">VEC</label>
+            <select id="vecId" name="vecId" required>
+                @foreach (var vec in Model.AvailableVecs)
+                {
+                    <option value="@vec.Id">@vec.Name</option>
+                }
+            </select>
+        </div>
+        <div class="field"><label for="accreditationNumber">Number</label><input id="accreditationNumber" name="accreditationNumber" /></div>
+        <div class="field"><label for="expiresUtc">Expires</label><input id="expiresUtc" name="expiresUtc" type="date" /></div>
+        <button type="submit" class="btn-secondary btn-sm">Add</button>
+    </form>
+</div>
+
+@if (Model.Person.CallSignHistory.Count > 0)
+{
+    <div class="ve-panel">
+        <h2>Previous call signs</h2>
+        <p class="session-sub">Kept so a session worked under an old call still resolves to this person.</p>
+        <ul>
+            @foreach (var history in Model.Person.CallSignHistory.OrderByDescending(h => h.ReplacedUtc))
+            {
+                <li><span class="mono">@history.CallSign</span> — until @history.ReplacedUtc.ToString("MMM d, yyyy")</li>
+            }
+        </ul>
+    </div>
+}

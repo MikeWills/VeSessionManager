@@ -288,6 +288,17 @@ tbody tr.row-past:hover { background: var(--row-hover); }
 .flag-banner b { font-weight: 600; }
 .flag-banner form { margin-left: auto; }
 
+/* VE Directory / VE detail (issue #142). A plain stacked card — .session-panel looks similar but is
+   a flex ROW built to push a session's meta block to the opposite edge, so reusing it would lay a
+   form's fields out side by side. Mobile-first like the rest of this file: .field-row is one column
+   here and becomes a row in the Desktop layer. */
+.ve-panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 18px 16px; margin-bottom: 22px; }
+.ve-panel h2 { font-size: 15px; margin: 0 0 4px; font-weight: 600; }
+.ve-panel-inset { border-top: 1px solid var(--line); padding-top: 14px; margin-top: 14px; }
+.ve-panel-inset:first-of-type { border-top: none; padding-top: 0; margin-top: 0; }
+.field-row { display: grid; grid-template-columns: 1fr; gap: 0 14px; align-items: end; }
+.inline-check { display: inline-flex; align-items: center; gap: 6px; margin: 0 14px 10px 0; font-size: 14px; }
+
 .section-head { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin: 8px 0 12px; }
 .section-head h2 { font-size: 15px; margin: 0; font-weight: 600; }
 
@@ -576,6 +587,7 @@ footer.roster { margin-top: 28px; background: var(--surface); border: 1px solid 
   .kebab { padding: 6px 9px; }
 
   .menu-head { color: var(--ink-soft); }
+  .field-row { grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); }
   .menu button.item, .menu a.item { font-size: 13px; padding: 8px 10px; }
   .menu label.item { font-size: 13px; padding: 8px 10px; gap: 8px; }
 

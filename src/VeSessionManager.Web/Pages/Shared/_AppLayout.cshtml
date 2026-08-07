@@ -60,7 +60,7 @@
     // current page is one of its children (the individual links inside still get their own
     // .active state too, same as before).
     var applicantsGroupActive = activeNav is "ApplicantStatus" or "RenewalMonitor";
-    var vesGroupActive = activeNav is "VeRoster";
+    var vesGroupActive = activeNav is "VeRoster" or "VeDirectory";
     var settingsGroupActive = activeNav is "AdminTeams" or "AdminTeamSettings" or "AdminUsers" or "AdminEmailTemplates"
         or "AdminFees" or "AdminVecs" or "AdminAuditLog" or "AdminJobHistory" or "AdminJobSchedule" or "AdminSystemSettings";
 }
@@ -127,6 +127,7 @@
                 <div class="nav-group">
                     <button type="button" class="kebab @(vesGroupActive ? "active" : "")">VEs <i class="bi bi-caret-down-fill" aria-hidden="true"></i></button>
                     <div class="menu">
+                        <a class="item @(activeNav == "VeDirectory" ? "active" : "")" asp-page="/SessionManager/VeDirectory">VE Directory</a>
                         <a class="item @(activeNav == "VeRoster" ? "active" : "")" asp-page="/SessionManager/VeRoster">VE Roster</a>
                     </div>
                 </div>

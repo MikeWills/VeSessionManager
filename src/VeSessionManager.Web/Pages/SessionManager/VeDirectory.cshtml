@@ -1,0 +1,142 @@
+@page
+@model VeSessionManager.Web.Pages.SessionManager.VeDirectoryModel
+@{
+    ViewData["Title"] = "VE Directory";
+    ViewData["ActiveNav"] = "VeDirectory";
+    Layout = "_AppLayout";
+}
+
+<div class="page-head">
+    <div>
+        <p class="eyebrow">Volunteer examiners</p>
+        <h1>VE Directory</h1>
+    </div>
+</div>
+
+<form method="get" class="filters" style="margin-bottom:20px; align-items:flex-start;">
+    @if (Model.AvailableTeams.Count > 1)
+    {
+        <div class="filter-dropdown">
+            <button type="button" class="kebab @(Model.TeamId is not null ? "active" : "")">Team: @Model.TeamSummaryLabel <i class="bi bi-caret-down-fill" aria-hidden="true"></i></button>
+            <div class="menu">
+                <label class="item"><input type="radio" name="teamId" value="" @(Model.TeamId is null ? "checked" : "") /> All teams</label>
+                @foreach (var team in Model.AvailableTeams)
+                {
+                    <label class="item"><input type="radio" name="teamId" value="@team.Id" @(team.Id == Model.TeamId ? "checked" : "") /> @team.Name</label>
+                }
+                <hr />
+                <button type="submit" class="item">Apply</button>
+            </div>
+        </div>
+    }
+
+    <label class="ve-search">
+        <span class="visually-hidden">Search by call sign, name or email</span>
+        <i class="bi bi-search" aria-hidden="true"></i>
+        <input type="search" name="search" value="@Model.Search" placeholder="Call sign, name or email" />
+    </label>
+
+    @if (Model.AvailableTags.Count > 0)
+    {
+        var activeTag = Model.AvailableTags.FirstOrDefault(t => t.Id == Model.TagId);
+        <div class="filter-dropdown">
+            <button type="button" class="kebab @(Model.TagId is not null ? "active" : "")">Tag: @(activeTag?.Name ?? "Any") <i class="bi bi-caret-down-fill" aria-hidden="true"></i></button>
+            <div class="menu">
+                <label class="item"><input type="radio" name="tagId" value="" @(Model.TagId is null ? "checked" : "") /> Any tag</label>
+                @foreach (var tag in Model.AvailableTags)
+                {
+                    <label class="item"><input type="radio" name="tagId" value="@tag.Id" @(tag.Id == Model.TagId ? "checked" : "") /> @tag.Name</label>
+                }
+                <hr />
+                <button type="submit" class="item">Apply</button>
+            </div>
+        </div>
+    }
+
+    @* Retired memberships are hidden by default: the directory answers "who can we call on", and a
+       list that keeps everyone who ever served stops being that. *@
+    <label class="ve-search" style="gap:8px;">
+        <input type="checkbox" name="includeInactive" value="true" @(Model.IncludeInactive ? "checked" : "") onchange="this.form.submit()" />
+        <span>Show retired</span>
+    </label>
+</form>
+
+@if (!Model.HasTeamContext)
+{
+    <p>This account isn't assigned to any team yet, so there is nothing to show.</p>
+}
+else
+{
+    <div class="table-scroll">
+    <table class="cards" data-sortable="ve-directory">
+        <thead>
+            <tr>
+                <th>Call sign</th>
+                <th>Name</th>
+                @if (Model.AvailableTeams.Count > 1)
+                {
+                    <th>Team</th>
+                }
+                <th>Tags</th>
+                <th>Last worked</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            @if (Model.Rows.Count == 0)
+            {
+                <tr><td colspan="6">
+                    @(string.IsNullOrWhiteSpace(Model.Search)
+                        ? "No VEs on this team's directory yet. They appear automatically once they work a session."
+                        : $"No VEs match \"{Model.Search}\".")
+                </td></tr>
+            }
+            @foreach (var row in Model.Rows)
+            {
+                <tr class="@(row.IsActive ? "" : "muted-row")">
+                    <td class="mono">
+                        @(row.VolunteerExaminer.CallSign ?? "—")
+                        @if (row.HasDuplicateCallSign)
+                        {
+                            @* Left unmerged by the phase 1 migration because the names disagreed —
+                               possibly one person, possibly a reissued call sign. A human decides. *@
+                            <i class="bi bi-exclamation-triangle" aria-hidden="true" title="Another VE record shares this call sign — possibly the same person"></i>
+                        }
+                    </td>
+                    <td><a asp-page="/SessionManager/VeDetail" asp-route-id="@row.VolunteerExaminer.Id">@row.VolunteerExaminer.Name</a></td>
+                    @if (Model.AvailableTeams.Count > 1)
+                    {
+                        <td>@row.TeamName</td>
+                    }
+                    <td>
+                        @if (row.IsGuest)
+                        {
+                            <span class="chip chip-neutral">Guest</span>
+                        }
+                        else
+                        {
+                            @foreach (var tag in row.Tags)
+                            {
+                                <span class="chip chip-neutral">@tag.Name</span>
+                            }
+                        }
+                        @if (!row.IsActive)
+                        {
+                            <span class="chip chip-brick">Retired</span>
+                        }
+                    </td>
+                    <td data-sort-value="@(row.LastWorkedUtc?.ToString("o") ?? "")">
+                        @(row.LastWorkedUtc?.ToString("MMM d, yyyy") ?? "Never")
+                    </td>
+                    <td><a asp-page="/SessionManager/VeDetail" asp-route-id="@row.VolunteerExaminer.Id">Manage</a></td>
+                </tr>
+            }
+        </tbody>
+    </table>
+    </div>
+
+    <p class="session-sub" style="margin-top:12px;">
+        Tags are for reporting only and grant no access to this app.
+        A VE with no tag is treated as a guest.
+    </p>
+}
