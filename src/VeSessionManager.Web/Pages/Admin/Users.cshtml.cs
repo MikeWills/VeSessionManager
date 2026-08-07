@@ -78,10 +78,47 @@ public class UsersModel(AppDbContext dbContext, UserManager<User> userManager, A
             u.UserTeams.Select(ut => ut.TeamId).ToList(),
             IsActive(u), u.ManagedByUser?.Name)).ToList();
 
-        AvailableManagers = await dbContext.Users
-            .Where(u => u.UserTeams.Any(ut => ut.TeamId == effectiveTeamId) && (u.Role == UserRole.SessionManager || u.Role == UserRole.TeamAdmin))
-            .Select(u => new ValueTuple<int, string>(u.Id, u.Name))
-            .ToListAsync();
+        // A TeamLead has no team of their own — theirs is inherited from whoever manages them
+        // (SessionAccessScope.GetEffectiveTeamIds resolves it through ManagedByUser), so this list is
+        // the ONLY way to move a TeamLead between teams.
+        //
+        // It used to filter on `ut.TeamId == effectiveTeamId` with no branch. For a SystemAdmin on
+        // "All teams" that value is null, and SQL `TeamId = NULL` is never true — so the list came
+        // back empty and the Assign manager dropdown offered nothing but "(none)". Changing a
+        // TeamLead's team was impossible from the default view (reported 2026-08-07). Same null-
+        // comparison trap CLAUDE.md records for `x.Id != someNullableInt`.
+        //
+        // Branched explicitly rather than made null-tolerant in one expression, so the behaviour
+        // no longer depends on how a provider treats a null comparison at all.
+        var managerCandidates = dbContext.Users
+            .Where(u => u.Role == UserRole.SessionManager || u.Role == UserRole.TeamAdmin);
+
+        if (effectiveTeamId is { } scopedTeamId)
+        {
+            managerCandidates = managerCandidates.Where(u => u.UserTeams.Any(ut => ut.TeamId == scopedTeamId));
+        }
+        else
+        {
+            // No team chosen. Show every manager the acting user is allowed to see — for a
+            // SystemAdmin that is all of them, which is what makes picking an HRCC manager from the
+            // unfiltered view possible.
+            var visibleTeamIds = adminAccessScope.GetEffectiveTeamIds(user);
+            if (visibleTeamIds is not null)
+            {
+                managerCandidates = managerCandidates.Where(u => u.UserTeams.Any(ut => visibleTeamIds.Contains(ut.TeamId)));
+            }
+        }
+
+        AvailableManagers = (await managerCandidates
+                .Select(u => new { u.Id, u.Name, Teams = u.UserTeams.Select(ut => ut.Team.Name).ToList() })
+                .ToListAsync())
+            .OrderBy(u => u.Name)
+            // The team is the whole point of the choice when several are listed, and two managers can
+            // share a name; without it you are picking blind.
+            .Select(u => new ValueTuple<int, string>(
+                u.Id,
+                u.Teams.Count > 0 ? $"{u.Name} ({string.Join(", ", u.Teams.OrderBy(t => t))})" : u.Name))
+            .ToList();
 
         return Page();
     }

@@ -220,6 +220,10 @@ else
                         <input type="hidden" name="targetUserId" value="@u.Id" />
                         <div class="field">
                             <label for="managerUserId-@u.Id">Manager</label>
+                            @* Says the quiet part out loud: a team lead has no team field of their
+                               own, so this control is also how their team gets set. Without this the
+                               missing "Manage teams" action reads as a bug. *@
+                            <p class="session-sub" style="margin:0 0 6px;">A team lead's team follows their manager — pick a manager on the team they should belong to.</p>
                             <select id="managerUserId-@u.Id" name="managerUserId">
                                 <option value="">(none)</option>
                                 @foreach (var manager in Model.AvailableManagers)
