@@ -385,6 +385,11 @@ app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 
+// After authentication (it needs HttpContext.User) and after authorization (so an unauthorized
+// request is still refused rather than redirected to a password form). Holds a user on Change
+// password while an admin-chosen password is still in place — see RequirePasswordChangeMiddleware.
+app.UseMiddleware<RequirePasswordChangeMiddleware>();
+
 app.MapStaticAssets();
 app.MapRazorPages()
    .WithStaticAssets();

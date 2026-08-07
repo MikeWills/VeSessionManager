@@ -31,12 +31,20 @@ public class PaymentUniqueIndexSqliteTests
     }
 
     /// <summary>Seeds Vec/User/FeeConfiguration/Team/Session and returns a saved Candidate.</summary>
-    internal static async Task<Candidate> SeedCandidateAsync(AppDbContext dbContext, string applicantId, Session? session = null, int? existingTeamId = null)
+    /// <param name="existingUserId">
+    /// A user inserted by the caller, for tests pinned to an older migration. Same reason as
+    /// <c>existingTeamId</c>: seeding through EF uses the CURRENT model, so any column added to
+    /// AspNetUsers later fails against a schema that predates it. Adding
+    /// <c>User.MustChangePassword</c> broke these two tests exactly that way (2026-08-07).
+    /// </param>
+    internal static async Task<Candidate> SeedCandidateAsync(AppDbContext dbContext, string applicantId, Session? session = null, int? existingTeamId = null, int? existingUserId = null)
     {
         if (session is null)
         {
             var vec = new Vec { Name = $"VEC-{applicantId}" };
-            var user = new User { Name = "System", Email = $"system-{applicantId}@localhost", Role = UserRole.SystemAdmin };
+            User? user = existingUserId is null
+                ? new User { Name = "System", Email = $"system-{applicantId}@localhost", Role = UserRole.SystemAdmin }
+                : null;
             Team? team = existingTeamId is null ? new Team { Name = $"TEAM-{applicantId}", CreatedUtc = Now } : null;
             session = new Session
             {
@@ -51,7 +59,6 @@ public class PaymentUniqueIndexSqliteTests
                     EffectiveDate = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc),
                     FeeCollectionEnabled = true,
                     ExamFeeAmount = 15m,
-                    CreatedByUser = user,
                     CreatedUtc = Now
                 },
                 Status = SessionStatus.Active,
@@ -59,6 +66,8 @@ public class PaymentUniqueIndexSqliteTests
             };
 
             if (team is not null) session.Team = team; else session.TeamId = existingTeamId!.Value;
+            if (user is not null) session.FeeConfiguration.CreatedByUser = user;
+            else session.FeeConfiguration.CreatedByUserId = existingUserId!.Value;
         }
 
         var candidate = new Candidate
@@ -170,6 +179,25 @@ public class PaymentUniqueIndexSqliteTests
     /// columns. Any table seeded by a migration test has the same hazard; this is the seam where it
     /// bites first because Team is the most-extended entity.</para>
     /// </summary>
+    /// <summary>
+    /// Inserts a user with raw SQL, listing only the columns the pinned migration knows about — the
+    /// same trick as <see cref="SeedTeamViaSqlAsync"/>. EF would insert every column the current
+    /// model has, which fails on a schema deliberately held at an older migration.
+    /// </summary>
+    private static async Task<int> SeedUserViaSqlAsync(AppDbContext dbContext, string email)
+    {
+        await dbContext.Database.ExecuteSqlRawAsync(
+            """
+            INSERT INTO AspNetUsers
+                (UserName, NormalizedUserName, Email, NormalizedEmail, EmailConfirmed, Name, Role,
+                 PhoneNumberConfirmed, TwoFactorEnabled, LockoutEnabled, AccessFailedCount, SecurityStamp, ConcurrencyStamp)
+            VALUES ({0}, {1}, {0}, {1}, 1, 'System', 0, 0, 0, 0, 0, {2}, {2})
+            """,
+            email, email.ToUpperInvariant(), Guid.NewGuid().ToString());
+
+        return await dbContext.Users.Select(u => u.Id).OrderByDescending(id => id).FirstAsync();
+    }
+
     private static async Task<int> SeedTeamViaSqlAsync(AppDbContext dbContext, string name)
     {
         await dbContext.Database.ExecuteSqlRawAsync(
@@ -195,7 +223,8 @@ public class PaymentUniqueIndexSqliteTests
 
         await dbContext.GetService<IMigrator>().MigrateAsync(MigrationBeforeTheIndex);
         var teamId = await SeedTeamViaSqlAsync(dbContext, "TEAM-applicant-1");
-        var candidate = await SeedCandidateAsync(dbContext, "applicant-1", existingTeamId: teamId);
+        var userId = await SeedUserViaSqlAsync(dbContext, "system-applicant-1@localhost");
+        var candidate = await SeedCandidateAsync(dbContext, "applicant-1", existingTeamId: teamId, existingUserId: userId);
 
         // Two provably inert duplicates: Unpaid, never linked, never given a Square order id.
         dbContext.Payments.AddRange(
@@ -228,7 +257,8 @@ public class PaymentUniqueIndexSqliteTests
 
         await dbContext.GetService<IMigrator>().MigrateAsync(MigrationBeforeTheIndex);
         var teamId = await SeedTeamViaSqlAsync(dbContext, "TEAM-applicant-1");
-        var candidate = await SeedCandidateAsync(dbContext, "applicant-1", existingTeamId: teamId);
+        var userId = await SeedUserViaSqlAsync(dbContext, "system-applicant-1@localhost");
+        var candidate = await SeedCandidateAsync(dbContext, "applicant-1", existingTeamId: teamId, existingUserId: userId);
 
         var first = NewPayment(candidate.Id, PaymentReason.InitialExam);
         var duplicate = NewPayment(candidate.Id, PaymentReason.InitialExam);

@@ -494,6 +494,112 @@ public class UserManagementServiceTests
         Assert.Equal(UserActionResult.Success, result);
     }
 
+    // ---- Self-service password change + forced first change (2026-08-07) -------------------------
+    // Before this there was no way to change a password at all short of the emailed reset flow,
+    // which needs system SMTP that has never been configured on any deployment.
 
+    [Fact]
+    public async Task CreateAsync_MarksTheAccountAsNeedingAPasswordChange()
+    {
+        await using var dbContext = CreateContext();
+        var userManager = CreateUserManager(dbContext);
+
+        var (result, created) = await CreateService(dbContext, userManager)
+            .CreateAsync("new@example.com", "New User", UserRole.SessionManager, ValidPassword, actingUserId: 1, CancellationToken.None);
+
+        Assert.Equal(UserActionResult.Success, result);
+        Assert.True(created!.MustChangePassword);
+    }
+
+    [Fact]
+    public async Task ChangeOwnPasswordAsync_WithTheCorrectCurrentPassword_Succeeds_AndClearsTheFlag()
+    {
+        await using var dbContext = CreateContext();
+        var userManager = CreateUserManager(dbContext);
+        var service = CreateService(dbContext, userManager);
+        var (_, user) = await service.CreateAsync("u@example.com", "U", UserRole.SessionManager, ValidPassword, actingUserId: 1, CancellationToken.None);
+
+        var result = await service.ChangeOwnPasswordAsync(user!.Id, ValidPassword, "An0ther-Valid-Pass!", CancellationToken.None);
+
+        Assert.Equal(UserActionResult.Success, result);
+        var updated = await userManager.FindByIdAsync(user.Id.ToString());
+        Assert.False(updated!.MustChangePassword);
+        Assert.True(await userManager.CheckPasswordAsync(updated, "An0ther-Valid-Pass!"));
+    }
+
+    /// <summary>The wrong current password must not change anything — including the flag.</summary>
+    [Fact]
+    public async Task ChangeOwnPasswordAsync_WithTheWrongCurrentPassword_ChangesNothing()
+    {
+        await using var dbContext = CreateContext();
+        var userManager = CreateUserManager(dbContext);
+        var service = CreateService(dbContext, userManager);
+        var (_, user) = await service.CreateAsync("u@example.com", "U", UserRole.SessionManager, ValidPassword, actingUserId: 1, CancellationToken.None);
+
+        var result = await service.ChangeOwnPasswordAsync(user!.Id, "not-the-password", "An0ther-Valid-Pass!", CancellationToken.None);
+
+        Assert.Equal(UserActionResult.InvalidPassword, result);
+        var updated = await userManager.FindByIdAsync(user.Id.ToString());
+        Assert.True(updated!.MustChangePassword);                                   // still forced
+        Assert.True(await userManager.CheckPasswordAsync(updated, ValidPassword));   // still the old one
+    }
+
+    /// <summary>A new password that fails the policy is refused, and the account keeps the old one.</summary>
+    [Fact]
+    public async Task ChangeOwnPasswordAsync_WithAWeakNewPassword_IsRefused()
+    {
+        await using var dbContext = CreateContext();
+        var userManager = CreateUserManager(dbContext);
+        var service = CreateService(dbContext, userManager);
+        var (_, user) = await service.CreateAsync("u@example.com", "U", UserRole.SessionManager, ValidPassword, actingUserId: 1, CancellationToken.None);
+
+        var result = await service.ChangeOwnPasswordAsync(user!.Id, ValidPassword, "a", CancellationToken.None);
+
+        Assert.Equal(UserActionResult.InvalidPassword, result);
+        Assert.True(await userManager.CheckPasswordAsync((await userManager.FindByIdAsync(user.Id.ToString()))!, ValidPassword));
+    }
+
+    /// <summary>An external-login account has no local password to change, and says so distinctly.</summary>
+    [Fact]
+    public async Task ChangeOwnPasswordAsync_ForAnOAuthAccount_ReportsNoLocalPassword()
+    {
+        await using var dbContext = CreateContext();
+        var userManager = CreateUserManager(dbContext);
+        var oauthUser = new User { UserName = "oauth@example.com", Email = "oauth@example.com", Name = "OAuth", Role = UserRole.SessionManager };
+        await userManager.CreateAsync(oauthUser); // no password
+        await dbContext.SaveChangesAsync();
+
+        var result = await CreateService(dbContext, userManager)
+            .ChangeOwnPasswordAsync(oauthUser.Id, "whatever", "An0ther-Valid-Pass!", CancellationToken.None);
+
+        Assert.Equal(UserActionResult.NoLocalPassword, result);
+    }
+
+    /// <summary>The change is audited against the user themselves — the one nobody else performed.</summary>
+    [Fact]
+    public async Task ChangeOwnPasswordAsync_WritesAnAuditEntry()
+    {
+        await using var dbContext = CreateContext();
+        var userManager = CreateUserManager(dbContext);
+        var service = CreateService(dbContext, userManager);
+        var (_, user) = await service.CreateAsync("u@example.com", "U", UserRole.SessionManager, ValidPassword, actingUserId: 1, CancellationToken.None);
+
+        await service.ChangeOwnPasswordAsync(user!.Id, ValidPassword, "An0ther-Valid-Pass!", CancellationToken.None);
+
+        var audit = await dbContext.AuditLogs.SingleAsync(a => a.Action == "UserPasswordChanged");
+        Assert.Equal(user.Id, audit.UserId);
+        Assert.Equal(user.Id, audit.EntityId);
+    }
+
+    [Fact]
+    public async Task ChangeOwnPasswordAsync_UnknownUser_ReturnsNotFound()
+    {
+        await using var dbContext = CreateContext();
+        var userManager = CreateUserManager(dbContext);
+
+        var result = await CreateService(dbContext, userManager)
+            .ChangeOwnPasswordAsync(99999, ValidPassword, "An0ther-Valid-Pass!", CancellationToken.None);
+
+        Assert.Equal(UserActionResult.NotFound, result);
+    }
 }
-

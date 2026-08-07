@@ -33,7 +33,10 @@ public class UserManagementService(UserManager<User> userManager, AppDbContext d
             EmailConfirmed = true,
             Name = name,
             CallSign = NormalizeCallSign(callSign),
-            Role = role
+            Role = role,
+            // The admin picked this password, so the owner must replace it before doing anything
+            // else. Cleared by ChangePasswordAsync below / the self-service page.
+            MustChangePassword = true
         };
 
         var result = await userManager.CreateAsync(user, initialPassword);
@@ -47,6 +50,51 @@ public class UserManagementService(UserManager<User> userManager, AppDbContext d
         await dbContext.SaveChangesAsync(cancellationToken);
 
         return (UserActionResult.Success, user);
+    }
+
+    /// <summary>
+    /// A signed-in user changing their own password. Verifies the current one (UserManager does it),
+    /// applies the same password policy as account creation, and clears
+    /// <see cref="User.MustChangePassword"/>.
+    ///
+    /// <para>Deliberately separate from PasswordResetService: that flow proves identity by emailing a
+    /// token, and is for someone who <i>cannot</i> sign in. This one is for someone already signed in,
+    /// where the current password is the proof — which matters on a deployment with no system SMTP,
+    /// where the emailed route does not work at all.</para>
+    /// </summary>
+    public async Task<UserActionResult> ChangeOwnPasswordAsync(
+        int userId, string currentPassword, string newPassword, CancellationToken cancellationToken)
+    {
+        var user = await userManager.FindByIdAsync(userId.ToString());
+        if (user is null)
+        {
+            return UserActionResult.NotFound;
+        }
+
+        // An OAuth account has no local password to change; their provider owns the credential.
+        if (!await userManager.HasPasswordAsync(user))
+        {
+            return UserActionResult.NoLocalPassword;
+        }
+
+        var result = await userManager.ChangePasswordAsync(user, currentPassword, newPassword);
+        if (!result.Succeeded)
+        {
+            // Wrong current password and a policy violation are both surfaced as one failure to the
+            // caller, which decides the wording. Nothing here distinguishes them for the user.
+            return UserActionResult.InvalidPassword;
+        }
+
+        user.MustChangePassword = false;
+        await userManager.UpdateAsync(user);
+
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+        // Actor and subject are the same person, which is the point: this is the one password change
+        // nobody else performed.
+        AddAudit(user.Id, "UserPasswordChanged", user.Id, $"User {user.Id} changed their own password.", now);
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        return UserActionResult.Success;
     }
 
     public async Task<UserActionResult> SetRoleAsync(int targetUserId, UserRole newRole, int actingUserId, CancellationToken cancellationToken)
@@ -221,5 +269,8 @@ public enum UserActionResult
     DuplicateEmail,
     InvalidPassword,
     CannotDeactivateSelf,
-    InvalidManager
+    InvalidManager,
+
+    /// <summary>The account signs in through an external provider, so there is no local password to change.</summary>
+    NoLocalPassword
 }
