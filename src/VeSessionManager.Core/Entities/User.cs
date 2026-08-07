@@ -37,6 +37,21 @@ public class User : IdentityUser<int>
     public UserRole Role { get; set; }
 
     /// <summary>
+    /// Set when an admin hands out a password the user did not choose, and cleared the moment they
+    /// change it. While true, every authenticated request is redirected to Change password
+    /// (RequirePasswordChangeMiddleware).
+    ///
+    /// <para>An admin-created account starts with a password its owner did not pick and that at
+    /// least one other person knows — often typed into a chat message. Nothing previously nudged
+    /// anyone to replace it, and until 2026-08-07 there was no self-service way to do so at all:
+    /// only the emailed reset flow, on a deployment where system SMTP has never been configured.</para>
+    ///
+    /// <para>Never set for an OAuth account — their provider owns the credential and there is no
+    /// local password to change.</para>
+    /// </summary>
+    public bool MustChangePassword { get; set; }
+
+    /// <summary>
     /// Replaces the old single, nullable TeamId (Phase 9a) — a TeamAdmin/SessionManager can now
     /// belong to more than one Team (issue #19). Empty for SystemAdmin (deployment-wide) and for
     /// TeamLead, whose effective teams are resolved transitively through ManagedByUser instead (see

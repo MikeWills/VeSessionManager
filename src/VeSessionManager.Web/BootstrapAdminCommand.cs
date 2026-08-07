@@ -75,7 +75,11 @@ public static class BootstrapAdminCommand
             Role = UserRole.SystemAdmin,
             // No email-confirmation infrastructure exists (Program.cs sets RequireConfirmedAccount
             // false); marking it confirmed keeps this account consistent with every other one.
-            EmailConfirmed = true
+            EmailConfirmed = true,
+            // This password is either generated and PRINTED TO THE CONSOLE, or supplied through an
+            // environment variable — so it exists in a scrollback buffer or a shell history either
+            // way. Replaced on first sign-in before the account can do anything else.
+            MustChangePassword = true
         };
 
         var result = await userManager.CreateAsync(user, password);
@@ -106,6 +110,8 @@ public static class BootstrapAdminCommand
             Console.WriteLine();
             Console.WriteLine("  Shown once and stored only as a hash — save it now. If you lose it, run this");
             Console.WriteLine("  command again with a different email to create another administrator.");
+            Console.WriteLine();
+            Console.WriteLine("  You will be asked to replace this password the first time you sign in.");
         }
 
         Console.WriteLine("Sign in at /Account/Login, then add any further users under Admin -> Users.");
