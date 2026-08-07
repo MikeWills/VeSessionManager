@@ -20,8 +20,17 @@ namespace VeSessionManager.Core.Entities;
 /// it avoids the question entirely. Call sign, FRN and licensee name are public FCC record data —
 /// same privacy class as Candidate.CallSign, which the PII purge deliberately keeps.</para>
 /// </summary>
-public class WatchedLicense
+public class WatchedLicense : ILicenseSnapshot
 {
+    // ---- ILicenseSnapshot ----------------------------------------------------------------------
+    // Mapped rather than renamed: this entity's names came first and are all over the Renewal
+    // Monitor, its service and a shipped migration. Explicit implementations keep the shared status
+    // rules working without a rename that would buy nothing.
+    DateTime? ILicenseSnapshot.LicenseLastCheckedUtc => LastCheckedUtc;
+    bool ILicenseSnapshot.LicenseNotFoundAtFcc => NotFoundAtFcc;
+    DateTime? ILicenseSnapshot.LicenseCancellationDateUtc => CancellationDateUtc;
+    DateTime? ILicenseSnapshot.LicenseExpiresUtc => ExpiredDateUtc;
+
     public int Id { get; set; }
 
     public int TeamId { get; set; }

@@ -25,7 +25,7 @@ namespace VeSessionManager.Core.Entities;
 /// — harmless while nothing could edit it, and a guaranteed clobber-every-hour bug the moment
 /// something could.</para>
 /// </summary>
-public class VolunteerExaminer
+public class VolunteerExaminer : ILicenseSnapshot
 {
     public int Id { get; set; }
 
