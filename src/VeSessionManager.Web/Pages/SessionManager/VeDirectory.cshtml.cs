@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Text;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -51,6 +53,57 @@ public class VeDirectoryModel(
 
     /// <summary>Taken once per request so every row's license status and day count are derived against the same instant — otherwise a list rendered across midnight ET could disagree with itself.</summary>
     public DateTime UtcNow { get; private set; }
+
+    /// <summary>
+    /// CSV of exactly what the current filters show — export-what-you-see, so a filtered list and
+    /// its export can never disagree about who is on it.
+    ///
+    /// <para><b>This carries real home addresses and phone numbers out of the database in bulk.</b>
+    /// That is the point of the feature, and also why it is audit-logged: the page is already
+    /// TeamAdmin/SystemAdmin only, but a screen someone reads and a file they can mail onward are
+    /// different kinds of exposure, and only one of them leaves the building. The audit entry
+    /// records who exported and how many rows, never the contents.</para>
+    /// </summary>
+    public async Task<IActionResult> OnGetExportAsync()
+    {
+        await OnGetAsync();
+
+        var csv = new StringBuilder();
+        csv.AppendLine("CallSign,Name,Team,Tags,Status,Email,Phone,AddressLine1,AddressLine2,City,State,PostalCode,Discord,ContactPreference,LicenseClass,LicenseExpires,Frn,LastWorked");
+
+        foreach (var row in Rows)
+        {
+            var ve = row.VolunteerExaminer;
+            csv.AppendLine(CsvExport.Row(
+                ve.CallSign,
+                ve.Name,
+                row.TeamName,
+                row.IsGuest ? "Guest" : string.Join("; ", row.Tags.Select(t => t.Name)),
+                row.IsActive ? "Active" : "Retired",
+                ve.Email,
+                ve.Phone,
+                ve.AddressLine1,
+                ve.AddressLine2,
+                ve.City,
+                ve.State,
+                ve.PostalCode,
+                ve.DiscordUsername,
+                ve.ContactPreference.ToString(),
+                ve.OperatorClass == LicenseClass.None ? "" : ve.OperatorClass.ToString(),
+                ve.LicenseExpiresUtc?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                ve.Frn,
+                row.LastWorkedUtc?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)));
+        }
+
+        var user = await userManager.GetUserWithManagerAsync(dbContext, User)
+            ?? throw new InvalidOperationException("No authenticated user for an [Authorize]d page.");
+        dbContext.AddAuditLog(user.Id, "VeDirectoryExported", nameof(VolunteerExaminer), 0,
+            $"Exported {Rows.Count} VE record(s) including contact details.", UtcNow);
+        await dbContext.SaveChangesAsync(HttpContext.RequestAborted);
+
+        var stamp = UtcNow.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture);
+        return File(CsvExport.ToBytes(csv), "text/csv", $"ve-directory-{stamp}.csv");
+    }
 
     public async Task OnGetAsync()
     {

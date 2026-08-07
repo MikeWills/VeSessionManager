@@ -12,6 +12,14 @@
         <p class="eyebrow">Volunteer examiners</p>
         <h1>VE Directory</h1>
     </div>
+    @* Carries the current filters, so the file matches the list on screen rather than silently
+       exporting everything. *@
+    <a class="btn-secondary btn-sm"
+       asp-page-handler="Export"
+       asp-route-teamId="@Model.TeamId"
+       asp-route-search="@Model.Search"
+       asp-route-tagId="@Model.TagId"
+       asp-route-includeInactive="@Model.IncludeInactive">Export CSV</a>
 </div>
 
 <form method="get" class="filters" style="margin-bottom:20px; align-items:flex-start;">
@@ -155,5 +163,6 @@ else
     <p class="session-sub" style="margin-top:12px;">
         Tags are for reporting only and grant no access to this app.
         A VE with no tag is treated as a guest.
+        The CSV export includes home addresses and phone numbers, and is recorded in the audit log.
     </p>
 }
