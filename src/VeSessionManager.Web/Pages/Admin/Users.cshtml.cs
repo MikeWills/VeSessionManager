@@ -57,7 +57,10 @@ public class UsersModel(AppDbContext dbContext, UserManager<User> userManager, A
             ? AvailableTeams.FirstOrDefault(t => t.Id == TeamId).Name ?? "All teams"
             : "All teams";
 
-        var query = dbContext.Users.Include(u => u.UserTeams).ThenInclude(ut => ut.Team).Include(u => u.ManagedByUser).AsQueryable();
+        var query = dbContext.Users
+            .Include(u => u.UserTeams).ThenInclude(ut => ut.Team)
+            .Include(u => u.ManagedByUser)
+            .AsQueryable();
         if (!IsSystemAdmin)
         {
             if (effectiveTeamId is null)

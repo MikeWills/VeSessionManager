@@ -133,16 +133,22 @@ public class UserManagementService(UserManager<User> userManager, AppDbContext d
             return UserActionResult.NotFound;
         }
 
-        // A manager must actually share at least one team with the TeamLead being assigned, and
-        // hold a role that's allowed to manage anyone at all — otherwise
-        // SessionAccessScope.GetEffectiveTeamIds (which resolves a TeamLead's teams via
-        // ManagedByUser.UserTeams) would grant them cross-team session/candidate visibility just by
-        // a TeamAdmin picking a manager with no shared team.
+        // **The manager link is a record of who a lead reports to. It grants no access.**
+        //
+        // It used to decide a TeamLead's team scope too, and the validation here defended that: the
+        // manager had to share a team with the lead, so a TeamAdmin could not widen a lead's
+        // visibility by picking an outsider. Scope now comes from the lead's own team assignment
+        // (see SessionAccessScope), because a manager can belong to several teams while a lead
+        // belongs to one - inheriting the manager's set handed the lead every other team that
+        // manager worked on.
+        //
+        // With no access riding on it, the only thing left worth checking is that the person named
+        // can actually manage someone. A team-overlap rule here would now block a legitimate
+        // reporting line for no security benefit - which is exactly what it did (2026-08-07).
         if (managerUserId is not null)
         {
-            var manager = await dbContext.Users.Include(u => u.UserTeams).FirstOrDefaultAsync(u => u.Id == managerUserId.Value, cancellationToken);
-            var sharesATeam = manager is not null && manager.UserTeams.Select(ut => ut.TeamId).Intersect(user.UserTeams.Select(ut => ut.TeamId)).Any();
-            if (manager is null || !sharesATeam || manager.Role is not (UserRole.SessionManager or UserRole.TeamAdmin))
+            var manager = await dbContext.Users.FirstOrDefaultAsync(u => u.Id == managerUserId.Value, cancellationToken);
+            if (manager is null || manager.Role is not (UserRole.SessionManager or UserRole.TeamAdmin))
             {
                 return UserActionResult.InvalidManager;
             }

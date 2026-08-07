@@ -204,10 +204,14 @@ public class SessionAccessScopeTests
         Assert.Empty(visible);
     }
 
+    // ---- TeamLead scope comes from their OWN team (2026-08-07) ------------------------------
+    // It used to be inherited from ManagedByUser. See the replaced tests in git history: one of them
+    // asserted, approvingly, that a lead inherited EVERY team their manager belonged to.
+
     [Theory]
     [InlineData(UserRole.SessionManager)]
     [InlineData(UserRole.TeamAdmin)]
-    public async Task TeamLead_SeesTheirAssignedManagersTeam_RegardlessOfManagersOwnRole(UserRole managerRole)
+    public async Task TeamLead_SeesOnlyTheirOwnTeam_WhateverTheirManagersRole(UserRole managerRole)
     {
         await using var dbContext = CreateContext();
         var (vec, feeConfiguration) = await SeedVecAndFeeConfigAsync(dbContext);
@@ -216,37 +220,57 @@ public class SessionAccessScopeTests
         var sessionInTeam = await SeedSessionAsync(dbContext, team, vec, feeConfiguration);
         await SeedSessionAsync(dbContext, otherTeam, vec, feeConfiguration);
         var manager = NewUser("Manager", managerRole, team.Id);
-        var teamLead = new User { Name = "Team Lead", Role = UserRole.TeamLead, ManagedByUser = manager };
+        var teamLead = NewUser("Team Lead", UserRole.TeamLead, team.Id);
+        teamLead.ManagedByUser = manager;
 
         var visible = Scope.Scope(dbContext.Sessions, teamLead).ToList();
 
-        var visibleSession = Assert.Single(visible);
-        Assert.Equal(sessionInTeam.Id, visibleSession.Id);
+        Assert.Equal(sessionInTeam.Id, Assert.Single(visible).Id);
     }
 
+    /// <summary>
+    /// <b>The leak this replaced.</b> A manager may work across several teams; a lead belongs to one.
+    /// Inheriting the manager's set gave the lead sight of every other team that manager covered —
+    /// reported 2026-08-07 ("I could have a session for two different teams, but the team lead is
+    /// only on one of the teams"). The previous test asserted that inheritance as correct behaviour.
+    /// </summary>
     [Fact]
-    public async Task TeamLead_WhoseManagerBelongsToMultipleTeams_InheritsAllOfThem()
+    public async Task TeamLead_DoesNotInheritTheirManagersOtherTeams()
     {
         await using var dbContext = CreateContext();
         var (vec, feeConfiguration) = await SeedVecAndFeeConfigAsync(dbContext);
         var teamA = await SeedTeamAsync(dbContext, "TEAMA");
         var teamB = await SeedTeamAsync(dbContext, "TEAMB");
-        var teamC = await SeedTeamAsync(dbContext, "TEAMC");
         var sessionA = await SeedSessionAsync(dbContext, teamA, vec, feeConfiguration);
-        var sessionB = await SeedSessionAsync(dbContext, teamB, vec, feeConfiguration);
-        await SeedSessionAsync(dbContext, teamC, vec, feeConfiguration); // manager isn't on this team
+        await SeedSessionAsync(dbContext, teamB, vec, feeConfiguration);
+        // The manager spans both teams; the lead is on TEAMA only.
         var manager = NewUser("Manager", UserRole.SessionManager, teamA.Id, teamB.Id);
+        var teamLead = NewUser("Team Lead", UserRole.TeamLead, teamA.Id);
+        teamLead.ManagedByUser = manager;
+
+        var visible = Scope.Scope(dbContext.Sessions, teamLead).ToList();
+
+        Assert.Equal(sessionA.Id, Assert.Single(visible).Id);
+    }
+
+    /// <summary>A manager grants nothing at all now — a lead with no team of their own sees nothing.</summary>
+    [Fact]
+    public async Task TeamLead_WithAManagerButNoTeamOfTheirOwn_SeesNothing()
+    {
+        await using var dbContext = CreateContext();
+        var (vec, feeConfiguration) = await SeedVecAndFeeConfigAsync(dbContext);
+        var team = await SeedTeamAsync(dbContext, "TEAMA");
+        await SeedSessionAsync(dbContext, team, vec, feeConfiguration);
+        var manager = NewUser("Manager", UserRole.SessionManager, team.Id);
         var teamLead = new User { Name = "Team Lead", Role = UserRole.TeamLead, ManagedByUser = manager };
 
         var visible = Scope.Scope(dbContext.Sessions, teamLead).ToList();
 
-        Assert.Equal(2, visible.Count);
-        Assert.Contains(visible, s => s.Id == sessionA.Id);
-        Assert.Contains(visible, s => s.Id == sessionB.Id);
+        Assert.Empty(visible);
     }
 
     [Fact]
-    public async Task TeamLead_WithNoManagerAssigned_SeesNothing()
+    public async Task TeamLead_WithNoTeamAssigned_SeesNothing()
     {
         await using var dbContext = CreateContext();
         var (vec, feeConfiguration) = await SeedVecAndFeeConfigAsync(dbContext);

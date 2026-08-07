@@ -228,7 +228,9 @@ public class UserManagementServiceTests
         dbContext.UserTeams.Add(new UserTeam { UserId = teamLead.Id, TeamId = team.Id, CreatedUtc = Now });
         await dbContext.SaveChangesAsync();
 
-        var result = await CreateService(dbContext, userManager).SetManagerAsync(teamLead.Id, manager.Id, actingUserId: 1, CancellationToken.None);
+        var actor = await SeedSystemAdminAsync(dbContext, userManager);
+
+        var result = await CreateService(dbContext, userManager).SetManagerAsync(teamLead.Id, manager.Id, actingUserId: actor.Id, CancellationToken.None);
 
         Assert.Equal(UserActionResult.Success, result);
         var updated = await userManager.FindByIdAsync(teamLead.Id.ToString());
@@ -255,17 +257,22 @@ public class UserManagementServiceTests
         dbContext.UserTeams.Add(new UserTeam { UserId = teamLead.Id, TeamId = leadOnlyTeam.Id, CreatedUtc = Now });
         await dbContext.SaveChangesAsync();
 
-        var result = await CreateService(dbContext, userManager).SetManagerAsync(teamLead.Id, manager.Id, actingUserId: 1, CancellationToken.None);
+        var actor = await SeedSystemAdminAsync(dbContext, userManager);
+
+        var result = await CreateService(dbContext, userManager).SetManagerAsync(teamLead.Id, manager.Id, actingUserId: actor.Id, CancellationToken.None);
 
         Assert.Equal(UserActionResult.Success, result);
     }
 
+    /// <summary>
+    /// The manager link no longer carries access, so a manager on another team is simply allowed —
+    /// this used to be refused to stop a TeamAdmin widening a lead's scope through it. The scope
+    /// half of that concern is now handled where it belongs, by the lead's own team assignment:
+    /// see SessionAccessScopeTests.TeamLead_DoesNotInheritTheirManagersOtherTeams.
+    /// </summary>
     [Fact]
-    public async Task SetManagerAsync_ManagerSharingNoTeam_ReturnsInvalidManager_DoesNotAssign()
+    public async Task SetManagerAsync_ManagerOnAnotherTeam_IsAllowed_AndGrantsNoAccess()
     {
-        // Cross-tenant guard: a TeamAdmin must not be able to grant a TeamLead effective read
-        // access into another team's sessions/candidates by assigning them a manager who shares no
-        // team with them (SessionAccessScope resolves a TeamLead's scope via ManagedByUser.UserTeams).
         await using var dbContext = CreateContext();
         var userManager = CreateUserManager(dbContext);
         var teamA = await SeedTeamAsync(dbContext, "TEAMA");
@@ -277,13 +284,15 @@ public class UserManagementServiceTests
         dbContext.UserTeams.Add(new UserTeam { UserId = otherTeamManager.Id, TeamId = teamB.Id, CreatedUtc = Now });
         dbContext.UserTeams.Add(new UserTeam { UserId = teamLead.Id, TeamId = teamA.Id, CreatedUtc = Now });
         await dbContext.SaveChangesAsync();
+        var actor = await SeedSystemAdminAsync(dbContext, userManager);
 
-        var result = await CreateService(dbContext, userManager).SetManagerAsync(teamLead.Id, otherTeamManager.Id, actingUserId: 1, CancellationToken.None);
+        var result = await CreateService(dbContext, userManager).SetManagerAsync(teamLead.Id, otherTeamManager.Id, actingUserId: actor.Id, CancellationToken.None);
 
-        Assert.Equal(UserActionResult.InvalidManager, result);
-        var updated = await userManager.FindByIdAsync(teamLead.Id.ToString());
-        Assert.Null(updated!.ManagedByUserId);
-        Assert.Empty(await dbContext.AuditLogs.ToListAsync());
+        Assert.Equal(UserActionResult.Success, result);
+        var updated = await dbContext.Users.Include(u => u.UserTeams).FirstAsync(u => u.Id == teamLead.Id);
+        Assert.Equal(otherTeamManager.Id, updated.ManagedByUserId);
+        // The lead is still on TEAMA only — the manager brought nothing with them.
+        Assert.Equal([teamA.Id], updated.UserTeams.Select(ut => ut.TeamId).ToList());
     }
 
     [Fact]
@@ -423,4 +432,68 @@ public class UserManagementServiceTests
         Assert.Equal(UserActionResult.Success, result);
         Assert.Equal("WX0MIK", created!.CallSign);
     }
+
+    /// <summary>A real acting user — SetManagerAsync fails closed on an actor it cannot find.</summary>
+    private static async Task<User> SeedSystemAdminAsync(AppDbContext dbContext, UserManager<User> userManager)
+    {
+        var admin = new User { UserName = "actor@example.com", Email = "actor@example.com", Name = "Acting Admin", Role = UserRole.SystemAdmin };
+        await userManager.CreateAsync(admin, ValidPassword);
+        await dbContext.SaveChangesAsync();
+        return admin;
+    }
+
+    // ---- Moving a TeamLead between teams (2026-08-07) -------------------------------------------
+
+    /// <summary>
+    /// <b>The reported bug.</b> A TeamLead's effective team IS their manager's, so assigning a
+    /// manager on another team is how you move them. The old rule required the manager to already
+    /// share a team with the lead, which made that move impossible — trying to move a lead from
+    /// WX0MIK to HRCC failed with "That manager doesn't share a team with this TeamLead".
+    /// </summary>
+    [Fact]
+    public async Task SetManagerAsync_SystemAdmin_CanMoveATeamLeadToAnotherTeam()
+    {
+        await using var dbContext = CreateContext();
+        var userManager = CreateUserManager(dbContext);
+        var wx0mik = await SeedTeamAsync(dbContext, "WX0MIK");
+        var hrcc = await SeedTeamAsync(dbContext, "HRCC");
+        var hrccManager = new User { UserName = "hrcc@example.com", Email = "hrcc@example.com", Name = "HRCC SM", Role = UserRole.SessionManager };
+        var teamLead = new User { UserName = "lead@example.com", Email = "lead@example.com", Name = "Lead", Role = UserRole.TeamLead };
+        await userManager.CreateAsync(hrccManager, ValidPassword);
+        await userManager.CreateAsync(teamLead, ValidPassword);
+        dbContext.UserTeams.Add(new UserTeam { UserId = hrccManager.Id, TeamId = hrcc.Id, CreatedUtc = Now });
+        // The lead carries a vestigial WX0MIK row — nothing reads it for scope, but it is exactly
+        // what the old overlap check tripped over.
+        dbContext.UserTeams.Add(new UserTeam { UserId = teamLead.Id, TeamId = wx0mik.Id, CreatedUtc = Now });
+        await dbContext.SaveChangesAsync();
+        var actor = await SeedSystemAdminAsync(dbContext, userManager);
+
+        var result = await CreateService(dbContext, userManager).SetManagerAsync(teamLead.Id, hrccManager.Id, actingUserId: actor.Id, CancellationToken.None);
+
+        Assert.Equal(UserActionResult.Success, result);
+        Assert.Equal(hrccManager.Id, (await userManager.FindByIdAsync(teamLead.Id.ToString()))!.ManagedByUserId);
+    }
+
+    /// <summary>A lead with no teams at all is assignable — the normal case, since nothing grants them any.</summary>
+    [Fact]
+    public async Task SetManagerAsync_TeamLeadWithNoTeamsOfTheirOwn_IsStillAssignable()
+    {
+        await using var dbContext = CreateContext();
+        var userManager = CreateUserManager(dbContext);
+        var team = await SeedTeamAsync(dbContext, "HRCC");
+        var manager = new User { UserName = "sm@example.com", Email = "sm@example.com", Name = "SM", Role = UserRole.SessionManager };
+        var teamLead = new User { UserName = "lead@example.com", Email = "lead@example.com", Name = "Lead", Role = UserRole.TeamLead };
+        await userManager.CreateAsync(manager, ValidPassword);
+        await userManager.CreateAsync(teamLead, ValidPassword);
+        dbContext.UserTeams.Add(new UserTeam { UserId = manager.Id, TeamId = team.Id, CreatedUtc = Now });
+        await dbContext.SaveChangesAsync();
+        var actor = await SeedSystemAdminAsync(dbContext, userManager);
+
+        var result = await CreateService(dbContext, userManager).SetManagerAsync(teamLead.Id, manager.Id, actingUserId: actor.Id, CancellationToken.None);
+
+        Assert.Equal(UserActionResult.Success, result);
+    }
+
+
 }
+
