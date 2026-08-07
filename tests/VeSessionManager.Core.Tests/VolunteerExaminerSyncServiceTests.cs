@@ -454,4 +454,63 @@ public class VolunteerExaminerSyncServiceTests
         var link = Assert.Single(dbContext.SessionVolunteerExaminers);
         Assert.Equal(sessionA.Id, link.SessionId);
     }
+
+    // ---- The historical import's escape hatch (2026-08-07) --------------------------------------
+
+    /// <summary>
+    /// <b>The bug this fixes.</b> Every session a historical import creates is older than
+    /// RosterRetryWindow by definition, so the settle rule removed all of them before a single roster
+    /// was fetched — the import's own VE step was a guaranteed no-op for exactly the data it had just
+    /// imported. Reported live: "I just did a history load but it didn't load the VEs."
+    /// </summary>
+    [Fact]
+    public async Task OldFinishedSession_WithIgnoreRetryWindow_IsStillPolledForItsRoster()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        await SeedSessionAsync(dbContext, team, scheduledStartUtc: Now - VolunteerExaminerSyncService.RosterRetryWindow.Add(TimeSpan.FromDays(365)));
+        var client = new FakeExamToolsClient();
+
+        await CreateService(dbContext, client).RunAsync(team, CancellationToken.None, onlySessionId: null, ignoreRetryWindow: true);
+
+        Assert.Single(client.RosterFetches);
+    }
+
+    /// <summary>
+    /// The escape hatch does not disable the other half of the settle rule: a session that already
+    /// has VEs recorded is still skipped, so re-running an import does not re-fetch what it already
+    /// has.
+    /// </summary>
+    [Fact]
+    public async Task OldFinishedSession_ThatAlreadyHasAroster_IsStillSkipped_EvenWithIgnoreRetryWindow()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        var session = await SeedSessionAsync(dbContext, team, scheduledStartUtc: Now - VolunteerExaminerSyncService.RosterRetryWindow.Add(TimeSpan.FromDays(365)));
+        var ve = new VolunteerExaminer { Name = "Existing VE", CallSign = "N0CALL", Team = team };
+        dbContext.SessionVolunteerExaminers.Add(new SessionVolunteerExaminer { Session = session, VolunteerExaminer = ve });
+        await dbContext.SaveChangesAsync();
+        var client = new FakeExamToolsClient();
+
+        await CreateService(dbContext, client).RunAsync(team, CancellationToken.None, onlySessionId: null, ignoreRetryWindow: true);
+
+        Assert.Empty(client.RosterFetches);
+    }
+
+    /// <summary>
+    /// And the routine path is unchanged — the window still protects the hourly sync from re-polling
+    /// a 2023 session whose roster ExamTools will never serve.
+    /// </summary>
+    [Fact]
+    public async Task RoutinePath_StillHonoursTheRetryWindow()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        await SeedSessionAsync(dbContext, team, scheduledStartUtc: Now - VolunteerExaminerSyncService.RosterRetryWindow.Add(TimeSpan.FromDays(1)));
+        var client = new FakeExamToolsClient();
+
+        await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+
+        Assert.Empty(client.RosterFetches);
+    }
 }

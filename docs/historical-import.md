@@ -372,3 +372,32 @@ where it had never been needed before.
 Migration `HistoricalImportRequests` — one new table, no changes to existing columns, so the
 down-migration is a clean `DROP TABLE` with no data-loss path for pre-existing data.
 
+## The VE roster step was a no-op for imported sessions (fixed 2026-08-07)
+
+Reported live: *"I just did a history load but it didn't load the VEs."* Sessions and candidates
+imported fine; volunteer examiners did not.
+
+Two features in direct conflict, each correct on its own:
+
+- `VolunteerExaminerSyncService.RosterRetryWindow` (30 days) settles a finished session **whether or
+  not a roster was ever obtained**. It exists because a real 2023 session pulled in by an earlier
+  import returned HTTP 500 for its roster on every attempt, producing a failed API call and an ERROR
+  line every hour, forever.
+- A historical import creates sessions that are, **by definition**, older than that window.
+
+So the import's own roster step settled every session it had just created before fetching a single
+roster. The step ran, logged nothing unusual, and did nothing.
+
+`RunAsync` gains `ignoreRetryWindow`, set by the historical import and nothing else — the import is
+the one caller that knows these sessions are old *on purpose*. The routine hourly path is unchanged
+and still protected from the 500-forever case. Same shape as
+`ExamResultSyncService.SyncSessionAsync` ignoring its own `ResultSyncWindow` for a session-scoped
+refresh.
+
+The other half of the settle rule still applies: a session that already has VEs recorded is skipped
+even with the flag set, so re-running an import does not re-fetch rosters it already has.
+
+**Existing imports do not self-heal.** The routine sync still honours the window, so sessions
+imported before this fix keep their empty rosters — **re-run the import over the same date range** to
+pull them in. That is safe and idempotent: sessions and candidates already present are updated rather
+than duplicated, and only the sessions still missing a roster cost an API call.
