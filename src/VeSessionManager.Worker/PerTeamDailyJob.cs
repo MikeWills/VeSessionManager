@@ -19,13 +19,14 @@ public abstract class PerTeamDailyJob(
     IServiceScopeFactory scopeFactory,
     IConfiguration configuration,
     ILogger logger,
-    string jobName,
-    string intervalConfigKey,
-    int defaultIntervalHours) : BackgroundService
+    string jobName) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var intervalHours = configuration.GetValue(intervalConfigKey, defaultIntervalHours);
+        // Interval comes from the shared registry rather than a literal here, so the admin Job
+        // Schedule page and this timer can never disagree about how often the job runs.
+        var descriptor = JobSchedules.For(jobName);
+        var intervalHours = configuration.GetValue(descriptor.IntervalConfigKey!, descriptor.DefaultIntervalHours!.Value);
         using var timer = new PeriodicTimer(TimeSpan.FromHours(intervalHours));
 
         do

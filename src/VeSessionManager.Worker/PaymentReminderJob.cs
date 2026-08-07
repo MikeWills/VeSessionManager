@@ -1,6 +1,8 @@
 using VeSessionManager.Core.Entities;
 using VeSessionManager.Core.Payments;
 
+using VeSessionManager.Core.Jobs;
+
 namespace VeSessionManager.Worker;
 
 /// <summary>
@@ -12,7 +14,7 @@ namespace VeSessionManager.Worker;
 /// SMTP account (multi-team, see docs/multi-team.md).
 /// </summary>
 public class PaymentReminderJob(IServiceScopeFactory scopeFactory, IConfiguration configuration, ILogger<PaymentReminderJob> logger)
-    : PerTeamDailyJob(scopeFactory, configuration, logger, "PaymentReminder", "Jobs:PaymentReminderIntervalHours", 24)
+    : PerTeamDailyJob(scopeFactory, configuration, logger, JobSchedules.PaymentReminder)
 {
     protected override Task RunForTeamAsync(IServiceProvider scopedServices, Team team, CancellationToken cancellationToken) =>
         scopedServices.GetRequiredService<PaymentReminderService>().RunAsync(team, cancellationToken);

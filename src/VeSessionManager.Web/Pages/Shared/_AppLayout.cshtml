@@ -54,7 +54,7 @@
     var applicantsGroupActive = activeNav is "ApplicantStatus" or "RenewalMonitor";
     var vesGroupActive = activeNav is "VeRoster";
     var settingsGroupActive = activeNav is "AdminTeams" or "AdminTeamSettings" or "AdminUsers" or "AdminEmailTemplates"
-        or "AdminFees" or "AdminVecs" or "AdminAuditLog" or "AdminJobHistory" or "AdminSystemSettings";
+        or "AdminFees" or "AdminVecs" or "AdminAuditLog" or "AdminJobHistory" or "AdminJobSchedule" or "AdminSystemSettings";
 }
 <!DOCTYPE html>
 <html lang="en">
@@ -159,6 +159,7 @@
                         <hr>
                         <a class="item @(activeNav == "AdminAuditLog" ? "active" : "")" asp-page="/Admin/AuditLog">Audit Log</a>
                         <a class="item @(activeNav == "AdminJobHistory" ? "active" : "")" asp-page="/Admin/JobRunHistory">Job History</a>
+                        <a class="item @(activeNav == "AdminJobSchedule" ? "active" : "")" asp-page="/Admin/JobSchedule">Job Schedule</a>
                         @if (currentUser?.Role is UserRole.SystemAdmin)
                         {
                             <hr>

@@ -45,6 +45,25 @@ public static class DailySlotSchedule
         return TimeZoneInfo.ConvertTimeToUtc(slotEt, UlsSchedule.EasternTimeZone);
     }
 
+    /// <summary>
+    /// The next slot (UTC) strictly after <paramref name="nowEt"/> — what the admin Job Schedule page
+    /// reports as "next run" once the current slot has already run.
+    ///
+    /// <para><b>Advances in Eastern wall-clock, not by adding hours to the UTC result.</b> Adding
+    /// <paramref name="intervalHours"/> to the previous slot's UTC value lands an hour off across a
+    /// DST boundary — 06:00 ET is 10:00 UTC in summer and 11:00 UTC in winter — so the answer would
+    /// be quietly wrong twice a year, in the direction nobody checks. Converting the *local* hour
+    /// after stepping keeps it pinned to the stated wall-clock time.</para>
+    /// </summary>
+    public static DateTime NextSlotUtc(DateTime nowEt, int startHourEt, int intervalHours)
+    {
+        var hoursSinceStart = ((nowEt.Hour - startHourEt) % intervalHours + intervalHours) % intervalHours;
+        var nextSlotEt = new DateTime(nowEt.Year, nowEt.Month, nowEt.Day, nowEt.Hour, 0, 0, DateTimeKind.Unspecified)
+            .AddHours(-hoursSinceStart)
+            .AddHours(intervalHours);
+        return TimeZoneInfo.ConvertTimeToUtc(nextSlotEt, UlsSchedule.EasternTimeZone);
+    }
+
     /// <summary>Current Eastern wall-clock time, for feeding <see cref="LatestDueSlotUtc"/>.</summary>
     public static DateTime NowEastern(TimeProvider timeProvider) =>
         TimeZoneInfo.ConvertTimeFromUtc(timeProvider.GetUtcNow().UtcDateTime, UlsSchedule.EasternTimeZone);

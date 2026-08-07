@@ -8,6 +8,14 @@ that window, or immediately if it's phase-numbered work already summarized in "C
 design rationale for any entry still lives in its linked `/docs/*.md` file, not here or in
 CLAUDE.md — this file, like CLAUDE.md's Change Log, is pointers only.
 
+- **Session Detail's "Refresh candidates" narrowed from team-wide to session-scoped (2026-08-03).**
+  See `docs/team-maintenance.md`'s "session-scoped" section. The button ran the full team pipeline —
+  one click could mint payment links and send emails for every *other* session the team had. New
+  `ManualCandidateRefreshService.RunForSessionAsync`: `SessionIngestionService.RefreshSessionCandidatesAsync`
+  syncs one session's applicants (no session create/cancel — those need the full-feed diff),
+  `ExamResultSyncService.SyncSessionAsync` ignores `ResultSyncWindow` (making the window's documented
+  escape hatch real for the first time), and the other four scan services gained a trailing optional
+  `int? onlySessionId` filter. Team Maintenance's "Refresh now" stays team-wide and throttled.
 - **Payment work bounded by session age; post-import log noise fixed (2026-08-01).** See
   `docs/historical-import.md`'s companion fixes 3 and 4. `PaymentGenerationService` filtered only on
   `Session.Status == Active` (= "not cancelled", never "not finished"), so the historical import's

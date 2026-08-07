@@ -27,7 +27,8 @@ public class HistoricalImportJob(
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var intervalSeconds = configuration.GetValue("Jobs:HistoricalImportIntervalSeconds", 60);
+        var descriptor = JobSchedules.For(JobSchedules.HistoricalImport);
+        var intervalSeconds = configuration.GetValue(descriptor.IntervalConfigKey!, descriptor.DefaultIntervalSeconds!.Value);
         using var timer = new PeriodicTimer(TimeSpan.FromSeconds(intervalSeconds));
 
         do
