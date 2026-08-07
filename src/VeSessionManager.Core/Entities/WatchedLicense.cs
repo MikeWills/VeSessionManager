@@ -85,7 +85,13 @@ public class WatchedLicense
     /// </summary>
     public DateTime? RenewalPendingSinceUtc { get; set; }
 
-    /// <summary>ULS file number of the pending renewal application, so it can be quoted when chasing FCC. Cleared alongside <see cref="RenewalPendingSinceUtc"/>.</summary>
+    /// <summary>
+    /// ULS file number of the renewal application, so it can be quoted when chasing FCC. Cleared
+    /// when an application is abandoned, but deliberately <b>kept</b> through a confirmation: FCC
+    /// leaves a granted application in its pending list for days afterwards, and this is what
+    /// LicenseWatchService matches it against so the row is not re-armed as pending by the very
+    /// application it just watched land.
+    /// </summary>
     public string? RenewalFileNumber { get; set; }
 
     /// <summary>

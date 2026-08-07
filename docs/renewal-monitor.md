@@ -92,6 +92,41 @@ Three details in `ApplyRenewalState` that each exist for a reason:
   withdrawn, re-filed), and the row returns to reporting its real expiry rather than a stale
   "pending".
 
+### The overlap outlives the poll that confirmed the renewal (fixed 2026-08-07)
+
+The bullet above about FCC leaving a granted application in `pendingApplications` was right about the
+overlap and wrong about its duration. It handled the overlap *within* the poll that spotted the
+grant — but the application is still listed on the **next** day's poll too, and by then the expiry
+has stopped moving, so the "no advance, and there's a renewal pending" path read it as a brand-new
+request.
+
+Observed on KA0MVW, one day after the fix above: Aug 6 correctly reported **Renewed**, Aug 7 showed
+**Renewal pending / "Filed, seen Aug 7"** against an expiry of 2036. And it was wedged there
+permanently — the anchor it recorded was the already-renewed expiry, a value nothing could ever beat,
+so the row could only escape when FCC eventually dropped the application. A licence walking backwards
+from issued to pending is exactly the thing the state machine exists to prevent.
+
+Two guards, deliberately at different layers:
+
+- **`LicenseWatchService.IsAlreadyIssued`** filters an already-granted application out of
+  `pendingApplications` before any branch looks at it, so no path can mistake a receipt for a
+  request. Matched on the ULS file number first — which is why `RenewalFileNumber` is now **kept**
+  through a confirmation rather than cleared with the other renewal fields. The fallback, for a
+  response that omits the number, is the receipt date: FCC cannot have received a genuinely new
+  renewal before it issued the last one, and real ones are ten years apart. A row already wedged by
+  the bug stands itself down on the next run, and that stand-down is deliberately **not** counted as
+  an abandonment.
+- **`DeriveStatus` puts `Renewed` above `RenewalPending`.** A renewal confirmed within the last month
+  cannot have been followed by a real new one, so whatever the stored fields say, the screen never
+  walks an issued licence back to pending. `RenewalMonitor`'s renewal column keys off the derived
+  status for the same reason — the chip saying Renewed while the column says "Filed" was half the
+  confusion.
+
+Pinned by `ApplicationStillListedAfterIssuance_DoesNotReArmPending`,
+`RowAlreadyWedgedByALingeringApplication_StandsDownWithoutCountingAsAbandoned`,
+`RenewalFiledLongAfterAPreviousOne_IsStillDetected` (the filtering must not deafen the row to the next
+real renewal) and `RecentlyIssuedRenewal_OutranksAPendingFlag`.
+
 ### The assumption that was wrong (resolved 2026-08-06)
 
 `application_purpose` was originally matched against FCC's two-letter codes, `RO` and `RM`. That was

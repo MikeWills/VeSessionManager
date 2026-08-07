@@ -77,12 +77,17 @@ public static class WatchedLicenseStatusExtensions
         if (licence.LastCheckedUtc is null) return WatchedLicenseStatus.NotYetChecked;
         if (licence.CancellationDateUtc is not null) return WatchedLicenseStatus.Cancelled;
 
-        if (licence.RenewalPendingSinceUtc is not null) return WatchedLicenseStatus.RenewalPending;
-
+        // Renewed outranks RenewalPending, not the other way round: a renewal issued within the last
+        // month cannot have been followed by a real new one (they are ten years apart), so a pending
+        // flag alongside a recent confirmation is FCC's granted application lingering in its pending
+        // list — or this app having been re-armed by it. A licence that has been issued must never
+        // walk backwards to "pending" on the screen, whatever the stored fields say.
         if (licence.RenewalConfirmedUtc is { } confirmed && utcNow - confirmed < RenewedHighlightWindow)
         {
             return WatchedLicenseStatus.Renewed;
         }
+
+        if (licence.RenewalPendingSinceUtc is not null) return WatchedLicenseStatus.RenewalPending;
 
         // No expiration date on a record that was otherwise found: nothing can be said about its
         // term, so don't invent an alarming answer.

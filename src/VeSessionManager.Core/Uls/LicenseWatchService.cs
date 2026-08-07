@@ -148,6 +148,11 @@ public class LicenseWatchService(
     /// necessarily drop the application from <c>pendingApplications</c> the instant the new term is
     /// granted — the two can overlap for a while. Testing "did the expiration advance?" first means
     /// an overlap reports Renewed rather than sticking on Renewal pending until FCC tidies up.</para>
+    ///
+    /// <para><b>And that overlap outlives the poll that confirmed the renewal</b> — see
+    /// <see cref="IsAlreadyIssued"/>. Issuance is terminal for a given application: once the
+    /// expiration has moved, the application still sitting in the list is a receipt, not a
+    /// request.</para>
     /// </summary>
     private static void ApplyRenewalState(
         WatchedLicense licence,
@@ -156,7 +161,27 @@ public class LicenseWatchService(
         DateTime? previousExpiry,
         LicenseWatchResult result)
     {
-        var renewal = lookup.PendingApplications.FirstOrDefault(a => a.IsRenewal);
+        var renewalApplications = lookup.PendingApplications.Where(a => a.IsRenewal).ToList();
+
+        // Anything FCC has already acted on is filtered out here rather than tested in each branch
+        // below, so no path can mistake a lingering receipt for a live request.
+        var renewal = renewalApplications.FirstOrDefault(a => !IsAlreadyIssued(licence, a));
+
+        // True when every renewal application on the record is one we have already seen land. Kept
+        // apart from "no application at all" so clearing it isn't miscounted as an abandonment.
+        var lingeringOnly = renewal is null && renewalApplications.Count > 0;
+
+        // The file number is retained (not cleared) through a confirmation, because it is what
+        // IsAlreadyIssued matches the lingering application against on subsequent polls.
+        void Confirm()
+        {
+            licence.RenewalConfirmedUtc = utcNow;
+            licence.RenewalPendingSinceUtc = null;
+            licence.ExpiredDateWhenRenewalFiledUtc = null;
+            licence.RenewalFileNumber =
+                renewalApplications.FirstOrDefault()?.UlsFileNumber ?? licence.RenewalFileNumber;
+            result.RenewalsConfirmed++;
+        }
 
         // The expiration date advancing since the last look IS issuance — whether or not this app
         // ever saw the application pending. Checked first, and independently of RenewalPendingSinceUtc,
@@ -168,11 +193,7 @@ public class LicenseWatchService(
         // (found 2026-08-06 on a licence granted before it was first observed).
         if (previousExpiry is { } before && licence.ExpiredDateUtc is { } after && after > before)
         {
-            licence.RenewalConfirmedUtc = utcNow;
-            licence.RenewalPendingSinceUtc = null;
-            licence.RenewalFileNumber = null;
-            licence.ExpiredDateWhenRenewalFiledUtc = null;
-            result.RenewalsConfirmed++;
+            Confirm();
             return;
         }
 
@@ -187,22 +208,28 @@ public class LicenseWatchService(
 
             if (issued)
             {
-                licence.RenewalConfirmedUtc = utcNow;
-                licence.RenewalPendingSinceUtc = null;
-                licence.RenewalFileNumber = null;
-                licence.ExpiredDateWhenRenewalFiledUtc = null;
-                result.RenewalsConfirmed++;
+                Confirm();
                 return;
             }
 
             if (renewal is null)
             {
+                licence.RenewalPendingSinceUtc = null;
+                licence.ExpiredDateWhenRenewalFiledUtc = null;
+
+                if (lingeringOnly)
+                {
+                    // Not an abandonment: this row was re-armed as "pending" by an application FCC
+                    // had already granted (the bug this filtering exists to stop). Stand the pending
+                    // state down and leave RenewalConfirmedUtc and the file number where they are,
+                    // so the row goes back to reporting the renewal it actually got.
+                    return;
+                }
+
                 // The application vanished without the expiration moving — dismissed, withdrawn, or
                 // FCC re-filed it under a new number. Reset to "not pending" so a later application
                 // is seen as new; the row simply goes back to reporting its real expiry.
-                licence.RenewalPendingSinceUtc = null;
                 licence.RenewalFileNumber = null;
-                licence.ExpiredDateWhenRenewalFiledUtc = null;
                 result.RenewalsAbandoned++;
                 return;
             }
@@ -224,6 +251,36 @@ public class LicenseWatchService(
             licence.ExpiredDateWhenRenewalFiledUtc = licence.ExpiredDateUtc ?? previousExpiry;
             result.RenewalsDetected++;
         }
+    }
+
+    /// <summary>
+    /// Whether a renewal application still listed at FCC is one this app has already watched land.
+    ///
+    /// <para><b>Issuance is terminal, but FCC's pending list does not say so.</b> The application
+    /// can sit in <c>pendingApplications</c> for days after the new term is granted, and by then the
+    /// expiration has stopped moving — so on the *next* poll the "no advance since last time, and
+    /// there's a renewal pending" path read it as a brand-new request. That re-armed the row to
+    /// Renewal pending the day after it correctly reported Renewed (observed on KA0MVW,
+    /// 2026-08-06/07), and wedged it there permanently: the anchor it recorded was the
+    /// already-renewed expiry, a value nothing would ever beat, so the row could only escape when
+    /// FCC eventually dropped the application.</para>
+    ///
+    /// <para>Matched on the file number first, since that identifies the application itself. The
+    /// receipt-date fallback covers a response that omits the number: FCC cannot have received a
+    /// genuinely new renewal before it issued the last one, and the real ones are ten years
+    /// apart.</para>
+    /// </summary>
+    private static bool IsAlreadyIssued(WatchedLicense licence, UlsPendingApplication application)
+    {
+        if (licence.RenewalConfirmedUtc is not { } confirmed) return false;
+
+        if (!string.IsNullOrWhiteSpace(application.UlsFileNumber) &&
+            string.Equals(application.UlsFileNumber, licence.RenewalFileNumber, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return application.ReceiptDateUtc is { } receipt && receipt <= confirmed;
     }
 }
 
