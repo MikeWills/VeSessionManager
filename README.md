@@ -105,6 +105,18 @@ team is silently skipped until they're filled in. Only `ExamTools:BaseUrl` (whic
 same for every team on one deployment; per-environment overrides pick the right one automatically.
 See [`docs/examtools-api.md`](docs/examtools-api.md) for API details.
 
+> **Anything this app does in ExamTools is attributed to the stored credential's account, not to
+> the person who clicked.** ExamTools is starting to expose its audit log to VEs (already on the
+> alpha site), so those entries will now be visible to your team — and they will all read as
+> whichever VE's login sits in `Team.ExamToolsUsername`, with no trace of the actual end user.
+>
+> This app is read-only against ExamTools today (session and candidate ingestion, VE rosters, exam
+> results, the ULS mirror), so there is nothing to misattribute yet. It matters for two reasons:
+> pick a credential whose name you are content to see against every automated action, and treat it
+> as a real cost when weighing any future write-back feature — the app's own audit log would know
+> who did it, and ExamTools' would not. It is part of why "add walk-in candidate" and "move
+> candidate between sessions" were removed in favour of doing those things in ExamTools directly.
+
 In the Development environment the Worker also seeds a starter `Vec`/`FeeConfiguration` on
 first run (see `DevDataSeeder`) — without those rows, ingestion intentionally skips sessions
 until fee configuration exists. `Vec` is shared/global across every team, not per-team — see

@@ -105,6 +105,23 @@ public class VolunteerExaminer : ILicenseSnapshot
 
     public DateTime? LicenseCancellationDateUtc { get; set; }
 
+    /// <summary>
+    /// Set when this record was merged into another because they turned out to be the same person —
+    /// proved by both resolving to one FRN, which is unique per person.
+    ///
+    /// <para><b>The row is kept, never deleted.</b> A hard delete after repointing would leave no
+    /// trace that the duplicate ever existed and no path back. A global query filter in AppDbContext
+    /// hides merged rows from every query at once, which matters more than it sounds: the
+    /// alternative is an invariant that every future query has to remember, and one eventually
+    /// will not.</para>
+    ///
+    /// <para>This records <i>that</i> a merge happened. Which session links came from which side is
+    /// recorded in the audit entry — without that, an un-merge could not tell whose history was
+    /// whose, and calling the merge reversible would be an overclaim.</para>
+    /// </summary>
+    public int? MergedIntoVolunteerExaminerId { get; set; }
+    public VolunteerExaminer? MergedIntoVolunteerExaminer { get; set; }
+
     // ---- Relationships --------------------------------------------------------------------------
 
     public List<VeTeamMembership> TeamMemberships { get; } = [];

@@ -149,6 +149,18 @@ public class AppDbContext(DbContextOptions<AppDbContext> options, IDataProtectio
             //
             // Uniqueness is enforced where it is actually knowable: on Frn above.
             b.HasIndex(v => v.CallSign);
+
+            b.HasOne(v => v.MergedIntoVolunteerExaminer)
+                .WithMany()
+                .HasForeignKey(v => v.MergedIntoVolunteerExaminerId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            // **A merged duplicate disappears from every query at once.** The alternative — asking
+            // each query to remember to exclude them — is an invariant that one future query will
+            // forget, and the symptom would be a person appearing twice on a screen long after
+            // someone merged them. Merged rows are still reachable via IgnoreQueryFilters() for the
+            // audit trail and for an un-merge.
+            b.HasQueryFilter(v => v.MergedIntoVolunteerExaminerId == null);
         });
 
         modelBuilder.Entity<VeTeamMembership>(b =>
