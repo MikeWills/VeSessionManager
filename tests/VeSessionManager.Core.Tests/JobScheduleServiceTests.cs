@@ -246,4 +246,101 @@ public class JobScheduleServiceTests
             }
         }
     }
+
+    // ---- Tick vs run, and the shared ULS schedule (2026-08-06) ----------------------------------
+
+    /// <summary>
+    /// Session ingestion's timer interval is NOT its cadence. It ticked every 5 minutes while the
+    /// configured per-team interval was 60, and the page reported the tick — off by 12x, on the one
+    /// screen whose entire value is being trusted.
+    /// </summary>
+    [Fact]
+    public async Task SessionIngestion_ReportsTheSettingsCadence_NotItsTimerTick()
+    {
+        await using var dbContext = CreateContext();
+        dbContext.SystemSettings.Add(new SystemSettings { SessionIngestionIntervalMinutes = 60 });
+        var lastRun = Now.AddMinutes(-10);
+        SeedRun(dbContext, JobSchedules.SessionIngestion, lastRun);
+
+        var status = await StatusForAsync(dbContext, JobSchedules.SessionIngestion);
+
+        Assert.Equal("Every 60 minutes", status.CadenceSummary);
+        Assert.Equal(lastRun.AddMinutes(60), status.NextRunUtc);
+        Assert.Contains("Ticks every 5 minutes", status.CadenceDetail);
+    }
+
+    /// <summary>Every job states its tick, including the ones where the tick is the run.</summary>
+    [Fact]
+    public async Task EveryJob_StatesItsTick()
+    {
+        await using var dbContext = CreateContext();
+
+        var statuses = await CreateService(dbContext).GetStatusesAsync(CancellationToken.None);
+
+        Assert.All(statuses, s => Assert.False(string.IsNullOrWhiteSpace(s.CadenceDetail), $"{s.Descriptor.JobName} has no tick"));
+        var purge = statuses.Single(s => s.Descriptor.JobName == JobSchedules.PiiPurge);
+        Assert.Contains("each tick does the work", purge.CadenceDetail);
+    }
+
+    /// <summary>
+    /// The renewal monitor shares the ULS watcher's schedule. It was 06:00 ET once a day while the
+    /// watcher ran every 6 hours, so a renewal already visible in the mirror could sit unseen for most
+    /// of a day — which is exactly what was reported.
+    /// </summary>
+    [Fact]
+    public async Task RenewalMonitor_SharesTheUlsWatcherSchedule()
+    {
+        await using var dbContext = CreateContext();
+        dbContext.SystemSettings.Add(new SystemSettings { UlsWatcherStartHourEt = 6, UlsWatcherIntervalHours = 6 });
+        SeedRun(dbContext, JobSchedules.UlsWatcher, Now.AddMinutes(-5));
+        SeedRun(dbContext, JobSchedules.LicenseWatch, Now.AddMinutes(-5));
+        await dbContext.SaveChangesAsync();
+
+        var statuses = await CreateService(dbContext).GetStatusesAsync(CancellationToken.None);
+        var watcher = statuses.Single(s => s.Descriptor.JobName == JobSchedules.UlsWatcher);
+        var renewal = statuses.Single(s => s.Descriptor.JobName == JobSchedules.LicenseWatch);
+
+        Assert.Equal(watcher.CadenceSummary, renewal.CadenceSummary);
+        Assert.Equal(watcher.NextRunUtc, renewal.NextRunUtc);
+        Assert.Contains("6:00 AM", renewal.CadenceSummary);   // four slots a day, not one
+        Assert.Contains("12:00 PM", renewal.CadenceSummary);
+    }
+
+    /// <summary>Changing the ULS setting moves the renewal monitor too — that is the point of sharing it.</summary>
+    [Fact]
+    public async Task ChangingTheUlsInterval_MovesTheRenewalMonitorAsWell()
+    {
+        await using var dbContext = CreateContext();
+        dbContext.SystemSettings.Add(new SystemSettings { UlsWatcherStartHourEt = 8, UlsWatcherIntervalHours = 24 });
+        SeedRun(dbContext, JobSchedules.LicenseWatch, Now.AddMinutes(-5));
+
+        var status = await StatusForAsync(dbContext, JobSchedules.LicenseWatch);
+
+        Assert.Equal("8:00 AM Eastern", status.CadenceSummary); // one slot a day now
+    }
+
+    /// <summary>
+    /// A SystemSettings row that was never filled in holds 0, which is a DivideByZero in the slot
+    /// arithmetic — it would take the whole page down, not just misreport one row. The admin form's
+    /// min="1" only guards the browser.
+    /// </summary>
+    [Fact]
+    public async Task ZeroIntervalInSettings_FallsBackInsteadOfCrashingThePage()
+    {
+        await using var dbContext = CreateContext();
+        dbContext.SystemSettings.Add(new SystemSettings()); // every schedule value defaults to 0
+
+        var statuses = await CreateService(dbContext).GetStatusesAsync(CancellationToken.None);
+
+        Assert.Equal(JobSchedules.All.Count, statuses.Count);
+        Assert.All(statuses, s => Assert.False(string.IsNullOrWhiteSpace(s.CadenceSummary)));
+    }
+
+    /// <summary>And the backstop names the problem rather than throwing DivideByZero.</summary>
+    [Fact]
+    public void SlotArithmetic_RejectsANonPositiveInterval()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => DailySlotSchedule.LatestDueSlotUtc(new DateTime(2026, 8, 6, 10, 0, 0), startHourEt: 8, intervalHours: 0));
+    }
 }

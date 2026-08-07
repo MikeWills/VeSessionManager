@@ -32,9 +32,14 @@ public enum NextRunConfidence
 /// Most recent *successful* run. Tracked separately because anchored jobs decide their catch-up from
 /// success alone, and because a job failing every attempt still has a recent LastRunUtc.
 /// </param>
+/// <param name="CadenceDetail">
+/// The timer's own cadence, when it differs from how often the job actually does its work — shown
+/// beneath the summary so "every 5 minutes" can never be mistaken for the polling interval.
+/// </param>
 public sealed record JobScheduleStatus(
     JobScheduleDescriptor Descriptor,
     string CadenceSummary,
+    string? CadenceDetail,
     DateTime? LastRunUtc,
     DateTime? LastSuccessUtc,
     bool LastRunSucceeded,
@@ -95,7 +100,7 @@ public class JobScheduleService(AppDbContext dbContext, IConfiguration configura
 
                 return descriptor.Kind == JobCadenceKind.AnchoredToEasternHour
                     ? BuildAnchored(descriptor, settings, nowEt, lastRunUtc, lastSuccessUtc)
-                    : BuildInterval(descriptor, nowUtc, lastRunUtc, lastSuccessUtc);
+                    : BuildInterval(descriptor, settings, nowUtc, lastRunUtc, lastSuccessUtc);
             })
             .ToList();
     }
@@ -110,11 +115,13 @@ public class JobScheduleService(AppDbContext dbContext, IConfiguration configura
         // Resolution order mirrors UlsWatcherJob's own: the SystemSettings row wins over configuration,
         // configuration over the built-in default. LicenseWatch is not settings-backed, so it skips
         // straight past the first two.
-        var intervalHours = descriptor.SettingsBacked && settings is not null
-            ? settings.UlsWatcherIntervalHours
-            : ResolveIntervalHours(descriptor);
-        var startHourEt = descriptor.SettingsBacked && settings is not null
-            ? settings.UlsWatcherStartHourEt
+        var useSettings = descriptor.SettingsSource == JobSettingsSource.UlsWatcher && settings is not null;
+        var configuredHours = ResolveIntervalHours(descriptor);
+        var intervalHours = useSettings
+            ? JobSchedules.IntervalOrDefault(settings!.UlsWatcherIntervalHours, configuredHours)
+            : configuredHours;
+        var startHourEt = useSettings
+            ? JobSchedules.StartHourOrDefault(settings!.UlsWatcherStartHourEt, descriptor.StartHourEt ?? 0)
             : descriptor.StartHourEt ?? 0;
 
         var dueSlotUtc = DailySlotSchedule.LatestDueSlotUtc(nowEt, startHourEt, intervalHours);
@@ -126,6 +133,7 @@ public class JobScheduleService(AppDbContext dbContext, IConfiguration configura
         return new JobScheduleStatus(
             descriptor,
             DescribeAnchored(startHourEt, intervalHours),
+            DescribeTick(descriptor, TimeSpan.FromHours(intervalHours), "checks hourly so a missed slot is caught up"),
             lastRunUtc,
             lastSuccessUtc,
             LastRunSucceeded: lastRunUtc is null || lastSuccessUtc == lastRunUtc,
@@ -135,11 +143,19 @@ public class JobScheduleService(AppDbContext dbContext, IConfiguration configura
 
     private JobScheduleStatus BuildInterval(
         JobScheduleDescriptor descriptor,
+        Entities.SystemSettings? settings,
         DateTime nowUtc,
         DateTime? lastRunUtc,
         DateTime? lastSuccessUtc)
     {
-        var interval = ResolveInterval(descriptor);
+        // Session ingestion's timer interval is NOT its cadence: each tick only polls a team whose own
+        // SystemSettings interval has elapsed. Reporting the tick said "every 5 minutes" while the
+        // configured cadence was 60 — off by 12x, on a page whose whole purpose is being trusted.
+        var interval = descriptor.SettingsSource == JobSettingsSource.SessionIngestion && settings is not null
+            ? TimeSpan.FromMinutes(JobSchedules.IntervalOrDefault(
+                settings.SessionIngestionIntervalMinutes,
+                (int)ResolveInterval(descriptor).TotalMinutes))
+            : ResolveInterval(descriptor);
 
         // Counting from the last run, not from now: the timer fires on a fixed cycle, and the last
         // run marks where in that cycle we are. Null when it has never run — there is nothing to
@@ -148,7 +164,8 @@ public class JobScheduleService(AppDbContext dbContext, IConfiguration configura
 
         return new JobScheduleStatus(
             descriptor,
-            DescribeInterval(interval),
+            DescribeInterval(interval, preferMinutes: descriptor.SettingsSource == JobSettingsSource.SessionIngestion),
+            DescribeTick(descriptor, interval, null),
             lastRunUtc,
             lastSuccessUtc,
             LastRunSucceeded: lastRunUtc is null || lastSuccessUtc == lastRunUtc,
@@ -176,6 +193,35 @@ public class JobScheduleService(AppDbContext dbContext, IConfiguration configura
         return TimeSpan.FromHours(ResolveIntervalHours(descriptor));
     }
 
+    /// <summary>
+    /// "Ticks every N minutes …" — stated for every job, since the ticks genuinely differ and the
+    /// relationship between tick and run is the thing that misleads. Three shapes: the tick is the
+    /// run; the tick is a catch-up check against a wall-clock slot; or the tick merely asks whether
+    /// anything is due yet, which is session ingestion and the one that read as "every 5 minutes"
+    /// when the configured cadence was 60.
+    /// </summary>
+    private static string? DescribeTick(JobScheduleDescriptor descriptor, TimeSpan runInterval, string? anchoredSuffix)
+    {
+        if (descriptor.TickIntervalSeconds is not { } seconds)
+        {
+            return null;
+        }
+
+        var tick = TimeSpan.FromSeconds(seconds);
+        var every = tick.TotalHours >= 1
+            ? $"Ticks every {tick.TotalHours:0} hour{(tick.TotalHours == 1 ? "" : "s")}"
+            : $"Ticks every {tick.TotalMinutes:0} minutes";
+
+        if (anchoredSuffix is not null)
+        {
+            return $"{every} — {anchoredSuffix}";
+        }
+
+        return tick == runInterval
+            ? $"{every} — each tick does the work"
+            : $"{every}, and polls a team once its own interval has elapsed";
+    }
+
     private static string DescribeAnchored(int startHourEt, int intervalHours)
     {
         var runsPerDay = Math.Max(1, 24 / intervalHours);
@@ -185,11 +231,27 @@ public class JobScheduleService(AppDbContext dbContext, IConfiguration configura
         return $"{string.Join(" and ", hours)} Eastern";
     }
 
-    private static string DescribeInterval(TimeSpan interval) => interval switch
+    /// <summary>
+    /// <paramref name="preferMinutes"/> keeps the wording in the same unit as the setting it came from:
+    /// Session Ingestion's field is "interval (minutes)", so a value of 60 should read back as
+    /// "Every 60 minutes", not "Every 1 hour" — the same number the admin typed, not a converted one.
+    /// </summary>
+    private static string DescribeInterval(TimeSpan interval, bool preferMinutes = false)
     {
-        { TotalHours: >= 24 } when interval.TotalHours % 24 == 0 =>
-            interval.TotalHours == 24 ? "Every 24 hours" : $"Every {interval.TotalDays:0} days",
-        { TotalHours: >= 1 } => $"Every {interval.TotalHours:0} hours",
-        _ => $"Every {interval.TotalMinutes:0} minutes"
-    };
+        if (preferMinutes)
+        {
+            return $"Every {interval.TotalMinutes:0} minute{Plural(interval.TotalMinutes)}";
+        }
+
+        if (interval.TotalHours >= 24 && interval.TotalHours % 24 == 0)
+        {
+            return interval.TotalHours == 24 ? "Every 24 hours" : $"Every {interval.TotalDays:0} days";
+        }
+
+        return interval.TotalHours >= 1
+            ? $"Every {interval.TotalHours:0} hour{Plural(interval.TotalHours)}"
+            : $"Every {interval.TotalMinutes:0} minute{Plural(interval.TotalMinutes)}";
+    }
+
+    private static string Plural(double value) => Math.Round(value) == 1 ? "" : "s";
 }

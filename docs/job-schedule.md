@@ -88,3 +88,39 @@ descriptor rather than a literal. `JobName` **must** match the string passed to
 `JobRunHistoryLogger.RunAsync` exactly — it is the join key back to `JobRunHistory`, which is where
 "when did this last run?" is answered. A job missing from the registry still runs; it just never
 appears on the one screen that claims to list everything.
+
+## Tick vs. run, and the shared ULS schedule (2026-08-06)
+
+Three corrections, all reported off the live page within a day of it shipping.
+
+**The page reported session ingestion's timer tick as its cadence.** It said *"Every 5 minutes"* while
+System Settings said 60. Both were true of different things: the job wakes every 5 minutes (config),
+but each tick only polls a team once `SystemSettings.SessionIngestionIntervalMinutes` has elapsed
+since *that team's* last run. Reporting the tick overstated the cadence by 12x — on the one screen
+whose entire value is being trusted.
+
+Now the cadence comes from the setting and the tick is stated beneath it, for **every** job rather
+than only where they differ: the ticks genuinely vary job to job, and "these two coincide" is itself
+worth being able to read off the page. Wording follows the unit of the setting it came from, so 60
+minutes reads back as *"Every 60 minutes"* — the number the admin typed, not a converted one.
+
+**The renewal monitor ran once a day while the ULS watcher ran every six hours.** Both read the same
+FCC data through the same ExamTools mirror, so a renewal already visible could sit unseen for most of
+a day — which is exactly what was noticed. `LicenseWatchJob` now reads the same
+`UlsWatcherStartHourEt`/`UlsWatcherIntervalHours` settings, so the two run on one schedule and one
+control. The System Settings help text says so where those fields are edited.
+
+**A zero interval crashed the page.** A `SystemSettings` row that was never filled in holds `0`, and
+`0` is a `DivideByZero` inside the slot arithmetic — taking down the whole Job Schedule page, not just
+misreporting one row, and stopping the anchored jobs too. The admin form's `min="1"` is client-side
+only. `JobSchedules.IntervalOrDefault`/`StartHourOrDefault` now coerce at every read site, and
+`DailySlotSchedule` throws `ArgumentOutOfRangeException` as a backstop so a bad value names itself
+instead of surfacing as arithmetic.
+
+### Separately: a settings help text that described removed behaviour
+
+The Session Ingestion field claimed the interval *"automatically shortens to every few minutes for any
+team with a session starting within the next hour"*. That surge existed once and was **deliberately
+removed** in favour of the session page's "Refresh candidates" button (see
+`IngestionScheduleService`'s own remarks), but the text outlived it — so the page promised a
+responsiveness the app no longer had. Corrected to describe the flat cadence and point at the button.

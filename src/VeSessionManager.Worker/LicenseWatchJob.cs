@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using VeSessionManager.Core.Admin;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Jobs;
 using VeSessionManager.Core.Uls;
@@ -29,12 +30,9 @@ public class LicenseWatchJob(
     ILogger<LicenseWatchJob> logger) : BackgroundService
 {
     /// <summary>
-    /// Anchor hour and interval both come from the shared registry — the admin Job Schedule page
-    /// reports this job's timing from the same two values, so they cannot drift apart.
+    /// Schedule definition shared with the admin Job Schedule page, so the two cannot drift.
     /// </summary>
-    private const int StartHourEt = JobSchedules.LicenseWatchStartHourEt;
-
-    private const int IntervalHours = 24;
+    private static readonly JobScheduleDescriptor Descriptor = JobSchedules.For(JobSchedules.LicenseWatch);
 
     /// <summary>
     /// How often the *slot check* runs, not how often licences are refreshed. Hourly so a Worker that
@@ -52,11 +50,20 @@ public class LicenseWatchJob(
             // SQLite file would stop the entire Worker, not just this job. See JobTick.
             await JobTick.GuardedAsync(logger, "LicenseWatch", async () =>
             {
-                var nowEt = DailySlotSchedule.NowEastern(timeProvider);
-                var dueSlotUtc = DailySlotSchedule.LatestDueSlotUtc(nowEt, StartHourEt, IntervalHours);
-
                 using var scope = scopeFactory.CreateScope();
                 var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+                // Same SystemSettings values the ULS watcher uses — deliberately one schedule for both
+                // (2026-08-06). See the class remarks.
+                var settings = await scope.ServiceProvider
+                    .GetRequiredService<SystemSettingsService>()
+                    .GetAsync(stoppingToken);
+
+                var nowEt = DailySlotSchedule.NowEastern(timeProvider);
+                var dueSlotUtc = DailySlotSchedule.LatestDueSlotUtc(
+                    nowEt,
+                    JobSchedules.StartHourOrDefault(settings.UlsWatcherStartHourEt, Descriptor.StartHourEt!.Value),
+                    JobSchedules.IntervalOrDefault(settings.UlsWatcherIntervalHours, Descriptor.DefaultIntervalHours!.Value));
 
                 // This is what makes the anchor survive restarts and outages: a Worker that boots at
                 // 08:47 finds no successful run since today's 06:00 slot and runs it immediately;

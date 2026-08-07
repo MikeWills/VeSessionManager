@@ -140,22 +140,26 @@
                 <div class="nav-group">
                     <button type="button" class="kebab @(settingsGroupActive ? "active" : "")">Settings <i class="bi bi-caret-down-fill" aria-hidden="true"></i></button>
                     <div class="menu">
-                        @if (currentUser?.Role is UserRole.SystemAdmin)
-                        {
-                            <a class="item @(activeNav == "AdminTeams" ? "active" : "")" asp-page="/Admin/Teams">Teams</a>
-                        }
-                        <a class="item @(activeNav == "AdminTeamSettings" ? "active" : "")" asp-page="/Admin/TeamSettings">Team Settings</a>
-                        <a class="item @(activeNav == "AdminTeamMaintenance" ? "active" : "")" asp-page="/Admin/TeamMaintenance">Team Maintenance</a>
+                        @* Visible to TeamAdmin as well, scoped to their own teams — it is the entry
+                           point for every per-team page now, so gating it would strand the role. *@
+                        <a class="item @(activeNav == "AdminTeams" ? "active" : "")" asp-page="/Admin/Teams">Teams</a>
+                        @* Team Settings, Team Maintenance and Email Templates are deliberately NOT
+                           here (2026-08-06). Each needs one team chosen, so a nav link lands on
+                           "Select a team…" while the Teams row menu picks the team for you — a
+                           strictly better route, now that Teams is reachable by TeamAdmin too.
+
+                           Users stays: unlike those three it is genuinely cross-team for a
+                           SystemAdmin (no team selected lists every user), so routing them through
+                           one team's row would make the global list harder to reach, not easier. *@
                         <a class="item @(activeNav == "AdminUsers" ? "active" : "")" asp-page="/Admin/Users">Users</a>
-                        <a class="item @(activeNav == "AdminEmailTemplates" ? "active" : "")" asp-page="/Admin/EmailTemplates">Email Templates</a>
                         <hr>
-                        @* Parent before child in each group: a fee configuration belongs to a VEC,
-                           the same way Team Settings/Maintenance belong to a Team above. *@
+                        @* Fees is deliberately not here either — it always scopes to exactly one VEC,
+                           so the VECs row menu is the honest way in, and it is SystemAdmin-only
+                           (2026-08-06) because a fee configuration is shared across every team. *@
                         @if (currentUser?.Role is UserRole.SystemAdmin)
                         {
                             <a class="item @(activeNav == "AdminVecs" ? "active" : "")" asp-page="/Admin/Vecs">VECs</a>
                         }
-                        <a class="item @(activeNav == "AdminFees" ? "active" : "")" asp-page="/Admin/FeeConfigurations">Fees</a>
                         <hr>
                         <a class="item @(activeNav == "AdminAuditLog" ? "active" : "")" asp-page="/Admin/AuditLog">Audit Log</a>
                         <a class="item @(activeNav == "AdminJobHistory" ? "active" : "")" asp-page="/Admin/JobRunHistory">Job History</a>

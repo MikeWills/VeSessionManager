@@ -1,0 +1,19 @@
+@model VeSessionManager.Web.ParentCrumb
+@*
+    Sits where the page's eyebrow text used to, so it costs no vertical space and keeps the page head
+    the same shape.
+
+    The role test is deliberately "can you reach the parent", not "can you reach this page" — see
+    ParentCrumb's own remarks. The parents differ (Teams admits TeamAdmin, VECs does not), so linking
+    unconditionally would hand some viewers a link straight to a 403.
+*@
+@if (Model.IsReachableBy(User))
+{
+    <p class="eyebrow">
+        <a class="crumb" asp-page="@Model.Page"><i class="bi bi-chevron-left" aria-hidden="true"></i>@Model.Label</a>
+    </p>
+}
+else
+{
+    <p class="eyebrow">@Model.Eyebrow</p>
+}

@@ -22,6 +22,26 @@ public enum JobCadenceKind
 }
 
 /// <summary>
+/// Which SystemSettings values (if any) override a job's configured schedule at runtime, so the admin
+/// page reads the same numbers the Worker obeys instead of trusting configuration alone.
+/// </summary>
+public enum JobSettingsSource
+{
+    None,
+
+    /// <summary>
+    /// <c>UlsWatcherStartHourEt</c> / <c>UlsWatcherIntervalHours</c> — shared by the ULS watcher and
+    /// the renewal monitor, which run on one schedule by design (2026-08-06): both read the same FCC
+    /// data through the same mirror, so checking one four times a day and the other once meant a
+    /// renewal could sit unnoticed for most of a day after it was already visible.
+    /// </summary>
+    UlsWatcher,
+
+    /// <summary><c>SessionIngestionIntervalMinutes</c> — the per-team cadence, not the job's tick.</summary>
+    SessionIngestion
+}
+
+/// <summary>
 /// One background job's identity and schedule — the single definition shared by the Worker (which
 /// obeys it) and the Web admin Job Schedule page (which reports it).
 ///
@@ -48,9 +68,13 @@ public enum JobCadenceKind
 /// <param name="DefaultIntervalHours">Fallback when the config key is absent. Null for sub-hour jobs.</param>
 /// <param name="DefaultIntervalSeconds">Fallback for the two jobs that poll far more often than hourly.</param>
 /// <param name="StartHourEt">Anchored jobs only: the Eastern hour the schedule is pinned to.</param>
-/// <param name="SettingsBacked">
-/// True when a SystemSettings row overrides the configured values at runtime, so the page must read
-/// the database rather than trusting configuration alone.
+/// <param name="SettingsSource">Which SystemSettings values override the configured schedule, if any.</param>
+/// <param name="TickIntervalSeconds">
+/// How often the job's timer wakes, when that differs from how often it actually *does* the work.
+/// Session ingestion ticks every few minutes but only polls a team once its own interval has elapsed,
+/// so reporting the tick as the cadence overstates it by an order of magnitude — the page shows both.
+/// Stated for every job, including the ones whose tick *is* their run: the ticks differ job to job,
+/// and "these two happen to coincide" is itself worth being able to read off the page.
 /// </param>
 public sealed record JobScheduleDescriptor(
     string JobName,
@@ -61,7 +85,8 @@ public sealed record JobScheduleDescriptor(
     int? DefaultIntervalHours = null,
     int? DefaultIntervalSeconds = null,
     int? StartHourEt = null,
-    bool SettingsBacked = false);
+    JobSettingsSource SettingsSource = JobSettingsSource.None,
+    int? TickIntervalSeconds = null);
 
 /// <summary>
 /// Every scheduled background job in this deployment. Adding a job means adding it here too —
@@ -84,47 +109,57 @@ public static class JobSchedules
 
     public static IReadOnlyList<JobScheduleDescriptor> All { get; } =
     [
+        // The configured seconds are the TICK. Each tick asks per team whether
+        // SystemSettings.SessionIngestionIntervalMinutes has elapsed since that team's last run, so
+        // the cadence a user cares about is the setting, not this number.
         new(SessionIngestion,
             "Session ingestion",
             "Polls ExamTools for each team's sessions and candidates, then runs the rest of the per-team pipeline.",
             JobCadenceKind.IntervalFromWorkerStart,
             "Jobs:SessionIngestionIntervalSeconds",
-            DefaultIntervalSeconds: 300),
+            DefaultIntervalSeconds: 300,
+            SettingsSource: JobSettingsSource.SessionIngestion,
+            TickIntervalSeconds: 300),
 
         new(HistoricalImport,
             "Historical import",
             "Works the queue of requested back-fills, one chunk at a time. Idle unless an import was requested.",
             JobCadenceKind.IntervalFromWorkerStart,
             "Jobs:HistoricalImportIntervalSeconds",
-            DefaultIntervalSeconds: 60),
+            DefaultIntervalSeconds: 60,
+            TickIntervalSeconds: 60),
 
         new(DayBeforeReminder,
             "Day-before reminder",
             "Emails candidates whose session is tomorrow.",
             JobCadenceKind.IntervalFromWorkerStart,
             "Jobs:DayBeforeReminderIntervalHours",
-            DefaultIntervalHours: 24),
+            DefaultIntervalHours: 24,
+            TickIntervalSeconds: 86400),
 
         new(PaymentReminder,
             "Payment reminder",
             "Chases unpaid exam fees and expires payment links that have gone stale.",
             JobCadenceKind.IntervalFromWorkerStart,
             "Jobs:PaymentReminderIntervalHours",
-            DefaultIntervalHours: 24),
+            DefaultIntervalHours: 24,
+            TickIntervalSeconds: 86400),
 
         new(SquareLinkPurge,
             "Square link purge",
             "Removes payment links left unpaid past the team's retention window.",
             JobCadenceKind.IntervalFromWorkerStart,
             "Jobs:SquareLinkPurgeIntervalHours",
-            DefaultIntervalHours: 24),
+            DefaultIntervalHours: 24,
+            TickIntervalSeconds: 86400),
 
         new(PiiPurge,
             "PII purge",
             "Clears candidate personal data once past the retention period.",
             JobCadenceKind.IntervalFromWorkerStart,
             "Jobs:PiiPurgeIntervalHours",
-            DefaultIntervalHours: 24),
+            DefaultIntervalHours: 24,
+            TickIntervalSeconds: 86400),
 
         new(UlsWatcher,
             "ULS watcher",
@@ -133,15 +168,34 @@ public static class JobSchedules
             "Jobs:UlsWatcherIntervalHours",
             DefaultIntervalHours: 12,
             StartHourEt: 8,
-            SettingsBacked: true),
+            SettingsSource: JobSettingsSource.UlsWatcher,
+            TickIntervalSeconds: 3600),
 
+        // Shares the ULS watcher's schedule outright (2026-08-06). It was 06:00 ET once a day while
+        // the watcher ran every 6 hours, so a renewal already visible in the mirror could go unseen
+        // for most of a day. Same data, same source — one schedule.
         new(LicenseWatch,
             "Renewal monitor refresh",
             "Refreshes the watched call signs on the Renewal Monitor from ExamTools' ULS mirror.",
             JobCadenceKind.AnchoredToEasternHour,
-            StartHourEt: LicenseWatchStartHourEt,
-            DefaultIntervalHours: 24)
+            "Jobs:UlsWatcherIntervalHours",
+            DefaultIntervalHours: 12,
+            StartHourEt: 8,
+            SettingsSource: JobSettingsSource.UlsWatcher,
+            TickIntervalSeconds: 3600)
     ];
+
+    /// <summary>
+    /// Falls back when a stored schedule value is unusable. A SystemSettings row that was never filled
+    /// in holds 0, which is not "run constantly" — it is a division by zero in the slot arithmetic, and
+    /// it would take the whole Job Schedule page down as well as stopping the job. The admin form's
+    /// <c>min="1"</c> only guards the browser.
+    /// </summary>
+    public static int IntervalOrDefault(int hours, int fallbackHours) => hours > 0 ? hours : fallbackHours;
+
+    /// <summary>Same idea for an anchor hour, which must be a real hour of the day.</summary>
+    public static int StartHourOrDefault(int hourEt, int fallbackHourEt) =>
+        hourEt is >= 0 and < 24 ? hourEt : fallbackHourEt;
 
     public static JobScheduleDescriptor For(string jobName) =>
         All.FirstOrDefault(d => d.JobName == jobName)

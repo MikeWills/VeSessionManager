@@ -33,14 +33,14 @@
                 <input id="ulsWatcherIntervalHours" name="ulsWatcherIntervalHours" type="number" min="1" value="@Model.UlsWatcherIntervalHours" required />
             </div>
         </div>
-        <p class="session-sub">Checks at the start hour (US Eastern) and again every interval after that — e.g. 8 + 12 checks at 8am and 8pm ET. FCC issues licences at 2am ET Tue&ndash;Sat, so a morning check lands after that day's grants exist. Each check looks up only candidates still awaiting a grant, so it costs one request per pending applicant.</p>
+        <p class="session-sub">Checks at the start hour (US Eastern) and again every interval after that — e.g. 8 + 12 checks at 8am and 8pm ET. FCC issues licences at 2am ET Tue&ndash;Sat, so a morning check lands after that day's grants exist. Each check looks up only candidates still awaiting a grant, so it costs one request per pending applicant. <strong>These two values also drive the Renewal Monitor refresh</strong>, which reads the same FCC data through the same mirror and so runs on the same schedule.</p>
 
         <div class="section-head" style="margin-top:24px;"><h2>Session Ingestion</h2></div>
         <div class="field" style="max-width:280px;">
             <label for="sessionIngestionIntervalMinutes">Normal polling interval (minutes)</label>
             <input id="sessionIngestionIntervalMinutes" name="sessionIngestionIntervalMinutes" type="number" min="1" value="@Model.SessionIngestionIntervalMinutes" required />
         </div>
-        <p class="session-sub">How often each team's ExamTools poll (+ Zoom/Discord/Square/email follow-up) runs when none of that team's sessions are imminent. Automatically shortens to every few minutes for any team with a session starting within the next hour or still in progress, so a last-minute registrant is still caught quickly — this only controls the slower, everyday cadence.</p>
+        <p class="session-sub">How often each team's ExamTools poll (+ Zoom/Discord/Square/email follow-up) runs. This is the cadence for every team, flat — the job itself wakes more often than this, but only polls a team once this interval has elapsed since that team's last run. To pull in a last-minute registrant right now, use <strong>Refresh candidates</strong> on the session, which does not wait for the schedule.</p>
 
         <div class="section-head" style="margin-top:24px;"><h2>Test Mode</h2></div>
         <div class="field" style="max-width:400px; flex-direction:row; align-items:center; gap:8px;">

@@ -8,7 +8,7 @@
 
 <div class="page-head">
     <div>
-        <p class="eyebrow">Per VEC</p>
+        <partial name="_ParentCrumb" model='new ParentCrumb("./Vecs", "VECs", "Per VEC", "SystemAdmin")' />
         <h1>Fee Configurations</h1>
     </div>
     @if (Model.VecId is not null)

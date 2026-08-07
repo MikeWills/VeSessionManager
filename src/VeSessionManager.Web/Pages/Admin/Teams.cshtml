@@ -8,10 +8,15 @@
 
 <div class="page-head">
     <div>
-        <p class="eyebrow">Deployment-wide</p>
+        <p class="eyebrow">@(Model.CanCreateTeam ? "Deployment-wide" : "Your teams")</p>
         <h1>Teams</h1>
     </div>
-    <button type="button" class="btn-primary" data-open-modal="createTeamModal">+ New Team</button>
+    @* Hidden for a TeamAdmin, who can view this list but not add to it. The handler forbids it too —
+       hiding a button is presentation, not authorization. *@
+    @if (Model.CanCreateTeam)
+    {
+        <button type="button" class="btn-primary" data-open-modal="createTeamModal">+ New Team</button>
+    }
 </div>
 
 <div class="table-scroll">
