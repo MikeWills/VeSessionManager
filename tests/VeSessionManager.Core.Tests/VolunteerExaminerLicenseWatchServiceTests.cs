@@ -200,6 +200,74 @@ public class VolunteerExaminerLicenseWatchServiceTests
         Assert.Equal(WatchedLicenseStatus.ExpiredInGrace, person.DeriveSnapshotStatus(Now));
     }
 
+    /// <summary>
+    /// Found on the first real run. Two VE rows resolving to one FRN is <i>proof</i> they are the
+    /// same human — stronger than a shared call sign, which can be a reissue — and it happens for
+    /// exactly the rows the #142 merge left alone because their names disagreed. Writing the second
+    /// one would violate the unique index; stealing it from the first would be worse, since merging
+    /// people is not reversible. So it is recorded and skipped.
+    /// </summary>
+    [Fact]
+    public async Task TwoVesResolvingToOneFrn_AreRecordedAsAConflictNotWritten()
+    {
+        await using var dbContext = CreateContext();
+        var first = await SeedVeAsync(dbContext, "N2SPG");
+        var second = await SeedVeAsync(dbContext, "KF0JZP");
+        var client = new FakeUlsLookupClient(new()
+        {
+            ["N2SPG"] = Found(Now.AddYears(4), callSign: "N2SPG", frn: "0004511143"),
+            ["KF0JZP"] = Found(Now.AddYears(4), callSign: "KF0JZP", frn: "0004511143")
+        });
+
+        var result = await CreateService(dbContext, client).RunAsync(CancellationToken.None);
+
+        Assert.Equal(1, result.FrnsBackfilled);
+        Assert.Equal(1, result.FrnConflicts);
+        Assert.Equal(0, result.Failures);
+        Assert.Equal(2, result.Checked);
+
+        // Exactly one row holds the FRN; the other is left alone rather than having it stolen.
+        var withFrn = await dbContext.VolunteerExaminers.Where(v => v.Frn == "0004511143").ToListAsync();
+        Assert.Single(withFrn);
+
+        // And the pair is identifiable, not just counted.
+        var (conflicted, owner, frn) = Assert.Single(result.ConflictingFrnOwnerIds);
+        Assert.Equal("0004511143", frn);
+        Assert.Contains(owner, new[] { first.Id, second.Id });
+        Assert.Contains(conflicted, new[] { first.Id, second.Id });
+        Assert.NotEqual(owner, conflicted);
+
+        // Both still got their license state — a conflict is not a reason to skip the whole row.
+        Assert.All(await dbContext.VolunteerExaminers.ToListAsync(), v => Assert.NotNull(v.LicenseLastCheckedUtc));
+    }
+
+    /// <summary>
+    /// One bad row must not end the sweep. Before the per-row guard, the FRN collision above threw
+    /// out of SaveChangesAsync and every later VE went unchecked — on the first real run, that was
+    /// most of the roster.
+    /// </summary>
+    [Fact]
+    public async Task OneFailingRow_DoesNotStopTheRest()
+    {
+        await using var dbContext = CreateContext();
+        await SeedVeAsync(dbContext, "N2SPG");
+        await SeedVeAsync(dbContext, "NP2UU");
+        await SeedVeAsync(dbContext, "W1AW");
+
+        var client = new FakeUlsLookupClient(new()
+        {
+            ["N2SPG"] = Found(Now.AddYears(4), callSign: "N2SPG", frn: "1"),
+            ["NP2UU"] = null,   // lookup failure
+            ["W1AW"] = Found(Now.AddYears(4), callSign: "W1AW", frn: "3")
+        });
+
+        var result = await CreateService(dbContext, client).RunAsync(CancellationToken.None);
+
+        Assert.Equal(2, result.Checked);
+        Assert.Equal(1, result.LookupFailures);
+        Assert.Equal(3, client.LookedUp.Count);   // it kept going
+    }
+
     /// <summary>The 90-day threshold is the shared one — this is the test that would fail if a second copy of it ever appeared.</summary>
     [Fact]
     public async Task LicenseInsideTheRenewalWindow_IsExpiringSoon()
