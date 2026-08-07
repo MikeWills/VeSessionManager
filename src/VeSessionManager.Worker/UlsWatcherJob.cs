@@ -79,7 +79,8 @@ public class UlsWatcherJob(
         var settings = await dbContext.SystemSettings.FirstOrDefaultAsync(s => s.Id == SystemSettingsService.SingletonId, cancellationToken);
         if (settings is not null)
         {
-            return (settings.UlsWatcherIntervalHours, settings.UlsWatcherStartHourEt);
+            return (JobSchedules.IntervalOrDefault(settings.UlsWatcherIntervalHours, UlsDescriptor.DefaultIntervalHours!.Value),
+                    JobSchedules.StartHourOrDefault(settings.UlsWatcherStartHourEt, UlsDescriptor.StartHourEt!.Value));
         }
 
         return (

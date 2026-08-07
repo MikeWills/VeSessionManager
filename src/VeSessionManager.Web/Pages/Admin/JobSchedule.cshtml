@@ -38,7 +38,13 @@
                     @job.Descriptor.DisplayName
                     <span class="session-sub">@job.Descriptor.Description</span>
                 </td>
-                <td>@job.CadenceSummary</td>
+                <td>
+                    @job.CadenceSummary
+                    @if (job.CadenceDetail is not null)
+                    {
+                        <span class="session-sub">@job.CadenceDetail</span>
+                    }
+                </td>
                 <td data-sort-value="@(job.LastRunUtc?.ToString("o") ?? "")">
                     @if (job.LastRunUtc is { } lastRun)
                     {

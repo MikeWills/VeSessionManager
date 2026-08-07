@@ -39,6 +39,12 @@ public static class DailySlotSchedule
     /// </summary>
     public static DateTime LatestDueSlotUtc(DateTime nowEt, int startHourEt, int intervalHours)
     {
+        // A zero interval is a DivideByZero two lines down, and the stack trace names neither the job
+        // nor the setting. A default-constructed SystemSettings row has exactly that, and the admin
+        // form's min="1" is client-side only. Callers should coerce via JobSchedules.IntervalOrDefault;
+        // this is the backstop that says what went wrong.
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(intervalHours);
+
         var hoursSinceStart = ((nowEt.Hour - startHourEt) % intervalHours + intervalHours) % intervalHours;
         var slotEt = new DateTime(nowEt.Year, nowEt.Month, nowEt.Day, nowEt.Hour, 0, 0, DateTimeKind.Unspecified)
             .AddHours(-hoursSinceStart);
@@ -57,6 +63,8 @@ public static class DailySlotSchedule
     /// </summary>
     public static DateTime NextSlotUtc(DateTime nowEt, int startHourEt, int intervalHours)
     {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(intervalHours);
+
         var hoursSinceStart = ((nowEt.Hour - startHourEt) % intervalHours + intervalHours) % intervalHours;
         var nextSlotEt = new DateTime(nowEt.Year, nowEt.Month, nowEt.Day, nowEt.Hour, 0, 0, DateTimeKind.Unspecified)
             .AddHours(-hoursSinceStart)
