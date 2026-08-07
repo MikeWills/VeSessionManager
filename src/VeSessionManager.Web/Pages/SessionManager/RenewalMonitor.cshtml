@@ -13,7 +13,7 @@
         <p class="eyebrow">Applicants</p>
         <h1>Renewal Monitor</h1>
     </div>
-    <button type="button" class="btn-primary" data-open-modal="addLicenseModal">Watch a licence</button>
+    <button type="button" class="btn-primary" data-open-modal="addLicenseModal">Watch a license</button>
 </div>
 
 @if (Model.AvailableTeams.Count > 1)
@@ -136,7 +136,7 @@ else
 
 <div class="modal-backdrop" id="addLicenseModal">
     <div class="modal">
-        <h3>Watch a licence</h3>
+        <h3>Watch a license</h3>
         <form method="post" asp-page-handler="Add" asp-route-teamId="@Model.TeamId" asp-antiforgery="true">
             @if (Model.AvailableTeams.Count > 1)
             {

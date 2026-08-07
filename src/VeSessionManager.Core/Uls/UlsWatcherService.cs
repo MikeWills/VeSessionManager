@@ -16,13 +16,13 @@ namespace VeSessionManager.Core.Uls;
 /// <list type="bullet">
 ///   <item>Only <c>license_status: "Active"</c> counts (the old HD License Status "A" rule). The same
 ///   FRN can carry a Canceled/Expired record touched by unrelated administrative activity.</item>
-///   <item>A **new licence** counts only when its grant date is on/after the candidate's session —
-///   without that guard an upgrade candidate's *pre-existing* licence marks them Granted instantly,
+///   <item>A **new license** counts only when its grant date is on/after the candidate's session —
+///   without that guard an upgrade candidate's *pre-existing* license marks them Granted instantly,
 ///   which is exactly what wrongly granted three real candidates on 2026-07-30.</item>
 ///   <item>An **upgrade** counts only when the class ULS now reports equals Candidate.NewLicenseClass
 ///   **and** the effective date is on/after the session. Either alone is insufficient: class alone
 ///   re-confirms someone who already held it walking in, date alone matches any unrelated action.
-///   Grant date is useless here — FCC pins it to the original licence and never advances it on an
+///   Grant date is useless here — FCC pins it to the original license and never advances it on an
 ///   upgrade, which is what left 20 real candidates stuck pending for up to 19 days.</item>
 /// </list>
 ///
@@ -92,15 +92,15 @@ public class UlsWatcherService(
     }
 
     /// <summary>
-    /// Persists the ULS licence key (`u_id`) whenever ULS reports one — **not only on grant**.
+    /// Persists the ULS license key (`u_id`) whenever ULS reports one — **not only on grant**.
     ///
-    /// <para>An upgrade candidate already holds a licence while their upgrade is still pending, so
+    /// <para>An upgrade candidate already holds a license while their upgrade is still pending, so
     /// capturing the key early gives Applicant Status a working "view in FCC ULS" link for the whole
     /// waiting period rather than only after the grant lands. Verified 2026-07-31 that `u_id` is
     /// exactly the `licKey` FCC's own URL takes
     /// (`UlsSearch/license.jsp?licKey=5339575` ⇔ `u_id: 5339575` for FRN 0038616330).</para>
     ///
-    /// <para>For a first-time applicant there is no licence yet, so this stays null until the grant —
+    /// <para>For a first-time applicant there is no license yet, so this stays null until the grant —
     /// which is precisely why the link is rendered conditionally.</para>
     /// </summary>
     private static bool ApplyLicenseKey(Candidate candidate, UlsLookupResult lookup)
@@ -189,7 +189,7 @@ public class UlsWatcherService(
 
         candidate.ApplicationStatus = CandidateApplicationStatus.Granted;
         candidate.CallSign = lookup.CallSign;
-        // For an upgrade the grant date is the *original* licence's — surfacing it would read as
+        // For an upgrade the grant date is the *original* license's — surfacing it would read as
         // "licensed in 2021" for a 2026 upgrade. Effective date is when the upgrade actually landed,
         // which is what every UI using this field is asking about.
         candidate.LicenseGrantDateUtc = isNewLicense ? lookup.GrantDateUtc : lookup.EffectiveDateUtc;

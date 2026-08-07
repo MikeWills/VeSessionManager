@@ -109,7 +109,7 @@ public class ExamToolsUlsLookupClient(
 
         /// <summary>
         /// The response carries the licensee's name in four separate fields rather than one. A club
-        /// licence leaves every one of them blank (verified on W1AW), so an empty result is normal
+        /// license leaves every one of them blank (verified on W1AW), so an empty result is normal
         /// and returns null rather than an empty or whitespace string.
         /// </summary>
         private static string? BuildLicenseeName(UlsLookupResponse r)

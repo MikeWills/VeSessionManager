@@ -118,8 +118,8 @@ should be filed, so they can be tracked, labelled, and closed by a PR. Listed he
 - [ ] [#64 — Per-team, per-integration enable/disable switches](https://github.com/MikeWills/VeSessionManager/issues/64)
   — **design complete**, all six open questions resolved 2026-07-31; ready to build. The issue carries
   the full decision record, including the "unconfigured ≠ disabled" problem that is the hard part.
-- [ ] [#107 — VE licence expiration tracking](https://github.com/MikeWills/VeSessionManager/issues/107)
-  — the deferred half of the licence work (the Renewal Monitor shipped in v0.1.4 covers a hand-curated
+- [ ] [#107 — VE license expiration tracking](https://github.com/MikeWills/VeSessionManager/issues/107)
+  — the deferred half of the license work (the Renewal Monitor shipped in v0.1.4 covers a hand-curated
   watch list; this covers the VE roster itself). **Most of the machinery already exists** — `expired_date`
   is mapped, the status derivation and thresholds are tested, and the lookup takes a call sign, which
   `VolunteerExaminer` already stores. The valuable part is the bit the Renewal Monitor structurally

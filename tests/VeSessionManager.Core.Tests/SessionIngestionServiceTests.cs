@@ -439,10 +439,10 @@ public class SessionIngestionServiceTests
 
     /// <summary>
     /// Historical candidates are assumed granted so UlsWatcherService stops polling FCC about
-    /// licences from one to four years ago — one HTTP call per candidate, twice a day, forever.
+    /// licenses from one to four years ago — one HTTP call per candidate, twice a day, forever.
     /// </summary>
     [Fact]
-    public async Task HistoricalImport_AssumesCandidatesAreGranted_WithoutInventingLicenceData()
+    public async Task HistoricalImport_AssumesCandidatesAreGranted_WithoutInventingLicenseData()
     {
         await using var dbContext = CreateContext();
         var team = await SeedTeamAsync(dbContext);

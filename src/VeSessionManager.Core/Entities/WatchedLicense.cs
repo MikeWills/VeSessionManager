@@ -1,9 +1,9 @@
 namespace VeSessionManager.Core.Entities;
 
 /// <summary>
-/// A licence a team has asked the app to keep an eye on — club members, family, anyone at all. It is
+/// A license a team has asked the app to keep an eye on — club members, family, anyone at all. It is
 /// deliberately **not** tied to a Candidate or a VolunteerExaminer: the whole point is that the
-/// person need never have tested with this team, or be a VE. Tracking VEs' own licences is a
+/// person need never have tested with this team, or be a VE. Tracking VEs' own licenses is a
 /// separate feature (see docs/renewal-monitor.md).
 ///
 /// Scoped to a Team so every role can use it within their own team(s), the same scoping every list
@@ -11,12 +11,12 @@ namespace VeSessionManager.Core.Entities;
 ///
 /// <para><b>Everything below LastCheckedUtc is a cache of FCC's record, not this app's data.</b>
 /// LicenseWatchService overwrites it wholesale from ULS on each refresh, so nothing here should ever
-/// be hand-edited or treated as authoritative — the licence lives at FCC, and this row is a
+/// be hand-edited or treated as authoritative — the license lives at FCC, and this row is a
 /// screenshot of it. The one exception is <see cref="RenewalPendingSinceUtc"/>, which is genuinely
 /// ours: it records when *we first saw* a renewal in flight, which FCC does not tell us.</para>
 ///
 /// <para><b>The address is deliberately not stored.</b> The ULS lookup returns street/city/state/zip
-/// alongside the name. None of it is needed to show whether a licence is expiring, and not holding
+/// alongside the name. None of it is needed to show whether a license is expiring, and not holding
 /// it avoids the question entirely. Call sign, FRN and licensee name are public FCC record data —
 /// same privacy class as Candidate.CallSign, which the PII purge deliberately keeps.</para>
 /// </summary>
@@ -71,7 +71,7 @@ public class WatchedLicense
     /// </summary>
     public DateTime? ExpiredDateUtc { get; set; }
 
-    /// <summary>Set only when FCC has cancelled the licence outright — distinct from being past <see cref="ExpiredDateUtc"/>, which is still renewable during the grace period.</summary>
+    /// <summary>Set only when FCC has cancelled the license outright — distinct from being past <see cref="ExpiredDateUtc"/>, which is still renewable during the grace period.</summary>
     public DateTime? CancellationDateUtc { get; set; }
 
     // ---- Renewal lifecycle ----------------------------------------------------------------------
@@ -97,7 +97,7 @@ public class WatchedLicense
     /// <summary>
     /// The expiration date as it stood when a renewal was first seen pending. Kept so that "the
     /// renewal was issued" can be asserted against the value it actually replaced, rather than
-    /// inferred from a date merely being in the future — a licence renewed years early would
+    /// inferred from a date merely being in the future — a license renewed years early would
     /// otherwise look unchanged. Cleared with the rest of the renewal fields.
     /// </summary>
     public DateTime? ExpiredDateWhenRenewalFiledUtc { get; set; }

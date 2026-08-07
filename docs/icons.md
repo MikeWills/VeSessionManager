@@ -1,7 +1,7 @@
 # Icons
 
 The UI uses **Bootstrap Icons 1.11.3** (MIT), vendored at
-`wwwroot/lib/bootstrap-icons/` — CSS, the `woff2`/`woff` fonts, and the licence.
+`wwwroot/lib/bootstrap-icons/` — CSS, the `woff2`/`woff` fonts, and the license.
 
 ```html
 <i class="bi bi-caret-down-fill" aria-hidden="true"></i>
