@@ -13,7 +13,7 @@ namespace VeSessionManager.Core.Ingestion;
 /// design.
 ///
 /// **Scope is deliberately narrower than the routine pipeline: sessions, candidates, and VE roster
-/// only.** No Square payment links, no Zoom/Discord events, no emails. `Session.HasEnded` guards in
+/// only** — and the VE roster part needs `ignoreRetryWindow`, see the call site. No Square payment links, no Zoom/Discord events, no emails. `Session.HasEnded` guards in
 /// SessionEventSchedulingService/CandidateNotificationService would suppress most of that anyway,
 /// but relying on them as the sole defence for a *year* of backdated data is exactly the wrong
 /// posture — generating live checkout links for sessions that finished in March, or emailing
@@ -170,7 +170,12 @@ public class HistoricalImportService(
 
             // Once, after every chunk — not per chunk. The sync reconciles every Active session for
             // the team in one pass, so running it per chunk would repeat the same work N times.
-            await veRosterSyncService.RunAsync(request.Team, cancellationToken);
+            //
+            // ignoreRetryWindow is load-bearing, not a tweak: every session this import creates is
+            // older than VolunteerExaminerSyncService.RosterRetryWindow, so without it the sync
+            // settles all of them before fetching anything and the import silently produces sessions
+            // and candidates with no VEs. That is what happened before 2026-08-07.
+            await veRosterSyncService.RunAsync(request.Team, cancellationToken, onlySessionId: null, ignoreRetryWindow: true);
 
             request.Status = HistoricalImportStatus.Completed;
             request.CompletedUtc = timeProvider.GetUtcNow().UtcDateTime;

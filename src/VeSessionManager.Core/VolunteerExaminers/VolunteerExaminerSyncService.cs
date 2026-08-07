@@ -34,7 +34,13 @@ public class VolunteerExaminerSyncService(
 
     /// <param name="onlySessionId">Restrict the sync to one session (the Detail page's
     /// session-scoped refresh); null (every scheduled/team-wide run) scans the whole team.</param>
-    public async Task<VeRosterSyncResult> RunAsync(Team team, CancellationToken cancellationToken, int? onlySessionId = null)
+    /// <param name="ignoreRetryWindow">
+    /// Skips the <see cref="RosterRetryWindow"/> cutoff, so sessions older than it still get their
+    /// roster fetched. Set by the historical import and nothing else — see the settle rule below for
+    /// why the window and that feature are otherwise in direct conflict. Follows the same shape as
+    /// ExamResultSyncService.SyncSessionAsync ignoring its own ResultSyncWindow.
+    /// </param>
+    public async Task<VeRosterSyncResult> RunAsync(Team team, CancellationToken cancellationToken, int? onlySessionId = null, bool ignoreRetryWindow = false)
     {
         var result = new VeRosterSyncResult();
 
@@ -81,6 +87,13 @@ public class VolunteerExaminerSyncService(
         // roster was ever fetched, losing it permanently. An empty roster keeps being retried, so a
         // sync that failed at the time self-heals instead of being silently written off.
         //
+        // **The window and the historical import are in direct conflict, and the import wins when it
+        // asks (2026-08-07).** Every session a historical import creates is by definition older than
+        // RosterRetryWindow, so this rule settled all of them on the very next line — the import's own
+        // roster step was a guaranteed no-op for exactly the data it had just fetched, and it imported
+        // sessions and candidates with no VEs at all. Reported live. `ignoreRetryWindow` is how the
+        // import says "these are old on purpose, fetch anyway"; the routine path is unchanged.
+        //
         // ...but "retry forever" is only right while the roster is still plausibly *fetchable*. A
         // real 2023 session pulled in by the historical import (819 / 6567ff0cfb29450af7ba19da)
         // returns HTTP 500 from ExamTools every time, so its roster stayed empty, it never settled,
@@ -92,7 +105,7 @@ public class VolunteerExaminerSyncService(
         var retryCutoff = now - RosterRetryWindow;
         var settled = sessions.RemoveAll(s =>
             (s.ExamToolsClosedUtc is not null || s.TestingCompletedUtc is not null || s.HasEnded(now))
-            && (s.SessionVolunteerExaminers.Count > 0 || s.ScheduledStartUtc < retryCutoff));
+            && (s.SessionVolunteerExaminers.Count > 0 || (!ignoreRetryWindow && s.ScheduledStartUtc < retryCutoff)));
         if (settled > 0)
         {
             logger.LogInformation("VE roster sync for team {TeamId} ({TeamName}): skipped {SettledCount} finished session(s) that already have a roster or started over {RetryWindowDays} days ago", team.Id, team.Name, settled, RosterRetryWindow.TotalDays);
