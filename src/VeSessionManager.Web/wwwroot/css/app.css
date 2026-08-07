@@ -125,6 +125,11 @@ main.vesm-main.wide { max-width: 1280px; padding: 20px 16px 56px; }
 .page-head { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 24px; flex-wrap: wrap; gap: 12px; }
 h1 { font-size: 24px; margin: 0 0 4px; letter-spacing: -.01em; }
 .eyebrow { font-family: "IBM Plex Mono", monospace; font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-soft); margin: 0; }
+/* Breadcrumb back to a page's parent list. Two classes deliberately: `.vesm a { color: inherit }` is
+   class-plus-element (0,1,1) and would beat a bare `.crumb`. */
+.vesm .crumb { display: inline-flex; align-items: center; gap: 3px; color: var(--ink-soft); text-decoration: none; }
+.vesm .crumb:hover { color: var(--ink); text-decoration: underline; }
+.vesm .crumb .bi { font-size: 12px; }
 .filters { display: flex; gap: 8px; flex-wrap: wrap; }
 .filters a.filter-pill { font-family: "IBM Plex Mono", monospace; font-size: 12px; padding: 9px 14px; border-radius: 99px; border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink-soft); cursor: pointer; text-decoration: none; display: inline-block; }
 .filters a.filter-pill.active { background: var(--panel); color: #fff; border-color: var(--panel); }

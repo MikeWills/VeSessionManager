@@ -9,7 +9,7 @@
 
 <div class="page-head">
     <div>
-        <p class="eyebrow">@(Model.IsSystemAdmin ? "Deployment-wide" : "Your team")</p>
+        <partial name="_ParentCrumb" model='new ParentCrumb("./Teams", "Teams", "Your team", "SystemAdmin,TeamAdmin")' />
         <h1>Users</h1>
     </div>
     @if (Model.IsSystemAdmin || Model.TeamId is not null)

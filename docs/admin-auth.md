@@ -242,3 +242,49 @@ Scope, deliberately:
 Nothing else surfaces the roster or the counts: `VolunteerExaminerReportService.GetSessionCountsAsync`
 has exactly one caller (this page), and `VolunteerExaminerRosterService`'s only Web consumer is the
 session Detail page.
+
+## Admin navigation: parent pages, not a flat menu (2026-08-06)
+
+The Settings menu used to list every admin page flat — Teams, Team Settings, Team Maintenance,
+Users, Email Templates, Fees, VECs. Three of those need **one team chosen** before they show
+anything, so a nav link landed on "Select a team…" and made you pick a team you had usually just
+been looking at.
+
+They now come off the nav entirely and are reached from the **Teams row menu**, which picks the team
+for you. Fees likewise moves to the **VECs row menu**. Each child page gained a breadcrumb back to
+its parent (`ParentCrumb` + `Pages/Shared/_ParentCrumb.cshtml`), rendered in place of the page's
+eyebrow so it costs no vertical space.
+
+### What this forced, and why
+
+**Teams had to open up to TeamAdmin.** It was SystemAdmin-only, while every per-team child page is
+SystemAdmin *and* TeamAdmin — so removing the nav links without changing that would have locked
+TeamAdmins out of their own settings, users and templates completely. Teams is now
+`SystemAdmin,TeamAdmin`, **scoped through the existing `AdminAccessScope.ScopeTeams`**: a SystemAdmin
+sees every team, a TeamAdmin sees only their own.
+
+Scoping the *list* was chosen over showing all teams with the row actions gated per row. Both work,
+but scoping leaves nothing to get wrong later — every row a viewer can see is one they may manage, so
+the row menu needs no condition. The show-everything variant was written first and discarded: a
+TeamAdmin could click a row for another team, and the child page would then quietly resolve to a team
+they *do* manage (those pages fall back rather than refusing), so you would land on different settings
+than the row you clicked. Nothing leaked, but it read as a bug.
+
+**Creating a team stays SystemAdmin**, enforced in `OnPostCreateAsync` via
+`AdminAccessScope.CanCreateTeam` — not merely by hiding the button. The page is reachable by
+TeamAdmin now, so the handler is the only real guard.
+
+**Fees became SystemAdmin-only.** A `FeeConfiguration` belongs to a `Vec`, which is shared reference
+data across every team, so one team's admin editing it would change what every other team charges.
+Its per-team checks are left in place underneath rather than removed.
+
+**Users deliberately stays in the nav.** Unlike the other three it is genuinely cross-team for a
+SystemAdmin — with no team selected it lists every user — so routing them through one team's row
+would make the global list *harder* to reach, not easier.
+
+### The breadcrumb's role check is per-parent
+
+`ParentCrumb` carries the roles allowed on the **parent** page and renders a link only if the viewer
+has one of them; otherwise the original eyebrow text renders unchanged. It has to be per-parent
+because the two parents differ — Teams admits TeamAdmin, VECs does not — and a blanket check would
+hand some viewers a link straight to a 403.

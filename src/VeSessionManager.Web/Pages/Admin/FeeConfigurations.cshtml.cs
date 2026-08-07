@@ -17,7 +17,10 @@ namespace VeSessionManager.Web.Pages.Admin;
 /// multi-team TeamAdmin (issue #19) sees the union across every team they belong to, since this
 /// page's unit of selection is the VEC, not a single team.
 /// </summary>
-[Authorize(Roles = "SystemAdmin,TeamAdmin")]
+// SystemAdmin only (2026-08-06): a fee configuration belongs to a VEC, which is shared reference data
+// across every team, so one team's admin editing it would change what every other team charges. The
+// per-team checks further down are left in place as a second line rather than removed.
+[Authorize(Roles = "SystemAdmin")]
 public class FeeConfigurationsModel(AppDbContext dbContext, UserManager<User> userManager, SessionAccessScope accessScope, FeeConfigurationService feeConfigurationService) : PageModel
 {
     [BindProperty(SupportsGet = true)]
