@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations.Schema;
+
 namespace VeSessionManager.Core.Entities;
 
 public class JobRunHistory
@@ -27,4 +29,18 @@ public class JobRunHistory
     /// <summary>Not in the original shared data model — added as a multi-team foundation. Null for jobs that aren't per-team (e.g. UlsWatcherJob, the global Zoom/Discord/Square/Email steps still shared across all teams pending their own fast-follow) — set for per-team runs (e.g. SessionIngestionJob's per-team loop) so the future ops dashboard (Phase 9) can filter by team.</summary>
     public int? TeamId { get; set; }
     public Team? Team { get; set; }
+
+    /// <summary>
+    /// <b>A run with no <see cref="CompletedUtc"/> is still going, not failed.</b>
+    /// JobRunHistoryLogger writes this row when the job <i>starts</i> — with <see cref="Success"/>
+    /// defaulting to false — and flips it when the job ends. So an in-flight run was indistinguishable
+    /// from a failure on the ops dashboard and in the CSV export, which is how a working historical
+    /// import got read as broken (2026-08-07). The distinguishing field was already here.
+    /// </summary>
+    [NotMapped]
+    public bool IsRunning => CompletedUtc is null && !Success;
+
+    /// <summary>Success / Failed / Running — the one definition, shared by the page and the export.</summary>
+    [NotMapped]
+    public string StatusText => IsRunning ? "Running" : Success ? "Success" : "Failed";
 }

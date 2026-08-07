@@ -5,6 +5,7 @@ using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Entities;
 using VeSessionManager.Core.ExamTools;
 using VeSessionManager.Core.Ingestion;
+using VeSessionManager.Core.Jobs;
 using VeSessionManager.Core.VolunteerExaminers;
 using Xunit;
 
@@ -70,7 +71,10 @@ public class HistoricalImportServiceTests
         var veSync = new VolunteerExaminerSyncService(
             dbContext, client, Options.Create(new ExamToolsOptions()), timeProvider,
             NullLogger<VolunteerExaminerSyncService>.Instance);
-        return new HistoricalImportService(dbContext, ingestion, veSync, timeProvider,
+        // Real logger, not a stub: the import records its VE roster step as its own JobRunHistory
+        // run, and that row is what makes "did the import fetch rosters?" answerable on the dashboard.
+        var jobRunHistoryLogger = new JobRunHistoryLogger(dbContext, NullLogger<JobRunHistoryLogger>.Instance);
+        return new HistoricalImportService(dbContext, ingestion, veSync, jobRunHistoryLogger, timeProvider,
             NullLogger<HistoricalImportService>.Instance);
     }
 
