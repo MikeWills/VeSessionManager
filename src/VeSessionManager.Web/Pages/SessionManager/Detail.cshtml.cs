@@ -10,6 +10,7 @@ using VeSessionManager.Core.Entities;
 using VeSessionManager.Core.Ingestion;
 using VeSessionManager.Core.Notifications;
 using VeSessionManager.Core.Sessions;
+using VeSessionManager.Core.VolunteerExaminers;
 using VeSessionManager.Core.VecSubmissions;
 
 namespace VeSessionManager.Web.Pages.SessionManager;
@@ -346,7 +347,7 @@ public class DetailModel(
             .Include(s => s.Team)
             .Include(s => s.FeeConfiguration)
             .Include(s => s.Candidates).ThenInclude(c => c.Payments)
-            .Include(s => s.SessionVolunteerExaminers).ThenInclude(l => l.VolunteerExaminer)
+            .Include(s => s.SessionVolunteerExaminers).ThenInclude(l => l.VolunteerExaminer).ThenInclude(v => v.VecAccreditations)
             .FirstOrDefaultAsync(s => s.Id == Id);
 
         if (session is null || !accessScope.CanView(user, session))
@@ -399,9 +400,16 @@ public class DetailModel(
         Candidates = [.. rows.Where(r => !r.IsWithdrawn)];
         WithdrawnCandidates = [.. rows.Where(r => r.IsWithdrawn)];
 
+        // The eligibility check is session-relative on purpose: "expired on the day you have them
+        // booked" is the fact that ruins a Saturday, and it is the one thing the Renewal Monitor
+        // structurally cannot say. See VeSessionEligibility.
         VeRoster = session.SessionVolunteerExaminers
             .OrderBy(l => l.VolunteerExaminer.CallSign)
-            .Select(l => new VeChip(l.VolunteerExaminer.Id, l.VolunteerExaminer.CallSign ?? "—", l.VolunteerExaminer.Name))
+            .Select(l => new VeChip(
+                l.VolunteerExaminer.Id,
+                l.VolunteerExaminer.CallSign ?? "—",
+                l.VolunteerExaminer.Name,
+                VeSessionEligibility.For(l.VolunteerExaminer, session.ScheduledStartUtc, session.VecId)))
             .ToList();
 
         return true;
@@ -519,5 +527,11 @@ public class DetailModel(
         int? PrimaryPaymentId,
         IReadOnlyList<EmailHistoryLine> EmailHistory);
 
-    public record VeChip(int Id, string CallSign, string Name);
+    /// <summary>
+    /// <see cref="Eligibility"/> is deliberately shown to every role that can load this page, unlike
+    /// the VE Directory's contact details. It is derived from license class, expiry and accreditation
+    /// — all public FCC record data or the team's own roster admin — and a Session Manager running
+    /// Saturday's session is exactly who needs to know a VE cannot serve it.
+    /// </summary>
+    public record VeChip(int Id, string CallSign, string Name, VeEligibility Eligibility);
 }

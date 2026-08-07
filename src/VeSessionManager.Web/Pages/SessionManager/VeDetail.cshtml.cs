@@ -31,7 +31,8 @@ public class VeDetailModel(
     UserManager<User> userManager,
     SessionAccessScope accessScope,
     VolunteerExaminerDirectoryService directoryService,
-    VolunteerExaminerManagementService managementService) : PageModel
+    VolunteerExaminerManagementService managementService,
+    TimeProvider timeProvider) : PageModel
 {
     [BindProperty(SupportsGet = true)]
     public int Id { get; set; }
@@ -42,6 +43,9 @@ public class VeDetailModel(
     public VolunteerExaminer Person { get; private set; } = null!;
     public IReadOnlyList<MembershipView> Memberships { get; private set; } = [];
     public IReadOnlyList<Vec> AvailableVecs { get; private set; } = [];
+
+    /// <summary>One instant for the whole render, so the status chip and the day count cannot disagree.</summary>
+    public DateTime UtcNow { get; private set; }
 
     public class ContactInput
     {
@@ -174,6 +178,8 @@ public class VeDetailModel(
     {
         var user = await userManager.GetUserWithManagerAsync(dbContext, User)
             ?? throw new InvalidOperationException("No authenticated user for an [Authorize]d page.");
+
+        UtcNow = timeProvider.GetUtcNow().UtcDateTime;
 
         var person = await directoryService.GetPersonAsync(Id, HttpContext.RequestAborted);
         if (person is null)

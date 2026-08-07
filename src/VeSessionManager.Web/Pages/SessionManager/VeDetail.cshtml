@@ -1,4 +1,5 @@
 @page "{id:int}"
+@using VeSessionManager.Core.Entities
 @model VeSessionManager.Web.Pages.SessionManager.VeDetailModel
 @{
     ViewData["Title"] = Model.Person.Name;
@@ -62,11 +63,11 @@
         <div class="field">
             <label asp-for="Contact.ContactPreference">Contact preference</label>
             <select asp-for="Contact.ContactPreference">
-                <option value="@((int)VeSessionManager.Core.Entities.VeContactPreference.Email)">Email</option>
+                <option value="@((int)VeContactPreference.Email)">Email</option>
                 @* Text and Both are deliberately disabled until SMS exists — offering a preference
                    the app cannot honour would quietly stop a VE being contacted at all. *@
-                <option value="@((int)VeSessionManager.Core.Entities.VeContactPreference.Text)" disabled>Text (not available yet)</option>
-                <option value="@((int)VeSessionManager.Core.Entities.VeContactPreference.Both)" disabled>Email and text (not available yet)</option>
+                <option value="@((int)VeContactPreference.Text)" disabled>Text (not available yet)</option>
+                <option value="@((int)VeContactPreference.Both)" disabled>Email and text (not available yet)</option>
             </select>
         </div>
 
@@ -78,6 +79,55 @@
 
         <button type="submit" class="btn-primary btn-sm">Save contact details</button>
     </form>
+</div>
+
+@{
+    var licenseStatus = Model.Person.DeriveSnapshotStatus(Model.UtcNow);
+    var licenseDays = WatchedLicenseStatusExtensions.DaysUntil(Model.Person.LicenseExpiresUtc, Model.UtcNow);
+}
+<div class="ve-panel">
+    <h2>FCC license</h2>
+    <p class="session-sub">
+        Public FCC record data, refreshed automatically each morning from ExamTools' ULS mirror.
+        Nothing here is edited by hand.
+    </p>
+
+    <div class="meta-grid">
+        <div class="meta-item">
+            <span class="session-sub">Status</span>
+            <div><span class="chip @licenseStatus.ChipClass()">@licenseStatus.Label()</span></div>
+        </div>
+        <div class="meta-item">
+            <span class="session-sub">Class</span>
+            <div>@(Model.Person.OperatorClass == LicenseClass.None ? "Unknown" : Model.Person.OperatorClass.ToString())</div>
+        </div>
+        <div class="meta-item">
+            <span class="session-sub">Expires</span>
+            <div>
+                @(Model.Person.LicenseExpiresUtc?.ToString("MMM d, yyyy") ?? "—")
+                @if (licenseDays is { } days && days <= 90)
+                {
+                    <span class="session-sub">(@days d)</span>
+                }
+            </div>
+        </div>
+        <div class="meta-item">
+            <span class="session-sub">FRN</span>
+            <div class="mono">@(Model.Person.Frn ?? "—")</div>
+        </div>
+        <div class="meta-item">
+            <span class="session-sub">Last refreshed</span>
+            <div>@(Model.Person.LicenseLastCheckedUtc?.ToString("MMM d, yyyy HH:mm") ?? "Never")</div>
+        </div>
+    </div>
+
+    @if (licenseStatus == WatchedLicenseStatus.NoCallSign)
+    {
+        <p class="session-sub">
+            ExamTools has no call sign for this VE, so there is nothing to look up. Their license
+            cannot be checked until a call sign is recorded upstream.
+        </p>
+    }
 </div>
 
 <div class="ve-panel">

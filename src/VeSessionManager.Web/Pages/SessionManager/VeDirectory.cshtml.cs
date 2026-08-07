@@ -28,7 +28,8 @@ public class VeDirectoryModel(
     AppDbContext dbContext,
     UserManager<User> userManager,
     SessionAccessScope accessScope,
-    VolunteerExaminerDirectoryService directoryService) : PageModel
+    VolunteerExaminerDirectoryService directoryService,
+    TimeProvider timeProvider) : PageModel
 {
     [BindProperty(SupportsGet = true)]
     public int? TeamId { get; set; }
@@ -48,8 +49,13 @@ public class VeDirectoryModel(
     public IReadOnlyList<VeDirectoryRow> Rows { get; private set; } = [];
     public IReadOnlyList<VeTag> AvailableTags { get; private set; } = [];
 
+    /// <summary>Taken once per request so every row's license status and day count are derived against the same instant — otherwise a list rendered across midnight ET could disagree with itself.</summary>
+    public DateTime UtcNow { get; private set; }
+
     public async Task OnGetAsync()
     {
+        UtcNow = timeProvider.GetUtcNow().UtcDateTime;
+
         // GetUserWithManagerAsync, never the bare GetUserAsync — GetEffectiveTeamIds reads
         // user.UserTeams, which the plain UserManager call leaves unloaded, silently giving a
         // TeamAdmin an empty team set. See CLAUDE.md.

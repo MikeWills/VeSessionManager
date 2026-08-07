@@ -1,4 +1,5 @@
 @page
+@using VeSessionManager.Core.Entities
 @model VeSessionManager.Web.Pages.SessionManager.VeDirectoryModel
 @{
     ViewData["Title"] = "VE Directory";
@@ -78,6 +79,7 @@ else
                     <th>Team</th>
                 }
                 <th>Tags</th>
+                <th>License</th>
                 <th>Last worked</th>
                 <th></th>
             </tr>
@@ -85,7 +87,7 @@ else
         <tbody>
             @if (Model.Rows.Count == 0)
             {
-                <tr><td colspan="6">
+                <tr><td colspan="7">
                     @(string.IsNullOrWhiteSpace(Model.Search)
                         ? "No VEs on this team's directory yet. They appear automatically once they work a session."
                         : $"No VEs match \"{Model.Search}\".")
@@ -123,6 +125,17 @@ else
                         @if (!row.IsActive)
                         {
                             <span class="chip chip-brick">Retired</span>
+                        }
+                    </td>
+                    @{
+                        var licenseStatus = row.VolunteerExaminer.DeriveSnapshotStatus(Model.UtcNow);
+                        var expiryDays = WatchedLicenseStatusExtensions.DaysUntil(row.VolunteerExaminer.LicenseExpiresUtc, Model.UtcNow);
+                    }
+                    <td data-sort-value="@(row.VolunteerExaminer.LicenseExpiresUtc?.ToString("o") ?? "")">
+                        <span class="chip @licenseStatus.ChipClass()">@licenseStatus.Label()</span>
+                        @if (row.VolunteerExaminer.LicenseExpiresUtc is { } expires)
+                        {
+                            <span class="session-sub">@expires.ToString("MMM yyyy")@(expiryDays is { } d && d <= 90 ? $" ({d} d)" : "")</span>
                         }
                     </td>
                     <td data-sort-value="@(row.LastWorkedUtc?.ToString("o") ?? "")">
