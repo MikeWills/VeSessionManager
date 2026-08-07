@@ -338,8 +338,6 @@ tbody tr.row-past:hover { background: var(--row-hover); }
 footer.roster { margin-top: 28px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
 .roster-list { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
 .ve-chip { font-family: "IBM Plex Mono", monospace; font-size: 12px; background: var(--paper); border: 1px solid var(--line); padding: 6px 12px; border-radius: 99px; display: inline-flex; align-items: center; gap: 8px; }
-.ve-chip form { margin: 0; }
-.ve-chip .x { color: var(--ink-soft); cursor: pointer; background: none; border: none; font: inherit; padding: 0; }
 
 /* Form field.
    16px is not a style choice — iOS Safari auto-zooms the viewport on focusing any control whose

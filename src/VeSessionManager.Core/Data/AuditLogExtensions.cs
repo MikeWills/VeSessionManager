@@ -6,8 +6,7 @@ namespace VeSessionManager.Core.Data;
 /// Single definition of "build and stage an AuditLog row" — previously a private AddAudit helper
 /// (or an inline object initializer) re-declared independently across TeamSettingsService,
 /// VecManagementService, FeeConfigurationService, UserManagementService, CandidateActionService,
-/// PiiPurgeService, EmailTemplateAdminService, SessionActionService, VolunteerExaminerRosterService,
-/// and VecSubmissionService.
+/// PiiPurgeService, EmailTemplateAdminService, SessionActionService, and VecSubmissionService.
 /// </summary>
 public static class AuditLogExtensions
 {

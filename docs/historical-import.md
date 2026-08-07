@@ -317,7 +317,8 @@ ExamTools-closed sessions as "Completed" since issue #71 — but that label is *
 place in the app where a finished session still looked open, which is exactly why the behaviour was
 easy to believe already fixed. It had not changed since Phase 7 (`de3288f`).
 
-A session is now skipped when it's done **and** already has a roster. Three ways to be done:
+A session is now skipped when it's done **and** has taken its final post-close roster poll. Three
+ways to be done:
 
 | Signal | Meaning |
 |---|---|
@@ -325,14 +326,41 @@ A session is now skipped when it's done **and** already has a roster. Three ways
 | `TestingCompletedUtc` | A Session Manager marked it completed |
 | `HasEnded` | Backstop for sessions that carry neither stamp and never will: those ingested before `ExamToolsClosedUtc` existed, and any session ExamTools drops without reporting "done" |
 
-**The roster check is not redundant.** VEs are assigned before or during a session, never after, so a
-finished session *with* VEs recorded really is finished. But a session that appears and closes inside
-a single polling interval would otherwise be skipped before its roster was ever fetched — losing it
-permanently. An empty roster keeps being retried, so a sync that failed at the time self-heals.
+### Finished is not settled — one more successful poll is (amended 2026-08-07)
 
-Tests: `SessionExamToolsHasClosed_IsNotRePolled_EvenBeforeItsScheduledEnd`,
-`SessionAManagerMarkedCompleted_IsNotRePolled`, `FinishedSessionWithARoster_IsNotRePolledForever`
-(the no-stamp backstop), `FinishedSessionWithNoRoster_IsStillRetried`.
+The original rule retired a session as soon as it was finished and had *any* VE stored, justified on
+"VEs are assigned before or during a session, never after". True of the exam, false of the paperwork.
+The app polls hourly, so **anything ExamTools records between the last mid-session poll and the close
+was simply never seen** — and a mid-session roster is not the final roster. That was invisible while
+session detail still offered a manual "+ Add VE"; removing that action the same day (ExamTools is the
+only route in now — see `docs/session-manager-ui.md`) made it a real gap.
+
+A longer window was the wrong shape for it. A session is never updated again after it closes, so what
+is owed is not *more* polling but **exactly one more poll, after the close**:
+
+`Session.VeRosterFinalSyncedUtc` is stamped only by a roster fetch that succeeded **while the session
+was already finished**. The settle rule keys on that stamp instead of on the roster count. So a
+session is polled once more after closing — the final update, capturing whatever the last mid-session
+poll missed — and then never again.
+
+Three properties fall out of stamping on success only, rather than on "we tried":
+
+- A fetch that throws leaves the stamp null, so the final poll retries by construction instead of
+  being written off on one transient ExamTools error.
+- A session that appears *and* closes inside a single polling interval has no stamp either, so it
+  still gets its roster — the case the roster-count check used to cover.
+- A legitimately VE-less session settles, where "has a roster" would have retried it forever.
+
+`RosterRetryWindow` stays as the backstop for a final poll that can never succeed (the HTTP-500 2023
+session below). Existing rows migrate with a null stamp, which costs one extra poll each for sessions
+inside that 30-day window and nothing at all for older ones — they settle on the retry clause without
+an API call.
+
+Tests: `ClosedSession_IsPolledExactlyOnceMore_AndPicksUpALateVe`,
+`FinalPollThatFails_DoesNotFinalise_AndIsRetried`,
+`SessionAManagerMarkedCompleted_IsPolledOnceMore_ThenSettles`,
+`SessionWithNeitherClosedStamp_IsRetiredByHasEnded_AfterItsFinalPoll` (the no-stamp backstop),
+`FinishedSessionThatWasNeverFinalised_IsStillRetried`.
 
 ## Companion fix 2: exam result sync is bounded by a time window
 
@@ -393,6 +421,10 @@ the one caller that knows these sessions are old *on purpose*. The routine hourl
 and still protected from the 500-forever case. Same shape as
 `ExamResultSyncService.SyncSessionAsync` ignoring its own `ResultSyncWindow` for a session-scoped
 refresh.
+
+The hatch skips the *window*, not the settle rule: an imported session is finished, so a successful
+roster fetch stamps `VeRosterFinalSyncedUtc` straight away and re-running the import does not
+re-fetch it (`OldFinishedSession_AlreadyFinalised_IsStillSkipped_EvenWithIgnoreRetryWindow`).
 
 The other half of the settle rule still applies: a session that already has VEs recorded is skipped
 even with the flag set, so re-running an import does not re-fetch rosters it already has.

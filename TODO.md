@@ -155,6 +155,30 @@ against a real server. See `docs/deployment.md` for step-by-step instructions fo
 
 ## Deferred (no urgency, revisit when ready)
 
+- [ ] **Does exam-result sync need the same "final poll" treatment as the VE roster?** (raised
+  2026-08-07, while fixing the roster.)
+
+  `VolunteerExaminerSyncService` no longer retires a session on a time window. It stamps
+  `Session.VeRosterFinalSyncedUtc` on a roster fetch that succeeded *while the session was already
+  finished*, so every session gets exactly one poll after it closes — which is what catches anything
+  ExamTools recorded between the last hourly poll and the close. See `docs/historical-import.md`.
+
+  `ExamResultSyncService` still uses a time window (`ResultSyncWindow`) plus a per-candidate gate
+  (`!c.Tested || c.NewLicenseClass is null`). That is a different shape, and it may well be the right
+  one — but nobody has checked, so it is a question, not a known bug.
+
+  What to establish before changing anything:
+  - **Do results settle at close the way the roster does?** The roster is final when ExamTools closes
+    the session. Results are not obviously the same: a VE team can amend paperwork afterwards, and
+    the ULS side of a candidate's record keeps moving for weeks regardless. If results genuinely keep
+    changing after close, a final-poll marker is the *wrong* model and the window is correct.
+  - **What the per-candidate gate already covers.** It may make the window's precision irrelevant,
+    since a fully-resolved session already costs no API calls.
+  - Whether the same question applies to `SessionIngestionService`'s candidate polling.
+
+  Not started. Do not "fix" this by symmetry with the roster — the roster's rule is right *because*
+  a closed session's roster is immutable, and that premise has to be verified separately here.
+
 - [ ] **Self-update notification for admins** (requested 2026-07-30; **re-scoped 2026-07-31, design
   explicitly deferred** — Mike: *"get past a solid beta first."* Do not design or build this until
   beta has proven solid and Mike raises it).

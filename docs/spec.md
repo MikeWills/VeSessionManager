@@ -408,7 +408,8 @@ features (ARRL's own youth discount program), not a generic VEC concept.
   - create a retest payment for a candidate who fails and retests within the same session
   - flag a payment as "refund requested" with notes — the actual refund is processed manually in the Square dashboard, this is tracking-only
   - review and clear a session's `RescheduleFlaggedForReview` flag once they've manually communicated the change to candidates and confirmed the new date
-  - VE roster editing, VEC submission toggle
+  - VEC submission toggle
+  - **VE roster editing was removed 2026-08-07** — the roster is displayed on session detail but not editable. `VolunteerExaminerSyncService` fully reconciles each session's roster against ExamTools on every poll, so an in-app add or remove was reverted on the next tick exactly when it mattered. Edit the roster in ExamTools instead. Same reasoning as the two removals below.
   - **"Add walk-in candidate" and "Move a candidate to a different session" were both removed 2026-07-21** — both are already handled by ExamTools itself (walk-in registration; moving a candidate between sessions), so a change made there flows in through `SessionIngestionService`'s normal polling the same as any other candidate/session update. Building a duplicate in-app path for either was unnecessary. See `CLAUDE.md`'s "Duplicative-with-ExamTools features removed" note.
 - **Team Lead:** scoped by their own team assignment (`User.UserTeams`), same as the other scoped roles — **changed 2026-08-07**, having originally been scoped transitively through `User.ManagedByUserId`; a manager can span several teams while a lead belongs to one, so inheriting leaked the manager's other teams (see `docs/admin-auth.md`). `ManagedByUserId` remains as a reporting record only. Same status view as Session Manager including full PII (Name, Email, FRN) — needed for day-of check-in and identity verification against photo ID, not masked, but read-only except where explicitly decided otherwise (confirm with Mike before granting Team Leads any write access beyond viewing)
 
@@ -444,7 +445,7 @@ features (ARRL's own youth discount program), not a generic VEC concept.
 
 - Session list + session detail view with the candidate table (registration, payment, application, license status)
 - Every action listed under "Session Manager" above, wired to the real underlying logic built in Phases 1–8
-- VE roster editing (Phase 7), VEC submission toggle (Phase 8), refund-request flagging (Phase 3)
+- VE roster display (Phase 7 — editing removed 2026-08-07, see above), VEC submission toggle (Phase 8), refund-request flagging (Phase 3)
 
 **Unit Tests:** Each action's authorization check (Session Manager can only act on their own sessions), each action's state-transition correctness (reuses/extends the logic already unit-tested in its originating phase — this phase's tests focus on the UI-triggered wiring, not re-testing the underlying business logic).
 

@@ -135,7 +135,6 @@ builder.Services.AddSingleton<IngestionHealthCache>();
 // Pages/SessionManager/Detail.cshtml.cs.
 builder.Services.AddScoped<CandidateActionService>();
 builder.Services.AddScoped<SessionActionService>();
-builder.Services.AddScoped<VolunteerExaminerRosterService>();
 
 // Phase 9a: stateless, no DB dependency of its own — safe as a singleton.
 builder.Services.AddSingleton<SessionAccessScope>();

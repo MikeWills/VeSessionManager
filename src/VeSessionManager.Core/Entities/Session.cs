@@ -84,6 +84,19 @@ public class Session
     /// </summary>
     public DateTime? ExamToolsClosedUtc { get; set; }
 
+    /// <summary>
+    /// When this session's VE roster was last successfully fetched from ExamTools **while the
+    /// session was already finished** — the "final poll" marker, and the thing that retires the
+    /// session from `VolunteerExaminerSyncService`'s scan.
+    ///
+    /// <para>Null on an open session by design: a roster fetched mid-session says nothing about the
+    /// final roster, since a VE can be added right up to (and just after) close. Once the session is
+    /// finished, exactly one more successful fetch is needed, and this records that it happened. A
+    /// fetch that throws never stamps it, so the retry is automatic — the usual scan-based idiom
+    /// where one field is both the query filter and the idempotency guard.</para>
+    /// </summary>
+    public DateTime? VeRosterFinalSyncedUtc { get; set; }
+
     /// <summary>Renamed from Arrl* to Vec* (Phase 8) — submission goes to whichever VEC this session is actually under (VecId), not always ARRL specifically.</summary>
     public VecSubmissionStatus VecSubmissionStatus { get; set; } = VecSubmissionStatus.NotSubmitted;
     public DateTime? VecSubmittedDate { get; set; }

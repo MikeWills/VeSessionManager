@@ -37,9 +37,9 @@ public class PaymentUniqueIndexSqliteTests
     /// AspNetUsers later fails against a schema that predates it. Adding
     /// <c>User.MustChangePassword</c> broke these two tests exactly that way (2026-08-07).
     /// </param>
-    internal static async Task<Candidate> SeedCandidateAsync(AppDbContext dbContext, string applicantId, Session? session = null, int? existingTeamId = null, int? existingUserId = null)
+    internal static async Task<Candidate> SeedCandidateAsync(AppDbContext dbContext, string applicantId, Session? session = null, int? existingTeamId = null, int? existingUserId = null, int? existingSessionId = null)
     {
-        if (session is null)
+        if (session is null && existingSessionId is null)
         {
             var vec = new Vec { Name = $"VEC-{applicantId}" };
             User? user = existingUserId is null
@@ -73,11 +73,15 @@ public class PaymentUniqueIndexSqliteTests
         var candidate = new Candidate
         {
             ExamToolsApplicantId = applicantId,
-            Session = session,
             Name = "Roana Glory",
             Email = $"{applicantId}@example.com",
             DateRegisteredUtc = Now
         };
+
+        // A Session built here would be INSERTed by EF, which names every column the *current* model
+        // has — fatal on the historical schema the migration tests pin to. Those tests seed the
+        // session with raw SQL and hand back its id instead; see SeedSessionViaSqlAsync.
+        if (session is not null) candidate.Session = session; else candidate.SessionId = existingSessionId!.Value;
         dbContext.Candidates.Add(candidate);
         await dbContext.SaveChangesAsync();
         return candidate;
@@ -198,6 +202,40 @@ public class PaymentUniqueIndexSqliteTests
         return await dbContext.Users.Select(u => u.Id).OrderByDescending(id => id).FirstAsync();
     }
 
+    /// <summary>
+    /// Inserts a Vec, a FeeConfiguration and a Session with raw SQL, naming only the columns that
+    /// existed at <see cref="MigrationBeforeTheIndex"/> — the same trick as the two helpers above,
+    /// and for the same reason. Session is the table that bit next: adding
+    /// <c>VeRosterFinalSyncedUtc</c> to the model (2026-08-07) broke both migration tests with
+    /// "table Sessions has no column named VeRosterFinalSyncedUtc", because EF's INSERT always
+    /// reflects the current model while the schema here is deliberately held in the past.
+    /// </summary>
+    private static async Task<int> SeedSessionViaSqlAsync(AppDbContext dbContext, string applicantId, int teamId, int userId)
+    {
+        await dbContext.Database.ExecuteSqlRawAsync(
+            "INSERT INTO Vecs (Name, SupportsYouthProgram) VALUES ({0}, 0)", $"VEC-{applicantId}");
+        var vecId = await dbContext.Vecs.Select(v => v.Id).OrderByDescending(id => id).FirstAsync();
+
+        await dbContext.Database.ExecuteSqlRawAsync(
+            """
+            INSERT INTO FeeConfigurations (VecId, EffectiveDate, FeeCollectionEnabled, ExamFeeAmount, CreatedByUserId, CreatedUtc)
+            VALUES ({0}, {1}, 1, '15.0', {2}, {3})
+            """,
+            vecId, new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc), userId, Now);
+        var feeConfigurationId = await dbContext.FeeConfigurations.Select(f => f.Id).OrderByDescending(id => id).FirstAsync();
+
+        await dbContext.Database.ExecuteSqlRawAsync(
+            """
+            INSERT INTO Sessions
+                (ExamToolsSessionId, Title, ScheduledStartUtc, DurationMinutes, TeamId, VecId,
+                 FeeConfigurationId, Status, VecSubmissionStatus, RescheduleFlaggedForReview, CreatedUtc)
+            VALUES ({0}, 'August Session', {1}, 60, {2}, {3}, {4}, 0, 0, 0, {5})
+            """,
+            $"session-{applicantId}", Now.AddDays(4), teamId, vecId, feeConfigurationId, Now);
+
+        return await dbContext.Sessions.Select(s => s.Id).OrderByDescending(id => id).FirstAsync();
+    }
+
     private static async Task<int> SeedTeamViaSqlAsync(AppDbContext dbContext, string name)
     {
         await dbContext.Database.ExecuteSqlRawAsync(
@@ -224,7 +262,8 @@ public class PaymentUniqueIndexSqliteTests
         await dbContext.GetService<IMigrator>().MigrateAsync(MigrationBeforeTheIndex);
         var teamId = await SeedTeamViaSqlAsync(dbContext, "TEAM-applicant-1");
         var userId = await SeedUserViaSqlAsync(dbContext, "system-applicant-1@localhost");
-        var candidate = await SeedCandidateAsync(dbContext, "applicant-1", existingTeamId: teamId, existingUserId: userId);
+        var sessionId = await SeedSessionViaSqlAsync(dbContext, "applicant-1", teamId, userId);
+        var candidate = await SeedCandidateAsync(dbContext, "applicant-1", existingSessionId: sessionId);
 
         // Two provably inert duplicates: Unpaid, never linked, never given a Square order id.
         dbContext.Payments.AddRange(
@@ -258,7 +297,8 @@ public class PaymentUniqueIndexSqliteTests
         await dbContext.GetService<IMigrator>().MigrateAsync(MigrationBeforeTheIndex);
         var teamId = await SeedTeamViaSqlAsync(dbContext, "TEAM-applicant-1");
         var userId = await SeedUserViaSqlAsync(dbContext, "system-applicant-1@localhost");
-        var candidate = await SeedCandidateAsync(dbContext, "applicant-1", existingTeamId: teamId, existingUserId: userId);
+        var sessionId = await SeedSessionViaSqlAsync(dbContext, "applicant-1", teamId, userId);
+        var candidate = await SeedCandidateAsync(dbContext, "applicant-1", existingSessionId: sessionId);
 
         var first = NewPayment(candidate.Id, PaymentReason.InitialExam);
         var duplicate = NewPayment(candidate.Id, PaymentReason.InitialExam);
