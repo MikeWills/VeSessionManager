@@ -41,8 +41,19 @@ public class VolunteerExaminerReportService(AppDbContext dbContext)
     /// per VE-per-team rather than silently combining the same person across teams — hence TeamName
     /// on the result.</para>
     /// </summary>
+    /// <param name="search">
+    /// Call sign or name, partial and case-insensitive (issue #135). Null or blank means no filter.
+    ///
+    /// <para>Written as <c>ToLower().Contains(...)</c> rather than <c>EF.Functions.Like</c> on
+    /// purpose. <c>Contains</c> alone translates to SQLite's <c>instr()</c>, which is <b>case
+    /// sensitive</b> — so "n2spg" would find nothing while "N2SPG" worked, and InMemory would never
+    /// show it because plain LINQ <c>Contains</c> is culture-sensitive there. <c>LIKE</c> would be
+    /// case-insensitive but makes a literal <c>%</c> or <c>_</c> typed into the box behave as a
+    /// wildcard, and EF exposes no escape-character overload. Lowering both sides sidesteps both
+    /// problems and translates on either provider.</para>
+    /// </param>
     public async Task<IReadOnlyList<VeSessionCount>> GetSessionCountsAsync(
-        IReadOnlyList<int>? teamIds, DateTime? fromUtc, DateTime? toUtc, CancellationToken cancellationToken)
+        IReadOnlyList<int>? teamIds, DateTime? fromUtc, DateTime? toUtc, string? search, CancellationToken cancellationToken)
     {
         var query = dbContext.SessionVolunteerExaminers
             .Where(sve => (teamIds == null || teamIds.Contains(sve.Session.TeamId))
@@ -61,6 +72,14 @@ public class VolunteerExaminerReportService(AppDbContext dbContext)
         if (toUtc is not null)
         {
             query = query.Where(sve => sve.Session.ScheduledStartUtc <= toUtc);
+        }
+
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var term = search.Trim().ToLower();
+            query = query.Where(sve =>
+                sve.VolunteerExaminer.Name.ToLower().Contains(term)
+                || (sve.VolunteerExaminer.CallSign ?? "").ToLower().Contains(term));
         }
 
         // Materialize the grouped counts first, then order client-side — the InMemory provider

@@ -33,6 +33,14 @@
         </div>
     }
 
+    @* Plain input rather than a dropdown: a search box that needs two clicks to reach is a search
+       box nobody uses. Submits with Enter like any single-field form. *@
+    <label class="ve-search">
+        <span class="visually-hidden">Search by call sign or name</span>
+        <i class="bi bi-search" aria-hidden="true"></i>
+        <input type="search" name="search" value="@Model.Search" placeholder="Call sign or name" />
+    </label>
+
     <div class="filter-dropdown">
         <button type="button" class="kebab @(Model.DateRangeSummaryLabel != "Any time" ? "active" : "")">Date range: @Model.DateRangeSummaryLabel <i class="bi bi-caret-down-fill" aria-hidden="true"></i></button>
         <div class="menu" style="width:240px;">
@@ -80,7 +88,11 @@ else
         <tbody>
             @if (Model.Counts.Count == 0)
             {
-                <tr><td colspan="@(Model.AvailableTeams.Count > 1 ? 4 : 3)">No VE session records in this range.</td></tr>
+                <tr><td colspan="@(Model.AvailableTeams.Count > 1 ? 4 : 3)">
+                    @(string.IsNullOrWhiteSpace(Model.Search)
+                        ? "No VE session records in this range."
+                        : $"No VEs match \"{Model.Search}\" in this range.")
+                </td></tr>
             }
             @foreach (var count in Model.Counts)
             {
