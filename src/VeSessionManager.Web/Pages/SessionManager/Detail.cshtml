@@ -266,10 +266,8 @@
             <p class="eyebrow">Volunteer examiners</p>
             <h2>VE roster</h2>
         </div>
-        @if (Model.CanEdit)
-        {
-            <button type="button" class="btn-secondary btn-sm" data-open-modal="addVeModal">+ Add VE</button>
-        }
+        @* Read-only on purpose: the roster comes from ExamTools and is fully reconciled there on
+           every poll, so an in-app add/remove was undone on the next tick. See docs/session-manager-ui.md. *@
     </div>
     <div class="roster-list">
         @if (Model.VeRoster.Count == 0)
@@ -278,16 +276,7 @@
         }
         @foreach (var ve in Model.VeRoster)
         {
-            <span class="ve-chip">
-                @ve.CallSign — @ve.Name
-                @if (Model.CanEdit)
-                {
-                    <form method="post" asp-page-handler="RemoveVe">
-                        <input type="hidden" name="volunteerExaminerId" value="@ve.Id" />
-                        <button type="submit" class="x" title="Remove from roster"><i class="bi bi-x-lg" aria-hidden="true"></i></button>
-                    </form>
-                }
-            </span>
+            <span class="ve-chip">@ve.CallSign — @ve.Name</span>
         }
     </div>
 </footer>
@@ -333,21 +322,6 @@
                 <div class="modal-actions">
                     <button type="button" class="btn-secondary btn-sm" data-close-modal>Cancel</button>
                     <button type="submit" class="btn-primary btn-sm">Save</button>
-                </div>
-            </form>
-        </div>
-    </div>
-
-    <!-- Add VE modal -->
-    <div class="modal-backdrop" id="addVeModal">
-        <div class="modal">
-            <h3>Add VE to roster</h3>
-            <form method="post" asp-page-handler="AddVe">
-                <div class="field"><label for="veCallSign">Call sign</label><input id="veCallSign" name="callSign" required /></div>
-                <div class="field"><label for="veName">Name</label><input id="veName" name="name" /></div>
-                <div class="modal-actions">
-                    <button type="button" class="btn-secondary btn-sm" data-close-modal>Cancel</button>
-                    <button type="submit" class="btn-primary btn-sm">Add VE</button>
                 </div>
             </form>
         </div>

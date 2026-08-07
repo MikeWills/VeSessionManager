@@ -14,11 +14,10 @@ per-file `<script>` blocks.
   set FRN, mark paid manually, flag refund requested, create retest payment
 - `Sessions/SessionActionService` — mark session completed + bulk `Tested` flip + felony-disclosure
   email fan-out, clear reschedule flag
-- `VolunteerExaminers/VolunteerExaminerRosterService` — manual VE add/remove on one session's roster
 
 Each is its own result-enum-returning, audit-logged, directly-unit-tested class
-(`CandidateActionServiceTests`/`SessionActionServiceTests`/`VolunteerExaminerRosterServiceTests`),
-following the `VecSubmissionService` shape from Phase 8.
+(`CandidateActionServiceTests`/`SessionActionServiceTests`), following the `VecSubmissionService`
+shape from Phase 8.
 
 The three email-sending actions (resend confirmation, ARRL Youth Program instructions, felony
 disclosure instructions) were added to `CandidateNotificationService` instead of the new services,
@@ -29,10 +28,14 @@ template.
 
 ## Known, accepted tensions / simplifications
 
-- `VolunteerExaminerRosterService`'s manual add/remove is not "sticky" against
-  `VolunteerExaminerSyncService`'s Phase 7 full-reconciliation-from-ExamTools-every-poll behavior —
-  a manual edit can be overwritten by the next poll if ExamTools' own roster for that session
-  disagrees; this is by design (ExamTools stays the source of truth), not a bug to chase.
+- **The VE roster on session detail is read-only (2026-08-07).** Phase 9b shipped an "+ Add VE"
+  button and a per-chip remove, backed by `VolunteerExaminerRosterService`. Both are gone, service
+  and tests included. The tension this section used to describe as accepted — the manual edit is not
+  "sticky" against `VolunteerExaminerSyncService`'s full reconciliation from ExamTools on every poll
+  — was not a tension so much as the feature not working: an add or remove made here was undone on
+  the next tick whenever ExamTools disagreed, which is *whenever the button was worth pressing*. Same
+  reasoning that removed the walk-in and move-candidate actions (CLAUDE.md, "check whether ExamTools
+  already does it"): change the roster in ExamTools and ingestion brings it across.
 - A candidate's payment *row* in the UI shows one "primary" payment (most recent `Unpaid`, else most
   recent overall) even though a candidate can have multiple `Payment` rows (initial + retest) —
   matches the mockup's one-row-per-candidate table, but "Mark paid manually"/"Flag refund requested"

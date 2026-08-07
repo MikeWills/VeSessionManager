@@ -11,7 +11,6 @@ using VeSessionManager.Core.Ingestion;
 using VeSessionManager.Core.Notifications;
 using VeSessionManager.Core.Sessions;
 using VeSessionManager.Core.VecSubmissions;
-using VeSessionManager.Core.VolunteerExaminers;
 
 namespace VeSessionManager.Web.Pages.SessionManager;
 
@@ -20,7 +19,7 @@ namespace VeSessionManager.Web.Pages.SessionManager;
 /// design_handoff_vesessionmanager_admin_ui/session-detail.html. Every Session Manager action from
 /// spec.md's Phase 9 bullet list is a named POST handler here, each a thin wrapper around the
 /// relevant Core service (CandidateActionService/SessionActionService/CandidateNotificationService/
-/// VolunteerExaminerRosterService/VecSubmissionService) — this page owns no business logic itself,
+/// VecSubmissionService) — this page owns no business logic itself,
 /// only wiring + the authorization check (SessionAccessScope.CanEdit) that Core services don't do
 /// on their own since they're called from elsewhere too (e.g. background jobs have no "acting
 /// user" to scope against).
@@ -41,7 +40,6 @@ public class DetailModel(
     CandidateActionService candidateActionService,
     SessionActionService sessionActionService,
     CandidateNotificationService candidateNotificationService,
-    VolunteerExaminerRosterService rosterService,
     VecSubmissionService vecSubmissionService,
     ManualCandidateRefreshService manualRefreshService) : PageModel
 {
@@ -189,31 +187,10 @@ public class DetailModel(
         return RedirectToPage(new { id = Id });
     }
 
-    public async Task<IActionResult> OnPostAddVeAsync(string callSign, string? name)
-    {
-        var auth = await AuthorizeAsync();
-        if (auth is null) return Forbid();
-
-        if (string.IsNullOrWhiteSpace(callSign))
-        {
-            SetStatus(false, "", "VE call sign is required.");
-            return RedirectToPage(new { id = Id });
-        }
-
-        var result = await rosterService.AddAsync(Id, callSign.Trim(), name?.Trim(), auth.Value.User.Id, CancellationToken.None);
-        SetStatus(result == VeRosterActionResult.Success, "VE added to roster.", "That VE is already on the roster.");
-        return RedirectToPage(new { id = Id });
-    }
-
-    public async Task<IActionResult> OnPostRemoveVeAsync(int volunteerExaminerId)
-    {
-        var auth = await AuthorizeAsync();
-        if (auth is null) return Forbid();
-
-        var result = await rosterService.RemoveAsync(Id, volunteerExaminerId, auth.Value.User.Id, CancellationToken.None);
-        SetStatus(result == VeRosterActionResult.Success, "VE removed from roster.", "Could not remove VE from roster.");
-        return RedirectToPage(new { id = Id });
-    }
+    // The VE roster is displayed here but not editable: VolunteerExaminerSyncService fully
+    // reconciles it against ExamTools on every poll, so an in-app add or remove was undone on the
+    // next tick. Removed 2026-08-07 for the same reason as the walk-in/move-candidate actions —
+    // see CLAUDE.md's "check whether ExamTools already does it" pattern.
 
     // ---- Candidate-level actions ----
 

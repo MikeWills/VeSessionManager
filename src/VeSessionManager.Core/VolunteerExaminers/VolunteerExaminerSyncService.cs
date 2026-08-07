@@ -32,6 +32,7 @@ public class VolunteerExaminerSyncService(
     /// </summary>
     public static readonly TimeSpan RosterRetryWindow = TimeSpan.FromDays(30);
 
+
     /// <param name="onlySessionId">Restrict the sync to one session (the Detail page's
     /// session-scoped refresh); null (every scheduled/team-wide run) scans the whole team.</param>
     /// <param name="ignoreRetryWindow">
@@ -74,18 +75,27 @@ public class VolunteerExaminerSyncService(
         // makes this the one place a finished session still looked open. Tolerable while ingestion
         // reached ~30 days back; the historical import (issue #67) can add a year in one go.
         //
-        // Three ways a session is done, and the roster check is what makes skipping safe:
+        // Three ways a session is done:
         //   ExamToolsClosedUtc  — ExamTools says the session is closed. The authoritative signal.
         //   TestingCompletedUtc — a Session Manager marked it completed.
         //   HasEnded            — the backstop for sessions that will never carry either stamp:
         //                         those ingested before ExamToolsClosedUtc existed, and any session
         //                         ExamTools drops without ever reporting "done".
         //
-        // The roster check is not redundant. VEs are assigned before or during a session, never
-        // after, so a finished session *with* VEs recorded really is finished — but a session that
-        // appears and closes inside a single polling interval would otherwise be skipped before its
-        // roster was ever fetched, losing it permanently. An empty roster keeps being retried, so a
-        // sync that failed at the time self-heals instead of being silently written off.
+        // **Finished is not settled — one more successful fetch is (2026-08-07).** The rule used to
+        // retire a session as soon as it was finished and had *any* VE stored, on the reasoning that
+        // VEs are assigned before or during a session and never after. True of the exam, false of
+        // the paperwork: a roster fetched mid-session is not the final roster, and this app polls
+        // hourly, so anything ExamTools records between the last poll and the close was simply never
+        // seen. That was invisible while session detail still offered a manual "+ Add VE"; removing
+        // it (same day) made ExamTools the only route in.
+        //
+        // The fix is not a longer window but a marker: VeRosterFinalSyncedUtc, stamped only by a
+        // successful fetch performed while the session was *already* finished. So a session is
+        // polled exactly once more after it closes — the final update, capturing whatever the last
+        // mid-session poll missed — and then never again. A fetch that throws leaves the stamp null,
+        // so a failure retries by construction rather than being written off; that also covers the
+        // session that appears and closes inside a single polling interval.
         //
         // **The window and the historical import are in direct conflict, and the import wins when it
         // asks (2026-08-07).** Every session a historical import creates is by definition older than
@@ -94,21 +104,21 @@ public class VolunteerExaminerSyncService(
         // sessions and candidates with no VEs at all. Reported live. `ignoreRetryWindow` is how the
         // import says "these are old on purpose, fetch anyway"; the routine path is unchanged.
         //
-        // ...but "retry forever" is only right while the roster is still plausibly *fetchable*. A
-        // real 2023 session pulled in by the historical import (819 / 6567ff0cfb29450af7ba19da)
-        // returns HTTP 500 from ExamTools every time, so its roster stayed empty, it never settled,
-        // and it produced one failed API call plus one ERROR line every hour, forever. Past
-        // RosterRetryWindow a finished session is settled whether or not a roster was ever obtained:
-        // nobody is assigning VEs to a session from two years ago, so an empty roster that old is a
-        // fact about ExamTools, not a sync still worth retrying.
+        // ...but "retry until it succeeds" is only right while the roster is still plausibly
+        // *fetchable*. A real 2023 session pulled in by the historical import
+        // (819 / 6567ff0cfb29450af7ba19da) returns HTTP 500 from ExamTools every time, so it never
+        // stamped, never settled, and produced one failed API call plus one ERROR line every hour,
+        // forever. Past RosterRetryWindow a finished session is settled whether or not its final
+        // fetch ever succeeded: nobody is assigning VEs to a session from two years ago, so a roster
+        // that can't be fetched by then is a fact about ExamTools, not a sync still worth retrying.
         var now = timeProvider.GetUtcNow().UtcDateTime;
         var retryCutoff = now - RosterRetryWindow;
         var settled = sessions.RemoveAll(s =>
-            (s.ExamToolsClosedUtc is not null || s.TestingCompletedUtc is not null || s.HasEnded(now))
-            && (s.SessionVolunteerExaminers.Count > 0 || (!ignoreRetryWindow && s.ScheduledStartUtc < retryCutoff)));
+            IsFinished(s, now)
+            && (s.VeRosterFinalSyncedUtc is not null || (!ignoreRetryWindow && s.ScheduledStartUtc < retryCutoff)));
         if (settled > 0)
         {
-            logger.LogInformation("VE roster sync for team {TeamId} ({TeamName}): skipped {SettledCount} finished session(s) that already have a roster or started over {RetryWindowDays} days ago", team.Id, team.Name, settled, RosterRetryWindow.TotalDays);
+            logger.LogInformation("VE roster sync for team {TeamId} ({TeamName}): skipped {SettledCount} finished session(s) already synced after close, or started over {RetryWindowDays} days ago", team.Id, team.Name, settled, RosterRetryWindow.TotalDays);
         }
 
         // Each session isolated and saved independently — same reasoning as every other scan-based
@@ -121,6 +131,17 @@ public class VolunteerExaminerSyncService(
             {
                 var roster = await examToolsClient.GetSessionVeRosterAsync(credentials, session.ExamToolsSessionId, cancellationToken);
                 ReconcileSession(team, session, roster, knownVes, result);
+
+                // Stamped here, after the call returned, and only for a session that was already
+                // finished when we asked — that combination is the whole meaning of the field. A
+                // successful fetch on an *open* session must not stamp it: its roster can still
+                // change, and the final poll would then never happen.
+                if (IsFinished(session, now))
+                {
+                    session.VeRosterFinalSyncedUtc = now;
+                    result.SessionsFinalised++;
+                }
+
                 await dbContext.SaveChangesAsync(cancellationToken);
             }
             catch (Exception ex)
@@ -132,6 +153,14 @@ public class VolunteerExaminerSyncService(
         logger.LogInformation("VE roster sync finished for team {TeamId} ({TeamName}): {Result}", team.Id, team.Name, result);
         return result;
     }
+
+    /// <summary>
+    /// The one definition of "this session is over", used by both the settle rule and the stamp so
+    /// they cannot disagree about which sessions get their final poll. Note it is not
+    /// <c>Status</c> — that only ever means "not cancelled" (see CLAUDE.md).
+    /// </summary>
+    private static bool IsFinished(Session session, DateTime now) =>
+        session.ExamToolsClosedUtc is not null || session.TestingCompletedUtc is not null || session.HasEnded(now);
 
     private void ReconcileSession(
         Team team, Session session, IReadOnlyList<ExamToolsVe> roster,
@@ -207,6 +236,9 @@ public class VeRosterSyncResult
     public int LinksAdded { get; set; }
     public int LinksRemoved { get; set; }
 
+    /// <summary>Sessions that took their final post-close roster sync this run and will not be polled again.</summary>
+    public int SessionsFinalised { get; set; }
+
     public override string ToString() =>
-        $"VEs added {VolunteerExaminersAdded}, VEs updated {VolunteerExaminersUpdated}, links added {LinksAdded}, links removed {LinksRemoved}";
+        $"VEs added {VolunteerExaminersAdded}, VEs updated {VolunteerExaminersUpdated}, links added {LinksAdded}, links removed {LinksRemoved}, sessions finalised {SessionsFinalised}";
 }

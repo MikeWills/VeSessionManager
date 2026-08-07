@@ -240,8 +240,7 @@ Scope, deliberately:
   together**, and the page's own XML doc says so at the point someone would edit it.
 
 Nothing else surfaces the roster or the counts: `VolunteerExaminerReportService.GetSessionCountsAsync`
-has exactly one caller (this page), and `VolunteerExaminerRosterService`'s only Web consumer is the
-session Detail page.
+has exactly one caller (this page), and the session Detail page's own roster is read-only.
 
 ## Admin navigation: parent pages, not a flat menu (2026-08-06)
 

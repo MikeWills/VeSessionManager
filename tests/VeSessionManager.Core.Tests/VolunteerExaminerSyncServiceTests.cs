@@ -304,31 +304,77 @@ public class VolunteerExaminerSyncServiceTests
         Assert.Single(dbContext.SessionVolunteerExaminers);
     }
 
+    /// <summary>
+    /// The whole point of the final-poll rule, in one test. The app polls hourly, so a VE recorded at
+    /// ExamTools between the last mid-session poll and the close was never seen — and since the
+    /// manual "+ Add VE" was removed (2026-08-07) ExamTools is the only route in. One more fetch
+    /// after the session is finished captures it; the fetch after that never happens.
+    /// </summary>
     [Fact]
-    public async Task SessionExamToolsHasClosed_IsNotRePolled_EvenBeforeItsScheduledEnd()
+    public async Task ClosedSession_IsPolledExactlyOnceMore_AndPicksUpALateVe()
     {
-        // ExamTools reporting the session closed is the authoritative "nothing more to pull" signal
-        // — it is what the UI has meant by "Completed" since issue #71, and it can arrive before the
-        // scheduled end time, which is why this doesn't rely on HasEnded alone.
         await using var dbContext = CreateContext();
         var team = await SeedTeamAsync(dbContext);
-        var session = await SeedSessionAsync(dbContext, team);
+        var session = await SeedSessionAsync(dbContext, team);   // still in the future: not finished
         var client = new FakeExamToolsClient();
         client.SetRoster(team.Id, session.ExamToolsSessionId, new ExamToolsVe { Call = "N2SPG", Name = "Test VE" });
+
+        // Mid-session poll: roster stored, but nothing is final yet.
         await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
         Assert.Single(client.RosterFetches);
+        Assert.Null((await dbContext.Sessions.SingleAsync()).VeRosterFinalSyncedUtc);
 
+        // The session closes, and only then does a second VE appear on ExamTools' roster.
+        session.ExamToolsClosedUtc = Now;
+        await dbContext.SaveChangesAsync();
+        client.SetRoster(team.Id, session.ExamToolsSessionId,
+            new ExamToolsVe { Call = "N2SPG", Name = "Test VE" },
+            new ExamToolsVe { Call = "KA0MVW", Name = "Late VE" });
+
+        var result = await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+
+        Assert.Equal(2, client.RosterFetches.Count);
+        Assert.Equal(1, result.LinksAdded);
+        Assert.Equal(1, result.SessionsFinalised);
+        Assert.Equal(2, dbContext.SessionVolunteerExaminers.Count());
+        Assert.Equal(Now, (await dbContext.Sessions.SingleAsync()).VeRosterFinalSyncedUtc);
+
+        // ...and that is the last word on this session.
+        await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+        Assert.Equal(2, client.RosterFetches.Count);
+    }
+
+    /// <summary>
+    /// A fetch that throws must not stamp the session — otherwise one transient ExamTools error on
+    /// the single final poll would freeze that roster permanently.
+    /// </summary>
+    [Fact]
+    public async Task FinalPollThatFails_DoesNotFinalise_AndIsRetried()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        var session = await SeedSessionAsync(dbContext, team, scheduledStartUtc: Now.AddDays(-1));
         session.ExamToolsClosedUtc = Now;
         await dbContext.SaveChangesAsync();
 
-        // Still well before ScheduledStartUtc, so HasEnded is false — only the closed stamp applies.
-        await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+        var client = new FakeExamToolsClient();
+        client.FailingSessionIds.Add(session.ExamToolsSessionId);
+        client.SetRoster(team.Id, session.ExamToolsSessionId, new ExamToolsVe { Call = "N2SPG", Name = "Test VE" });
 
-        Assert.Single(client.RosterFetches);
+        await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+        Assert.Null((await dbContext.Sessions.SingleAsync()).VeRosterFinalSyncedUtc);
+
+        // ExamTools recovers; the retry lands and finalises.
+        client.FailingSessionIds.Clear();
+        var result = await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+
+        Assert.Equal(2, client.RosterFetches.Count);
+        Assert.Equal(1, result.LinksAdded);
+        Assert.Equal(Now, (await dbContext.Sessions.SingleAsync()).VeRosterFinalSyncedUtc);
     }
 
     [Fact]
-    public async Task SessionAManagerMarkedCompleted_IsNotRePolled()
+    public async Task SessionAManagerMarkedCompleted_IsPolledOnceMore_ThenSettles()
     {
         await using var dbContext = CreateContext();
         var team = await SeedTeamAsync(dbContext);
@@ -340,15 +386,17 @@ public class VolunteerExaminerSyncServiceTests
         session.TestingCompletedUtc = Now;
         await dbContext.SaveChangesAsync();
         await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+        Assert.Equal(2, client.RosterFetches.Count);
 
-        Assert.Single(client.RosterFetches);
+        await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+        Assert.Equal(2, client.RosterFetches.Count);
     }
 
     [Fact]
-    public async Task FinishedSessionWithARoster_IsNotRePolledForever()
+    public async Task SessionWithNeitherClosedStamp_IsRetiredByHasEnded_AfterItsFinalPoll()
     {
         // The backstop case: sessions ingested before ExamToolsClosedUtc existed carry neither
-        // stamp and never will, so HasEnded is the only thing that can retire them.
+        // stamp and never will, so HasEnded is the only thing that can make them finished.
         await using var dbContext = CreateContext();
         var team = await SeedTeamAsync(dbContext);
         var session = await SeedSessionAsync(dbContext, team);
@@ -359,23 +407,25 @@ public class VolunteerExaminerSyncServiceTests
         await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
         Assert.Single(client.RosterFetches);
 
-        // Long after the session has ended, it is never fetched again.
-        var afterSession = new FixedTimeProvider(session.ScheduledStartUtc.AddDays(30));
-        var laterService = new VolunteerExaminerSyncService(
+        // Once it has ended it takes its one final poll, and nothing after that.
+        var afterSession = new FixedTimeProvider(session.ScheduledStartUtc.AddDays(1));
+        VolunteerExaminerSyncService LaterService() => new(
             dbContext, client, Options.Create(new ExamToolsOptions()), afterSession,
             NullLogger<VolunteerExaminerSyncService>.Instance);
-        await laterService.RunAsync(team, CancellationToken.None);
 
-        Assert.Single(client.RosterFetches);
+        await LaterService().RunAsync(team, CancellationToken.None);
+        Assert.Equal(2, client.RosterFetches.Count);
+
+        await LaterService().RunAsync(team, CancellationToken.None);
+        Assert.Equal(2, client.RosterFetches.Count);
     }
 
     [Fact]
-    public async Task FinishedSessionWithNoRoster_IsStillRetried()
+    public async Task FinishedSessionThatWasNeverFinalised_IsStillRetried()
     {
-        // The other half: skipping keys on "ended AND already has a roster", so a sync that failed
-        // at the time still self-heals rather than being permanently written off. VEs are assigned
-        // before or during a session, so an ended session with VEs recorded really is finished — an
-        // ended session with none is unfinished business.
+        // A session already past when this app first saw it has no stamp, so its final poll is still
+        // owed — that is what stops a session which appeared and closed inside one polling interval
+        // from losing its roster permanently.
         await using var dbContext = CreateContext();
         var team = await SeedTeamAsync(dbContext);
         var session = await SeedSessionAsync(dbContext, team);
@@ -477,18 +527,19 @@ public class VolunteerExaminerSyncServiceTests
     }
 
     /// <summary>
-    /// The escape hatch does not disable the other half of the settle rule: a session that already
-    /// has VEs recorded is still skipped, so re-running an import does not re-fetch what it already
-    /// has.
+    /// The escape hatch does not disable the other half of the settle rule: a session that has
+    /// already taken its final post-close poll is still skipped, so re-running an import does not
+    /// re-fetch what it already has.
     /// </summary>
     [Fact]
-    public async Task OldFinishedSession_ThatAlreadyHasAroster_IsStillSkipped_EvenWithIgnoreRetryWindow()
+    public async Task OldFinishedSession_AlreadyFinalised_IsStillSkipped_EvenWithIgnoreRetryWindow()
     {
         await using var dbContext = CreateContext();
         var team = await SeedTeamAsync(dbContext);
         var session = await SeedSessionAsync(dbContext, team, scheduledStartUtc: Now - VolunteerExaminerSyncService.RosterRetryWindow.Add(TimeSpan.FromDays(365)));
         var ve = new VolunteerExaminer { Name = "Existing VE", CallSign = "N0CALL", Team = team };
         dbContext.SessionVolunteerExaminers.Add(new SessionVolunteerExaminer { Session = session, VolunteerExaminer = ve });
+        session.VeRosterFinalSyncedUtc = Now.AddDays(-1);
         await dbContext.SaveChangesAsync();
         var client = new FakeExamToolsClient();
 
