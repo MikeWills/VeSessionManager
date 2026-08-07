@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Entities;
+using VeSessionManager.Core.Jobs;
 using VeSessionManager.Core.VolunteerExaminers;
 
 namespace VeSessionManager.Core.Ingestion;
@@ -25,6 +26,7 @@ public class HistoricalImportService(
     AppDbContext dbContext,
     SessionIngestionService ingestionService,
     VolunteerExaminerSyncService veRosterSyncService,
+    JobRunHistoryLogger jobRunHistoryLogger,
     TimeProvider timeProvider,
     ILogger<HistoricalImportService> logger)
 {
@@ -175,7 +177,17 @@ public class HistoricalImportService(
             // older than VolunteerExaminerSyncService.RosterRetryWindow, so without it the sync
             // settles all of them before fetching anything and the import silently produces sessions
             // and candidates with no VEs. That is what happened before 2026-08-07.
-            await veRosterSyncService.RunAsync(request.Team, cancellationToken, onlySessionId: null, ignoreRetryWindow: true);
+            //
+            // Logged as its own run rather than called bare (2026-08-07): this step used to write no
+            // history at all, so "did the import actually fetch rosters?" was unanswerable from the
+            // ops dashboard — the only VeRosterSync rows on it were the routine ones, which skip old
+            // sessions by design and so always read "VEs added 0". Its own name keeps it distinct
+            // from those, following the same prefixing convention TeamPipeline uses for "Manual".
+            await jobRunHistoryLogger.RunAsync(
+                "HistoricalImportVeRosterSync",
+                ct => veRosterSyncService.RunAsync(request.Team, ct, onlySessionId: null, ignoreRetryWindow: true),
+                request.TeamId,
+                cancellationToken);
 
             request.Status = HistoricalImportStatus.Completed;
             request.CompletedUtc = timeProvider.GetUtcNow().UtcDateTime;

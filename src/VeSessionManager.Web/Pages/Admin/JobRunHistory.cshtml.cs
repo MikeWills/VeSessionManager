@@ -28,7 +28,7 @@ public class JobRunHistoryModel(AppDbContext dbContext, UserManager<User> userMa
         var scoped = adminAccessScope.ScopeJobRunHistory(dbContext.JobRunHistories.Include(j => j.Team), user);
         var runs = await scoped.OrderByDescending(j => j.StartedUtc).Take(200).ToListAsync();
 
-        Runs = runs.Select(j => new JobRunRow(j.JobName, j.Team?.Name, j.StartedUtc, j.CompletedUtc, j.Success, j.ErrorMessage, j.ResultSummary)).ToList();
+        Runs = runs.Select(j => new JobRunRow(j.JobName, j.Team?.Name, j.StartedUtc, j.CompletedUtc, j.Success, j.ErrorMessage, j.ResultSummary, j.IsRunning, j.StatusText)).ToList();
         return Page();
     }
 
@@ -66,7 +66,7 @@ public class JobRunHistoryModel(AppDbContext dbContext, UserManager<User> userMa
                 Csv(duration),
                 Csv(run.JobName),
                 Csv(run.Team?.Name ?? "(global)"),
-                Csv(run.Success ? "Success" : "Failed"),
+                Csv(run.StatusText),
                 Csv(run.ResultSummary),
                 Csv(run.ErrorMessage)));
         }
@@ -101,5 +101,6 @@ public class JobRunHistoryModel(AppDbContext dbContext, UserManager<User> userMa
         return "\"" + value.Replace("\"", "\"\"") + "\"";
     }
 
-    public record JobRunRow(string JobName, string? TeamName, DateTime StartedUtc, DateTime? CompletedUtc, bool Success, string? ErrorMessage, string? ResultSummary);
+    /// <param name="IsRunning">Computed on <see cref="JobRunHistory"/>, carried here so the view and the CSV agree.</param>
+    public record JobRunRow(string JobName, string? TeamName, DateTime StartedUtc, DateTime? CompletedUtc, bool Success, string? ErrorMessage, string? ResultSummary, bool IsRunning, string StatusText);
 }

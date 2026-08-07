@@ -108,7 +108,7 @@ public class VolunteerExaminerReportServiceTests
         await dbContext.SaveChangesAsync();
 
         var counts = await new VolunteerExaminerReportService(dbContext)
-            .GetSessionCountsAsync([team.Id], fromUtc: null, toUtc: null, CancellationToken.None);
+            .GetSessionCountsAsync([team.Id], fromUtc: null, toUtc: null, search: null, CancellationToken.None);
 
         Assert.Equal(2, counts.Count);
         var lead = counts.Single(c => c.VolunteerExaminerId == veLead.Id);
@@ -139,8 +139,7 @@ public class VolunteerExaminerReportServiceTests
         var counts = await new VolunteerExaminerReportService(dbContext).GetSessionCountsAsync(
             [team.Id],
             fromUtc: new DateTime(2026, 6, 1, 0, 0, 0, DateTimeKind.Utc),
-            toUtc: new DateTime(2026, 6, 30, 0, 0, 0, DateTimeKind.Utc),
-            CancellationToken.None);
+            toUtc: new DateTime(2026, 6, 30, 0, 0, 0, DateTimeKind.Utc), search: null, CancellationToken.None);
 
         var result = Assert.Single(counts);
         Assert.Equal(2, result.SessionCount); // onFrom and onTo only
@@ -161,7 +160,7 @@ public class VolunteerExaminerReportServiceTests
         await dbContext.SaveChangesAsync();
 
         var counts = await new VolunteerExaminerReportService(dbContext)
-            .GetSessionCountsAsync([team.Id], fromUtc: null, toUtc: null, CancellationToken.None);
+            .GetSessionCountsAsync([team.Id], fromUtc: null, toUtc: null, search: null, CancellationToken.None);
 
         var result = Assert.Single(counts);
         Assert.Equal(1, result.SessionCount);
@@ -184,7 +183,7 @@ public class VolunteerExaminerReportServiceTests
         await dbContext.SaveChangesAsync();
 
         var counts = await new VolunteerExaminerReportService(dbContext)
-            .GetSessionCountsAsync([teamA.Id], fromUtc: null, toUtc: null, CancellationToken.None);
+            .GetSessionCountsAsync([teamA.Id], fromUtc: null, toUtc: null, search: null, CancellationToken.None);
 
         var result = Assert.Single(counts);
         Assert.Equal(veA.Id, result.VolunteerExaminerId);
@@ -212,7 +211,7 @@ public class VolunteerExaminerReportServiceTests
         await dbContext.SaveChangesAsync();
 
         var counts = await new VolunteerExaminerReportService(dbContext)
-            .GetSessionCountsAsync(null, fromUtc: null, toUtc: null, CancellationToken.None);
+            .GetSessionCountsAsync(null, fromUtc: null, toUtc: null, search: null, CancellationToken.None);
 
         // Two rows, not one merged row — a VolunteerExaminer is team-scoped, so the same callsign in
         // two teams is two different records and must not be silently combined.
@@ -237,7 +236,7 @@ public class VolunteerExaminerReportServiceTests
         await dbContext.SaveChangesAsync();
 
         var counts = await new VolunteerExaminerReportService(dbContext)
-            .GetSessionCountsAsync([teamA.Id, teamC.Id], fromUtc: null, toUtc: null, CancellationToken.None);
+            .GetSessionCountsAsync([teamA.Id, teamC.Id], fromUtc: null, toUtc: null, search: null, CancellationToken.None);
 
         Assert.Equal(["TEAMA", "TEAMC"], counts.Select(c => c.TeamName).OrderBy(n => n));
     }
@@ -262,7 +261,7 @@ public class VolunteerExaminerReportServiceTests
         await dbContext.SaveChangesAsync();
 
         var counts = await new VolunteerExaminerReportService(dbContext)
-            .GetSessionCountsAsync([team.Id], fromUtc: null, toUtc: null, CancellationToken.None);
+            .GetSessionCountsAsync([team.Id], fromUtc: null, toUtc: null, search: null, CancellationToken.None);
 
         Assert.Equal(1, Assert.Single(counts).SessionCount);
     }
@@ -282,7 +281,7 @@ public class VolunteerExaminerReportServiceTests
         await dbContext.SaveChangesAsync();
 
         var counts = await new VolunteerExaminerReportService(dbContext)
-            .GetSessionCountsAsync([team.Id], fromUtc: null, toUtc: null, CancellationToken.None);
+            .GetSessionCountsAsync([team.Id], fromUtc: null, toUtc: null, search: null, CancellationToken.None);
 
         Assert.Equal(1, Assert.Single(counts).SessionCount);
     }
@@ -304,7 +303,7 @@ public class VolunteerExaminerReportServiceTests
         await dbContext.SaveChangesAsync();
 
         var counts = await new VolunteerExaminerReportService(dbContext)
-            .GetSessionCountsAsync([team.Id], fromUtc: null, toUtc: null, CancellationToken.None);
+            .GetSessionCountsAsync([team.Id], fromUtc: null, toUtc: null, search: null, CancellationToken.None);
 
         Assert.Empty(counts);
     }
@@ -323,7 +322,7 @@ public class VolunteerExaminerReportServiceTests
         await dbContext.SaveChangesAsync();
 
         var counts = await new VolunteerExaminerReportService(dbContext)
-            .GetSessionCountsAsync([team.Id], fromUtc: null, toUtc: null, CancellationToken.None);
+            .GetSessionCountsAsync([team.Id], fromUtc: null, toUtc: null, search: null, CancellationToken.None);
 
         Assert.Empty(counts);
     }

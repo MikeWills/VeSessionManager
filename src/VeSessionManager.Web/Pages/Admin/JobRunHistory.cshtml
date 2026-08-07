@@ -51,7 +51,13 @@
                 <td class="mono" data-sort-value="@run.StartedUtc.ToString("o")">@EasternTimeFormatter.Format(run.StartedUtc, "MMM d, yyyy h:mm:ss tt")</td>
                 <td class="mono" data-sort-value="@(run.CompletedUtc?.ToString("o"))">@(EasternTimeFormatter.Format(run.CompletedUtc, "MMM d, yyyy h:mm:ss tt") ?? "—")</td>
                 <td>
-                    @if (run.Success)
+                    @if (run.IsRunning)
+                    {
+                        @* Amber, not red: nothing has gone wrong yet. Matches the Running chip on
+                           Team Maintenance's import list. *@
+                        <span class="chip chip-amber">Running</span>
+                    }
+                    else if (run.Success)
                     {
                         <span class="chip chip-green">Success</span>
                     }

@@ -59,6 +59,10 @@ public class VeRosterModel(AppDbContext dbContext, UserManager<User> userManager
     [BindProperty(SupportsGet = true)]
     public DateOnly? DateTo { get; set; }
 
+    /// <summary>Call sign or name, partial and case-insensitive (issue #135).</summary>
+    [BindProperty(SupportsGet = true)]
+    public string? Search { get; set; }
+
     /// <summary>False only when the account belongs to no team at all — a null TeamId now means "all teams merged", not "no context" (2026-07-30, matching the session list).</summary>
     public bool HasTeamContext { get; private set; }
 
@@ -98,7 +102,7 @@ public class VeRosterModel(AppDbContext dbContext, UserManager<User> userManager
 
         if (HasTeamContext)
         {
-            Counts = await reportService.GetSessionCountsAsync(teamIds, fromUtc, toUtc, CancellationToken.None);
+            Counts = await reportService.GetSessionCountsAsync(teamIds, fromUtc, toUtc, Search, CancellationToken.None);
         }
     }
 
