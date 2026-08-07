@@ -7,7 +7,7 @@ using VeSessionManager.Core.Uls;
 namespace VeSessionManager.Worker;
 
 /// <summary>
-/// Refreshes watched licences from ExamTools' ULS mirror — see docs/renewal-monitor.md.
+/// Refreshes watched licenses from ExamTools' ULS mirror — see docs/renewal-monitor.md.
 ///
 /// <para><b>Anchored to 06:00 ET, once a day</b> (2026-08-06). It previously ticked every four hours
 /// from Worker start, which meant its check times drifted with every restart: nobody could say when
@@ -35,7 +35,7 @@ public class LicenseWatchJob(
     private static readonly JobScheduleDescriptor Descriptor = JobSchedules.For(JobSchedules.LicenseWatch);
 
     /// <summary>
-    /// How often the *slot check* runs, not how often licences are refreshed. Hourly so a Worker that
+    /// How often the *slot check* runs, not how often licenses are refreshed. Hourly so a Worker that
     /// boots after 06:00 picks up the missed slot within the hour rather than waiting until tomorrow.
     /// </summary>
     private static readonly TimeSpan TickInterval = TimeSpan.FromHours(1);

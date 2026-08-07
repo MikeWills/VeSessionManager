@@ -3,7 +3,7 @@ namespace VeSessionManager.Core.Uls;
 public static class UlsSchedule
 {
     /// <summary>
-    /// US Eastern, the timezone every FCC-side process is anchored to — licences are issued at
+    /// US Eastern, the timezone every FCC-side process is anchored to — licenses are issued at
     /// 02:00 ET Tue-Sat and fee payments processed at 18:00 ET Mon-Fri. IANA id resolves
     /// cross-platform since .NET 6 (verified on both Windows and the Linux deploy target).
     ///

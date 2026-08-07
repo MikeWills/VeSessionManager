@@ -11,19 +11,19 @@ using VeSessionManager.Core.Uls;
 namespace VeSessionManager.Web.Pages.SessionManager;
 
 /// <summary>
-/// A team's watch list of amateur licences — expiration dates, and the renewal lifecycle from
+/// A team's watch list of amateur licenses — expiration dates, and the renewal lifecycle from
 /// application through issuance. See docs/renewal-monitor.md.
 ///
-/// <para><b>Named "Renewal Monitor" in the UI, "watched licence" in the model.</b> The page is filed
+/// <para><b>Named "Renewal Monitor" in the UI, "watched license" in the model.</b> The page is filed
 /// under Applicants because a renewal is, technically, an application; the Core types
 /// (<see cref="WatchedLicense"/>, <c>LicenseWatchService</c>) keep the mechanical name because that
-/// is what they are — a licence being watched — and renaming the table would cost a migration on an
+/// is what they are — a license being watched — and renaming the table would cost a migration on an
 /// already-deployed schema for no functional gain.</para>
 ///
 /// <para><b>Open to all four roles, scoped to their own team(s).</b> Unlike VE Roster (admin-only,
 /// because it is a contact list plus a per-VE leaderboard), this holds nothing sensitive: call sign,
 /// licensee name and expiry are all public FCC record data, and a TeamLead has as much reason to
-/// check whether a club member's licence is lapsing as anyone else. The <c>[Authorize]</c> here and
+/// check whether a club member's license is lapsing as anyone else. The <c>[Authorize]</c> here and
 /// the nav gate in _AppLayout.cshtml must therefore stay in step — both simply require
 /// authentication.</para>
 /// </summary>
@@ -43,7 +43,7 @@ public class RenewalMonitorModel(
     public string TeamSummaryLabel { get; private set; } = "All teams";
     public IReadOnlyList<WatchedLicenseRow> Licenses { get; private set; } = [];
 
-    /// <summary>Which team a newly added licence is filed under. Only meaningful — and only rendered — when the user can see more than one.</summary>
+    /// <summary>Which team a newly added license is filed under. Only meaningful — and only rendered — when the user can see more than one.</summary>
     [BindProperty]
     public int? AddTeamId { get; set; }
 
@@ -56,7 +56,7 @@ public class RenewalMonitorModel(
     public async Task OnGetAsync() => await LoadAsync();
 
     /// <summary>
-    /// Adds a licence, resolving the entry against ULS first.
+    /// Adds a license, resolving the entry against ULS first.
     ///
     /// <para><b>The lookup is synchronous and blocking on purpose.</b> A mistyped call sign that is
     /// merely stored would sit in the list forever showing "not checked yet", and the person who
@@ -81,7 +81,7 @@ public class RenewalMonitorModel(
         var targetTeamId = AddTeamId ?? (AvailableTeams.Count == 1 ? AvailableTeams[0].Id : null);
         if (targetTeamId is null || !AvailableTeams.Any(t => t.Id == targetTeamId))
         {
-            TempData["ErrorMessage"] = "Choose a team to add this licence to.";
+            TempData["ErrorMessage"] = "Choose a team to add this license to.";
             return RedirectToPage(new { TeamId });
         }
 
@@ -90,13 +90,13 @@ public class RenewalMonitorModel(
         {
             // The endpoint itself was unreachable. Distinct from "no such call sign" — say so, rather
             // than telling someone their correct call sign does not exist.
-            TempData["ErrorMessage"] = $"Couldn't reach the FCC licence lookup just now — {entry.ToUpperInvariant()} wasn't added. Try again shortly.";
+            TempData["ErrorMessage"] = $"Couldn't reach the FCC license lookup just now — {entry.ToUpperInvariant()} wasn't added. Try again shortly.";
             return RedirectToPage(new { TeamId });
         }
 
         if (!lookup.Found || string.IsNullOrWhiteSpace(lookup.CallSign))
         {
-            TempData["ErrorMessage"] = $"FCC has no licence record for \"{entry}\". Check the call sign or FRN and try again.";
+            TempData["ErrorMessage"] = $"FCC has no license record for \"{entry}\". Check the call sign or FRN and try again.";
             return RedirectToPage(new { TeamId });
         }
 
@@ -108,7 +108,7 @@ public class RenewalMonitorModel(
         }
 
         var utcNow = timeProvider.GetUtcNow().UtcDateTime;
-        var licence = new WatchedLicense
+        var license = new WatchedLicense
         {
             TeamId = targetTeamId.Value,
             CallSign = callSign,
@@ -120,13 +120,13 @@ public class RenewalMonitorModel(
         // Populate from the lookup already in hand, so the row is complete on first render instead of
         // showing "not checked yet" until the Worker's next tick. Reuses the service's own mapping so
         // the two can't drift.
-        LicenseWatchService.Apply(licence, lookup, utcNow, new LicenseWatchResult());
+        LicenseWatchService.Apply(license, lookup, utcNow, new LicenseWatchResult());
 
-        dbContext.WatchedLicenses.Add(licence);
+        dbContext.WatchedLicenses.Add(license);
         await dbContext.SaveChangesAsync(HttpContext.RequestAborted);
 
         // Audited after the save, because EntityId is an int and the row has no id until then.
-        dbContext.AddAuditLog(user.Id, "Create", nameof(WatchedLicense), licence.Id, $"Added {callSign} to the licence watch list", utcNow);
+        dbContext.AddAuditLog(user.Id, "Create", nameof(WatchedLicense), license.Id, $"Added {callSign} to the license watch list", utcNow);
         await dbContext.SaveChangesAsync(HttpContext.RequestAborted);
 
         TempData["StatusMessage"] = $"{callSign} added to the watch list.";
@@ -137,10 +137,10 @@ public class RenewalMonitorModel(
     {
         var user = await userManager.GetUserWithManagerAsync(dbContext, User) ?? throw new InvalidOperationException("No authenticated user for an [Authorize]d page.");
 
-        var licence = await dbContext.WatchedLicenses.FirstOrDefaultAsync(w => w.Id == watchedLicenseId, HttpContext.RequestAborted);
-        if (licence is null)
+        var license = await dbContext.WatchedLicenses.FirstOrDefaultAsync(w => w.Id == watchedLicenseId, HttpContext.RequestAborted);
+        if (license is null)
         {
-            TempData["ErrorMessage"] = "That licence is no longer on the watch list.";
+            TempData["ErrorMessage"] = "That license is no longer on the watch list.";
             return RedirectToPage(new { TeamId });
         }
 
@@ -148,16 +148,16 @@ public class RenewalMonitorModel(
         // Contains check would 403 exactly the person with the most access. Same trap CLAUDE.md
         // records for the unmatched-payment match action.
         var effectiveTeamIds = accessScope.GetEffectiveTeamIds(user);
-        if (effectiveTeamIds is not null && !effectiveTeamIds.Contains(licence.TeamId))
+        if (effectiveTeamIds is not null && !effectiveTeamIds.Contains(license.TeamId))
         {
             return Forbid();
         }
 
-        dbContext.WatchedLicenses.Remove(licence);
-        dbContext.AddAuditLog(user.Id, "Delete", nameof(WatchedLicense), licence.Id, $"Removed {licence.CallSign} from the licence watch list", timeProvider.GetUtcNow().UtcDateTime);
+        dbContext.WatchedLicenses.Remove(license);
+        dbContext.AddAuditLog(user.Id, "Delete", nameof(WatchedLicense), license.Id, $"Removed {license.CallSign} from the license watch list", timeProvider.GetUtcNow().UtcDateTime);
         await dbContext.SaveChangesAsync(HttpContext.RequestAborted);
 
-        TempData["StatusMessage"] = $"{licence.CallSign} removed from the watch list.";
+        TempData["StatusMessage"] = $"{license.CallSign} removed from the watch list.";
         return RedirectToPage(new { TeamId });
     }
 

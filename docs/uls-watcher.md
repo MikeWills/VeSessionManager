@@ -1,4 +1,4 @@
-# ULS Watcher — licence grant tracking via ExamTools' ULS API
+# ULS Watcher — license grant tracking via ExamTools' ULS API
 
 Replaced the FCC bulk-file watcher on 2026-07-31. For the removed subsystem — and, more importantly,
 the incidents that produced the matching rules carried over here — see
@@ -9,7 +9,7 @@ the incidents that produced the matching rules carried over here — see
 The old watcher downloaded FCC's daily/weekly ULS transaction archives and parsed four `.dat` record
 types (`HD`, `EN`, `AM`, `HS`) by field position. It worked, but:
 
-- **It was structurally ~26-30h behind.** FCC issues licences at 02:00 ET; the day's file publishes
+- **It was structurally ~26-30h behind.** FCC issues licenses at 02:00 ET; the day's file publishes
   the *following* morning. A candidate granted today could not appear until tomorrow. ExamTools —
   which a Session Manager has open on the next screen — showed the call sign immediately, so the app
   routinely disagreed with the reference the user actually trusts.
@@ -23,7 +23,7 @@ unauthenticated, in one call — including the two fields that made upgrade dete
 **The accuracy trade-off was accepted deliberately** (Mike, 2026-07-31): this tracking is
 informational, not operational. *"We aren't out here tracking the FCC and putting in tickets if there
 are issues. That's the VECs job."* The source of truth remains FCC's own Application Search and ULS,
-consulted manually. Applicant Status links out to the ULS licence record; the application side is
+consulted manually. Applicant Status links out to the ULS license record; the application side is
 not linkable — see "No application deep link" below.
 
 The failure-domain objection (adding a dependency on ExamTools) was raised and correctly dismissed:
@@ -63,7 +63,7 @@ Only the data source moved. Each rule below was bought with a real incident; non
 | Rule | Why |
 |---|---|
 | Only `license_status: "Active"` counts | An FRN can carry a Canceled/Expired record touched by unrelated admin activity |
-| **New licence**: `grant_date` on/after the session | Without it, an upgrade candidate's *pre-existing* licence marks them Granted instantly — this wrongly granted three real candidates on 2026-07-30 |
+| **New license**: `grant_date` on/after the session | Without it, an upgrade candidate's *pre-existing* license marks them Granted instantly — this wrongly granted three real candidates on 2026-07-30 |
 | **Upgrade**: `license_class` == `NewLicenseClass` **and** `effective_date` on/after the session | Both halves load-bearing: class alone re-confirms someone who already held it walking in; date alone matches any unrelated action |
 | Pending application only counts if `receipt_date` is on/after the session | A dismissed old application can share an FRN; a real post-exam application cannot predate the exam |
 
@@ -125,7 +125,7 @@ real candidates before the switchover, 66 had `FccPaymentStatus = Unknown` and *
 
 ## FCC links on Applicant Status
 
-**Licence link only, rendered whenever a licence key exists.** Built by `FccUlsLinks.License` as
+**License link only, rendered whenever a license key exists.** Built by `FccUlsLinks.License` as
 `https://wireless2.fcc.gov/UlsApp/UlsSearch/license.jsp?licKey={u_id}`.
 
 Verified end to end 2026-07-31 against a real record: FRN `0038616330` → `lookup2` `u_id: 5339575` →
@@ -133,8 +133,8 @@ the FCC URL Mike opened, `…/license.jsp?licKey=5339575` (KD3DPX). So `u_id` *i
 shape is confirmed, not inferred, and the page resolves.
 
 `UlsWatcherService.ApplyLicenseKey` persists the key **on every run that returns one, not only on
-grant**. An upgrade candidate already holds a licence while their upgrade is pending, so the link
-works for the whole waiting period. A first-time applicant has no licence until the grant, so the key
+grant**. An upgrade candidate already holds a license while their upgrade is pending, so the link
+works for the whole waiting period. A first-time applicant has no license until the grant, so the key
 stays null and the link simply isn't rendered — which is the whole reason it's conditional.
 
 ### No application deep link — closed, not deferred
@@ -147,9 +147,9 @@ Investigated to a conclusion and abandoned for three independent reasons, any on
    unrestricted access.
 2. **`ApplicationSearch/*` is blocked for this deployment's operator** — Akamai 403, reproduced from
    multiple VPN exits. A link would land on an error page. (`UlsSearch/*` on the same host is *not*
-   blocked, which is why the licence link is fine — Akamai rules differ per path.)
+   blocked, which is why the license link is fine — Akamai rules differ per path.)
 3. **We don't hold the key it would need.** An application has its own USI, distinct from the
-   licence's (Anthony Losada: application `16131111`, licence `5339614`). The ULS lookup API does not
+   license's (Anthony Losada: application `16131111`, license `5339614`). The ULS lookup API does not
    expose it — `pendingApplications[]` carries only `uls_filenumber`, `application_purpose`, `source`,
    `receipt_date`, `history`, `comments`. The deleted FCC `AD.dat`/`EN.dat` parser *did* carry it, and
    resurrecting a file-parsing subsystem for a convenience link would be a bad trade.

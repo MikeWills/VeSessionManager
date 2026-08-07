@@ -7,7 +7,7 @@ namespace VeSessionManager.Web;
 public static class FccUlsLinks
 {
     /// <summary>
-    /// A granted licence's ULS record. **Verified shape** — ExamTools itself links to exactly this
+    /// A granted license's ULS record. **Verified shape** — ExamTools itself links to exactly this
     /// URL/param, and the licKey is the ULS "Unique System Identifier" stored in
     /// Candidate.FccUlsLicenseKey. Returns null when there is no key yet.
     /// </summary>

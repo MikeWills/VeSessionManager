@@ -1,6 +1,6 @@
 # Renewal Monitor
 
-A team's watch list of amateur licences: expiration dates, and the renewal lifecycle from
+A team's watch list of amateur licenses: expiration dates, and the renewal lifecycle from
 application through issuance. Lives under **Applicants** in the nav — a renewal is, technically,
 an application, and it keeps every "waiting on FCC" screen together.
 
@@ -10,7 +10,7 @@ an application, and it keeps every "waiting on FCC" screen together.
 > migration, and renaming it would cost a migration on a deployed schema for no functional gain. Anyone can be watched — club members, family, someone who never tested
 with this team. Rows are **not** tied to a `Candidate` or a `VolunteerExaminer`.
 
-Tracking the VE roster's own licences is a **separate, not-yet-built feature**. It was deliberately
+Tracking the VE roster's own licenses is a **separate, not-yet-built feature**. It was deliberately
 split off rather than folded in here (2026-08-05): a VE watch list wants different questions
 answered ("can this person serve on Saturday?"), and `VolunteerExaminer` rows already exist and are
 synced from ExamTools, so the two have almost nothing in common beyond the ULS call.
@@ -43,7 +43,7 @@ class as `Candidate.CallSign`, which the PII purge deliberately keeps.
 > **FCC's own API is not an option.** `data.fcc.gov/api/license-view/...` 301s to `www.fcc.gov` and
 > returns Akamai 403, the same edge block already documented for `wireless2.fcc.gov`. Confirmed
 > 2026-08-05. ExamTools' mirror is the only workable source, which is also the right answer for
-> consistency — two sources could disagree about the same licence.
+> consistency — two sources could disagree about the same license.
 
 ## Renewal detection is a two-step state machine
 
@@ -61,13 +61,13 @@ thing that moves is the expiration date. So the service:
    that stored anchor**.
 
 The anchor is what makes step 2 an assertion rather than a guess. Without it the only available test
-is "is the expiry in the future?", which is true for a licence renewed years early and would report
+is "is the expiry in the future?", which is true for a license renewed years early and would report
 a renewal that never happened.
 
 **Issuance is detected from the expiry advancing, not from having seen the application first.**
 That distinction was originally missing, and it broke the very first real renewal (2026-08-06).
 
-The state machine required a prior "pending" sighting before it would recognise a grant. A licence
+The state machine required a prior "pending" sighting before it would recognise a grant. A license
 renewed *between two polls* therefore arrived with its new expiry already in place, was recorded as
 newly **pending**, and anchored against that already-updated value — which it could then never beat.
 The row sat on "Renewal pending" until FCC dropped the application, then fell through to plain
@@ -103,7 +103,7 @@ request.
 Observed on KA0MVW, one day after the fix above: Aug 6 correctly reported **Renewed**, Aug 7 showed
 **Renewal pending / "Filed, seen Aug 7"** against an expiry of 2036. And it was wedged there
 permanently — the anchor it recorded was the already-renewed expiry, a value nothing could ever beat,
-so the row could only escape when FCC eventually dropped the application. A licence walking backwards
+so the row could only escape when FCC eventually dropped the application. A license walking backwards
 from issued to pending is exactly the thing the state machine exists to prevent.
 
 Two guards, deliberately at different layers:
@@ -118,7 +118,7 @@ Two guards, deliberately at different layers:
   an abandonment.
 - **`DeriveStatus` puts `Renewed` above `RenewalPending`.** A renewal confirmed within the last month
   cannot have been followed by a real new one, so whatever the stored fields say, the screen never
-  walks an issued licence back to pending. `RenewalMonitor`'s renewal column keys off the derived
+  walks an issued license back to pending. `RenewalMonitor`'s renewal column keys off the derived
   status for the same reason — the chip saying Renewed while the column says "Filed" was half the
   confusion.
 
@@ -146,7 +146,7 @@ It was wrong. A real renewal, observed live on 2026-08-06:
 
 **ExamTools returns FCC's human-readable description, not the raw code.** So `IsRenewal` was always
 false and the entire request-through-issuance lifecycle never fired. The failure was quiet in the
-worst way: the licence still picked up its new expiration date on the next refresh, so the row simply
+worst way: the license still picked up its new expiration date on the next refresh, so the row simply
 slid from "Expiring soon" to "Active" with a 2036 date, never once reporting a renewal.
 
 Matching now accepts **either form** — the codes, in case another endpoint or a future shape change
@@ -159,12 +159,12 @@ combination and would break on the next one.
 > on a value that has never been seen, the honest options are to find a real sample or to make the
 > match tolerant enough that being wrong degrades rather than disables.
 
-## Refresh cadence follows FCC's clock, not the licence's
+## Refresh cadence follows FCC's clock, not the license's
 
-`RefreshInterval` was originally 20 hours, justified as "a licence term is ten years and a renewal
-takes days to weeks, so nothing changes hour to hour". True of the licence, wrong about the feed.
+`RefreshInterval` was originally 20 hours, justified as "a license term is ten years and a renewal
+takes days to weeks, so nothing changes hour to hour". True of the license, wrong about the feed.
 
-**FCC posts its daily changes at 02:00 ET.** The useful question is not how fast a licence changes,
+**FCC posts its daily changes at 02:00 ET.** The useful question is not how fast a license changes,
 but how long after that nightly run this app notices. The job originally ticked every four hours
 **from Worker start**, so its check times drifted with every restart — boot at 21:27 and it checks at
 21:27/01:27/05:27; restart at 06:10 and it becomes 06:10/10:10/14:10. Nobody could say when the next
@@ -223,7 +223,7 @@ progress marker, rows save individually, and the tick body is wrapped in `JobTic
 the next run retry it — stamping it would park the row for a full refresh interval on the strength of
 an error. `FailedLookup_LeavesTheRowStaleSoItRetries` pins this.
 
-## Adding a licence resolves it immediately
+## Adding a license resolves it immediately
 
 The add flow performs the ULS lookup **synchronously, in the web request**, and refuses to save if
 the call sign does not resolve. A mistyped entry that was merely stored would sit in the list forever
@@ -241,8 +241,8 @@ call sign does not exist, because ExamTools happened to be down, would be worse 
 
 ## Follow-ups
 
-- **VE licence tracking** — the other half of the original request, deliberately deferred.
+- **VE license tracking** — the other half of the original request, deliberately deferred.
 - Confirm the renewal purpose codes against a live pending renewal.
 - Nothing notifies. If a digest is ever wanted, the existing `PaymentExpirationNotice` pattern (which
   mails the Session Manager rather than the subject) is the precedent to copy — and note that a
-  watched licence has **no contact details at all**, by design.
+  watched license has **no contact details at all**, by design.

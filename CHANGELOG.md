@@ -145,7 +145,7 @@ CLAUDE.md — this file, like CLAUDE.md's Change Log, is pointers only.
   structurally ~26-30h stale (issuance 02:00 ET, file publishes next morning), so the app routinely
   disagreed with what ExamTools showed a Session Manager on the next screen — and the accuracy
   trade-off was accepted deliberately since this tracking is informational, not operational ("that's
-  the VEC's job"). **All grant rules carried over unchanged** — Active-only, new-licence grant date
+  the VEC's job"). **All grant rules carried over unchanged** — Active-only, new-license grant date
   on/after session, and the two-part upgrade test — now using `effective_date` (ExamTools' rendering
   of HD Last Action Date) in place of AM.dat + Last Action Date. Verified live in both directions the
   same day: two candidates were correctly withheld at 10:00 (class still Technician) and correctly
@@ -154,7 +154,7 @@ CLAUDE.md — this file, like CLAUDE.md's Change Log, is pointers only.
   three `--run-fcc-*` switches collapse to `--run-uls`. Migration `UlsWatcherReplacesFccFiles` is
   **hand-written** — EF's scaffolder paired the columns by position and would have set start-hour 24
   and a 1-hour interval. New `Candidate.UlsApplicationFileNumber`; Applicant Status gains the ULS
-  licence link and the application file number (no application deep link — `wireless2.fcc.gov` 403s,
+  license link and the application file number (no application deep link — `wireless2.fcc.gov` 403s,
   so the shape is still unverified).
 - **Team selectors unified + `User.CallSign` (2026-07-30).** No linked doc — see TODO.md. The last
   four pages on the old pills/`<select>` pickers (VE Roster, Admin Users/Team Settings/Email
@@ -282,7 +282,7 @@ CLAUDE.md — this file, like CLAUDE.md's Change Log, is pointers only.
   access*; `wireless2.fcc.gov/UlsApp/ApplicationSearch/*` returns Akamai 403 to this operator including
   from other VPN exits; and an application record's own Unique System Identifier — the plausible key —
   **isn't exposed by the ULS lookup API at all**, only `uls_filenumber`, which is stored on `Candidate`
-  for paste-in reference. The *licence* link (`UlsSearch/license.jsp?licKey=`) is unaffected and
+  for paste-in reference. The *license* link (`UlsSearch/license.jsp?licKey=`) is unaffected and
   verified working. Don't reopen this without a new fact; the previous framing ("just observe a working
   URL once") was wrong, because blocker 1 means no such durable URL exists.
 - **Zoom/Discord cleanup stopped repeating an `[ERR]` every tick (2026-07-29, commit `b6cbfc0`).** No

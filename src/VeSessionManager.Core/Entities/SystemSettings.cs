@@ -11,7 +11,7 @@ public class SystemSettings
     /// <summary>
     /// Hours between UlsWatcherJob checks, anchored to UlsWatcherStartHourEt rather than Worker start
     /// time (default 8/12 -> checks at 08:00 and 20:00 ET). Anchored to wall-clock ET because FCC
-    /// issues licences at 02:00 ET, so a morning slot lands after that day's grants exist.
+    /// issues licenses at 02:00 ET, so a morning slot lands after that day's grants exist.
     /// See docs/uls-watcher.md.
     /// </summary>
     public int UlsWatcherIntervalHours { get; set; }

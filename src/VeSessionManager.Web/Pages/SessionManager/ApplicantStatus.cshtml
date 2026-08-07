@@ -90,7 +90,7 @@ else
                         @if (!string.IsNullOrWhiteSpace(row.LicenseUrl))
                         {
                             <a href="@row.LicenseUrl" target="_blank" rel="noopener"
-                               title="This candidate's current FCC licence in ULS — for an upgrade, the licence they already hold while this exam is still pending"><i class="bi bi-arrow-up-right" aria-hidden="true"></i></a>
+                               title="This candidate's current FCC license in ULS — for an upgrade, the license they already hold while this exam is still pending"><i class="bi bi-arrow-up-right" aria-hidden="true"></i></a>
                         }
                     </td>
                     <td data-sort-value="@row.SessionDateSortValue"><a asp-page="./Detail" asp-route-id="@row.SessionId">@row.SessionDateLine</a></td>
@@ -144,7 +144,7 @@ else
                         @row.CallSign
                         @if (!string.IsNullOrWhiteSpace(row.LicenseUrl))
                         {
-                            <a href="@row.LicenseUrl" target="_blank" rel="noopener" title="This licence in FCC ULS"><i class="bi bi-arrow-up-right" aria-hidden="true"></i></a>
+                            <a href="@row.LicenseUrl" target="_blank" rel="noopener" title="This license in FCC ULS"><i class="bi bi-arrow-up-right" aria-hidden="true"></i></a>
                         }
                     </td>
                     <td class="mono">@row.LicenseClassLine</td>

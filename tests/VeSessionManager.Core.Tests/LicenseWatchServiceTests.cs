@@ -8,7 +8,7 @@ using Xunit;
 namespace VeSessionManager.Core.Tests;
 
 /// <summary>
-/// Covers the licence watch list — see docs/renewal-monitor.md. Follows UlsWatcherServiceTests' shape:
+/// Covers the license watch list — see docs/renewal-monitor.md. Follows UlsWatcherServiceTests' shape:
 /// EF InMemory plus a fake lookup client, no live calls.
 /// </summary>
 public class LicenseWatchServiceTests
@@ -42,11 +42,11 @@ public class LicenseWatchServiceTests
     private static async Task<WatchedLicense> SeedAsync(AppDbContext dbContext, Action<WatchedLicense>? configure = null)
     {
         var team = new Team { Name = "Test Team", ExamToolsTeamCode = "TEST" };
-        var licence = new WatchedLicense { Team = team, CallSign = "W1AW", AddedUtc = Now.AddDays(-1) };
-        configure?.Invoke(licence);
-        dbContext.WatchedLicenses.Add(licence);
+        var license = new WatchedLicense { Team = team, CallSign = "W1AW", AddedUtc = Now.AddDays(-1) };
+        configure?.Invoke(license);
+        dbContext.WatchedLicenses.Add(license);
         await dbContext.SaveChangesAsync();
-        return licence;
+        return license;
     }
 
     private static UlsLookupResult Found(DateTime? expires, params UlsPendingApplication[] pending) => new()
@@ -65,7 +65,7 @@ public class LicenseWatchServiceTests
     // ---- Refresh basics -------------------------------------------------------------------------
 
     [Fact]
-    public async Task NeverCheckedLicence_IsRefreshedAndPopulatedFromTheLookup()
+    public async Task NeverCheckedLicense_IsRefreshedAndPopulatedFromTheLookup()
     {
         using var dbContext = CreateContext();
         await SeedAsync(dbContext);
@@ -74,12 +74,12 @@ public class LicenseWatchServiceTests
 
         await CreateService(dbContext, client).RunAsync(CancellationToken.None);
 
-        var licence = await dbContext.WatchedLicenses.SingleAsync();
-        Assert.Equal(Now, licence.LastCheckedUtc);
-        Assert.Equal(expires, licence.ExpiredDateUtc);
-        Assert.Equal("Test Licensee", licence.LicenseeName);
+        var license = await dbContext.WatchedLicenses.SingleAsync();
+        Assert.Equal(Now, license.LastCheckedUtc);
+        Assert.Equal(expires, license.ExpiredDateUtc);
+        Assert.Equal("Test Licensee", license.LicenseeName);
         // A row added by call sign acquires its FRN from the lookup.
-        Assert.Equal("0004511143", licence.Frn);
+        Assert.Equal("0004511143", license.Frn);
     }
 
     [Fact]
@@ -95,7 +95,7 @@ public class LicenseWatchServiceTests
     }
 
     [Fact]
-    public async Task FreshlyCheckedLicence_IsNotLookedUpAgain()
+    public async Task FreshlyCheckedLicense_IsNotLookedUpAgain()
     {
         using var dbContext = CreateContext();
         await SeedAsync(dbContext, l => l.LastCheckedUtc = Now.AddHours(-1));
@@ -120,8 +120,8 @@ public class LicenseWatchServiceTests
 
         var result = await CreateService(dbContext, client).RunAsync(CancellationToken.None);
 
-        var licence = await dbContext.WatchedLicenses.SingleAsync();
-        Assert.Null(licence.LastCheckedUtc);
+        var license = await dbContext.WatchedLicenses.SingleAsync();
+        Assert.Null(license.LastCheckedUtc);
         Assert.Equal(1, result.LookupFailures);
     }
 
@@ -134,11 +134,11 @@ public class LicenseWatchServiceTests
 
         var result = await CreateService(dbContext, client).RunAsync(CancellationToken.None);
 
-        var licence = await dbContext.WatchedLicenses.SingleAsync();
-        Assert.True(licence.NotFoundAtFcc);
-        Assert.Equal(Now, licence.LastCheckedUtc);
+        var license = await dbContext.WatchedLicenses.SingleAsync();
+        Assert.True(license.NotFoundAtFcc);
+        Assert.Equal(Now, license.LastCheckedUtc);
         Assert.Equal(0, result.LookupFailures);
-        Assert.Equal(WatchedLicenseStatus.NotFound, licence.DeriveStatus(Now));
+        Assert.Equal(WatchedLicenseStatus.NotFound, license.DeriveStatus(Now));
     }
 
     // ---- Renewal lifecycle ----------------------------------------------------------------------
@@ -156,13 +156,13 @@ public class LicenseWatchServiceTests
 
         var result = await CreateService(dbContext, client).RunAsync(CancellationToken.None);
 
-        var licence = await dbContext.WatchedLicenses.SingleAsync();
-        Assert.Equal(Now, licence.RenewalPendingSinceUtc);
-        Assert.Equal("0012131564", licence.RenewalFileNumber);
+        var license = await dbContext.WatchedLicenses.SingleAsync();
+        Assert.Equal(Now, license.RenewalPendingSinceUtc);
+        Assert.Equal("0012131564", license.RenewalFileNumber);
         // The anchor is what the renewal must beat before it can be called issued.
-        Assert.Equal(expires, licence.ExpiredDateWhenRenewalFiledUtc);
+        Assert.Equal(expires, license.ExpiredDateWhenRenewalFiledUtc);
         Assert.Equal(1, result.RenewalsDetected);
-        Assert.Equal(WatchedLicenseStatus.RenewalPending, licence.DeriveStatus(Now));
+        Assert.Equal(WatchedLicenseStatus.RenewalPending, license.DeriveStatus(Now));
     }
 
     /// <summary>RenewalPendingSinceUtc records when *we* first saw it and must not creep forward on every poll — otherwise "pending since" is always today and the wait is invisible.</summary>
@@ -181,8 +181,8 @@ public class LicenseWatchServiceTests
 
         await CreateService(dbContext, client).RunAsync(CancellationToken.None);
 
-        var licence = await dbContext.WatchedLicenses.SingleAsync();
-        Assert.Equal(firstSeen, licence.RenewalPendingSinceUtc);
+        var license = await dbContext.WatchedLicenses.SingleAsync();
+        Assert.Equal(firstSeen, license.RenewalPendingSinceUtc);
     }
 
     [Fact]
@@ -202,12 +202,12 @@ public class LicenseWatchServiceTests
 
         var result = await CreateService(dbContext, client).RunAsync(CancellationToken.None);
 
-        var licence = await dbContext.WatchedLicenses.SingleAsync();
-        Assert.Equal(Now, licence.RenewalConfirmedUtc);
-        Assert.Null(licence.RenewalPendingSinceUtc);
-        Assert.Null(licence.ExpiredDateWhenRenewalFiledUtc);
+        var license = await dbContext.WatchedLicenses.SingleAsync();
+        Assert.Equal(Now, license.RenewalConfirmedUtc);
+        Assert.Null(license.RenewalPendingSinceUtc);
+        Assert.Null(license.ExpiredDateWhenRenewalFiledUtc);
         Assert.Equal(1, result.RenewalsConfirmed);
-        Assert.Equal(WatchedLicenseStatus.Renewed, licence.DeriveStatus(Now));
+        Assert.Equal(WatchedLicenseStatus.Renewed, license.DeriveStatus(Now));
     }
 
     /// <summary>
@@ -230,8 +230,8 @@ public class LicenseWatchServiceTests
 
         await CreateService(dbContext, client).RunAsync(CancellationToken.None);
 
-        var licence = await dbContext.WatchedLicenses.SingleAsync();
-        Assert.Equal(WatchedLicenseStatus.Renewed, licence.DeriveStatus(Now));
+        var license = await dbContext.WatchedLicenses.SingleAsync();
+        Assert.Equal(WatchedLicenseStatus.Renewed, license.DeriveStatus(Now));
     }
 
     /// <summary>
@@ -257,10 +257,10 @@ public class LicenseWatchServiceTests
 
         var result = await CreateService(dbContext, client).RunAsync(CancellationToken.None);
 
-        var licence = await dbContext.WatchedLicenses.SingleAsync();
-        Assert.Equal(WatchedLicenseStatus.Renewed, licence.DeriveStatus(Now));
-        Assert.Equal(Now, licence.RenewalConfirmedUtc);
-        Assert.Null(licence.RenewalPendingSinceUtc);
+        var license = await dbContext.WatchedLicenses.SingleAsync();
+        Assert.Equal(WatchedLicenseStatus.Renewed, license.DeriveStatus(Now));
+        Assert.Equal(Now, license.RenewalConfirmedUtc);
+        Assert.Null(license.RenewalPendingSinceUtc);
         Assert.Equal(1, result.RenewalsConfirmed);
     }
 
@@ -288,9 +288,9 @@ public class LicenseWatchServiceTests
 
         await CreateService(dbContext, client).RunAsync(CancellationToken.None);
 
-        var licence = await dbContext.WatchedLicenses.SingleAsync();
-        Assert.Equal(WatchedLicenseStatus.RenewalPending, licence.DeriveStatus(Now));
-        Assert.Null(licence.RenewalConfirmedUtc);
+        var license = await dbContext.WatchedLicenses.SingleAsync();
+        Assert.Equal(WatchedLicenseStatus.RenewalPending, license.DeriveStatus(Now));
+        Assert.Null(license.RenewalConfirmedUtc);
     }
 
     [Fact]
@@ -308,12 +308,12 @@ public class LicenseWatchServiceTests
 
         var result = await CreateService(dbContext, client).RunAsync(CancellationToken.None);
 
-        var licence = await dbContext.WatchedLicenses.SingleAsync();
-        Assert.Null(licence.RenewalPendingSinceUtc);
-        Assert.Null(licence.RenewalConfirmedUtc);
+        var license = await dbContext.WatchedLicenses.SingleAsync();
+        Assert.Null(license.RenewalPendingSinceUtc);
+        Assert.Null(license.RenewalConfirmedUtc);
         Assert.Equal(1, result.RenewalsAbandoned);
         // Back to reporting the real expiry rather than a stale "pending".
-        Assert.Equal(WatchedLicenseStatus.ExpiringSoon, licence.DeriveStatus(Now));
+        Assert.Equal(WatchedLicenseStatus.ExpiringSoon, license.DeriveStatus(Now));
     }
 
     /// <summary>A non-renewal application (a modification, say) must not start the renewal clock.</summary>
@@ -327,8 +327,8 @@ public class LicenseWatchServiceTests
 
         await CreateService(dbContext, client).RunAsync(CancellationToken.None);
 
-        var licence = await dbContext.WatchedLicenses.SingleAsync();
-        Assert.Null(licence.RenewalPendingSinceUtc);
+        var license = await dbContext.WatchedLicenses.SingleAsync();
+        Assert.Null(license.RenewalPendingSinceUtc);
     }
 
     /// <summary>An unrecognised purpose code degrades to "not a renewal" rather than throwing — the code list is FCC's documented one but has not been seen live.</summary>
@@ -376,12 +376,12 @@ public class LicenseWatchServiceTests
 
     /// <summary>
     /// A cancelled record keeps whatever expiration it had, so testing dates before cancellation
-    /// would report a revoked licence as comfortably Active.
+    /// would report a revoked license as comfortably Active.
     /// </summary>
     [Fact]
     public void Cancellation_OutranksAFutureExpiry()
     {
-        var licence = new WatchedLicense
+        var license = new WatchedLicense
         {
             CallSign = "W1AW",
             LastCheckedUtc = Now,
@@ -389,7 +389,7 @@ public class LicenseWatchServiceTests
             CancellationDateUtc = Now.AddDays(-3)
         };
 
-        Assert.Equal(WatchedLicenseStatus.Cancelled, licence.DeriveStatus(Now));
+        Assert.Equal(WatchedLicenseStatus.Cancelled, license.DeriveStatus(Now));
     }
 
     [Fact]
@@ -403,8 +403,8 @@ public class LicenseWatchServiceTests
     [Fact]
     public void FoundRecordWithNoExpiry_IsActiveNotExpired()
     {
-        var licence = new WatchedLicense { CallSign = "W1AW", LastCheckedUtc = Now };
-        Assert.Equal(WatchedLicenseStatus.Active, licence.DeriveStatus(Now));
+        var license = new WatchedLicense { CallSign = "W1AW", LastCheckedUtc = Now };
+        Assert.Equal(WatchedLicenseStatus.Active, license.DeriveStatus(Now));
     }
 
     /// <summary>
@@ -438,12 +438,12 @@ public class LicenseWatchServiceTests
 
         await CreateService(dbContext, client).RunAsync(CancellationToken.None);
 
-        var licence = await dbContext.WatchedLicenses.SingleAsync();
-        Assert.Equal(WatchedLicenseStatus.ExpiringSoon, licence.DeriveStatus(Now));
-        Assert.True(licence.DeriveStatus(Now).NeedsAttention());
-        Assert.Null(licence.RenewalPendingSinceUtc);
+        var license = await dbContext.WatchedLicenses.SingleAsync();
+        Assert.Equal(WatchedLicenseStatus.ExpiringSoon, license.DeriveStatus(Now));
+        Assert.True(license.DeriveStatus(Now).NeedsAttention());
+        Assert.Null(license.RenewalPendingSinceUtc);
         // Still inside the window, so it is renewable today without re-testing.
-        Assert.True(licence.ExpiredDateUtc > Now);
+        Assert.True(license.ExpiredDateUtc > Now);
     }
 
     /// <summary>
@@ -461,7 +461,7 @@ public class LicenseWatchServiceTests
     [InlineData("2026-08-08T12:00:00Z", -1)] // expired yesterday
     public void DaysUntilExpiry_CountsCalendarDaysInEastern(string nowIso, int expected)
     {
-        var licence = new WatchedLicense
+        var license = new WatchedLicense
         {
             CallSign = "KA0MVW",
             LastCheckedUtc = Now,
@@ -470,18 +470,18 @@ public class LicenseWatchServiceTests
 
         var utcNow = DateTime.Parse(nowIso, null, System.Globalization.DateTimeStyles.AdjustToUniversal | System.Globalization.DateTimeStyles.AssumeUniversal);
 
-        Assert.Equal(expected, licence.DaysUntilExpiry(utcNow));
+        Assert.Equal(expected, license.DaysUntilExpiry(utcNow));
     }
 
     /// <summary>
-    /// A licence is valid THROUGH its expiration date. Comparing raw instants flipped it to Expired
+    /// A license is valid THROUGH its expiration date. Comparing raw instants flipped it to Expired
     /// at midnight on that date — a full day early, and visible to the user as a red "Expired" chip
-    /// on a licence they could still legally operate.
+    /// on a license they could still legally operate.
     /// </summary>
     [Fact]
     public void ExpiresToday_IsStillCurrent_NotExpired()
     {
-        var licence = new WatchedLicense
+        var license = new WatchedLicense
         {
             CallSign = "KA0MVW",
             LastCheckedUtc = Now,
@@ -489,8 +489,8 @@ public class LicenseWatchServiceTests
         };
 
         // Now is midday UTC on 5 Aug — the expiry date itself.
-        Assert.Equal(WatchedLicenseStatus.ExpiringSoon, licence.DeriveStatus(Now));
-        Assert.Equal(0, licence.DaysUntilExpiry(Now));
+        Assert.Equal(WatchedLicenseStatus.ExpiringSoon, license.DeriveStatus(Now));
+        Assert.Equal(0, license.DaysUntilExpiry(Now));
     }
 
     [Fact]
@@ -530,12 +530,12 @@ public class LicenseWatchServiceTests
 
         var result = await CreateService(dbContext, client).RunAsync(CancellationToken.None);
 
-        var licence = await dbContext.WatchedLicenses.SingleAsync();
-        Assert.Null(licence.RenewalPendingSinceUtc);
-        Assert.Null(licence.ExpiredDateWhenRenewalFiledUtc);
-        Assert.Equal(Now.AddDays(-1), licence.RenewalConfirmedUtc);
+        var license = await dbContext.WatchedLicenses.SingleAsync();
+        Assert.Null(license.RenewalPendingSinceUtc);
+        Assert.Null(license.ExpiredDateWhenRenewalFiledUtc);
+        Assert.Equal(Now.AddDays(-1), license.RenewalConfirmedUtc);
         Assert.Equal(0, result.RenewalsDetected);
-        Assert.Equal(WatchedLicenseStatus.Renewed, licence.DeriveStatus(Now));
+        Assert.Equal(WatchedLicenseStatus.Renewed, license.DeriveStatus(Now));
     }
 
     /// <summary>A row already wedged by that bug heals itself on the next run — and the stand-down is not an abandonment.</summary>
@@ -557,11 +557,11 @@ public class LicenseWatchServiceTests
 
         var result = await CreateService(dbContext, client).RunAsync(CancellationToken.None);
 
-        var licence = await dbContext.WatchedLicenses.SingleAsync();
-        Assert.Null(licence.RenewalPendingSinceUtc);
-        Assert.Equal(Now.AddDays(-1), licence.RenewalConfirmedUtc);
+        var license = await dbContext.WatchedLicenses.SingleAsync();
+        Assert.Null(license.RenewalPendingSinceUtc);
+        Assert.Equal(Now.AddDays(-1), license.RenewalConfirmedUtc);
         Assert.Equal(0, result.RenewalsAbandoned);
-        Assert.Equal(WatchedLicenseStatus.Renewed, licence.DeriveStatus(Now));
+        Assert.Equal(WatchedLicenseStatus.Renewed, license.DeriveStatus(Now));
     }
 
     /// <summary>The filtering must not deafen the row to the next real renewal, a term later.</summary>
@@ -580,18 +580,18 @@ public class LicenseWatchServiceTests
 
         var result = await CreateService(dbContext, client).RunAsync(CancellationToken.None);
 
-        var licence = await dbContext.WatchedLicenses.SingleAsync();
-        Assert.Equal(Now, licence.RenewalPendingSinceUtc);
-        Assert.Equal("0012131564", licence.RenewalFileNumber);
+        var license = await dbContext.WatchedLicenses.SingleAsync();
+        Assert.Equal(Now, license.RenewalPendingSinceUtc);
+        Assert.Equal("0012131564", license.RenewalFileNumber);
         Assert.Equal(1, result.RenewalsDetected);
-        Assert.Equal(WatchedLicenseStatus.RenewalPending, licence.DeriveStatus(Now));
+        Assert.Equal(WatchedLicenseStatus.RenewalPending, license.DeriveStatus(Now));
     }
 
-    /// <summary>Belt and braces at render time: whatever the stored fields say, an issued licence never walks backwards to "pending" on screen.</summary>
+    /// <summary>Belt and braces at render time: whatever the stored fields say, an issued license never walks backwards to "pending" on screen.</summary>
     [Fact]
     public void RecentlyIssuedRenewal_OutranksAPendingFlag()
     {
-        var licence = new WatchedLicense
+        var license = new WatchedLicense
         {
             CallSign = "KA0MVW",
             LastCheckedUtc = Now,
@@ -600,6 +600,6 @@ public class LicenseWatchServiceTests
             RenewalPendingSinceUtc = Now
         };
 
-        Assert.Equal(WatchedLicenseStatus.Renewed, licence.DeriveStatus(Now));
+        Assert.Equal(WatchedLicenseStatus.Renewed, license.DeriveStatus(Now));
     }
 }

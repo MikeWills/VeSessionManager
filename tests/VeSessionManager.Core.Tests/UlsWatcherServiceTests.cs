@@ -102,7 +102,7 @@ public class UlsWatcherServiceTests
 
     /// <summary>
     /// The regression guard for the 2026-07-30 incident: three real upgrade candidates were wrongly
-    /// marked Granted off a licence granted years earlier, because a pre-existing Active record
+    /// marked Granted off a license granted years earlier, because a pre-existing Active record
     /// looks identical to a fresh one apart from its date.
     /// </summary>
     [Fact]
@@ -331,8 +331,8 @@ public class UlsWatcherServiceTests
     }
 
     /// <summary>
-    /// The licence key is captured whenever ULS reports one, **not only on grant** — an upgrade
-    /// candidate already holds a licence while their upgrade is pending, and Applicant Status renders
+    /// The license key is captured whenever ULS reports one, **not only on grant** — an upgrade
+    /// candidate already holds a license while their upgrade is pending, and Applicant Status renders
     /// its "view in FCC ULS" link off exactly this field. Verified live that `u_id` is the `licKey`
     /// FCC's URL takes.
     /// </summary>
@@ -343,7 +343,7 @@ public class UlsWatcherServiceTests
         await SeedCandidateAsync(dbContext, newLicenseClass: LicenseClass.General, initialLicenseClass: LicenseClass.Technician);
         var client = new FakeUlsLookupClient(new()
         {
-            // Still holds Technician from before the exam — no grant yet, but the licence exists.
+            // Still holds Technician from before the exam — no grant yet, but the license exists.
             ["0038704029"] = ActiveLicense(
                 grantDate: new DateTime(2026, 5, 22, 0, 0, 0, DateTimeKind.Utc),
                 effectiveDate: new DateTime(2026, 5, 22, 0, 0, 0, DateTimeKind.Utc),

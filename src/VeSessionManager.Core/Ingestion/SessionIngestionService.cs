@@ -160,13 +160,13 @@ public class SessionIngestionService(
 
     /// <summary>
     /// Historical candidates are assumed to have been granted, per the session-lifecycle rule: there
-    /// is no reason to keep asking FCC whether a licence from one to four years ago was issued. Left
+    /// is no reason to keep asking FCC whether a license from one to four years ago was issued. Left
     /// non-terminal they would be polled by UlsWatcherService — one HTTP call per candidate, twice a
     /// day, forever — and counted as outstanding on the Applicant Status screen.
     ///
     /// Deliberately does NOT invent a CallSign or LicenseGrantDateUtc: those stay null because they
     /// were never verified. Only the status is asserted. Where UlsWatcherService *did* manage to
-    /// match a real licence during an earlier run, that candidate is already terminal and is left
+    /// match a real license during an earlier run, that candidate is already terminal and is left
     /// exactly as it is, call sign and grant date intact.
     ///
     /// No per-candidate audit entry, on purpose: an import writes thousands of these at once and the

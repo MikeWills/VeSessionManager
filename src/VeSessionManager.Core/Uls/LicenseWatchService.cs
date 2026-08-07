@@ -6,7 +6,7 @@ using VeSessionManager.Core.Entities;
 namespace VeSessionManager.Core.Uls;
 
 /// <summary>
-/// Refreshes every team's watched licences from ExamTools' ULS mirror — see docs/renewal-monitor.md.
+/// Refreshes every team's watched licenses from ExamTools' ULS mirror — see docs/renewal-monitor.md.
 ///
 /// <para>Same scan-based, idempotent shape as every other job here: the work is "re-derive current
 /// state from the remote feed", <see cref="WatchedLicense.LastCheckedUtc"/> is both the staleness
@@ -29,14 +29,14 @@ public class LicenseWatchService(
     /// <summary>
     /// How stale a row may be before it is refreshed.
     ///
-    /// <para><b>Six hours, not twenty.</b> The original 20 hours came from "a licence term is ten
+    /// <para><b>Six hours, not twenty.</b> The original 20 hours came from "a license term is ten
     /// years and a renewal takes days to weeks, so nothing changes hour to hour" — true of the
-    /// licence, wrong about the feed. FCC posts its daily changes at <b>02:00 ET</b>, so the useful
-    /// question is not how fast a licence changes but how long after that nightly run this app
+    /// license, wrong about the feed. FCC posts its daily changes at <b>02:00 ET</b>, so the useful
+    /// question is not how fast a license changes but how long after that nightly run this app
     /// notices. At 20 hours the answer drifts: a renewal granted at 02:00 sat invisible until the
     /// following evening simply because the row had last been checked at 21:27 (observed
     /// 2026-08-06). Six hours bounds the lag to a morning while still costing four lookups a day per
-    /// licence against a third-party mirror.</para>
+    /// license against a third-party mirror.</para>
     ///
     /// <para><b>Since 2026-08-06 the cadence is decided by the job's anchored 06:00 ET slot, not by
     /// this number.</b> Its remaining job is to stop a second run on the same day (a Worker restart,
@@ -63,7 +63,7 @@ public class LicenseWatchService(
         var staleBefore = utcNow - RefreshInterval;
 
         // Never-checked rows sort first (null is less than any value in SQLite's ordering), which is
-        // what makes a just-added licence resolve on the next tick rather than queueing behind a
+        // what makes a just-added license resolve on the next tick rather than queueing behind a
         // backlog of routine refreshes.
         var due = await dbContext.WatchedLicenses
             .Where(w => w.LastCheckedUtc == null || w.LastCheckedUtc < staleBefore)
@@ -73,13 +73,13 @@ public class LicenseWatchService(
 
         result.Due = due.Count;
 
-        foreach (var licence in due)
+        foreach (var license in due)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
             // Call sign is preferred over FRN: it is what the row is keyed on and what a human
             // entered, and the endpoint resolves either.
-            var lookup = await lookupClient.LookupByFrnAsync(licence.CallSign, cancellationToken);
+            var lookup = await lookupClient.LookupByFrnAsync(license.CallSign, cancellationToken);
             if (lookup is null)
             {
                 // The lookup itself failed, so nothing was learned. Deliberately does NOT stamp
@@ -88,14 +88,14 @@ public class LicenseWatchService(
                 continue;
             }
 
-            Apply(licence, lookup, utcNow, result);
+            Apply(license, lookup, utcNow, result);
 
             // Per row, not batched — same reasoning as UlsWatcherService.
             await dbContext.SaveChangesAsync(cancellationToken);
             result.Checked++;
         }
 
-        logger.LogInformation("Licence watch finished: {Result}", result);
+        logger.LogInformation("License watch finished: {Result}", result);
         return result;
     }
 
@@ -105,40 +105,40 @@ public class LicenseWatchService(
     /// otherwise the two would map the same response independently and drift — and so the tests can
     /// drive it directly against a fabricated <see cref="UlsLookupResult"/>.
     /// </summary>
-    public static void Apply(WatchedLicense licence, UlsLookupResult lookup, DateTime utcNow, LicenseWatchResult result)
+    public static void Apply(WatchedLicense license, UlsLookupResult lookup, DateTime utcNow, LicenseWatchResult result)
     {
-        licence.LastCheckedUtc = utcNow;
+        license.LastCheckedUtc = utcNow;
 
         if (!lookup.Found)
         {
             // A call sign that resolved when it was added can stop resolving later (a cancelled
             // record eventually drops out). Flag it rather than blanking the row, so the page can
             // say what happened instead of showing an empty line.
-            licence.NotFoundAtFcc = true;
+            license.NotFoundAtFcc = true;
             result.NotFound++;
             return;
         }
 
-        licence.NotFoundAtFcc = false;
-        licence.LicenseeName = lookup.LicenseeName;
-        licence.LicenseStatus = lookup.LicenseStatus;
-        licence.OperatorClass = lookup.OperatorClass;
-        licence.GrantDateUtc = lookup.GrantDateUtc;
-        licence.CancellationDateUtc = lookup.CancellationDateUtc;
+        license.NotFoundAtFcc = false;
+        license.LicenseeName = lookup.LicenseeName;
+        license.LicenseStatus = lookup.LicenseStatus;
+        license.OperatorClass = lookup.OperatorClass;
+        license.GrantDateUtc = lookup.GrantDateUtc;
+        license.CancellationDateUtc = lookup.CancellationDateUtc;
 
         // Keep whatever FRN FCC reports — this is how a row added by call sign acquires one.
-        if (!string.IsNullOrWhiteSpace(lookup.Frn)) licence.Frn = lookup.Frn;
+        if (!string.IsNullOrWhiteSpace(lookup.Frn)) license.Frn = lookup.Frn;
 
         // A call sign can change (vanity), and the row is keyed on it, so follow FCC rather than
         // pinning to what was typed. Uniqueness is per team, so a rename colliding with another
         // watched row would throw on save — accepted as vanishingly rare and loud rather than
         // silently dropping one of the two.
-        if (!string.IsNullOrWhiteSpace(lookup.CallSign)) licence.CallSign = lookup.CallSign;
+        if (!string.IsNullOrWhiteSpace(lookup.CallSign)) license.CallSign = lookup.CallSign;
 
-        var previousExpiry = licence.ExpiredDateUtc;
-        licence.ExpiredDateUtc = lookup.ExpiredDateUtc;
+        var previousExpiry = license.ExpiredDateUtc;
+        license.ExpiredDateUtc = lookup.ExpiredDateUtc;
 
-        ApplyRenewalState(licence, lookup, utcNow, previousExpiry, result);
+        ApplyRenewalState(license, lookup, utcNow, previousExpiry, result);
     }
 
     /// <summary>
@@ -155,7 +155,7 @@ public class LicenseWatchService(
     /// request.</para>
     /// </summary>
     private static void ApplyRenewalState(
-        WatchedLicense licence,
+        WatchedLicense license,
         UlsLookupResult lookup,
         DateTime utcNow,
         DateTime? previousExpiry,
@@ -165,7 +165,7 @@ public class LicenseWatchService(
 
         // Anything FCC has already acted on is filtered out here rather than tested in each branch
         // below, so no path can mistake a lingering receipt for a live request.
-        var renewal = renewalApplications.FirstOrDefault(a => !IsAlreadyIssued(licence, a));
+        var renewal = renewalApplications.FirstOrDefault(a => !IsAlreadyIssued(license, a));
 
         // True when every renewal application on the record is one we have already seen land. Kept
         // apart from "no application at all" so clearing it isn't miscounted as an abandonment.
@@ -175,35 +175,35 @@ public class LicenseWatchService(
         // IsAlreadyIssued matches the lingering application against on subsequent polls.
         void Confirm()
         {
-            licence.RenewalConfirmedUtc = utcNow;
-            licence.RenewalPendingSinceUtc = null;
-            licence.ExpiredDateWhenRenewalFiledUtc = null;
-            licence.RenewalFileNumber =
-                renewalApplications.FirstOrDefault()?.UlsFileNumber ?? licence.RenewalFileNumber;
+            license.RenewalConfirmedUtc = utcNow;
+            license.RenewalPendingSinceUtc = null;
+            license.ExpiredDateWhenRenewalFiledUtc = null;
+            license.RenewalFileNumber =
+                renewalApplications.FirstOrDefault()?.UlsFileNumber ?? license.RenewalFileNumber;
             result.RenewalsConfirmed++;
         }
 
         // The expiration date advancing since the last look IS issuance — whether or not this app
         // ever saw the application pending. Checked first, and independently of RenewalPendingSinceUtc,
         // because requiring a prior "pending" sighting made the state machine misreport any renewal it
-        // joined mid-stream: a licence renewed between two polls would be recorded as newly *pending*,
+        // joined mid-stream: a license renewed between two polls would be recorded as newly *pending*,
         // anchored against its own already-updated expiry, and could then never satisfy the
         // "expiry > anchor" test. It sat on "Renewal pending" until FCC dropped the application and
         // then fell through to plain Active, never once reporting the renewal it had just watched land
-        // (found 2026-08-06 on a licence granted before it was first observed).
-        if (previousExpiry is { } before && licence.ExpiredDateUtc is { } after && after > before)
+        // (found 2026-08-06 on a license granted before it was first observed).
+        if (previousExpiry is { } before && license.ExpiredDateUtc is { } after && after > before)
         {
             Confirm();
             return;
         }
 
-        if (licence.RenewalPendingSinceUtc is not null)
+        if (license.RenewalPendingSinceUtc is not null)
         {
             // Belt and braces alongside the previousExpiry test above: that one compares against the
             // last poll, this one against the value when the renewal was first seen, which still
             // catches an advance spread across a poll that returned no expiry at all.
-            var filedAgainst = licence.ExpiredDateWhenRenewalFiledUtc;
-            var issued = licence.ExpiredDateUtc is { } current &&
+            var filedAgainst = license.ExpiredDateWhenRenewalFiledUtc;
+            var issued = license.ExpiredDateUtc is { } current &&
                          (filedAgainst is null || current > filedAgainst);
 
             if (issued)
@@ -214,8 +214,8 @@ public class LicenseWatchService(
 
             if (renewal is null)
             {
-                licence.RenewalPendingSinceUtc = null;
-                licence.ExpiredDateWhenRenewalFiledUtc = null;
+                license.RenewalPendingSinceUtc = null;
+                license.ExpiredDateWhenRenewalFiledUtc = null;
 
                 if (lingeringOnly)
                 {
@@ -229,7 +229,7 @@ public class LicenseWatchService(
                 // The application vanished without the expiration moving — dismissed, withdrawn, or
                 // FCC re-filed it under a new number. Reset to "not pending" so a later application
                 // is seen as new; the row simply goes back to reporting its real expiry.
-                licence.RenewalFileNumber = null;
+                license.RenewalFileNumber = null;
                 result.RenewalsAbandoned++;
                 return;
             }
@@ -237,18 +237,18 @@ public class LicenseWatchService(
             // Still pending — refresh the file number in case FCC re-issued it, but leave
             // RenewalPendingSinceUtc alone: it records when *we* first saw it, and must not creep
             // forward on every poll.
-            licence.RenewalFileNumber = renewal.UlsFileNumber ?? licence.RenewalFileNumber;
+            license.RenewalFileNumber = renewal.UlsFileNumber ?? license.RenewalFileNumber;
             return;
         }
 
         if (renewal is not null)
         {
-            licence.RenewalPendingSinceUtc = utcNow;
-            licence.RenewalFileNumber = renewal.UlsFileNumber;
+            license.RenewalPendingSinceUtc = utcNow;
+            license.RenewalFileNumber = renewal.UlsFileNumber;
             // Anchor on the expiry as it stands right now — the value the renewal must beat. Falls
             // back to the pre-refresh value if this poll returned none, so the anchor is never null
             // when we had something to record.
-            licence.ExpiredDateWhenRenewalFiledUtc = licence.ExpiredDateUtc ?? previousExpiry;
+            license.ExpiredDateWhenRenewalFiledUtc = license.ExpiredDateUtc ?? previousExpiry;
             result.RenewalsDetected++;
         }
     }
@@ -270,12 +270,12 @@ public class LicenseWatchService(
     /// genuinely new renewal before it issued the last one, and the real ones are ten years
     /// apart.</para>
     /// </summary>
-    private static bool IsAlreadyIssued(WatchedLicense licence, UlsPendingApplication application)
+    private static bool IsAlreadyIssued(WatchedLicense license, UlsPendingApplication application)
     {
-        if (licence.RenewalConfirmedUtc is not { } confirmed) return false;
+        if (license.RenewalConfirmedUtc is not { } confirmed) return false;
 
         if (!string.IsNullOrWhiteSpace(application.UlsFileNumber) &&
-            string.Equals(application.UlsFileNumber, licence.RenewalFileNumber, StringComparison.OrdinalIgnoreCase))
+            string.Equals(application.UlsFileNumber, license.RenewalFileNumber, StringComparison.OrdinalIgnoreCase))
         {
             return true;
         }

@@ -163,7 +163,7 @@ public static class JobSchedules
 
         new(UlsWatcher,
             "ULS watcher",
-            "Checks FCC ULS for candidates' applications and new licences.",
+            "Checks FCC ULS for candidates' applications and new licenses.",
             JobCadenceKind.AnchoredToEasternHour,
             "Jobs:UlsWatcherIntervalHours",
             DefaultIntervalHours: 12,

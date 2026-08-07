@@ -243,7 +243,7 @@ Three things worth knowing about the shape of the fix:
 ## Imported candidates are assumed granted (2026-08-01)
 
 Session-lifecycle rule, decided after the import surfaced the bugs below: **a historical load assumes
-everyone was granted.** There is no reason to keep asking FCC whether a licence from one to four
+everyone was granted.** There is no reason to keep asking FCC whether a license from one to four
 years ago was issued — it either happened long ago or never will.
 
 Left non-terminal, those candidates are polled by `UlsWatcherService` (one HTTP call each, twice a
@@ -253,7 +253,7 @@ terminal, and terminal is already the universal "stop processing" signal across 
 Two limits on what is asserted:
 
 - **Only the status.** `CallSign` and `LicenseGrantDateUtc` stay null, because they were never
-  verified. Inventing them would put fabricated licence data in a table other screens read.
+  verified. Inventing them would put fabricated license data in a table other screens read.
 - **A candidate the watcher already matched is untouched.** Where `UlsWatcherService` pulled a real
   call sign from ExamTools' ULS API during an earlier run, that candidate is already terminal and
   keeps its real data. In the live backfill all 542 affected rows had no call sign, so nothing

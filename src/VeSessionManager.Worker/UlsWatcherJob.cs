@@ -7,7 +7,7 @@ using VeSessionManager.Core.Uls;
 namespace VeSessionManager.Worker;
 
 /// <summary>
-/// Checks ExamTools' ULS mirror for licence grants twice a day — 08:00 and 20:00 ET by default
+/// Checks ExamTools' ULS mirror for license grants twice a day — 08:00 and 20:00 ET by default
 /// (SystemSettings.UlsWatcherStartHourEt/UlsWatcherIntervalHours).
 ///
 /// <para>Replaced FccDailyWatcherJob + FccWeeklyCatchupJob on 2026-07-31 (see docs/uls-watcher.md).

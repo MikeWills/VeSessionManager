@@ -36,10 +36,10 @@ public sealed record UlsLookupResult
     /// <summary>End of the current 10-year term. **This advancing is the only positive confirmation that a renewal was actually issued** — a renewal leaves call sign, class and grant date untouched, so nothing else on the record changes. Verified live 2026-08-05 (W1AW: <c>expired_date</c> 2031-02-26).</summary>
     public DateTime? ExpiredDateUtc { get; init; }
 
-    /// <summary>Set when FCC has cancelled the licence outright. Distinct from simply being past <see cref="ExpiredDateUtc"/>, which is still renewable during the grace period.</summary>
+    /// <summary>Set when FCC has cancelled the license outright. Distinct from simply being past <see cref="ExpiredDateUtc"/>, which is still renewable during the grace period.</summary>
     public DateTime? CancellationDateUtc { get; init; }
 
-    /// <summary>FCC's own FRN for the record. Captured so a watch entry added by call sign gets its FRN filled in automatically — the two identify the same licence and either can be looked up.</summary>
+    /// <summary>FCC's own FRN for the record. Captured so a watch entry added by call sign gets its FRN filled in automatically — the two identify the same license and either can be looked up.</summary>
     public string? Frn { get; init; }
 
     /// <summary>Licensee name, assembled from the response's separate first/middle/last/suffix fields. A club record (W1AW) leaves all of them blank, so this can legitimately be null on a found record. The address the response also carries is deliberately **not** mapped — nothing here needs it, and not holding it is cheaper than justifying it.</summary>
@@ -60,7 +60,7 @@ public sealed record UlsPendingApplication
     /// <para><b>ExamTools returns the human-readable description, not FCC's raw code.</b> Observed
     /// live on 2026-08-06: a real renewal came back as <c>"Renewal/Modification"</c>, not <c>"RM"</c>.
     /// The original matcher tested only the two-letter codes, so <see cref="IsRenewal"/> was always
-    /// false and the whole request-through-issuance lifecycle never fired — a renewed licence just
+    /// false and the whole request-through-issuance lifecycle never fired — a renewed license just
     /// slid from "Expiring soon" to "Active" with a new expiry, never reporting a renewal at all.</para>
     ///
     /// <para>Matching now accepts either form: the codes, in case another endpoint or a future shape
