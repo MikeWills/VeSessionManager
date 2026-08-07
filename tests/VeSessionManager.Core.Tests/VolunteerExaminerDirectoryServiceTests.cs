@@ -223,6 +223,27 @@ public class VolunteerExaminerDirectoryServiceTests
         Assert.False(rows.Single(r => r.VolunteerExaminer.CallSign == "NP2UU").HasDuplicateCallSign);
     }
 
+    /// <summary>
+    /// ExamTools' "&lt;UNKNOWN&gt;" placeholder is shared by every VE it has no call sign for, so
+    /// those rows always collide — but they are known to be different people, not suspected
+    /// duplicates. Flagging them is noise that trains people to ignore the marker where it matters.
+    /// </summary>
+    [Fact]
+    public async Task PlaceholderCallSigns_AreNotFlaggedAsDuplicates()
+    {
+        await using var dbContext = CreateContext();
+        var teamA = await SeedTeamAsync(dbContext, "TEAM-A");
+        var teamB = await SeedTeamAsync(dbContext, "TEAM-B");
+        await SeedVeAsync(dbContext, teamA, "<UNKNOWN>", "<UNKNOWN>");
+        await SeedVeAsync(dbContext, teamB, "<UNKNOWN>", "<UNKNOWN>");
+
+        var rows = await new VolunteerExaminerDirectoryService(dbContext)
+            .GetDirectoryAsync(null, null, null, includeInactive: false, CancellationToken.None);
+
+        Assert.Equal(2, rows.Count);
+        Assert.All(rows, r => Assert.False(r.HasDuplicateCallSign));
+    }
+
     [Fact]
     public async Task Accreditation_IsRecordedOncePerVec()
     {

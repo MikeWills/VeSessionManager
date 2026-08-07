@@ -96,7 +96,15 @@ public class VolunteerExaminerDirectoryService(AppDbContext dbContext)
             .Where(g => g.Count() > 1)
             .Select(g => g.Key)
             .ToListAsync(cancellationToken);
-        var duplicateCallSigns = sharedCallSigns.ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        // Placeholders excluded. ExamTools' "<UNKNOWN>" is shared by every VE it has no call sign
+        // for, so those rows always collide — but they are *known* to be different people, not
+        // suspected duplicates, and flagging them is noise that trains people to ignore the marker
+        // on the rows where it means something. Seen immediately after the split repair, which
+        // correctly produced two unidentified people who then both lit up as possible duplicates.
+        var duplicateCallSigns = sharedCallSigns
+            .Where(CallSign.IsUsable)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         return [.. memberships
             .Select(m => new VeDirectoryRow(

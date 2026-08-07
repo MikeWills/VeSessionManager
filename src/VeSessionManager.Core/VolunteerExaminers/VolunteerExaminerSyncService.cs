@@ -62,11 +62,27 @@ public class VolunteerExaminerSyncService(
         // roster names may already exist because they serve another team — scoping the lookup would
         // recreate exactly the per-team duplication this change removed. The team-specific part is
         // the VeTeamMembership added below.
-        var knownVes = await dbContext.VolunteerExaminers
+        var allWithCallSign = await dbContext.VolunteerExaminers
             .Include(v => v.TeamMemberships)
             .Include(v => v.CallSignHistory)
             .Where(v => v.CallSign != null)
-            .ToDictionaryAsync(v => v.CallSign!, cancellationToken);
+            .ToListAsync(cancellationToken);
+
+        // Keyed on the call sign, so only rows whose call sign is actually an identity may go in.
+        // Placeholders are excluded for two reasons: matching on one fuses different people (see
+        // ReconcileSession), and — because several people can legitimately hold the literal
+        // "<UNKNOWN>" — a straight ToDictionary over every row throws a duplicate-key exception the
+        // moment more than one exists, taking the whole roster sync down with it.
+        var knownVes = allWithCallSign
+            .Where(v => CallSign.IsUsable(v.CallSign))
+            .ToDictionary(v => v.CallSign!);
+
+        // Unidentifiable rows are matched within one team only, which is what the old per-team
+        // schema did implicitly and what stops a new person being minted on every poll.
+        var placeholderVesOnThisTeam = allWithCallSign
+            .Where(v => !CallSign.IsUsable(v.CallSign) && v.TeamMemberships.Any(m => m.TeamId == team.Id))
+            .GroupBy(v => v.CallSign!)
+            .ToDictionary(g => g.Key, g => g.First());
 
         // Former call signs, so a roster still reporting someone's old call resolves to them rather
         // than minting a second person. Only consulted when the live call sign misses — see
@@ -145,7 +161,7 @@ public class VolunteerExaminerSyncService(
             try
             {
                 var roster = await examToolsClient.GetSessionVeRosterAsync(credentials, session.ExamToolsSessionId, cancellationToken);
-                ReconcileSession(team, session, roster, knownVes, byFormerCallSign, now, result);
+                ReconcileSession(team, session, roster, knownVes, placeholderVesOnThisTeam, byFormerCallSign, now, result);
 
                 // Stamped here, after the call returned, and only for a session that was already
                 // finished when we asked — that combination is the whole meaning of the field. A
@@ -179,7 +195,9 @@ public class VolunteerExaminerSyncService(
 
     private void ReconcileSession(
         Team team, Session session, IReadOnlyList<ExamToolsVe> roster,
-        Dictionary<string, VolunteerExaminer> knownVes, Dictionary<string, int> byFormerCallSign,
+        Dictionary<string, VolunteerExaminer> knownVes,
+        Dictionary<string, VolunteerExaminer> placeholderVesOnThisTeam,
+        Dictionary<string, int> byFormerCallSign,
         DateTime now, VeRosterSyncResult result)
     {
         var rosterCallSigns = roster
@@ -210,29 +228,59 @@ public class VolunteerExaminerSyncService(
             var callSign = ve.Call.Trim().ToUpperInvariant();
             var name = ve.Name.Trim();
 
-            if (!knownVes.TryGetValue(callSign, out var volunteerExaminer))
+            // **A placeholder is not an identity.** ExamTools reports the literal "<UNKNOWN>" when it
+            // has no call sign, and treated as an ordinary value it looks like one call sign shared
+            // by many different people. Matching on it fused HRCC's unidentified VE with MARC's into
+            // a single person carrying 88 sessions of both their histories (found live 2026-08-07).
+            //
+            // Such a row is still matched *within one team*, which is what the old per-team schema
+            // did implicitly and what stops a new person being created on every single poll — but it
+            // can never match across teams, so two teams' unknowns stay two people.
+            var identifiable = CallSign.IsUsable(callSign);
+
+            // Lookup: a real call sign identifies a person anywhere; a placeholder only within
+            // this team.
+            VolunteerExaminer? volunteerExaminer = null;
+            if (identifiable)
             {
-                // Second chance before creating a person: the roster may still be naming someone by
-                // a call sign they no longer hold. Creating a duplicate here would split their
-                // session history in two and hand them a second, empty set of contact details.
-                if (byFormerCallSign.TryGetValue(callSign, out var formerId))
-                {
-                    volunteerExaminer = knownVes.Values.FirstOrDefault(v => v.Id == formerId);
-                }
+                knownVes.TryGetValue(callSign, out volunteerExaminer);
+            }
+            else
+            {
+                placeholderVesOnThisTeam.TryGetValue(callSign, out volunteerExaminer);
+            }
 
-                if (volunteerExaminer is null)
-                {
-                    volunteerExaminer = new VolunteerExaminer
-                    {
-                        Name = string.IsNullOrWhiteSpace(name) ? callSign : name,
-                        CallSign = callSign,
-                        CreatedUtc = now
-                    };
-                    dbContext.VolunteerExaminers.Add(volunteerExaminer);
-                    result.VolunteerExaminersAdded++;
-                }
+            // Second chance before creating a person: the roster may still be naming someone by a
+            // call sign they no longer hold. Creating a duplicate here would split their session
+            // history in two and hand them a second, empty set of contact details. Real call signs
+            // only — a placeholder has no history worth following.
+            if (volunteerExaminer is null && identifiable && byFormerCallSign.TryGetValue(callSign, out var formerId))
+            {
+                volunteerExaminer = knownVes.Values.FirstOrDefault(v => v.Id == formerId);
+            }
 
+            if (volunteerExaminer is null)
+            {
+                volunteerExaminer = new VolunteerExaminer
+                {
+                    Name = string.IsNullOrWhiteSpace(name) ? callSign : name,
+                    CallSign = callSign,
+                    CreatedUtc = now
+                };
+                dbContext.VolunteerExaminers.Add(volunteerExaminer);
+                result.VolunteerExaminersAdded++;
+            }
+
+            // Cached so a VE created earlier in this same run is found again rather than duplicated.
+            // A usable call sign goes in the global map; a placeholder only in this team's, so the
+            // next team's sync cannot pick up the person we just created for this one.
+            if (identifiable)
+            {
                 knownVes[callSign] = volunteerExaminer;
+            }
+            else
+            {
+                placeholderVesOnThisTeam[callSign] = volunteerExaminer;
             }
 
             // **Name is NOT refreshed from ExamTools.** It used to be, on the stated grounds that

@@ -64,7 +64,11 @@ else
                         <td class="count">@row.Tag.SortOrder</td>
                         <td class="count">@row.AssignedCount</td>
                         <td>
+                            @* asp-page-handler builds the action from the route only and DROPS the
+                               query string, so this posted without teamId and the page 403'd its own
+                               form. The hidden field re-supplies it. See CLAUDE.md. *@
                             <form method="post" asp-page-handler="Delete">
+                                <input type="hidden" name="teamId" value="@Model.ResolvedTeamId" />
                                 <input type="hidden" name="tagId" value="@row.Tag.Id" />
                                 <button type="submit" class="btn-secondary btn-sm"
                                         title="@(row.AssignedCount > 0 ? $"This will also remove the tag from {row.AssignedCount} VE(s)" : null)">
@@ -82,6 +86,7 @@ else
     <div class="ve-panel">
         <h2>Add a tag</h2>
         <form method="post" asp-page-handler="Create" class="field-row">
+            <input type="hidden" name="teamId" value="@Model.ResolvedTeamId" />
             <div class="field">
                 <label for="name">Name</label>
                 <input id="name" name="name" required placeholder="e.g. Team member" />

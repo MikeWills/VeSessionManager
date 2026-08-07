@@ -246,6 +246,12 @@ tbody tr.row-past:hover { background: var(--row-hover); }
 .btn-primary { background: var(--panel); color: #fff; }
 .btn-primary:hover { background: var(--panel-2); }
 .btn-secondary { background: var(--surface); color: var(--ink); border-color: var(--line-strong); }
+/* Two classes, and that is load-bearing: `.vesm button` above sets the `border` SHORTHAND to
+   transparent at (0,1,1), which beats a bare `.btn-secondary` setting only `border-color` at
+   (0,1,0). The result was a white button on a white panel with no border at all — every secondary
+   button in the app rendering as plain text. Same specificity trap as .nav-toggle and the anchor
+   buttons, third instance. */
+.vesm .btn-secondary { border-color: var(--line-strong); }
 .btn-secondary:hover { border-color: var(--ink); }
 .btn-danger { background: var(--surface); color: var(--brick); border-color: var(--brick-dim); }
 .btn-danger:hover { background: var(--brick-dim); }

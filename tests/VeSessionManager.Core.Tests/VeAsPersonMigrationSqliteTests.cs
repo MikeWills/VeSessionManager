@@ -238,6 +238,161 @@ public class VeAsPersonMigrationSqliteTests
         Assert.Equal(teamC, Assert.Single(await dbContext.VeTeamMemberships.ToListAsync()).TeamId);
     }
 
+    /// <summary>
+    /// The bug real data found and every test above missed (2026-08-07). ExamTools reports the
+    /// literal "&lt;UNKNOWN&gt;" when it has no call sign, so HRCC's unidentified VE and MARC's
+    /// shared a "call sign" and a name, and were merged into one person carrying 88 sessions of both
+    /// their histories. Every other test here uses realistic call signs and sails straight past it.
+    /// </summary>
+    [Fact]
+    public async Task PlaceholderCallSigns_AreNeverMergedAcrossTeams()
+    {
+        var (connection, dbContext) = await MigrateToOldSchemaAsync();
+        await using var _ = connection;
+        await using var __ = dbContext;
+
+        var teamA = await SeedTeamAsync(dbContext, "TEAM-A");
+        var teamB = await SeedTeamAsync(dbContext, "TEAM-B");
+        var sessionA = await SeedSessionAsync(dbContext, teamA, "a");
+        var sessionB = await SeedSessionAsync(dbContext, teamB, "b");
+        var unknownA = await SeedOldShapeVeAsync(dbContext, teamA, "<UNKNOWN>", "<UNKNOWN>");
+        var unknownB = await SeedOldShapeVeAsync(dbContext, teamB, "<UNKNOWN>", "<UNKNOWN>");
+        await LinkAsync(dbContext, sessionA, unknownA);
+        await LinkAsync(dbContext, sessionB, unknownB);
+
+        await dbContext.Database.MigrateAsync();
+        dbContext.ChangeTracker.Clear();
+
+        Assert.Equal(2, await dbContext.VolunteerExaminers.CountAsync());
+
+        var links = await dbContext.SessionVolunteerExaminers.ToListAsync();
+        Assert.Equal(2, links.Count);
+        Assert.Equal(2, links.Select(l => l.VolunteerExaminerId).Distinct().Count());
+    }
+
+    /// <summary>
+    /// The repair for databases that already ran the broken merge. Splitting merged people is
+    /// normally impossible, but here it is fully determined: each pre-merge row was one team's, and
+    /// every session belongs to exactly one team.
+    /// </summary>
+    [Fact]
+    public async Task AlreadyMergedPlaceholders_AreSplitBackByTeam()
+    {
+        var (connection, dbContext) = await MigrateToOldSchemaAsync();
+        await using var _ = connection;
+        await using var __ = dbContext;
+
+        var teamA = await SeedTeamAsync(dbContext, "TEAM-A");
+        var teamB = await SeedTeamAsync(dbContext, "TEAM-B");
+        var sessionA = await SeedSessionAsync(dbContext, teamA, "a");
+        var sessionB = await SeedSessionAsync(dbContext, teamB, "b");
+        var unknownA = await SeedOldShapeVeAsync(dbContext, teamA, "<UNKNOWN>", "<UNKNOWN>");
+        var unknownB = await SeedOldShapeVeAsync(dbContext, teamB, "<UNKNOWN>", "<UNKNOWN>");
+        await LinkAsync(dbContext, sessionA, unknownA);
+        await LinkAsync(dbContext, sessionB, unknownB);
+
+        await dbContext.Database.MigrateAsync();
+        dbContext.ChangeTracker.Clear();
+
+        // Reproduce the damaged state by hand: one person holding both teams' memberships and links.
+        await dbContext.Database.ExecuteSqlRawAsync(
+            "UPDATE SessionVolunteerExaminers SET VolunteerExaminerId = {0} WHERE VolunteerExaminerId = {1}", unknownA, unknownB);
+        await dbContext.Database.ExecuteSqlRawAsync(
+            "UPDATE VeTeamMemberships SET VolunteerExaminerId = {0} WHERE VolunteerExaminerId = {1}", unknownA, unknownB);
+        await dbContext.Database.ExecuteSqlRawAsync(
+            "DELETE FROM VolunteerExaminers WHERE Id = {0}", unknownB);
+        dbContext.ChangeTracker.Clear();
+        Assert.Single(await dbContext.VolunteerExaminers.ToListAsync());
+
+        await RunSplitRepairAsync(dbContext);
+        dbContext.ChangeTracker.Clear();
+
+        Assert.Equal(2, await dbContext.VolunteerExaminers.CountAsync());
+        var memberships = await dbContext.VeTeamMemberships.ToListAsync();
+        Assert.Equal(2, memberships.Select(m => m.VolunteerExaminerId).Distinct().Count());
+
+        // Each session went back to the person belonging to its own team.
+        foreach (var link in await dbContext.SessionVolunteerExaminers.Include(l => l.Session).ToListAsync())
+        {
+            var membership = memberships.Single(m => m.VolunteerExaminerId == link.VolunteerExaminerId);
+            Assert.Equal(link.Session.TeamId, membership.TeamId);
+        }
+
+        // The marker used to correlate the new ids must not be left behind in a user-visible field.
+        Assert.All(await dbContext.VolunteerExaminers.ToListAsync(), v => Assert.Null(v.Notes));
+    }
+
+    /// <summary>A real call sign shared by one person across two teams must stay merged — the repair must not undo the feature.</summary>
+    [Fact]
+    public async Task SplitRepair_LeavesRealCallSignsMerged()
+    {
+        var (connection, dbContext) = await MigrateToOldSchemaAsync();
+        await using var _ = connection;
+        await using var __ = dbContext;
+
+        var teamA = await SeedTeamAsync(dbContext, "TEAM-A");
+        var teamB = await SeedTeamAsync(dbContext, "TEAM-B");
+        await SeedOldShapeVeAsync(dbContext, teamA, "N2SPG", "Sam Granger");
+        await SeedOldShapeVeAsync(dbContext, teamB, "N2SPG", "Sam Granger");
+
+        await dbContext.Database.MigrateAsync();
+        await RunSplitRepairAsync(dbContext);
+        dbContext.ChangeTracker.Clear();
+
+        Assert.Single(await dbContext.VolunteerExaminers.ToListAsync());
+        Assert.Equal(2, await dbContext.VeTeamMemberships.CountAsync());
+    }
+
+    /// <summary>
+    /// Replays the repair migration's statements. MigrateAsync has already applied it and a
+    /// migration never runs twice, so exercising it against a hand-damaged database means running
+    /// its SQL directly. Kept character-for-character in step with the migration.
+    /// </summary>
+    private static async Task RunSplitRepairAsync(AppDbContext dbContext)
+    {
+        await dbContext.Database.ExecuteSqlRawAsync("""
+            CREATE TEMPORARY TABLE _ve_split AS
+            SELECT m.Id AS MembershipId, m.VolunteerExaminerId AS OldVeId, m.TeamId
+            FROM VeTeamMemberships m
+            JOIN VolunteerExaminers v ON v.Id = m.VolunteerExaminerId
+            WHERE v.CallSign IS NOT NULL
+              AND v.CallSign GLOB '*[^A-Za-z0-9/]*'
+              AND m.TeamId <> (SELECT MIN(m2.TeamId) FROM VeTeamMemberships m2
+                                WHERE m2.VolunteerExaminerId = m.VolunteerExaminerId);
+            """);
+        await dbContext.Database.ExecuteSqlRawAsync("ALTER TABLE _ve_split ADD COLUMN NewVeId INTEGER;");
+        await dbContext.Database.ExecuteSqlRawAsync("""
+            INSERT INTO VolunteerExaminers (Name, CallSign, ContactPreference, LicenseNotFoundAtFcc, OperatorClass, CreatedUtc, Notes)
+            SELECT v.Name, v.CallSign, v.ContactPreference, 0, 0,
+                   strftime('%Y-%m-%d %H:%M:%f', 'now'), '_ve_split_' || s.MembershipId
+            FROM _ve_split s JOIN VolunteerExaminers v ON v.Id = s.OldVeId;
+            """);
+        await dbContext.Database.ExecuteSqlRawAsync("""
+            UPDATE _ve_split SET NewVeId = (SELECT v.Id FROM VolunteerExaminers v
+                                             WHERE v.Notes = '_ve_split_' || _ve_split.MembershipId);
+            """);
+        await dbContext.Database.ExecuteSqlRawAsync("""
+            UPDATE VeTeamMemberships
+               SET VolunteerExaminerId = (SELECT s.NewVeId FROM _ve_split s WHERE s.MembershipId = VeTeamMemberships.Id)
+             WHERE Id IN (SELECT MembershipId FROM _ve_split WHERE NewVeId IS NOT NULL);
+            """);
+        await dbContext.Database.ExecuteSqlRawAsync("""
+            UPDATE SessionVolunteerExaminers
+               SET VolunteerExaminerId = (
+                    SELECT s.NewVeId FROM _ve_split s
+                     JOIN Sessions ses ON ses.Id = SessionVolunteerExaminers.SessionId
+                    WHERE s.OldVeId = SessionVolunteerExaminers.VolunteerExaminerId
+                      AND s.TeamId = ses.TeamId AND s.NewVeId IS NOT NULL)
+             WHERE EXISTS (
+                    SELECT 1 FROM _ve_split s
+                     JOIN Sessions ses ON ses.Id = SessionVolunteerExaminers.SessionId
+                    WHERE s.OldVeId = SessionVolunteerExaminers.VolunteerExaminerId
+                      AND s.TeamId = ses.TeamId AND s.NewVeId IS NOT NULL);
+            """);
+        await dbContext.Database.ExecuteSqlRawAsync("UPDATE VolunteerExaminers SET Notes = NULL WHERE Notes LIKE '_ve_split_%';");
+        await dbContext.Database.ExecuteSqlRawAsync("DROP TABLE _ve_split;");
+    }
+
     /// <summary>CreatedUtc is a new non-null column; every migrated row must come out with a real date rather than 0001-01-01.</summary>
     [Fact]
     public async Task MigratedPeople_GetARealCreatedDate()

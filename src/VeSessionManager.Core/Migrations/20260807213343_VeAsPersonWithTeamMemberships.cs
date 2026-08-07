@@ -336,18 +336,30 @@ namespace VeSessionManager.Core.Migrations
                 SELECT v.Id AS OldId,
                        (SELECT MIN(v2.Id) FROM VolunteerExaminers v2
                          WHERE v2.CallSign IS NOT NULL
+                           AND v2.CallSign NOT GLOB '*[^A-Za-z0-9/]*'
                            AND UPPER(v2.CallSign) = UPPER(v.CallSign)
                            AND UPPER(TRIM(v2.Name)) = UPPER(TRIM(v.Name))) AS NewId
                 FROM VolunteerExaminers v
-                WHERE v.CallSign IS NOT NULL;
+                WHERE v.CallSign IS NOT NULL
+                  AND v.CallSign NOT GLOB '*[^A-Za-z0-9/]*';
                 """);
 
-            // A VE with no call sign cannot be matched to anything, so they map to themselves and
-            // are left exactly as they are.
+            // Rows that cannot identify a person map to themselves and are left exactly as they
+            // are: no call sign at all, or a value that is not call-sign-shaped.
+            //
+            // **The second case is not hypothetical.** ExamTools reports the literal "<UNKNOWN>"
+            // when it has no call sign for a VE, and an earlier version of this migration treated
+            // that as an ordinary value — merging HRCC's unidentified VE with MARC's into one person
+            // carrying 88 sessions of both their histories. Found by running against real data
+            // (2026-08-07); the tests all used realistic call signs and sailed past it. The GLOB
+            // excludes anything containing a character outside [A-Za-z0-9/], which catches that
+            // placeholder and whatever the next one turns out to be. Mirrors CallSign.IsUsable.
             migrationBuilder.Sql(
                 """
                 INSERT INTO _ve_merge_map (OldId, NewId)
-                SELECT Id, Id FROM VolunteerExaminers WHERE CallSign IS NULL;
+                SELECT Id, Id FROM VolunteerExaminers
+                 WHERE CallSign IS NULL
+                    OR CallSign GLOB '*[^A-Za-z0-9/]*';
                 """);
 
             // Every pre-merge row was one team's copy of a person, so each becomes one membership.
