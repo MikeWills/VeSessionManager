@@ -205,10 +205,17 @@ public class RenewalMonitorModel(
         /// <summary>Delegates to the shared definition in WatchedLicenseStatusExtensions — a second copy here is exactly how the pill and the status chip would come to disagree.</summary>
         public int? DaysUntilExpiry(DateTime utcNow) => License.DaysUntilExpiry(utcNow);
 
-        public string RenewalDisplay => License.RenewalPendingSinceUtc is { } since
-            ? $"Filed, seen {since:MMM d}"
-            : License.RenewalConfirmedUtc is { } confirmed
-                ? $"Issued {confirmed:MMM d}"
-                : "—";
+        /// <summary>
+        /// Keyed off the derived status rather than testing the two dates in its own order — the
+        /// chip saying Renewed while this column says "Filed" is precisely the disagreement that
+        /// made a lingering FCC application look like a fresh one.
+        /// </summary>
+        public string RenewalDisplay => Status is WatchedLicenseStatus.Renewed
+            ? License.RenewalConfirmedUtc is { } issued ? $"Issued {issued:MMM d}" : "Issued"
+            : License.RenewalPendingSinceUtc is { } since
+                ? $"Filed, seen {since:MMM d}"
+                : License.RenewalConfirmedUtc is { } confirmed
+                    ? $"Issued {confirmed:MMM d}"
+                    : "—";
     }
 }

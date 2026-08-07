@@ -507,4 +507,99 @@ public class LicenseWatchServiceTests
         Assert.Equal(WatchedLicenseStatus.Renewed, Renewed(Now.AddDays(-5)).DeriveStatus(Now));
         Assert.Equal(WatchedLicenseStatus.Active, Renewed(Now.AddDays(-40)).DeriveStatus(Now));
     }
+
+    /// <summary>
+    /// KA0MVW again, 2026-08-07: the day after the renewal was correctly reported as issued, FCC was
+    /// still listing the granted application, the expiry had (of course) stopped moving, and the row
+    /// went back to "Renewal pending" — anchored against the already-renewed expiry, so nothing could
+    /// ever confirm it again.
+    /// </summary>
+    [Fact]
+    public async Task ApplicationStillListedAfterIssuance_DoesNotReArmPending()
+    {
+        using var dbContext = CreateContext();
+        var newExpiry = Now.AddYears(10);
+        await SeedAsync(dbContext, l =>
+        {
+            l.ExpiredDateUtc = newExpiry;
+            l.RenewalConfirmedUtc = Now.AddDays(-1);
+            l.RenewalFileNumber = "0012131564";
+            l.LastCheckedUtc = Now.AddDays(-1);
+        });
+        var client = new FakeUlsLookupClient(new() { ["W1AW"] = Found(newExpiry, Renewal()) });
+
+        var result = await CreateService(dbContext, client).RunAsync(CancellationToken.None);
+
+        var licence = await dbContext.WatchedLicenses.SingleAsync();
+        Assert.Null(licence.RenewalPendingSinceUtc);
+        Assert.Null(licence.ExpiredDateWhenRenewalFiledUtc);
+        Assert.Equal(Now.AddDays(-1), licence.RenewalConfirmedUtc);
+        Assert.Equal(0, result.RenewalsDetected);
+        Assert.Equal(WatchedLicenseStatus.Renewed, licence.DeriveStatus(Now));
+    }
+
+    /// <summary>A row already wedged by that bug heals itself on the next run — and the stand-down is not an abandonment.</summary>
+    [Fact]
+    public async Task RowAlreadyWedgedByALingeringApplication_StandsDownWithoutCountingAsAbandoned()
+    {
+        using var dbContext = CreateContext();
+        var newExpiry = Now.AddYears(10);
+        await SeedAsync(dbContext, l =>
+        {
+            l.ExpiredDateUtc = newExpiry;
+            l.RenewalConfirmedUtc = Now.AddDays(-1);
+            l.RenewalPendingSinceUtc = Now.AddHours(-6);          // wrongly re-armed
+            l.ExpiredDateWhenRenewalFiledUtc = newExpiry;          // against an unbeatable anchor
+            l.RenewalFileNumber = "0012131564";
+            l.LastCheckedUtc = Now.AddHours(-7);   // stale enough to be due this run
+        });
+        var client = new FakeUlsLookupClient(new() { ["W1AW"] = Found(newExpiry, Renewal()) });
+
+        var result = await CreateService(dbContext, client).RunAsync(CancellationToken.None);
+
+        var licence = await dbContext.WatchedLicenses.SingleAsync();
+        Assert.Null(licence.RenewalPendingSinceUtc);
+        Assert.Equal(Now.AddDays(-1), licence.RenewalConfirmedUtc);
+        Assert.Equal(0, result.RenewalsAbandoned);
+        Assert.Equal(WatchedLicenseStatus.Renewed, licence.DeriveStatus(Now));
+    }
+
+    /// <summary>The filtering must not deafen the row to the next real renewal, a term later.</summary>
+    [Fact]
+    public async Task RenewalFiledLongAfterAPreviousOne_IsStillDetected()
+    {
+        using var dbContext = CreateContext();
+        var expiry = Now.AddDays(40);
+        await SeedAsync(dbContext, l =>
+        {
+            l.ExpiredDateUtc = expiry;
+            l.RenewalConfirmedUtc = Now.AddYears(-10);
+            l.RenewalFileNumber = "0009999999";
+        });
+        var client = new FakeUlsLookupClient(new() { ["W1AW"] = Found(expiry, Renewal("0012131564")) });
+
+        var result = await CreateService(dbContext, client).RunAsync(CancellationToken.None);
+
+        var licence = await dbContext.WatchedLicenses.SingleAsync();
+        Assert.Equal(Now, licence.RenewalPendingSinceUtc);
+        Assert.Equal("0012131564", licence.RenewalFileNumber);
+        Assert.Equal(1, result.RenewalsDetected);
+        Assert.Equal(WatchedLicenseStatus.RenewalPending, licence.DeriveStatus(Now));
+    }
+
+    /// <summary>Belt and braces at render time: whatever the stored fields say, an issued licence never walks backwards to "pending" on screen.</summary>
+    [Fact]
+    public void RecentlyIssuedRenewal_OutranksAPendingFlag()
+    {
+        var licence = new WatchedLicense
+        {
+            CallSign = "KA0MVW",
+            LastCheckedUtc = Now,
+            ExpiredDateUtc = Now.AddYears(10),
+            RenewalConfirmedUtc = Now.AddDays(-1),
+            RenewalPendingSinceUtc = Now
+        };
+
+        Assert.Equal(WatchedLicenseStatus.Renewed, licence.DeriveStatus(Now));
+    }
 }
