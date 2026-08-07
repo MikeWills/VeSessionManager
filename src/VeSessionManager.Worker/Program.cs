@@ -104,6 +104,7 @@ builder.Services.Configure<UlsLookupOptions>(builder.Configuration.GetSection(Ul
 builder.Services.AddSingleton<IUlsLookupClient, ExamToolsUlsLookupClient>();
 builder.Services.AddScoped<UlsWatcherService>();
 builder.Services.AddScoped<LicenseWatchService>();
+builder.Services.AddScoped<VolunteerExaminerLicenseWatchService>();
 
 builder.Services.Configure<PaymentReminderOptions>(builder.Configuration.GetSection(PaymentReminderOptions.SectionName));
 builder.Services.AddScoped<PaymentReminderService>();

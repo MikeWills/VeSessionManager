@@ -118,6 +118,7 @@ builder.Services.AddScoped<ExamResultSyncService>();
 // silently never resolves. Same client the Worker's refresh job uses.
 builder.Services.AddSingleton<IUlsLookupClient, ExamToolsUlsLookupClient>();
 builder.Services.AddScoped<LicenseWatchService>();
+builder.Services.AddScoped<VolunteerExaminerLicenseWatchService>();
 builder.Services.AddScoped<TeamPipeline>();
 builder.Services.AddScoped<ManualCandidateRefreshService>();
 
