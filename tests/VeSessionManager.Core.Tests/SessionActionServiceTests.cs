@@ -336,7 +336,7 @@ public class SessionActionServiceTests
             CandidateId = candidate.Id, Reason = PaymentReason.InitialExam, Amount = 15m,
             Status = PaymentStatus.Unpaid, CreatedUtc = Now
         });
-        var ve = new VolunteerExaminer { TeamId = session.TeamId, CallSign = "W1AW", Name = "Test VE" };
+        var ve = new VolunteerExaminer { CallSign = "W1AW", Name = "Test VE" };
         dbContext.VolunteerExaminers.Add(ve);
         await dbContext.SaveChangesAsync();
         dbContext.SessionVolunteerExaminers.Add(new SessionVolunteerExaminer { SessionId = session.Id, VolunteerExaminerId = ve.Id });

@@ -125,7 +125,11 @@ public class VolunteerExaminerSyncServiceTests
         var ve = Assert.Single(dbContext.VolunteerExaminers);
         Assert.Equal("N2SPG", ve.CallSign); // normalized upper-invariant
         Assert.Equal("Test VE", ve.Name);
-        Assert.Equal(team.Id, ve.TeamId);
+        // The person carries no team; the membership does.
+        var membership = Assert.Single(dbContext.VeTeamMemberships);
+        Assert.Equal(team.Id, membership.TeamId);
+        Assert.Equal(ve.Id, membership.VolunteerExaminerId);
+        Assert.True(membership.IsActive);
         var link = Assert.Single(dbContext.SessionVolunteerExaminers);
         Assert.Equal(session.Id, link.SessionId);
         Assert.Equal(ve.Id, link.VolunteerExaminerId);
@@ -150,8 +154,15 @@ public class VolunteerExaminerSyncServiceTests
         Assert.Equal(2, dbContext.SessionVolunteerExaminers.Count());
     }
 
+    /// <summary>
+    /// Inverted by issue #142, and this is the trap it exists to hold shut. The sync used to
+    /// re-apply ExamTools' name on every poll, justified in a comment saying nothing in the app
+    /// could edit it — true at the time. #142 gives admins and the VEs themselves an edit screen, so
+    /// the same code would now silently undo their corrections within the hour. ExamTools seeds the
+    /// name once and owns nothing about the person afterwards.
+    /// </summary>
     [Fact]
-    public async Task VeNameChangedUpstream_UpdatesExistingRecord()
+    public async Task VeNameChangedUpstream_DoesNotOverwriteTheStoredName()
     {
         await using var dbContext = CreateContext();
         var team = await SeedTeamAsync(dbContext);
@@ -164,9 +175,8 @@ public class VolunteerExaminerSyncServiceTests
         var result = await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
 
         Assert.Equal(0, result.VolunteerExaminersAdded);
-        Assert.Equal(1, result.VolunteerExaminersUpdated);
         Assert.Equal(0, result.LinksAdded); // already linked from the first run
-        Assert.Equal("New Name", dbContext.VolunteerExaminers.Single().Name);
+        Assert.Equal("Old Name", dbContext.VolunteerExaminers.Single().Name);
     }
 
     [Fact]
@@ -237,8 +247,13 @@ public class VolunteerExaminerSyncServiceTests
         Assert.Empty(dbContext.VolunteerExaminers);
     }
 
+    /// <summary>
+    /// Inverted by issue #142. This used to assert two rows, one per team — which is exactly the
+    /// duplication that made contact details, tags and accreditations impossible to hold: the same
+    /// human existed twice with nothing linking the two halves. One person, two memberships now.
+    /// </summary>
     [Fact]
-    public async Task TwoTeams_SameCallSign_AreDistinctVolunteerExaminers()
+    public async Task TwoTeams_SameCallSign_AreOnePersonWithTwoMemberships()
     {
         await using var dbContext = CreateContext();
         var teamA = await SeedTeamAsync(dbContext, "TEAMA");
@@ -252,11 +267,14 @@ public class VolunteerExaminerSyncServiceTests
         await CreateService(dbContext, client).RunAsync(teamA, CancellationToken.None);
         await CreateService(dbContext, client).RunAsync(teamB, CancellationToken.None);
 
-        Assert.Equal(2, dbContext.VolunteerExaminers.Count());
-        var veA = dbContext.VolunteerExaminers.Single(v => v.TeamId == teamA.Id);
-        var veB = dbContext.VolunteerExaminers.Single(v => v.TeamId == teamB.Id);
-        Assert.Equal("Team A's VE", veA.Name);
-        Assert.Equal("Team B's VE", veB.Name);
+        var ve = Assert.Single(dbContext.VolunteerExaminers);
+        Assert.Equal(2, dbContext.VeTeamMemberships.Count());
+        Assert.Contains(dbContext.VeTeamMemberships, m => m.TeamId == teamA.Id && m.VolunteerExaminerId == ve.Id);
+        Assert.Contains(dbContext.VeTeamMemberships, m => m.TeamId == teamB.Id && m.VolunteerExaminerId == ve.Id);
+
+        // Team A saw them first, so Team A's spelling of the name is the one that seeded the row —
+        // and Team B's roster does NOT overwrite it. Name is app-owned after creation.
+        Assert.Equal("Team A's VE", ve.Name);
     }
 
     [Fact]
@@ -537,7 +555,7 @@ public class VolunteerExaminerSyncServiceTests
         await using var dbContext = CreateContext();
         var team = await SeedTeamAsync(dbContext);
         var session = await SeedSessionAsync(dbContext, team, scheduledStartUtc: Now - VolunteerExaminerSyncService.RosterRetryWindow.Add(TimeSpan.FromDays(365)));
-        var ve = new VolunteerExaminer { Name = "Existing VE", CallSign = "N0CALL", Team = team };
+        var ve = new VolunteerExaminer { Name = "Existing VE", CallSign = "N0CALL" };
         dbContext.SessionVolunteerExaminers.Add(new SessionVolunteerExaminer { Session = session, VolunteerExaminer = ve });
         session.VeRosterFinalSyncedUtc = Now.AddDays(-1);
         await dbContext.SaveChangesAsync();

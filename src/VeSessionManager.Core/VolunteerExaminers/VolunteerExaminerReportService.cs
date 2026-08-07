@@ -85,7 +85,11 @@ public class VolunteerExaminerReportService(AppDbContext dbContext)
         // Materialize the grouped counts first, then order client-side — the InMemory provider
         // can't translate OrderBy chained directly onto this GroupBy/Select projection.
         var counts = await query
-            .GroupBy(sve => new { sve.VolunteerExaminerId, sve.VolunteerExaminer.Name, sve.VolunteerExaminer.CallSign, TeamName = sve.VolunteerExaminer.Team.Name })
+            // The *session's* team, not the VE's — since issue #142 a VE is a person who can serve
+            // several teams and has no single one. This keeps the report's shape unchanged (one row
+            // per VE per team, exactly as the old per-team VE rows produced) while making the column
+            // mean something defensible: whose session they worked, not which copy of them this is.
+            .GroupBy(sve => new { sve.VolunteerExaminerId, sve.VolunteerExaminer.Name, sve.VolunteerExaminer.CallSign, TeamName = sve.Session.Team.Name })
             .Select(g => new VeSessionCount(g.Key.VolunteerExaminerId, g.Key.Name, g.Key.CallSign, g.Key.TeamName, g.Count()))
             .ToListAsync(cancellationToken);
 

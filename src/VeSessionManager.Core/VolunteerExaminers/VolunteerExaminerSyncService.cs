@@ -57,9 +57,24 @@ public class VolunteerExaminerSyncService(
         // Preloaded and kept up to date in-memory for the rest of this run — a plain
         // FirstOrDefaultAsync-per-VE would miss a VE created earlier in the same run (not yet
         // saved), creating duplicate VolunteerExaminer rows for the same callsign.
+        //
+        // **Not scoped to this team any more (issue #142).** A VE is a person, and the person a
+        // roster names may already exist because they serve another team — scoping the lookup would
+        // recreate exactly the per-team duplication this change removed. The team-specific part is
+        // the VeTeamMembership added below.
         var knownVes = await dbContext.VolunteerExaminers
-            .Where(v => v.TeamId == team.Id && v.CallSign != null)
+            .Include(v => v.TeamMemberships)
+            .Include(v => v.CallSignHistory)
+            .Where(v => v.CallSign != null)
             .ToDictionaryAsync(v => v.CallSign!, cancellationToken);
+
+        // Former call signs, so a roster still reporting someone's old call resolves to them rather
+        // than minting a second person. Only consulted when the live call sign misses — see
+        // ResolveVolunteerExaminer.
+        var byFormerCallSign = await dbContext.VeCallSignHistories
+            .GroupBy(h => h.CallSign)
+            .Select(g => new { CallSign = g.Key, VeId = g.OrderByDescending(h => h.ReplacedUtc).First().VolunteerExaminerId })
+            .ToDictionaryAsync(x => x.CallSign, x => x.VeId, cancellationToken);
 
         var sessions = await dbContext.Sessions
             .Include(s => s.SessionVolunteerExaminers).ThenInclude(sve => sve.VolunteerExaminer)
@@ -130,7 +145,7 @@ public class VolunteerExaminerSyncService(
             try
             {
                 var roster = await examToolsClient.GetSessionVeRosterAsync(credentials, session.ExamToolsSessionId, cancellationToken);
-                ReconcileSession(team, session, roster, knownVes, result);
+                ReconcileSession(team, session, roster, knownVes, byFormerCallSign, now, result);
 
                 // Stamped here, after the call returned, and only for a session that was already
                 // finished when we asked — that combination is the whole meaning of the field. A
@@ -164,7 +179,8 @@ public class VolunteerExaminerSyncService(
 
     private void ReconcileSession(
         Team team, Session session, IReadOnlyList<ExamToolsVe> roster,
-        Dictionary<string, VolunteerExaminer> knownVes, VeRosterSyncResult result)
+        Dictionary<string, VolunteerExaminer> knownVes, Dictionary<string, int> byFormerCallSign,
+        DateTime now, VeRosterSyncResult result)
     {
         var rosterCallSigns = roster
             .Where(v => !string.IsNullOrWhiteSpace(v.Call))
@@ -196,24 +212,37 @@ public class VolunteerExaminerSyncService(
 
             if (!knownVes.TryGetValue(callSign, out var volunteerExaminer))
             {
-                volunteerExaminer = new VolunteerExaminer
+                // Second chance before creating a person: the roster may still be naming someone by
+                // a call sign they no longer hold. Creating a duplicate here would split their
+                // session history in two and hand them a second, empty set of contact details.
+                if (byFormerCallSign.TryGetValue(callSign, out var formerId))
                 {
-                    Name = string.IsNullOrWhiteSpace(name) ? callSign : name,
-                    CallSign = callSign,
-                    TeamId = team.Id
-                };
-                dbContext.VolunteerExaminers.Add(volunteerExaminer);
+                    volunteerExaminer = knownVes.Values.FirstOrDefault(v => v.Id == formerId);
+                }
+
+                if (volunteerExaminer is null)
+                {
+                    volunteerExaminer = new VolunteerExaminer
+                    {
+                        Name = string.IsNullOrWhiteSpace(name) ? callSign : name,
+                        CallSign = callSign,
+                        CreatedUtc = now
+                    };
+                    dbContext.VolunteerExaminers.Add(volunteerExaminer);
+                    result.VolunteerExaminersAdded++;
+                }
+
                 knownVes[callSign] = volunteerExaminer;
-                result.VolunteerExaminersAdded++;
             }
-            else if (!string.IsNullOrWhiteSpace(name) && volunteerExaminer.Name != name)
-            {
-                // No manual-edit path exists yet (Phase 9), so ExamTools stays the single source of
-                // truth for Name — unlike CallSign-matched Frn on Candidate, there's nothing to
-                // preserve against yet.
-                volunteerExaminer.Name = name;
-                result.VolunteerExaminersUpdated++;
-            }
+
+            // **Name is NOT refreshed from ExamTools.** It used to be, on the stated grounds that
+            // nothing in the app could edit it — true then, false since issue #142 gave admins and
+            // the VEs themselves an edit screen. Re-applying the feed's value every poll would
+            // silently undo those edits within the hour, which is the same trap the manual VE roster
+            // buttons fell into. ExamTools seeds the name once, at creation above, and owns nothing
+            // about this person afterwards; team membership below is the only thing it still drives.
+
+            EnsureTeamMembership(volunteerExaminer, team, now, result);
 
             if (!existingCallSigns.Contains(callSign))
             {
@@ -227,12 +256,46 @@ public class VolunteerExaminerSyncService(
             }
         }
     }
+
+    /// <summary>
+    /// Working a session for a team is what makes someone a member of it, so the membership is
+    /// created here on first sight.
+    ///
+    /// <para><b>It is never removed, and <see cref="VeTeamMembership.IsActive"/> is never touched.</b>
+    /// Retiring a VE from a team is a human decision an admin makes; if this method "corrected" it,
+    /// an inactivated VE who then turned up on one more session roster would quietly reactivate
+    /// themselves. ExamTools owns whether a membership exists, an admin owns whether it is
+    /// active.</para>
+    /// </summary>
+    private void EnsureTeamMembership(VolunteerExaminer volunteerExaminer, Team team, DateTime now, VeRosterSyncResult result)
+    {
+        if (volunteerExaminer.TeamMemberships.Any(m => m.TeamId == team.Id))
+        {
+            return;
+        }
+
+        var membership = new VeTeamMembership
+        {
+            VolunteerExaminer = volunteerExaminer,
+            TeamId = team.Id,
+            IsActive = true,
+            CreatedUtc = now
+        };
+        volunteerExaminer.TeamMemberships.Add(membership);
+        dbContext.VeTeamMemberships.Add(membership);
+        result.TeamMembershipsAdded++;
+    }
 }
 
 public class VeRosterSyncResult
 {
     public int VolunteerExaminersAdded { get; set; }
+
+    /// <summary>Kept at zero since issue #142 — ExamTools no longer updates anything on an existing VE. Retained so the summary line's shape (and Job History's stored text) doesn't change under anyone reading old runs.</summary>
     public int VolunteerExaminersUpdated { get; set; }
+
+    /// <summary>New (VE, team) memberships established by a VE turning up on that team's roster.</summary>
+    public int TeamMembershipsAdded { get; set; }
     public int LinksAdded { get; set; }
     public int LinksRemoved { get; set; }
 
@@ -240,5 +303,5 @@ public class VeRosterSyncResult
     public int SessionsFinalised { get; set; }
 
     public override string ToString() =>
-        $"VEs added {VolunteerExaminersAdded}, VEs updated {VolunteerExaminersUpdated}, links added {LinksAdded}, links removed {LinksRemoved}, sessions finalised {SessionsFinalised}";
+        $"VEs added {VolunteerExaminersAdded}, team memberships added {TeamMembershipsAdded}, links added {LinksAdded}, links removed {LinksRemoved}, sessions finalised {SessionsFinalised}";
 }
