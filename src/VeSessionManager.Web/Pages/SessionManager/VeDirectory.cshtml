@@ -82,10 +82,7 @@ else
             <tr>
                 <th>Call sign</th>
                 <th>Name</th>
-                @if (Model.AvailableTeams.Count > 1)
-                {
-                    <th>Team</th>
-                }
+                <th>Teams</th>
                 <th>Tags</th>
                 <th>License</th>
                 <th>Last worked</th>
@@ -118,10 +115,7 @@ else
                         }
                     </td>
                     <td><a asp-page="/SessionManager/VeDetail" asp-route-id="@row.VolunteerExaminer.Id">@row.VolunteerExaminer.Name</a></td>
-                    @if (Model.AvailableTeams.Count > 1)
-                    {
-                        <td>@row.TeamName</td>
-                    }
+                    <td>@row.TeamSummary</td>
                     <td>
                         @if (row.IsGuest)
                         {
@@ -136,6 +130,9 @@ else
                         }
                         @if (!row.IsActive)
                         {
+                            @* Retired everywhere in scope. A VE retired from one team but serving
+                               another is still someone this deployment can call on, so the per-team
+                               state shows in the Teams column instead. *@
                             <span class="chip chip-brick">Retired</span>
                         }
                     </td>

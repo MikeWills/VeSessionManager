@@ -2,7 +2,8 @@
 
 Managing the people a VE team works with — who they are, how to reach them, and what they are to each
 team — rather than counting how many sessions they worked. That count already existed
-(`VolunteerExaminerReportService`, the VE Roster page) and is deliberately untouched; the issue says
+(`VolunteerExaminerReportService`, the **VE Session Counts** page — called VE Roster until
+2026-08-07, renamed because it never was one) and is deliberately untouched; the issue says
 outright that session counts are not the focus.
 
 ## The change everything else hangs off
@@ -133,7 +134,7 @@ All under the existing **VEs** nav dropdown, per the issue's own request.
 
 | Page | Who |
 |---|---|
-| VE Directory — list, search, tag filter, last-worked, license, duplicate marker | TeamAdmin / SystemAdmin |
+| VE Directory — **one row per person**, teams listed on it; search, tag filter, last-worked, license, duplicate marker | TeamAdmin / SystemAdmin |
 | VE detail — contact details, teams and tags, accreditations, FCC license | TeamAdmin / SystemAdmin |
 | VE Tags — the team's vocabulary | TeamAdmin / SystemAdmin |
 | Possible duplicates / merge | TeamAdmin / SystemAdmin |
@@ -161,6 +162,19 @@ the first time reading a tag would be convenient, while three screens carry on s
 
 **No tag means guest**, derived at render time. A stored "guest" tag would need adding and removing in
 step with every other tag change and would be wrong in between.
+
+### One row per person
+
+The directory started as one row per person *per team*, mirroring the session-count report. That was
+wrong for this page: the report is a leaderboard where the per-team split is the point, while this is
+a directory of people — and repeating a name once per team made a 176-VE roster read as if it held far
+more, while burying the fact that those rows were one person. Which is the very thing the person model
+exists to express.
+
+Everything per-team collapses across the teams **in scope**: tags union (deduped by name, since two
+teams can each define "Team member"), last-worked takes the most recent, and the row is active if any
+membership is. Filter to one team and each narrows to that team's answer — which is what makes the
+collapse safe rather than lossy. Per-team detail lives on the VE's own page.
 
 ### Last worked
 

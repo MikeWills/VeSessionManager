@@ -69,7 +69,7 @@ public class VeDirectoryModel(
         await OnGetAsync();
 
         var csv = new StringBuilder();
-        csv.AppendLine("CallSign,Name,Team,Tags,Status,Email,Phone,AddressLine1,AddressLine2,City,State,PostalCode,Discord,ContactPreference,LicenseClass,LicenseExpires,Frn,LastWorked");
+        csv.AppendLine("CallSign,Name,Teams,Tags,Status,Email,Phone,AddressLine1,AddressLine2,City,State,PostalCode,Discord,ContactPreference,LicenseClass,LicenseExpires,Frn,LastWorked");
 
         foreach (var row in Rows)
         {
@@ -77,7 +77,7 @@ public class VeDirectoryModel(
             csv.AppendLine(CsvExport.Row(
                 ve.CallSign,
                 ve.Name,
-                row.TeamName,
+                row.TeamSummary,
                 row.IsGuest ? "Guest" : string.Join("; ", row.Tags.Select(t => t.Name)),
                 row.IsActive ? "Active" : "Retired",
                 ve.Email,

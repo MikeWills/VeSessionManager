@@ -58,7 +58,7 @@ fields elsewhere) — full reconciliation every poll is correct and cheap at thi
 ## Report: session count per VE
 
 `VolunteerExaminerReportService.GetSessionCountsAsync(teamIds, fromUtc, toUtc, ct)` — pure
-aggregation, no side effects. Backs the VE Roster page's "Sessions worked" column.
+aggregation, no side effects. Backs the VE Session Counts page's "Sessions worked" column (that page was called VE Roster until 2026-08-07).
 `fromUtc`/`toUtc` bound `Session.ScheduledStartUtc` inclusively and either may be `null` for an
 open-ended range. Results are ordered by count descending, then name.
 

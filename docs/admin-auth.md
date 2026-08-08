@@ -219,6 +219,8 @@ SessionManager) can reach — see below.
 
 ## VE Roster restricted to admin roles (2026-08-01)
 
+> Renamed **VE Session Counts** in the UI on 2026-08-07; the route and this section's history keep the old name.
+
 `Pages/SessionManager/VeRoster.cshtml.cs` went from
 `[Authorize(Roles = "SystemAdmin,TeamAdmin,SessionManager,TeamLead")]` to
 **`[Authorize(Roles = "SystemAdmin,TeamAdmin")]`**.

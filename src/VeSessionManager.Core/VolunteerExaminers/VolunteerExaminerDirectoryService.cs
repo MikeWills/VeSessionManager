@@ -21,8 +21,18 @@ namespace VeSessionManager.Core.VolunteerExaminers;
 public class VolunteerExaminerDirectoryService(AppDbContext dbContext)
 {
     /// <summary>
-    /// One row per person per team they belong to — the same shape as the session-count report, so
-    /// a VE serving two teams appears under each rather than being silently collapsed.
+    /// <b>One row per person</b>, with the teams they serve listed in it (changed 2026-08-07).
+    ///
+    /// <para>It was one row per person per team, mirroring the session-count report — but that report
+    /// is a leaderboard where per-team numbers are the whole point, and this is a directory of people.
+    /// Repeating a name once per team made a 176-VE roster read as if it held far more, and buried
+    /// the fact that the duplicate rows were one person, which is the very thing the person model
+    /// exists to express.</para>
+    ///
+    /// <para>Everything per-team collapses across the teams <i>in scope</i>: tags union, last-worked
+    /// takes the most recent, and the row counts as active if any membership is. Filter to one team
+    /// and each of those narrows to that team's answer, which is what makes the collapse safe rather
+    /// than lossy — the per-team detail lives on the VE's own page.</para>
     /// </summary>
     /// <param name="teamIds">Null means every team (SystemAdmin, unfiltered) — the convention
     /// <c>SessionAccessScope.ResolveViewableTeamIds</c> already uses. An empty list means no team
@@ -70,9 +80,10 @@ public class VolunteerExaminerDirectoryService(AppDbContext dbContext)
 
         // "Last worked" is a MAX over the session links, fetched in one pass rather than per row.
         //
-        // Scoped to the same team as the membership: a VE's most recent session for THIS team is the
-        // useful figure, and their last outing anywhere would quietly answer a different question on
-        // a page that is otherwise entirely per-team.
+        // Still computed PER TEAM even though the row is per person, because the row collapses over
+        // the teams in scope: filtered to one team it must answer "when did they last work for you",
+        // and only a per-team figure can narrow like that. A single global MAX would silently answer a
+        // different question the moment someone filtered.
         //
         // Only sessions that actually happened count. Session.Status is not that signal — it only
         // ever means "not cancelled", so filtering on it would count a session scheduled for next
@@ -107,17 +118,34 @@ public class VolunteerExaminerDirectoryService(AppDbContext dbContext)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         return [.. memberships
-            .Select(m => new VeDirectoryRow(
-                m.VolunteerExaminer,
-                m.Id,
-                m.TeamId,
-                m.Team.Name,
-                m.IsActive,
-                [.. m.TagAssignments.Select(a => a.VeTag).OrderBy(t => t.SortOrder).ThenBy(t => t.Name)],
-                lastByVeAndTeam.TryGetValue((m.VolunteerExaminerId, m.TeamId), out var last) ? last : null,
-                m.VolunteerExaminer.CallSign is { } call && duplicateCallSigns.Contains(call)))
-            .OrderBy(r => r.VolunteerExaminer.Name)
-            .ThenBy(r => r.TeamName)];
+            .GroupBy(m => m.VolunteerExaminerId)
+            .Select(group =>
+            {
+                var person = group.First().VolunteerExaminer;
+
+                // Deduped by name, not by id: two teams can define their own "Team member" tag, and
+                // showing it twice on one row would look like a rendering bug rather than a fact.
+                var tags = group
+                    .SelectMany(m => m.TagAssignments.Select(a => a.VeTag))
+                    .GroupBy(t => t.Name, StringComparer.OrdinalIgnoreCase)
+                    .Select(g => g.OrderBy(t => t.SortOrder).First())
+                    .OrderBy(t => t.SortOrder).ThenBy(t => t.Name)
+                    .ToList();
+
+                var mostRecent = group
+                    .Select(m => lastByVeAndTeam.TryGetValue((m.VolunteerExaminerId, m.TeamId), out var last) ? last : (DateTime?)null)
+                    .Where(d => d is not null)
+                    .DefaultIfEmpty(null)
+                    .Max();
+
+                return new VeDirectoryRow(
+                    person,
+                    [.. group.Select(m => new VeDirectoryTeam(m.TeamId, m.Team.Name, m.IsActive, m.Id)).OrderBy(t => t.Name)],
+                    tags,
+                    mostRecent,
+                    person.CallSign is { } call && duplicateCallSigns.Contains(call));
+            })
+            .OrderBy(r => r.VolunteerExaminer.Name)];
     }
 
     /// <summary>Everything one person's detail screen needs, or null when the id doesn't exist.</summary>
@@ -135,15 +163,19 @@ public class VolunteerExaminerDirectoryService(AppDbContext dbContext)
 /// tag would have to be added and removed in step with every other tag change and would be wrong in
 /// between.
 /// </summary>
+public record VeDirectoryTeam(int TeamId, string Name, bool IsActive, int MembershipId);
+
 public record VeDirectoryRow(
     VolunteerExaminer VolunteerExaminer,
-    int MembershipId,
-    int TeamId,
-    string TeamName,
-    bool IsActive,
+    IReadOnlyList<VeDirectoryTeam> Teams,
     IReadOnlyList<VeTag> Tags,
     DateTime? LastWorkedUtc,
     bool HasDuplicateCallSign)
 {
     public bool IsGuest => Tags.Count == 0;
+
+    /// <summary>Active somewhere in scope. Someone retired from one team but serving another is still a VE this team can call on.</summary>
+    public bool IsActive => Teams.Any(t => t.IsActive);
+
+    public string TeamSummary => string.Join(", ", Teams.Select(t => t.IsActive ? t.Name : $"{t.Name} (retired)"));
 }

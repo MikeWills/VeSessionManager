@@ -99,9 +99,14 @@ public class VolunteerExaminerDirectoryServiceTests
         Assert.Equal(past.ScheduledStartUtc, Assert.Single(rows).LastWorkedUtc);
     }
 
-    /// <summary>Last worked is per team — a VE's outing for another team must not answer this team's question.</summary>
+    /// <summary>
+    /// The row is per person now, but "last worked" is still computed per team and collapsed over the
+    /// teams in scope — so filtering to a team answers "when did they last work for YOU", while
+    /// unfiltered takes the most recent anywhere. A single global MAX would silently answer the wrong
+    /// question the moment someone filtered.
+    /// </summary>
     [Fact]
-    public async Task LastWorked_IsScopedToTheRowsOwnTeam()
+    public async Task LastWorked_NarrowsWhenFilteredToOneTeam()
     {
         await using var dbContext = CreateContext();
         var teamA = await SeedTeamAsync(dbContext, "TEAM-A");
@@ -115,12 +120,17 @@ public class VolunteerExaminerDirectoryServiceTests
         dbContext.SessionVolunteerExaminers.Add(new SessionVolunteerExaminer { Session = forB, VolunteerExaminer = person });
         await dbContext.SaveChangesAsync();
 
-        var rows = await new VolunteerExaminerDirectoryService(dbContext)
-            .GetDirectoryAsync(null, search: null, tagId: null, includeInactive: false, CancellationToken.None);
+        var service = new VolunteerExaminerDirectoryService(dbContext);
 
-        Assert.Equal(2, rows.Count);
-        Assert.Equal(forA.ScheduledStartUtc, rows.Single(r => r.TeamId == teamA.Id).LastWorkedUtc);
-        Assert.Equal(forB.ScheduledStartUtc, rows.Single(r => r.TeamId == teamB.Id).LastWorkedUtc);
+        // One person, one row, both teams named on it.
+        var merged = Assert.Single(await service.GetDirectoryAsync(null, null, null, false, CancellationToken.None));
+        Assert.Equal(2, merged.Teams.Count);
+        Assert.Equal(forB.ScheduledStartUtc, merged.LastWorkedUtc);   // the more recent of the two
+
+        // Filtered to team A, it answers team A's question.
+        var scoped = Assert.Single(await service.GetDirectoryAsync([teamA.Id], null, null, false, CancellationToken.None));
+        Assert.Equal(forA.ScheduledStartUtc, scoped.LastWorkedUtc);
+        Assert.Equal("TEAM-A", Assert.Single(scoped.Teams).Name);
     }
 
     [Fact]
