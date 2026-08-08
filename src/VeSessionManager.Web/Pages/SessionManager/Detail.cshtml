@@ -268,6 +268,10 @@
         </div>
         @* Read-only on purpose: the roster comes from ExamTools and is fully reconciled there on
            every poll, so an in-app add/remove was undone on the next tick. See docs/session-manager-ui.md. *@
+        @if (Model.CanEdit)
+        {
+            <a class="btn-secondary btn-sm" asp-page="/SessionManager/VeInvite" asp-route-id="@Model.Session.Id">Invite VEs</a>
+        }
     </div>
     <div class="roster-list">
         @if (Model.VeRoster.Count == 0)

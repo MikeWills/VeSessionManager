@@ -93,6 +93,7 @@ builder.Services.AddScoped<VolunteerExaminerMergeService>();
 builder.Services.AddScoped<VolunteerExaminerImportService>();
 builder.Services.AddScoped<VeSelfServiceLinkService>();
 builder.Services.AddScoped<VeEmailChangeService>();
+builder.Services.AddScoped<VeSessionInvitationService>();
 
 // Pending-work counts shown as badges on the app nav (_AppLayout.cshtml); also the single source of
 // the pending-VEC-submission predicate VecSubmissionReportService delegates to.

@@ -1,0 +1,115 @@
+@page "{id:int}"
+@model VeSessionManager.Web.Pages.SessionManager.VeInviteModel
+@{
+    ViewData["Title"] = "Invite VEs";
+    ViewData["ActiveNav"] = "Sessions";
+    Layout = "_AppLayout";
+}
+
+<div class="page-head">
+    <div>
+        <p class="eyebrow"><a asp-page="/SessionManager/Detail" asp-route-id="@Model.Session.Id">@Model.Session.Title</a></p>
+        <h1>Invite VEs</h1>
+    </div>
+</div>
+
+@if (string.IsNullOrWhiteSpace(Model.Session.ZoomJoinUrl))
+{
+    @* The Zoom link is the reason this feature exists, so a missing one is worth stopping to read
+       rather than discovering as a blank line in a sent email. *@
+    <div class="vesm-alert error">
+        This session has no Zoom link yet, so <code>{{ZoomJoinUrl}}</code> will come out empty.
+        Wait for scheduling to run, or take the placeholder out of the message.
+    </div>
+}
+
+<form method="post">
+    <div class="ve-panel">
+        <h2>Who to invite</h2>
+        <p class="session-sub">
+            Active VEs on @Model.Session.Team.Name. A warning means they could not legally serve on
+            this session's date — see their record for why.
+        </p>
+
+        <div class="table-scroll">
+        <table class="cards">
+            <thead><tr><th></th><th>Call sign</th><th>Name</th><th>Tags</th><th>Eligibility</th></tr></thead>
+            <tbody>
+                @if (Model.Candidates.Count == 0)
+                {
+                    <tr><td colspan="5">No active VEs on this team yet.</td></tr>
+                }
+                @foreach (var candidate in Model.Candidates)
+                {
+                    <tr>
+                        <td>
+                            <input type="checkbox" name="SelectedVeIds" value="@candidate.VolunteerExaminer.Id"
+                                   @(candidate.HasEmail ? "" : "disabled")
+                                   title="@(candidate.HasEmail ? null : "No email address on file")" />
+                        </td>
+                        <td class="mono">@(candidate.VolunteerExaminer.CallSign ?? "—")</td>
+                        <td>
+                            @candidate.VolunteerExaminer.Name
+                            @if (candidate.AlreadyOnRoster)
+                            {
+                                <span class="chip chip-green">Already on this session</span>
+                            }
+                            @if (!candidate.HasEmail)
+                            {
+                                <span class="chip chip-brick">No email</span>
+                            }
+                        </td>
+                        <td>
+                            @foreach (var tag in candidate.Tags)
+                            {
+                                <span class="chip chip-neutral">@tag</span>
+                            }
+                        </td>
+                        <td title="@candidate.Eligibility.Summary">
+                            @if (candidate.Eligibility.HasProblem)
+                            {
+                                <i class="bi bi-exclamation-triangle-fill ve-flag-problem" aria-hidden="true"></i>
+                                <span>Cannot serve</span>
+                            }
+                            else if (candidate.Eligibility.HasUnknown)
+                            {
+                                <i class="bi bi-question-circle ve-flag-unknown" aria-hidden="true"></i>
+                                <span>Unverified</span>
+                            }
+                            else
+                            {
+                                <span class="session-sub">OK</span>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        </div>
+    </div>
+
+    <div class="ve-panel">
+        <h2>Message</h2>
+        <p class="session-sub">
+            Placeholders:
+            @foreach (var placeholder in VeSessionManager.Web.Pages.SessionManager.VeInviteModel.Placeholders)
+            {
+                <code>@("{{" + placeholder + "}}")</code><text> </text>
+            }
+        </p>
+
+        <div class="field">
+            <label asp-for="Subject">Subject</label>
+            <input asp-for="Subject" />
+        </div>
+
+        <div class="field">
+            <label asp-for="Body">Message</label>
+            <textarea asp-for="Body" rows="10"></textarea>
+            <span class="session-sub">HTML is allowed. Sent from your team's own email address.</span>
+        </div>
+
+        <button type="submit" class="btn-primary btn-sm">Send invitations</button>
+        <a class="btn-secondary btn-sm" asp-page="/SessionManager/Detail" asp-route-id="@Model.Session.Id">Cancel</a>
+    </div>
+</form>
