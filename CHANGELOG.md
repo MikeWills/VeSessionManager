@@ -8,6 +8,18 @@ that window, or immediately if it's phase-numbered work already summarized in "C
 design rationale for any entry still lives in its linked `/docs/*.md` file, not here or in
 CLAUDE.md — this file, like CLAUDE.md's Change Log, is pointers only.
 
+- **Public-internet hardening pass (2026-08-03).** See `docs/security-hardening-2026-08-03.md`
+  (Tier 1 of `docs/audit-2026-08-03-tasks.md`). Rate limiting on `/Account/*` (20/min per IP, global
+  limiter + no-limiter partition elsewhere) — which **required adding `UseForwardedHeaders`**, or
+  behind the Apache proxy the whole internet shares one bucket; security response headers incl. a
+  CSP whose `style-src`/`font-src` allowances are load-bearing (Google Fonts + ~139 inline
+  `style=""` attributes — tightening them without removing those breaks the site's typography);
+  password-reset links now built from `App:PublicBaseUrl` instead of the request Host (which was an
+  admin-account-takeover vector) plus `AllowedHosts` pinned — **a deployment under any other
+  hostname now 400s until both are updated**; the youth-rate attestation enforced server-side
+  (`[Required]` on a non-nullable bool is client-side only — it always passes on the server); Square
+  webhook body capped at 64KB.
+
 - **Session Detail's "Refresh candidates" narrowed from team-wide to session-scoped (2026-08-03).**
   See `docs/team-maintenance.md`'s "session-scoped" section. The button ran the full team pipeline —
   one click could mint payment links and send emails for every *other* session the team had. New

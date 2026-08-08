@@ -1,7 +1,7 @@
 namespace VeSessionManager.Core.Entities;
 
 /// <summary>
-/// A cached copy of one FCC licence record, as held by whichever entity is holding it.
+/// A cached copy of one FCC license record, as held by whichever entity is holding it.
 ///
 /// <para>Two things now cache the same ULS fields for different reasons:
 /// <see cref="WatchedLicense"/> (the Renewal Monitor's hand-curated watch list) and
@@ -23,7 +23,7 @@ public interface ILicenseSnapshot
     /// <summary>True when the last lookup answered <c>type: "notfound"</c>.</summary>
     bool LicenseNotFoundAtFcc { get; }
 
-    /// <summary>Set only when FCC cancelled the licence outright — distinct from being past its expiry, which is still renewable.</summary>
+    /// <summary>Set only when FCC cancelled the license outright — distinct from being past its expiry, which is still renewable.</summary>
     DateTime? LicenseCancellationDateUtc { get; }
 
     /// <summary>End of the current ten-year term.</summary>

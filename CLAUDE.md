@@ -97,6 +97,22 @@ would be pure duplication — and goes straight to `CHANGELOG.md` instead. Non-p
 redesigns, hardening passes) start here and move to `CHANGELOG.md` once the section is at/over the
 cap and a newer entry needs to be added; oldest goes first.
 
+- **VE management, license tracking, self-service and invitations (2026-08-07).** Issues #142 and
+  #107, built together because neither could answer its own question alone. See
+  `docs/ve-management.md` (the person model), `docs/ve-license-tracking.md`,
+  `docs/ve-import-export.md`, `docs/ve-self-service.md` and `docs/ve-session-invitations.md`.
+  **`VolunteerExaminer` is now a person, not a per-team row** — `TeamId` gone, `VeTeamMembership`
+  added, identity on `Id` then `Frn` and never the call sign, since a call sign changes and the
+  person does not. #107's ULS sweep is what backfills that FRN, which is why the two shipped
+  together; it also answers "can this VE legally serve on Saturday?" on Session Detail's chips, which
+  needed #142's accreditations to be more than half an answer. **Three things real data caught that
+  the tests could not:** ExamTools' literal `<UNKNOWN>` fused two different people (hence
+  `Core/CallSign.IsUsable`, now the one definition of "is this a call sign"), an FRN collision aborted
+  the whole sweep for want of a per-row guard, and an admin could not set a VE's email at all — so
+  nobody could ever start self-service. Self-service is the app's **first unauthenticated endpoint
+  reaching personal data**: separate cookie scheme, three independent barriers from the admin app, and
+  `/VeSelfService` added to the global rate limiter.
+
 - **Job Schedule page: when every background job runs next (2026-08-06).** See
   `docs/job-schedule.md`. "When does the next run happen?" was answerable only by reading the Worker's
   source — Job History records what happened, never what will. New `JobSchedules` registry in Core is
@@ -198,18 +214,6 @@ cap and a newer entry needs to be added; oldest goes first.
   left `Running` by a Worker restart wedged that team's queue forever — now reclaimed after
   `StaleRunningThreshold` and **resumed at the interrupted chunk** via `Skip(ChunksCompleted)`. Team
   Settings' STARTTLS checkbox gained its hidden `false` sibling (it could never be turned off).
-- **Public-internet hardening pass (2026-08-03).** See `docs/security-hardening-2026-08-03.md`
-  (Tier 1 of `docs/audit-2026-08-03-tasks.md`). Rate limiting on `/Account/*` (20/min per IP, global
-  limiter + no-limiter partition elsewhere) — which **required adding `UseForwardedHeaders`**, or
-  behind the Apache proxy the whole internet shares one bucket; security response headers incl. a
-  CSP whose `style-src`/`font-src` allowances are load-bearing (Google Fonts + ~139 inline
-  `style=""` attributes — tightening them without removing those breaks the site's typography);
-  password-reset links now built from `App:PublicBaseUrl` instead of the request Host (which was an
-  admin-account-takeover vector) plus `AllowedHosts` pinned — **a deployment under any other
-  hostname now 400s until both are updated**; the youth-rate attestation enforced server-side
-  (`[Required]` on a non-nullable bool is client-side only — it always passes on the server); Square
-  webhook body capped at 64KB.
-
 Everything through Phase 0-10's initial build (ExamTools ingestion, Zoom/Discord, Square, email
 notifications, FCC ULS watcher, payment reminders, VE tracking, VEC submission tracker, admin
 auth/config/candidate-actions, PII purge), the public privacy page, and everything dated 2026-08-01

@@ -1,0 +1,183 @@
+# VE management (issue #142)
+
+Managing the people a VE team works with — who they are, how to reach them, and what they are to each
+team — rather than counting how many sessions they worked. That count already existed
+(`VolunteerExaminerReportService`, the VE Roster page) and is deliberately untouched; the issue says
+outright that session counts are not the focus.
+
+## The change everything else hangs off
+
+`VolunteerExaminer` **was a per-team row**: it carried a `TeamId` and was unique on
+`(TeamId, CallSign)`. One human serving two teams existed twice, with nothing linking the halves.
+
+Every single thing #142 asks for — contact details, tags, VEC accreditations, self-service — is a
+fact about the *person*, not about one team's copy of them. So the row became the person, and
+`VeTeamMembership` carries the per-team part. Same shape as the earlier `User.TeamId` → `UserTeams`
+change (issues #17/#19).
+
+| Table | Holds |
+|---|---|
+| `VolunteerExaminer` | The person: name, call sign, FRN, contact details, cached FCC license state |
+| `VeTeamMembership` | One person on one team — active/retired, and where tags hang |
+| `VeTag` / `VeTagAssignment` | A team's own vocabulary, applied per membership |
+| `VeVecAccreditation` | Person ⇄ VEC, hand-entered |
+| `VeCallSignHistory` | Call signs they used to hold |
+
+Tags hang off the *membership*, not the person, because someone can be a full member of their home
+team and a guest elsewhere, and one set of tags on the person cannot say that.
+
+## Identity: the id, then the FRN, never the call sign
+
+**A call sign changes. The person does not.** Keying identity on the call sign would mean a VE
+becomes a *new person* the day their vanity call comes through, orphaning their session history at
+exactly the moment someone would want it.
+
+So:
+
+- **`Id`** is the identity. Every relationship points at it, so a rename is invisible to session
+  history, memberships and accreditations.
+- **`Frn`** is the stable external key — FCC's registration number survives a call sign change.
+  Unique where present.
+- **`CallSign`** is a mutable *attribute*. When FCC reports a different one, the value is replaced and
+  the old one written to `VeCallSignHistory`.
+
+ExamTools' roster never reports an FRN, so it arrives only from the ULS sweep
+([`docs/ve-license-tracking.md`](ve-license-tracking.md)) — which is why that issue and this one
+ended up depending on each other.
+
+### `CallSign` is deliberately NOT unique
+
+Tempting, since only one person holds a call at a time. Rejected for two practical reasons:
+
+1. **The migration can only match on call sign**, and a call sign released and reissued to a
+   different person would fuse two humans irreversibly. It therefore merges only when call sign *and*
+   name agree — and a unique index would reject the rows it deliberately leaves alone, turning a
+   data-quality question into a migration that cannot run.
+2. Those survivors are surfaced as **possible duplicates** for a human. A constraint cannot express
+   "probably the same person, ask someone".
+
+Uniqueness is enforced where it is knowable: on `Frn`.
+
+## ExamTools owns membership and nothing else
+
+It supplies a call sign and a name on a session roster, and has no contact information at all.
+`Name` is seeded from it the first time a VE is seen and is **app-owned from then on**.
+
+That is a change, and an important one. The sync used to re-apply ExamTools' name on every poll,
+justified in a comment saying nothing in the app could edit it — true at the time. #142 created
+exactly that edit path, so the same code would have undone an admin's or a VE's own correction within
+the hour. The same trap the manual VE roster buttons fell into (see
+[`docs/session-manager-ui.md`](session-manager-ui.md)).
+
+The sync also **never touches `IsActive`**. Retiring a VE is a human decision; if the sync
+"corrected" it, someone retired would quietly reactivate the next time they turned up on a roster.
+
+### A placeholder is not an identity
+
+ExamTools reports the literal `<UNKNOWN>` when it has no call sign. Treated as an ordinary value it
+looks like one call sign shared by many people — and it fused HRCC's unidentified VE with MARC's into
+a single person carrying 88 sessions of both their histories. Found by running the migration against
+real data; every test used realistic call signs and sailed past it.
+
+`Core/CallSign.IsUsable` is now the single answer to "is this a call sign at all". The rule is
+structural rather than a list of known placeholders — letters, digits, an optional slash, and at least
+one letter and one digit — so it catches the next placeholder without anyone predicting it. Used by
+the migration, the sync, the license sweep, the importer and the duplicate flag.
+
+## Merging duplicates
+
+Duplicates exist by design: the migration is conservative. The FRN backfill then turns suspicion into
+**proof** — FRN is unique per person, so two records resolving to one is conclusive, unlike a shared
+call sign.
+
+`VolunteerExaminerMergeService` does it in **one transaction**, because a half-merge is the only
+outcome with no recovery. Six things point at the retired record, three with uniqueness constraints
+that collide:
+
+- **Session links** repoint; where both records worked the *same* session the two collapse to one.
+  Not data loss — one person cannot be on a roster twice, so a count of 1 is the correct answer.
+- **Team memberships** fold on `(VeId, TeamId)`: active beats retired, tags union.
+- **Accreditations** fold on `(VeId, VecId)`: a recorded number or a later expiry wins.
+- **Call sign history** moves, and the retired record's own call sign becomes history if it differs.
+- **Contact details fill blanks, never overwrite** — nothing a human typed on the survivor is
+  replaced by whichever record happened to lose.
+- **FRN transfers rather than copies.** Leaving it on both violates the unique index; the SQLite test
+  caught that, which an InMemory one could not.
+
+Three mechanisms carry the integrity guarantee:
+
+1. **The transaction.**
+2. **A conservation check inside it** — distinct sessions before must equal distinct sessions after,
+   asserted against the database rather than the in-memory graph, rolled back if it fails. That turns
+   "we believe nothing was lost" into something the code refuses to commit if untrue.
+3. **The loser is retired, never deleted** — `MergedIntoVolunteerExaminerId` plus a **global query
+   filter**, so it vanishes from every query at once rather than leaving an invariant each future
+   query must remember.
+
+The audit entry records **which session ids moved**. Without that, an un-merge could not tell whose
+history was whose, and calling the merge reversible would be an overclaim.
+
+Two different FRNs is a **hard block**: FCC saying these are two people is stronger evidence against
+the merge than a matching name is for it.
+
+### `ConflictingFrn`
+
+When the sweep finds a collision it cannot store the FRN — the unique index refuses it. That proof
+was originally only a log line, so the merge screen could see nothing but a shared call sign and
+called a *proven* duplicate "needs checking". `ConflictingFrn` stores what the index refused. Not
+indexed, not unique: it is a note about a collision, not an identifier.
+
+## The screens
+
+All under the existing **VEs** nav dropdown, per the issue's own request.
+
+| Page | Who |
+|---|---|
+| VE Directory — list, search, tag filter, last-worked, license, duplicate marker | TeamAdmin / SystemAdmin |
+| VE detail — contact details, teams and tags, accreditations, FCC license | TeamAdmin / SystemAdmin |
+| VE Tags — the team's vocabulary | TeamAdmin / SystemAdmin |
+| Possible duplicates / merge | TeamAdmin / SystemAdmin |
+
+**The admin gate is a data-protection boundary, not tidiness.** These rows carry home addresses and
+phone numbers, which — unlike call sign, FRN and license class — are **not public FCC record data**. A
+VE's public record usually carries a PO box precisely because they chose not to publish where they
+live. Session Managers and Team Leads get no access. The nav gate matches the page attribute, so no
+role is shown a link that 403s.
+
+Two consequences of that, both deliberate:
+
+- The **contact-details audit entry records that it changed, not what to.** The audit log is readable
+  by roles not entitled to see an address, and a diff would route around the restriction.
+- The **CSV export is audit-logged** where Job History's is not — a screen someone reads and a file
+  they can mail onward are different kinds of exposure.
+
+### Tags grant no access
+
+Several starting names ("admin", "session manager", "team lead") match real roles in this app,
+because those are the words the team uses. A VE tagged "admin" gets nothing.
+`VeTagsGrantNoAccessTests` scans the authorization sources for any reference to `VeTag` and asserts
+the entity has grown no permission-shaped property — this is exactly the kind of promise that erodes
+the first time reading a tag would be convenient, while three screens carry on saying otherwise.
+
+**No tag means guest**, derived at render time. A stored "guest" tag would need adding and removing in
+step with every other tag change and would be wrong in between.
+
+### Last worked
+
+`MAX(session date)` over the session links, scoped to the row's own team. It avoids the
+`Session.Status` trap for the third time in this codebase: `Status` only ever means "not cancelled",
+so filtering on it reports a VE booked for next month as having already worked that session — a
+*future* "last worked" date.
+
+## Deliberately not built
+
+- **Editing the roster in-app.** Removed 2026-08-07; ExamTools reconciles it every poll. See
+  [`docs/session-manager-ui.md`](session-manager-ui.md).
+- **QRZ prefill**, which the issue also asks for. Blocked on credentials: nobody has confirmed whether
+  their API returns email and address at all, and designing around an unseen field is how the `RO`/`RM`
+  assumption in the Renewal Monitor went wrong. Note it could only ever return the *public* address —
+  usually a PO box — so it must never overwrite a hand-entered one.
+- **FRN-first matching in the sync.** ExamTools' feed has no FRN, so this would need a ULS lookup on
+  the create path, coupling the roster sync to the ULS client. A VE who changes call sign between
+  sweeps still creates a duplicate — caught within a day by the collision detector and surfaced for
+  merge. Prevention deferred; detection works.

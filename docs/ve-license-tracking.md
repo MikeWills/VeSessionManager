@@ -4,6 +4,9 @@ The other half of the license work. [`docs/renewal-monitor.md`](renewal-monitor.
 hand-curated watch list; this covers the **VE roster's own** licenses, which is a different question
 with a different answer.
 
+> Built alongside issue #142 — see [`docs/ve-management.md`](ve-management.md) for the person model
+> this depends on, and for why the FRN backfill below matters beyond licenses.
+
 ## The question this exists to answer
 
 The Renewal Monitor asks *"is this person's license lapsing?"* about people someone deliberately
