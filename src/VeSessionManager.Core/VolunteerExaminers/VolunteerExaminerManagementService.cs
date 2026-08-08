@@ -60,6 +60,43 @@ public class VolunteerExaminerManagementService(AppDbContext dbContext, TimeProv
     }
 
     /// <summary>
+    /// The VE's own edit of their details (issue #142 phase 5). Narrower than
+    /// <see cref="UpdateContactDetailsAsync"/> on purpose: <b>Notes are admin-facing and not included
+    /// here</b>, so a VE can neither read nor overwrite what their team wrote about them. Email is
+    /// absent too — that goes through VeEmailChangeService, confirmed from the old address.
+    ///
+    /// <para>Audited with a null acting user, because there is no admin involved and naming one would
+    /// make the trail say something untrue.</para>
+    /// </summary>
+    public async Task<VeManagementResult> UpdateOwnContactDetailsAsync(
+        int volunteerExaminerId, VeSelfContactDetails details, CancellationToken cancellationToken)
+    {
+        var person = await dbContext.VolunteerExaminers.FirstOrDefaultAsync(v => v.Id == volunteerExaminerId, cancellationToken);
+        if (person is null)
+        {
+            return VeManagementResult.NotFound;
+        }
+
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+
+        person.Name = string.IsNullOrWhiteSpace(details.Name) ? person.Name : details.Name.Trim();
+        person.Phone = Blank(details.Phone);
+        person.AddressLine1 = Blank(details.AddressLine1);
+        person.AddressLine2 = Blank(details.AddressLine2);
+        person.City = Blank(details.City);
+        person.State = Blank(details.State);
+        person.PostalCode = Blank(details.PostalCode);
+        person.DiscordUsername = Blank(details.DiscordUsername);
+        person.ContactPreference = details.ContactPreference;
+        person.UpdatedUtc = now;
+
+        dbContext.AddAuditLog(null, "VeContactDetailsUpdatedBySelf", nameof(VolunteerExaminer), person.Id,
+            $"{person.CallSign ?? person.Name} updated their own contact details.", now);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return VeManagementResult.Success;
+    }
+
+    /// <summary>
     /// Retire a VE from one team, or bring them back. The membership row stays either way — see the
     /// class remarks.
     /// </summary>
@@ -258,6 +295,18 @@ public record VeContactDetails(
     string? DiscordUsername,
     VeContactPreference ContactPreference,
     string? Notes);
+
+/// <summary>What a VE may change about themselves. No Notes (admin-facing) and no Email (see VeEmailChangeService).</summary>
+public record VeSelfContactDetails(
+    string Name,
+    string? Phone,
+    string? AddressLine1,
+    string? AddressLine2,
+    string? City,
+    string? State,
+    string? PostalCode,
+    string? DiscordUsername,
+    VeContactPreference ContactPreference);
 
 public enum VeManagementResult
 {

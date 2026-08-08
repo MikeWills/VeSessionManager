@@ -1,0 +1,84 @@
+@page
+@using VeSessionManager.Core.Entities
+@model VeSessionManager.Web.Pages.VeSelfService.DetailsModel
+@{
+    ViewData["Title"] = "Your VE details";
+    Layout = "_PublicLayout";
+}
+
+<div class="ve-panel">
+    <h1>Your details</h1>
+    <p class="session-sub">
+        @Model.Person.Name@(Model.Person.CallSign is { } call ? $" — {call}" : "")@(Model.Teams.Count > 0 ? $" · {string.Join(", ", Model.Teams)}" : "")
+    </p>
+    <p class="session-sub">
+        Only your team's admins can see this, and it is used to reach you about sessions. Your address
+        is not published anywhere.
+    </p>
+
+    <form method="post">
+        <div asp-validation-summary="ModelOnly" class="vesm-alert error"></div>
+
+        <div class="field">
+            <label asp-for="Input.Name">Name</label>
+            <input asp-for="Input.Name" />
+            <span asp-validation-for="Input.Name"></span>
+        </div>
+
+        <div class="field">
+            <label asp-for="Input.Phone">Phone</label>
+            <input asp-for="Input.Phone" type="tel" />
+        </div>
+
+        <div class="field">
+            <label asp-for="Input.AddressLine1">Address</label>
+            <input asp-for="Input.AddressLine1" placeholder="Street address" />
+            <input asp-for="Input.AddressLine2" placeholder="Apt, suite (optional)" />
+        </div>
+
+        <div class="field-row">
+            <div class="field"><label asp-for="Input.City">City</label><input asp-for="Input.City" /></div>
+            <div class="field"><label asp-for="Input.State">State</label><input asp-for="Input.State" /></div>
+            <div class="field"><label asp-for="Input.PostalCode">ZIP</label><input asp-for="Input.PostalCode" /></div>
+        </div>
+
+        <div class="field">
+            <label asp-for="Input.DiscordUsername">Discord username</label>
+            <input asp-for="Input.DiscordUsername" />
+        </div>
+
+        <div class="field">
+            <label asp-for="Input.ContactPreference">How should we contact you?</label>
+            <select asp-for="Input.ContactPreference">
+                <option value="@((int)VeContactPreference.Email)">Email</option>
+                @* Disabled until SMS exists — offering it would quietly stop them being contacted. *@
+                <option value="@((int)VeContactPreference.Text)" disabled>Text (not available yet)</option>
+                <option value="@((int)VeContactPreference.Both)" disabled>Email and text (not available yet)</option>
+            </select>
+        </div>
+
+        <button type="submit" class="btn-primary btn-sm">Save my details</button>
+    </form>
+</div>
+
+<div class="ve-panel">
+    <h2>Email address</h2>
+    <p class="session-sub">
+        Currently <strong>@Model.Person.Email</strong>. This is where your sign-in links go, so a
+        change has to be confirmed from this address before it takes effect.
+    </p>
+
+    <form method="post" asp-page-handler="ChangeEmail">
+        <div class="field">
+            <label for="NewEmail">New email address</label>
+            <input id="NewEmail" name="NewEmail" type="email" required />
+        </div>
+        <button type="submit" class="btn-secondary btn-sm">Send confirmation to my current address</button>
+    </form>
+</div>
+
+<div class="ve-panel">
+    <form method="post" asp-page-handler="SignOut">
+        <button type="submit" class="btn-secondary btn-sm">Sign out</button>
+    </form>
+</div>

@@ -91,6 +91,8 @@ builder.Services.AddScoped<VolunteerExaminerDirectoryService>();
 builder.Services.AddScoped<VolunteerExaminerManagementService>();
 builder.Services.AddScoped<VolunteerExaminerMergeService>();
 builder.Services.AddScoped<VolunteerExaminerImportService>();
+builder.Services.AddScoped<VeSelfServiceLinkService>();
+builder.Services.AddScoped<VeEmailChangeService>();
 
 // Pending-work counts shown as badges on the app nav (_AppLayout.cshtml); also the single source of
 // the pending-VEC-submission predicate VecSubmissionReportService delegates to.
@@ -175,6 +177,41 @@ builder.Services.AddIdentityCore<User>(options =>
     .AddDefaultTokenProviders()
     .AddClaimsPrincipalFactory<AppClaimsPrincipalFactory>();
 
+// A SECOND, deliberately weak authentication scheme for volunteer examiners maintaining their own
+// contact details (issue #142 phase 5). It exists alongside Identity and must never be mistaken for
+// it.
+//
+// Three things keep them apart:
+//
+//   The scheme name. Every admin page authorises against the DEFAULT scheme (Identity), so a VE
+//   cookie satisfies nothing there — the self-service page is the only one that names this scheme
+//   explicitly.
+//
+//   The cookie path. Scoped to /VeSelfService, so the browser does not even send it to an admin
+//   route. A bug that accepted any authenticated principal would still not see this cookie.
+//
+//   The claims. A VE principal carries an id and a name and NO role claim, so every
+//   [Authorize(Roles = ...)] in the app fails closed for it rather than depending on the two rules
+//   above holding.
+builder.Services.AddAuthentication().AddCookie(VeSelfServiceAuth.Scheme, options =>
+{
+    options.Cookie.Name = "vesm_ve_self_service";
+    options.Cookie.HttpOnly = true;
+    options.Cookie.SameSite = SameSiteMode.Lax;
+    options.Cookie.Path = "/VeSelfService";
+    options.Cookie.SecurePolicy = builder.Environment.IsDevelopment()
+        ? CookieSecurePolicy.SameAsRequest
+        : CookieSecurePolicy.Always;
+
+    // Absolute, not sliding: this session is a convenience for one edit, and a link found later
+    // should not be able to keep itself alive by being reloaded.
+    options.ExpireTimeSpan = VeSelfServiceLinkService.SessionLifetime;
+    options.SlidingExpiration = false;
+
+    options.LoginPath = "/VeSelfService/SignIn";
+    options.AccessDeniedPath = "/VeSelfService/SignIn";
+});
+
 builder.Services.ConfigureApplicationCookie(options =>
 {
     options.LoginPath = "/Account/Login";
@@ -248,7 +285,13 @@ builder.Services.AddRateLimiter(options =>
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
     options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
     {
-        if (!context.Request.Path.StartsWithSegments("/Account"))
+        // /VeSelfService joins /Account here, and it is the more exposed of the two: it is reachable
+        // with no account at all, it sends email on request, and behind it sits a person's home
+        // address. Adding the path to this predicate is what protects it — the pages themselves carry
+        // no per-page limiter attribute, deliberately, so a new page under either prefix is covered
+        // the moment it exists.
+        if (!context.Request.Path.StartsWithSegments("/Account")
+            && !context.Request.Path.StartsWithSegments("/VeSelfService"))
         {
             return RateLimitPartition.GetNoLimiter("unlimited");
         }
