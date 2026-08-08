@@ -41,6 +41,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options, IDataProtectio
     public DbSet<VeVecAccreditation> VeVecAccreditations => Set<VeVecAccreditation>();
     public DbSet<VeCallSignHistory> VeCallSignHistories => Set<VeCallSignHistory>();
     public DbSet<VeSelfServiceToken> VeSelfServiceTokens => Set<VeSelfServiceToken>();
+    public DbSet<VeEmailChangeRequest> VeEmailChangeRequests => Set<VeEmailChangeRequest>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<JobRunHistory> JobRunHistories => Set<JobRunHistory>();
     public DbSet<SystemSettings> SystemSettings => Set<SystemSettings>();
@@ -197,6 +198,12 @@ public class AppDbContext(DbContextOptions<AppDbContext> options, IDataProtectio
             // 256-bit coincidence, but a unique index turns "cannot happen" into "cannot be stored".
             b.HasIndex(t => t.TokenHash).IsUnique();
             b.HasOne(t => t.VolunteerExaminer).WithMany().HasForeignKey(t => t.VolunteerExaminerId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<VeEmailChangeRequest>(b =>
+        {
+            b.HasIndex(r => r.TokenHash).IsUnique();
+            b.HasOne(r => r.VolunteerExaminer).WithMany().HasForeignKey(r => r.VolunteerExaminerId).OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<VeCallSignHistory>(b =>

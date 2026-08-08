@@ -164,7 +164,13 @@ public class VeSelfServiceLinkService(
         return token.VolunteerExaminer;
     }
 
-    /// <summary>Removes tokens that can no longer be used. Not security-critical — a consumed or expired token is already inert — but the table would otherwise grow forever.</summary>
+    /// <summary>
+    /// Removes tokens that can no longer be used. Not security-critical — a consumed or expired token
+    /// is already inert — but the table would otherwise grow forever.
+    /// <para>Uses ExecuteDelete, which needs a relational provider: this is a bulk maintenance sweep
+    /// where loading every row to delete it would be the wrong shape, unlike the small per-VE delete
+    /// in VeEmailChangeService.</para>
+    /// </summary>
     public async Task<int> PurgeSpentTokensAsync(CancellationToken cancellationToken)
     {
         var cutoff = timeProvider.GetUtcNow().UtcDateTime - TimeSpan.FromDays(7);
