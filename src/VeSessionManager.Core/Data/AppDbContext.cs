@@ -40,6 +40,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options, IDataProtectio
     public DbSet<VeTagAssignment> VeTagAssignments => Set<VeTagAssignment>();
     public DbSet<VeVecAccreditation> VeVecAccreditations => Set<VeVecAccreditation>();
     public DbSet<VeCallSignHistory> VeCallSignHistories => Set<VeCallSignHistory>();
+    public DbSet<VeSelfServiceToken> VeSelfServiceTokens => Set<VeSelfServiceToken>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<JobRunHistory> JobRunHistories => Set<JobRunHistory>();
     public DbSet<SystemSettings> SystemSettings => Set<SystemSettings>();
@@ -188,6 +189,14 @@ public class AppDbContext(DbContextOptions<AppDbContext> options, IDataProtectio
             b.HasIndex(a => new { a.VolunteerExaminerId, a.VecId }).IsUnique();
             b.HasOne(a => a.VolunteerExaminer).WithMany(v => v.VecAccreditations).HasForeignKey(a => a.VolunteerExaminerId).OnDelete(DeleteBehavior.Cascade);
             b.HasOne(a => a.Vec).WithMany().HasForeignKey(a => a.VecId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<VeSelfServiceToken>(b =>
+        {
+            // Unique: a presented token resolves to exactly one row or none. A collision would be a
+            // 256-bit coincidence, but a unique index turns "cannot happen" into "cannot be stored".
+            b.HasIndex(t => t.TokenHash).IsUnique();
+            b.HasOne(t => t.VolunteerExaminer).WithMany().HasForeignKey(t => t.VolunteerExaminerId).OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<VeCallSignHistory>(b =>
