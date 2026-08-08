@@ -1,0 +1,132 @@
+@page
+@using VeSessionManager.Core.VolunteerExaminers
+@model VeSessionManager.Web.Pages.SessionManager.VeImportModel
+@{
+    ViewData["Title"] = "Import VEs";
+    ViewData["ActiveNav"] = "VeImport";
+    Layout = "_AppLayout";
+}
+
+<div class="page-head">
+    <div>
+        <p class="eyebrow">Volunteer examiners</p>
+        <h1>Import VEs</h1>
+    </div>
+</div>
+
+@if (Model.AvailableTeams.Count > 1)
+{
+    <form method="get" class="filters" style="margin-bottom:20px;">
+        <div class="filter-dropdown">
+            <button type="button" class="kebab @(Model.ResolvedTeamId is not null ? "active" : "")">
+                Team: @(Model.AvailableTeams.FirstOrDefault(t => t.Id == Model.ResolvedTeamId).Name ?? "Choose a team")
+                <i class="bi bi-caret-down-fill" aria-hidden="true"></i>
+            </button>
+            <div class="menu">
+                @foreach (var team in Model.AvailableTeams)
+                {
+                    <label class="item"><input type="radio" name="teamId" value="@team.Id" @(team.Id == Model.ResolvedTeamId ? "checked" : "") /> @team.Name</label>
+                }
+                <hr />
+                <button type="submit" class="item">Apply</button>
+            </div>
+        </div>
+    </form>
+}
+
+@if (Model.ResolvedTeamId is null)
+{
+    <p>Choose a team to import VEs into.</p>
+}
+else if (Model.Preview is null)
+{
+    <div class="ve-panel">
+        <h2>Choose a file</h2>
+        <p class="session-sub">
+            A CSV with a header row. <strong>CallSign</strong> and <strong>Name</strong> are the ones
+            that matter; <code>Email</code>, <code>Phone</code>, <code>AddressLine1</code>,
+            <code>AddressLine2</code>, <code>City</code>, <code>State</code>, <code>PostalCode</code>,
+            <code>Discord</code> and <code>Frn</code> are read if present, and any other column is
+            ignored. A file exported from the VE Directory can be edited and re-imported as-is.
+        </p>
+        <p class="session-sub">
+            Nothing is written until you review what it would do. An empty cell is left alone rather
+            than clearing what is already on record, and an FRN in the file is only used to find the
+            right person — it is never written, since the nightly FCC check owns that field.
+        </p>
+
+        <form method="post" asp-page-handler="Preview" enctype="multipart/form-data">
+            <input type="hidden" name="teamId" value="@Model.ResolvedTeamId" />
+            <div class="field">
+                <label for="file">CSV file</label>
+                <input id="file" name="file" type="file" accept=".csv,text/csv" required />
+            </div>
+            <button type="submit" class="btn-primary btn-sm">Review import</button>
+        </form>
+    </div>
+}
+else if (Model.Preview.Error is not null)
+{
+    <div class="ve-panel">
+        <h2>That file could not be read</h2>
+        <p>@Model.Preview.Error</p>
+        <a class="btn-secondary btn-sm" asp-page="/SessionManager/VeImport" asp-route-teamId="@Model.ResolvedTeamId">Try another file</a>
+    </div>
+}
+else
+{
+    <div class="ve-panel">
+        <h2>Review</h2>
+        <p>
+            <strong>@Model.Preview.CreateCount</strong> new VE(s),
+            <strong>@Model.Preview.UpdateCount</strong> existing record(s) updated,
+            <strong>@Model.Preview.AddToTeamCount</strong> known VE(s) added to this team,
+            <strong>@Model.Preview.InvalidCount</strong> row(s) skipped.
+        </p>
+
+        <div class="table-scroll">
+        <table class="cards">
+            <thead><tr><th>Line</th><th>Call sign</th><th>Name</th><th>What happens</th></tr></thead>
+            <tbody>
+                @foreach (var row in Model.Preview.Rows)
+                {
+                    <tr>
+                        <td class="count">@row.LineNumber</td>
+                        <td class="mono">@(row.CallSign ?? "—")</td>
+                        <td>@row.Name</td>
+                        <td>
+                            @switch (row.Action)
+                            {
+                                case VeImportAction.Create:
+                                    <span class="chip chip-green">New VE</span>
+                                    break;
+                                case VeImportAction.Update:
+                                    <span class="chip chip-neutral">Fill blank fields</span>
+                                    break;
+                                case VeImportAction.AddToTeam:
+                                    <span class="chip chip-amber">Already known — add to this team</span>
+                                    break;
+                                default:
+                                    <span class="chip chip-brick">Skipped</span>
+                                    <span class="session-sub">@row.Problem</span>
+                                    break;
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        </div>
+
+        @* The file's text, not the parsed rows: the confirm step re-runs the identical parse, so
+           what was reviewed above is exactly what applies. *@
+        <form method="post" asp-page-handler="Apply">
+            <input type="hidden" name="teamId" value="@Model.ResolvedTeamId" />
+            <input type="hidden" asp-for="CsvText" />
+            <button type="submit" class="btn-primary btn-sm" @(Model.Preview.Rows.Any(r => r.IsValid) ? "" : "disabled")>
+                Import @Model.Preview.Rows.Count(r => r.IsValid) row(s)
+            </button>
+            <a class="btn-secondary btn-sm" asp-page="/SessionManager/VeImport" asp-route-teamId="@Model.ResolvedTeamId">Cancel</a>
+        </form>
+    </div>
+}
