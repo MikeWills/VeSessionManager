@@ -53,6 +53,10 @@ public class VeDetailModel(
         [Display(Name = "Name")]
         public string Name { get; set; } = "";
 
+        [EmailAddress]
+        [Display(Name = "Email")]
+        public string? Email { get; set; }
+
         public string? Phone { get; set; }
         public string? AddressLine1 { get; set; }
         public string? AddressLine2 { get; set; }
@@ -74,6 +78,7 @@ public class VeDetailModel(
         Contact = new ContactInput
         {
             Name = Person.Name,
+            Email = Person.Email,
             Phone = Person.Phone,
             AddressLine1 = Person.AddressLine1,
             AddressLine2 = Person.AddressLine2,
@@ -99,7 +104,7 @@ public class VeDetailModel(
 
         var result = await managementService.UpdateContactDetailsAsync(
             Id,
-            new VeContactDetails(Contact.Name, Contact.Phone, Contact.AddressLine1, Contact.AddressLine2,
+            new VeContactDetails(Contact.Name, Contact.Email, Contact.Phone, Contact.AddressLine1, Contact.AddressLine2,
                 Contact.City, Contact.State, Contact.PostalCode, Contact.DiscordUsername,
                 Contact.ContactPreference, Contact.Notes),
             (await CurrentUserAsync()).Id,
@@ -236,6 +241,7 @@ public class VeDetailModel(
             VeManagementResult.TagNotOnThisTeam => "That tag belongs to a different team.",
             VeManagementResult.AlreadyAccredited => "This VE already has an accreditation with that VEC.",
             VeManagementResult.NameRequired => "A name is required.",
+            VeManagementResult.EmailAlreadyInUse => "Another VE already uses that email address.",
             _ => "Could not save that change."
         };
     }

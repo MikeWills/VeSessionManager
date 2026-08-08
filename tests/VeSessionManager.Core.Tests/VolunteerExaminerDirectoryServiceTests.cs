@@ -244,6 +244,64 @@ public class VolunteerExaminerDirectoryServiceTests
         Assert.All(rows, r => Assert.False(r.HasDuplicateCallSign));
     }
 
+    /// <summary>
+    /// An admin must be able to set the address, or a VE with none can never start self-service and
+    /// nobody can fix it — the hole found the first time the flow was tried for real (2026-08-07).
+    /// </summary>
+    [Fact]
+    public async Task AdminCanSetTheEmail()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext, "TEAM-A");
+        var (person, _) = await SeedVeAsync(dbContext, team, "N2SPG", "Sam Granger");
+
+        var result = await CreateManagement(dbContext).UpdateContactDetailsAsync(
+            person.Id,
+            new VeContactDetails("Sam Granger", "sam@example.com", null, null, null, null, null, null, null,
+                VeContactPreference.Email, null),
+            userId: 1, CancellationToken.None);
+
+        Assert.Equal(VeManagementResult.Success, result);
+        Assert.Equal("sam@example.com", (await dbContext.VolunteerExaminers.FirstAsync(v => v.Id == person.Id)).Email);
+    }
+
+    /// <summary>Sign-in resolves an address to one person, so the admin path needs the same uniqueness rule as the self-service one.</summary>
+    [Fact]
+    public async Task AdminCannotGiveTwoVesTheSameEmail()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext, "TEAM-A");
+        var (first, _) = await SeedVeAsync(dbContext, team, "N2SPG", "Sam Granger");
+        var (second, _) = await SeedVeAsync(dbContext, team, "NP2UU", "Uma Unwin");
+
+        var management = CreateManagement(dbContext);
+        await management.UpdateContactDetailsAsync(first.Id,
+            new VeContactDetails("Sam Granger", "shared@example.com", null, null, null, null, null, null, null,
+                VeContactPreference.Email, null), 1, CancellationToken.None);
+
+        var result = await management.UpdateContactDetailsAsync(second.Id,
+            new VeContactDetails("Uma Unwin", "shared@example.com", null, null, null, null, null, null, null,
+                VeContactPreference.Email, null), 1, CancellationToken.None);
+
+        Assert.Equal(VeManagementResult.EmailAlreadyInUse, result);
+    }
+
+    /// <summary>An admin changing the sign-in address is worth finding later, so it is called out rather than folded into "details updated".</summary>
+    [Fact]
+    public async Task AdminEmailChange_IsCalledOutInTheAudit()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext, "TEAM-A");
+        var (person, _) = await SeedVeAsync(dbContext, team, "N2SPG", "Sam Granger");
+
+        await CreateManagement(dbContext).UpdateContactDetailsAsync(person.Id,
+            new VeContactDetails("Sam Granger", "sam@example.com", null, null, null, null, null, null, null,
+                VeContactPreference.Email, null), 1, CancellationToken.None);
+
+        var audit = dbContext.AuditLogs.Single(a => a.Action == "VeContactDetailsUpdated");
+        Assert.Contains("Email address was changed by an admin", audit.Details);
+    }
+
     [Fact]
     public async Task Accreditation_IsRecordedOncePerVec()
     {

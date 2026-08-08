@@ -23,9 +23,16 @@ public class VolunteerExaminerManagementService(AppDbContext dbContext, TimeProv
     /// <summary>
     /// Contact details live on the person and are shared by every team they serve — this deployment
     /// hosts cooperating teams, not unrelated organisations.
-    /// <para><b>Email is not settable here.</b> It is the factor the phase 5 self-service magic link
-    /// authenticates against, so changing it decides who receives future links; that flow needs its
-    /// own design and is deliberately not reachable from a general "edit contact details" call.</para>
+    ///
+    /// <para><b>An admin CAN set the email here (corrected 2026-08-07).</b> It was originally locked
+    /// on the grounds that it is the self-service sign-in credential — but an admin already has full
+    /// write access to this person, so refusing them one field was theatre, and it left a VE with no
+    /// address permanently unable to start self-service with no supported way to fix it. Discovered
+    /// the moment the flow was tried for real.
+    ///
+    /// <para>What actually needed protecting was the VE changing it <i>unconfirmed</i>, and
+    /// VeEmailChangeService handles that: their own change is confirmed from the address already on
+    /// file. An admin's change is a different act by a different party, and it is audited.</para></para>
     /// </summary>
     public async Task<VeManagementResult> UpdateContactDetailsAsync(
         int volunteerExaminerId, VeContactDetails details, int userId, CancellationToken cancellationToken)
@@ -38,7 +45,19 @@ public class VolunteerExaminerManagementService(AppDbContext dbContext, TimeProv
 
         var now = timeProvider.GetUtcNow().UtcDateTime;
 
+        // Uniqueness matters as much here as in the self-service flow: sign-in resolves an address
+        // to one person, so two VEs sharing one means somebody silently receives another's links.
+        var email = Blank(details.Email);
+        if (email is not null && await dbContext.VolunteerExaminers
+                .AnyAsync(v => v.Id != person.Id && v.Email != null && v.Email.ToLower() == email.ToLower(), cancellationToken))
+        {
+            return VeManagementResult.EmailAlreadyInUse;
+        }
+
+        var emailChanged = !string.Equals(person.Email, email, StringComparison.OrdinalIgnoreCase);
+
         person.Name = details.Name.Trim();
+        person.Email = email;
         person.Phone = Blank(details.Phone);
         person.AddressLine1 = Blank(details.AddressLine1);
         person.AddressLine2 = Blank(details.AddressLine2);
@@ -54,7 +73,10 @@ public class VolunteerExaminerManagementService(AppDbContext dbContext, TimeProv
         // is readable by roles that are not entitled to see a VE's home address, and a diff in the
         // details column would route around the very restriction the page enforces.
         dbContext.AddAuditLog(userId, "VeContactDetailsUpdated", nameof(VolunteerExaminer), person.Id,
-            $"Contact details updated for {person.CallSign ?? person.Name}.", now);
+            $"Contact details updated for {person.CallSign ?? person.Name}." +
+            // Called out specifically, unlike the other fields: this one decides who can sign in as
+            // them and who receives their links, so "an admin changed it" is worth being able to find.
+            (emailChanged ? " Email address was changed by an admin." : ""), now);
         await dbContext.SaveChangesAsync(cancellationToken);
         return VeManagementResult.Success;
     }
@@ -286,6 +308,7 @@ public class VolunteerExaminerManagementService(AppDbContext dbContext, TimeProv
 /// <summary>Contact details as one value, so the update signature doesn't grow to ten positional strings that are trivial to transpose.</summary>
 public record VeContactDetails(
     string Name,
+    string? Email,
     string? Phone,
     string? AddressLine1,
     string? AddressLine2,
@@ -315,5 +338,8 @@ public enum VeManagementResult
     NameRequired,
     DuplicateTagName,
     TagNotOnThisTeam,
-    AlreadyAccredited
+    AlreadyAccredited,
+
+    /// <summary>Another VE already uses that address — sign-in could not tell them apart.</summary>
+    EmailAlreadyInUse
 }

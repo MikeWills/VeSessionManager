@@ -30,12 +30,15 @@
             <span asp-validation-for="Contact.Name"></span>
         </div>
 
-        @* Read-only on purpose — see the page model. Changing it decides who receives future
-           self-service links, so it needs the phase 5 design, not this form. *@
         <div class="field">
-            <label>Email</label>
-            <input value="@Model.Person.Email" disabled />
-            <span class="session-sub">Changing a VE's email will be handled with self-service sign-in (not built yet).</span>
+            <label asp-for="Contact.Email">Email</label>
+            <input asp-for="Contact.Email" type="email" />
+            <span asp-validation-for="Contact.Email"></span>
+            <span class="session-sub">
+                This is where the VE's self-service sign-in links go, so changing it changes who can
+                sign in as them. The change is recorded in the audit log. A VE can also change it
+                themselves, which is confirmed from their existing address first.
+            </span>
         </div>
 
         <div class="field">
