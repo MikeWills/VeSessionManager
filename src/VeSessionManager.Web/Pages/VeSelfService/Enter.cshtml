@@ -1,0 +1,19 @@
+@page
+@model VeSessionManager.Web.Pages.VeSelfService.EnterModel
+@{
+    ViewData["Title"] = "Link expired";
+    Layout = "_PublicLayout";
+}
+
+@* Only rendered when redemption failed — success redirects. Expired, already used and never issued
+   deliberately share one message. *@
+<div class="auth-wrap">
+    <div class="auth-card">
+        <h1>That link no longer works</h1>
+        <p>
+            Sign-in links work once and expire after 30 minutes, so this one has probably already
+            been used or has timed out.
+        </p>
+        <a class="btn-primary" asp-page="/VeSelfService/SignIn">Send me a new one</a>
+    </div>
+</div>

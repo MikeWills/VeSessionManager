@@ -1,4 +1,5 @@
 using VeSessionManager.Core.Uls;
+using CallSign = VeSessionManager.Core.CallSign;
 namespace VeSessionManager.Core.Entities;
 
 /// <summary>
@@ -11,6 +12,15 @@ public enum WatchedLicenseStatus
 {
     /// <summary>Added but never successfully looked up yet.</summary>
     NotYetChecked,
+
+    /// <summary>
+    /// There is no call sign to look up, so nothing can be said about this license — issue #107's
+    /// open question 3. Unreachable for a <see cref="WatchedLicense"/>, whose call sign is required;
+    /// it exists for a <see cref="VolunteerExaminer"/>, whose call sign ExamTools may simply not
+    /// report (or may report as the literal "&lt;UNKNOWN&gt;"). A state of its own because "we
+    /// cannot check this" must never render as healthy.
+    /// </summary>
+    NoCallSign,
 
     /// <summary>Looked up, and FCC has no record of this call sign.</summary>
     NotFound,
@@ -60,7 +70,56 @@ public static class WatchedLicenseStatusExtensions
     public static readonly TimeSpan RenewedHighlightWindow = TimeSpan.FromDays(30);
 
     /// <summary>
-    /// Order matters here, and each step is doing real work:
+    /// The record-only half of the rules, shared by everything holding an
+    /// <see cref="ILicenseSnapshot"/> — <see cref="WatchedLicense"/> and, since issue #107,
+    /// <see cref="VolunteerExaminer"/>.
+    ///
+    /// <para>Knows nothing about renewals: that lifecycle is the Renewal Monitor's alone, and
+    /// <see cref="DeriveStatus(WatchedLicense, DateTime)"/> layers it on top of this. Sharing the
+    /// thresholds is the entire point — two copies of "90 days" and "two years" would have drifted
+    /// the first time either was tuned.</para>
+    /// </summary>
+    public static WatchedLicenseStatus DeriveSnapshotStatus(this ILicenseSnapshot snapshot, DateTime utcNow)
+    {
+        // Before "have we checked?": with no usable call sign there is nothing to check, and
+        // NotYetChecked would imply the sweep is merely behind and will get to it. Uses the same
+        // CallSign.IsUsable as the sync, so ExamTools' literal "<UNKNOWN>" lands here rather than
+        // being looked up forever and reported as not found.
+        if (!CallSign.IsUsable(snapshot.CallSign)) return WatchedLicenseStatus.NoCallSign;
+
+        if (snapshot.LicenseNotFoundAtFcc) return WatchedLicenseStatus.NotFound;
+        if (snapshot.LicenseLastCheckedUtc is null) return WatchedLicenseStatus.NotYetChecked;
+        if (snapshot.LicenseCancellationDateUtc is not null) return WatchedLicenseStatus.Cancelled;
+
+        if (DaysUntil(snapshot.LicenseExpiresUtc, utcNow) is not { } days) return WatchedLicenseStatus.Active;
+
+        if (days < -GraceDays) return WatchedLicenseStatus.ExpiredLapsed;
+        if (days < 0) return WatchedLicenseStatus.ExpiredInGrace;
+        if (days <= RenewalWindowDays) return WatchedLicenseStatus.ExpiringSoon;
+
+        return WatchedLicenseStatus.Active;
+    }
+
+    /// <summary>
+    /// Whole calendar days from "today in US Eastern" to a date. Extracted from
+    /// <see cref="DaysUntilExpiry"/> so the VE sweep and the Renewal Monitor cannot come to
+    /// different conclusions about what day it is.
+    /// </summary>
+    public static int? DaysUntil(DateTime? date, DateTime utcNow)
+    {
+        if (date is not { } target) return null;
+
+        var today = DateOnly.FromDateTime(
+            TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(utcNow, DateTimeKind.Utc), UlsSchedule.EasternTimeZone));
+
+        return DateOnly.FromDateTime(target).DayNumber - today.DayNumber;
+    }
+
+    /// <summary>
+    /// The Renewal Monitor's full rules: the shared record status above, plus the renewal lifecycle
+    /// that only a watched license has.
+    ///
+    /// <para>Order matters and each step is doing real work:</para>
     /// <list type="number">
     /// <item>Not-checked and not-found come first — with no ULS data every date test below is
     /// meaningless, not merely false.</item>
@@ -70,6 +129,11 @@ public static class WatchedLicenseStatusExtensions
     /// <item>A pending renewal outranks ExpiringSoon and ExpiredInGrace — once it is filed, "expires
     /// in 12 days" is no longer the actionable fact.</item>
     /// </list>
+    ///
+    /// <para>Deliberately still its own method rather than a call into
+    /// <see cref="DeriveSnapshotStatus"/>: the renewal checks sit *between* cancellation and the
+    /// date tests, so delegating would need the shared rule to know about a lifecycle that means
+    /// nothing to a VE. The thresholds are what had to be shared, and they are.</para>
     /// </summary>
     public static WatchedLicenseStatus DeriveStatus(this WatchedLicense license, DateTime utcNow)
     {
@@ -120,12 +184,7 @@ public static class WatchedLicenseStatusExtensions
     /// </summary>
     public static int? DaysUntilExpiry(this WatchedLicense license, DateTime utcNow)
     {
-        if (license.ExpiredDateUtc is not { } expires) return null;
-
-        var today = DateOnly.FromDateTime(
-            TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(utcNow, DateTimeKind.Utc), UlsSchedule.EasternTimeZone));
-
-        return DateOnly.FromDateTime(expires).DayNumber - today.DayNumber;
+        return DaysUntil(license.ExpiredDateUtc, utcNow);
     }
 
     /// <summary>Statuses a human should do something about — what the list sorts to the top and what a future digest would count.</summary>
@@ -133,7 +192,8 @@ public static class WatchedLicenseStatusExtensions
         WatchedLicenseStatus.ExpiringSoon or
         WatchedLicenseStatus.ExpiredInGrace or
         WatchedLicenseStatus.ExpiredLapsed or
-        WatchedLicenseStatus.NotFound;
+        WatchedLicenseStatus.NotFound or
+        WatchedLicenseStatus.NoCallSign;
 
     /// <summary>Maps to the design system's existing chip classes — no new colours introduced.</summary>
     public static string ChipClass(this WatchedLicenseStatus status) => status switch
@@ -147,6 +207,7 @@ public static class WatchedLicenseStatusExtensions
     public static string Label(this WatchedLicenseStatus status) => status switch
     {
         WatchedLicenseStatus.NotYetChecked => "Not checked yet",
+        WatchedLicenseStatus.NoCallSign => "No call sign on file",
         WatchedLicenseStatus.NotFound => "Not found at FCC",
         WatchedLicenseStatus.Cancelled => "Cancelled",
         WatchedLicenseStatus.Active => "Active",

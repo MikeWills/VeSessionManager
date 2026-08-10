@@ -268,6 +268,10 @@
         </div>
         @* Read-only on purpose: the roster comes from ExamTools and is fully reconciled there on
            every poll, so an in-app add/remove was undone on the next tick. See docs/session-manager-ui.md. *@
+        @if (Model.CanEdit)
+        {
+            <a class="btn-secondary btn-sm" asp-page="/SessionManager/VeInvite" asp-route-id="@Model.Session.Id">Invite VEs</a>
+        }
     </div>
     <div class="roster-list">
         @if (Model.VeRoster.Count == 0)
@@ -276,7 +280,22 @@
         }
         @foreach (var ve in Model.VeRoster)
         {
-            <span class="ve-chip">@ve.CallSign — @ve.Name</span>
+            @* Marker only when there is something to say — a tick on every clear VE would make the
+               warning invisible by familiarity. Problem and unverified are visually distinct: one
+               means they cannot serve, the other means nobody has checked. *@
+            <span class="ve-chip" title="@ve.Eligibility.Summary">
+                @ve.CallSign — @ve.Name
+                @if (ve.Eligibility.HasProblem)
+                {
+                    <i class="bi bi-exclamation-triangle-fill ve-flag-problem" aria-hidden="true"></i>
+                    <span class="visually-hidden">Cannot serve this session</span>
+                }
+                else if (ve.Eligibility.HasUnknown)
+                {
+                    <i class="bi bi-question-circle ve-flag-unknown" aria-hidden="true"></i>
+                    <span class="visually-hidden">Eligibility unverified</span>
+                }
+            </span>
         }
     </div>
 </footer>

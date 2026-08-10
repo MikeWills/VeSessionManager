@@ -61,45 +61,23 @@ public class JobRunHistoryModel(AppDbContext dbContext, UserManager<User> userMa
                 : "";
 
             csv.AppendLine(string.Join(",",
-                Csv(run.StartedUtc.ToString("o", CultureInfo.InvariantCulture)),
-                Csv(run.CompletedUtc?.ToString("o", CultureInfo.InvariantCulture)),
-                Csv(duration),
-                Csv(run.JobName),
-                Csv(run.Team?.Name ?? "(global)"),
-                Csv(run.StatusText),
-                Csv(run.ResultSummary),
-                Csv(run.ErrorMessage)));
+                CsvExport.Field(run.StartedUtc.ToString("o", CultureInfo.InvariantCulture)),
+                CsvExport.Field(run.CompletedUtc?.ToString("o", CultureInfo.InvariantCulture)),
+                CsvExport.Field(duration),
+                CsvExport.Field(run.JobName),
+                CsvExport.Field(run.Team?.Name ?? "(global)"),
+                CsvExport.Field(run.StatusText),
+                CsvExport.Field(run.ResultSummary),
+                CsvExport.Field(run.ErrorMessage)));
         }
 
-        // UTF-8 BOM so Excel opens it as UTF-8 rather than mangling anything non-ASCII.
-        var bytes = Encoding.UTF8.GetPreamble().Concat(Encoding.UTF8.GetBytes(csv.ToString())).ToArray();
+        var bytes = CsvExport.ToBytes(csv);
         var stamp = DateTime.UtcNow.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture);
         return File(bytes, "text/csv", $"job-run-history-{stamp}.csv");
     }
 
     /// <summary>Rows in the export. Deliberately larger than the 200 the page renders — see OnGetExportAsync.</summary>
     private const int ExportRowLimit = 2000;
-
-    /// <summary>
-    /// Quotes a CSV field, and neutralises spreadsheet formula injection.
-    ///
-    /// <para>Excel and Sheets evaluate a cell beginning <c>=</c>, <c>+</c>, <c>-</c>, <c>@</c>, tab or
-    /// carriage return as a formula. Error messages here are exception text, which is not something
-    /// this app chooses — so a leading apostrophe is prepended to force those to be read as text.
-    /// Quoting alone does not prevent it: Excel strips the quotes and evaluates what is inside.</para>
-    /// </summary>
-    private static string Csv(string? value)
-    {
-        if (string.IsNullOrEmpty(value)) return "\"\"";
-
-        var first = value[0];
-        if (first is '=' or '+' or '-' or '@' || first == (char)9 || first == (char)13)
-        {
-            value = "'" + value;
-        }
-
-        return "\"" + value.Replace("\"", "\"\"") + "\"";
-    }
 
     /// <param name="IsRunning">Computed on <see cref="JobRunHistory"/>, carried here so the view and the CSV agree.</param>
     public record JobRunRow(string JobName, string? TeamName, DateTime StartedUtc, DateTime? CompletedUtc, bool Success, string? ErrorMessage, string? ResultSummary, bool IsRunning, string StatusText);

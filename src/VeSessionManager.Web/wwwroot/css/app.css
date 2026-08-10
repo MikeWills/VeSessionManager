@@ -246,6 +246,13 @@ tbody tr.row-past:hover { background: var(--row-hover); }
 .btn-primary { background: var(--panel); color: #fff; }
 .btn-primary:hover { background: var(--panel-2); }
 .btn-secondary { background: var(--surface); color: var(--ink); border-color: var(--line-strong); }
+/* Two classes, and that is load-bearing: `.vesm button` above sets the `border` SHORTHAND to
+   transparent at (0,1,1), which beats a bare `.btn-secondary` setting only `border-color` at
+   (0,1,0). The result was a white button on a white panel with no border at all — every secondary
+   button in the app rendering as plain text. Same specificity trap as .nav-toggle and the anchor
+   buttons, third instance. */
+.vesm .btn-secondary { border-color: var(--line-strong); }
+.vesm .btn-danger { border-color: var(--brick-dim); }
 .btn-secondary:hover { border-color: var(--ink); }
 .btn-danger { background: var(--surface); color: var(--brick); border-color: var(--brick-dim); }
 .btn-danger:hover { background: var(--brick-dim); }
@@ -287,6 +294,17 @@ tbody tr.row-past:hover { background: var(--row-hover); }
 .flag-banner { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; background: var(--amber-dim); color: #7A5313; border: 1px solid #E4C486; border-radius: 8px; padding: 10px 14px; font-size: 13px; margin-bottom: 20px; }
 .flag-banner b { font-weight: 600; }
 .flag-banner form { margin-left: auto; }
+
+/* VE Directory / VE detail (issue #142). A plain stacked card — .session-panel looks similar but is
+   a flex ROW built to push a session's meta block to the opposite edge, so reusing it would lay a
+   form's fields out side by side. Mobile-first like the rest of this file: .field-row is one column
+   here and becomes a row in the Desktop layer. */
+.ve-panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 18px 16px; margin-bottom: 22px; }
+.ve-panel h2 { font-size: 15px; margin: 0 0 4px; font-weight: 600; }
+.ve-panel-inset { border-top: 1px solid var(--line); padding-top: 14px; margin-top: 14px; }
+.ve-panel-inset:first-of-type { border-top: none; padding-top: 0; margin-top: 0; }
+.field-row { display: grid; grid-template-columns: 1fr; gap: 0 14px; align-items: end; }
+.inline-check { display: inline-flex; align-items: center; gap: 6px; margin: 0 14px 10px 0; font-size: 14px; }
 
 .section-head { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin: 8px 0 12px; }
 .section-head h2 { font-size: 15px; margin: 0; font-weight: 600; }
@@ -341,6 +359,21 @@ tbody tr.row-past:hover { background: var(--row-hover); }
 footer.roster { margin-top: 28px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
 .roster-list { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
 .ve-chip { font-family: "IBM Plex Mono", monospace; font-size: 12px; background: var(--paper); border: 1px solid var(--line); padding: 6px 12px; border-radius: 99px; display: inline-flex; align-items: center; gap: 8px; }
+/* Session-relative eligibility markers (issue #107). Colour alone is not the signal — the two use
+   different glyphs as well, so they stay distinguishable to a colour-blind reader and in a
+   screenshot. Bootstrap Icons rather than a Unicode symbol: a bare character renders only if the
+   device happens to have a font containing it, which is how a marker became a tofu box on an
+   iPhone once already. */
+/* Sticky action bar for a long picker (the VE invitation screen). Sits inside the form so the
+   submit still belongs to it. `bottom: 0` on a sticky element only works while the element is in
+   normal flow — do not give it position:fixed, which would take it out and let the page scroll
+   underneath the last table row. */
+.ve-action-bar { position: sticky; bottom: 0; z-index: 4; display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap;
+                 background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px; margin-bottom: 22px;
+                 box-shadow: 0 -6px 18px rgba(20, 24, 26, .10); }
+
+.ve-flag-problem { color: var(--brick); }
+.ve-flag-unknown { color: var(--ink-soft); }
 
 /* Form field.
    16px is not a style choice — iOS Safari auto-zooms the viewport on focusing any control whose
@@ -576,6 +609,7 @@ footer.roster { margin-top: 28px; background: var(--surface); border: 1px solid 
   .kebab { padding: 6px 9px; }
 
   .menu-head { color: var(--ink-soft); }
+  .field-row { grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); }
   .menu button.item, .menu a.item { font-size: 13px; padding: 8px 10px; }
   .menu label.item { font-size: 13px; padding: 8px 10px; gap: 8px; }
 

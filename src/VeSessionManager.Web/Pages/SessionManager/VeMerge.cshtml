@@ -1,0 +1,89 @@
+@page "{id:int}"
+@using VeSessionManager.Core.Entities
+@model VeSessionManager.Web.Pages.SessionManager.VeMergeModel
+@{
+    ViewData["Title"] = "Possible duplicate";
+    ViewData["ActiveNav"] = "VeDirectory";
+    Layout = "_AppLayout";
+}
+
+<div class="page-head">
+    <div>
+        <p class="eyebrow"><a asp-page="/SessionManager/VeDetail" asp-route-id="@Model.Person.Id">@Model.Person.Name</a></p>
+        <h1>Possible duplicate records</h1>
+    </div>
+</div>
+
+@if (Model.Candidates.Count == 0)
+{
+    <div class="ve-panel">
+        <p>No other record shares this VE's call sign or FRN. Nothing to merge.</p>
+    </div>
+}
+else
+{
+    <div class="ve-panel">
+        <h2>Keeping: @Model.Person.Name</h2>
+        <p class="session-sub">
+            This record survives. Everything below merges <em>into</em> it — its own contact details
+            are kept, and the other record's values only fill fields left blank here.
+        </p>
+        <div class="meta-grid">
+            <div class="meta-item"><span class="session-sub">Call sign</span><div class="mono">@(Model.Person.CallSign ?? "—")</div></div>
+            <div class="meta-item"><span class="session-sub">FRN</span><div class="mono">@(Model.Person.Frn ?? "—")</div></div>
+        </div>
+    </div>
+
+    @foreach (var candidate in Model.Candidates)
+    {
+        <div class="ve-panel">
+            <h2>@candidate.Other.Name</h2>
+
+            @* Two very different kinds of evidence, said plainly rather than averaged into one
+               confidence: an FRN match is conclusive, a shared call sign is a prompt to check. *@
+            <p class="session-sub">
+                @if (candidate.IsProof)
+                {
+                    <span class="chip chip-green">Confirmed same person</span>
+                }
+                else
+                {
+                    <span class="chip chip-amber">Needs checking</span>
+                }
+                @candidate.Evidence
+            </p>
+
+            <div class="meta-grid">
+                <div class="meta-item"><span class="session-sub">Call sign</span><div class="mono">@(candidate.Other.CallSign ?? "—")</div></div>
+                <div class="meta-item"><span class="session-sub">FRN</span><div class="mono">@(candidate.Other.Frn ?? "—")</div></div>
+            </div>
+
+            <p>Merging would move onto <strong>@Model.Person.Name</strong>:</p>
+            <ul>
+                <li><strong>@candidate.Preview.SessionsMoving</strong> session(s) of history</li>
+                @if (candidate.Preview.SessionsAlreadyShared > 0)
+                {
+                    <li>
+                        @candidate.Preview.SessionsAlreadyShared session(s) both records already worked —
+                        these collapse into one entry each, since one person cannot be on a roster twice
+                    </li>
+                }
+                <li><strong>@candidate.Preview.TeamMembershipsMoving</strong> team membership(s)</li>
+                <li><strong>@candidate.Preview.AccreditationsMoving</strong> VEC accreditation(s)</li>
+            </ul>
+
+            <p class="session-sub">
+                No session history is lost — the merge is refused outright if the count would change.
+                The other record is retired rather than deleted, and the audit log records exactly
+                which sessions moved.
+            </p>
+
+            <form method="post" asp-page-handler="Merge">
+                <input type="hidden" name="duplicateId" value="@candidate.Other.Id" />
+                <button type="submit" class="btn-danger btn-sm">
+                    Merge @candidate.Other.Name into @Model.Person.Name
+                </button>
+            </form>
+        </div>
+    }
+}

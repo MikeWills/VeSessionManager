@@ -7,7 +7,8 @@ using VeSessionManager.Core.Uls;
 namespace VeSessionManager.Worker;
 
 /// <summary>
-/// Refreshes watched licenses from ExamTools' ULS mirror — see docs/renewal-monitor.md.
+/// Refreshes watched licenses from ExamTools' ULS mirror — see docs/renewal-monitor.md — and, on
+/// the same anchored slot, the VE roster's own licenses (issue #107, docs/ve-license-tracking.md).
 ///
 /// <para><b>Anchored to 06:00 ET, once a day</b> (2026-08-06). It previously ticked every four hours
 /// from Worker start, which meant its check times drifted with every restart: nobody could say when
@@ -85,6 +86,22 @@ public class LicenseWatchJob(
                     watchService.RunAsync,
                     // Global rather than per-team: one scan covers every team's rows, so there is no
                     // single team id to attribute the run to.
+                    null,
+                    stoppingToken);
+
+                // The VE roster's own licenses (issue #107), on the same anchored slot: both read the
+                // same nightly FCC data through the same mirror, so a second schedule would be two
+                // names for one cadence.
+                //
+                // A SEPARATE JobRunHistory entry, not a step inside the one above. The slot guard
+                // keys on a successful "LicenseWatch" run, so folding these together would mean one
+                // failing sweep suppresses the other for the rest of the day — and the ops dashboard
+                // could no longer say which half broke.
+                var veWatchService = scope.ServiceProvider.GetRequiredService<VolunteerExaminerLicenseWatchService>();
+
+                await jobRunHistoryLogger.RunAsync(
+                    "VeLicenseWatch",
+                    veWatchService.RunAsync,
                     null,
                     stoppingToken);
             });

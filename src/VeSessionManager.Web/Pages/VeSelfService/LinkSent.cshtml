@@ -1,0 +1,19 @@
+@page
+@{
+    ViewData["Title"] = "Check your email";
+    Layout = "_PublicLayout";
+}
+
+@* Deliberately says nothing about whether the address matched a VE — see VeSelfServiceLinkService. *@
+<div class="auth-wrap">
+    <div class="auth-card">
+        <h1>Check your email</h1>
+        <p>
+            If that address belongs to a volunteer examiner, a sign-in link is on its way. It works
+            once and expires after 30 minutes.
+        </p>
+        <p class="session-sub">
+            Nothing arrived? The address your team holds may be a different one — ask your team admin.
+        </p>
+    </div>
+</div>

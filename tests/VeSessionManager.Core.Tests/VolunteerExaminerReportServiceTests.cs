@@ -82,7 +82,7 @@ public class VolunteerExaminerReportServiceTests
 
     private static async Task<VolunteerExaminer> SeedVeAsync(AppDbContext dbContext, Team team, string callSign, string name)
     {
-        var ve = new VolunteerExaminer { Name = name, CallSign = callSign, Team = team };
+        var ve = new VolunteerExaminer { Name = name, CallSign = callSign };
         dbContext.VolunteerExaminers.Add(ve);
         await dbContext.SaveChangesAsync();
         return ve;

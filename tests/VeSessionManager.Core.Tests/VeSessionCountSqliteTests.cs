@@ -67,7 +67,7 @@ public class VeSessionCountSqliteTests
         var markedByHand = Session(Now.AddDays(-14), null, Now.AddDays(-14).AddHours(3));
         var upcoming = Session(Now.AddDays(21), null, null);
 
-        var ve = new VolunteerExaminer { Name = "Test VE", CallSign = "N2SPG", Team = team };
+        var ve = new VolunteerExaminer { Name = "Test VE", CallSign = "N2SPG" };
         dbContext.Sessions.AddRange(closedUpstream, markedByHand, upcoming);
         dbContext.VolunteerExaminers.Add(ve);
         foreach (var session in new[] { closedUpstream, markedByHand, upcoming })
@@ -163,8 +163,8 @@ public class VeSessionCountSqliteTests
             CreatedUtc = Now
         };
 
-        var spg = new VolunteerExaminer { Name = "Sam Granger", CallSign = "N2SPG", Team = team };
-        var uu = new VolunteerExaminer { Name = "Uma Unwin", CallSign = "NP2UU", Team = team };
+        var spg = new VolunteerExaminer { Name = "Sam Granger", CallSign = "N2SPG" };
+        var uu = new VolunteerExaminer { Name = "Uma Unwin", CallSign = "NP2UU" };
         dbContext.Sessions.Add(session);
         dbContext.SessionVolunteerExaminers.Add(new SessionVolunteerExaminer { Session = session, VolunteerExaminer = spg });
         dbContext.SessionVolunteerExaminers.Add(new SessionVolunteerExaminer { Session = session, VolunteerExaminer = uu });

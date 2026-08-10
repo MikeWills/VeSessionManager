@@ -1,0 +1,102 @@
+@page
+@model VeSessionManager.Web.Pages.SessionManager.VeTagsModel
+@{
+    ViewData["Title"] = "VE Tags";
+    ViewData["ActiveNav"] = "VeTags";
+    Layout = "_AppLayout";
+}
+
+<div class="page-head">
+    <div>
+        <p class="eyebrow">Volunteer examiners</p>
+        <h1>VE Tags</h1>
+    </div>
+</div>
+
+@if (Model.AvailableTeams.Count > 1)
+{
+    <form method="get" class="filters" style="margin-bottom:20px;">
+        <div class="filter-dropdown">
+            <button type="button" class="kebab @(Model.ResolvedTeamId is not null ? "active" : "")">
+                Team: @(Model.AvailableTeams.FirstOrDefault(t => t.Id == Model.ResolvedTeamId).Name ?? "Choose a team")
+                <i class="bi bi-caret-down-fill" aria-hidden="true"></i>
+            </button>
+            <div class="menu">
+                @foreach (var team in Model.AvailableTeams)
+                {
+                    <label class="item"><input type="radio" name="teamId" value="@team.Id" @(team.Id == Model.ResolvedTeamId ? "checked" : "") /> @team.Name</label>
+                }
+                <hr />
+                <button type="submit" class="item">Apply</button>
+            </div>
+        </div>
+    </form>
+}
+
+@if (Model.ResolvedTeamId is null)
+{
+    @* A tag belongs to one team's vocabulary, so there is nothing to show or create until one is
+       chosen — unlike the directory, which reads perfectly well merged across teams. *@
+    <p>Choose a team to manage its VE tags.</p>
+}
+else
+{
+    <div class="ve-panel">
+        <h2>Tags for this team</h2>
+        <p class="session-sub">
+            Tags are used for reporting and for choosing who to invite to a session.
+            <strong>They grant no access to this app</strong> — a VE tagged "admin" or "session manager"
+            has exactly the same access as one with no tag at all. A VE with no tag is treated as a guest.
+        </p>
+
+        <div class="table-scroll">
+        <table class="cards">
+            <thead><tr><th>Name</th><th>Order</th><th>VEs tagged</th><th></th></tr></thead>
+            <tbody>
+                @if (Model.Tags.Count == 0)
+                {
+                    <tr><td colspan="4">No tags yet. Add the ones your team actually uses below.</td></tr>
+                }
+                @foreach (var row in Model.Tags)
+                {
+                    <tr>
+                        <td>@row.Tag.Name</td>
+                        <td class="count">@row.Tag.SortOrder</td>
+                        <td class="count">@row.AssignedCount</td>
+                        <td>
+                            @* asp-page-handler builds the action from the route only and DROPS the
+                               query string, so this posted without teamId and the page 403'd its own
+                               form. The hidden field re-supplies it. See CLAUDE.md. *@
+                            <form method="post" asp-page-handler="Delete">
+                                <input type="hidden" name="teamId" value="@Model.ResolvedTeamId" />
+                                <input type="hidden" name="tagId" value="@row.Tag.Id" />
+                                <button type="submit" class="btn-secondary btn-sm"
+                                        title="@(row.AssignedCount > 0 ? $"This will also remove the tag from {row.AssignedCount} VE(s)" : null)">
+                                    Delete
+                                </button>
+                            </form>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        </div>
+    </div>
+
+    <div class="ve-panel">
+        <h2>Add a tag</h2>
+        <form method="post" asp-page-handler="Create" class="field-row">
+            <input type="hidden" name="teamId" value="@Model.ResolvedTeamId" />
+            <div class="field">
+                <label for="name">Name</label>
+                <input id="name" name="name" required placeholder="e.g. Team member" />
+            </div>
+            <div class="field">
+                <label for="sortOrder">Order</label>
+                <input id="sortOrder" name="sortOrder" type="number" value="0" />
+                <span class="session-sub">Lower shows first.</span>
+            </div>
+            <button type="submit" class="btn-primary btn-sm">Add tag</button>
+        </form>
+    </div>
+}

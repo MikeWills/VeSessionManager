@@ -35,6 +35,13 @@ public class AppDbContext(DbContextOptions<AppDbContext> options, IDataProtectio
     public DbSet<Payment> Payments => Set<Payment>();
     public DbSet<VolunteerExaminer> VolunteerExaminers => Set<VolunteerExaminer>();
     public DbSet<SessionVolunteerExaminer> SessionVolunteerExaminers => Set<SessionVolunteerExaminer>();
+    public DbSet<VeTeamMembership> VeTeamMemberships => Set<VeTeamMembership>();
+    public DbSet<VeTag> VeTags => Set<VeTag>();
+    public DbSet<VeTagAssignment> VeTagAssignments => Set<VeTagAssignment>();
+    public DbSet<VeVecAccreditation> VeVecAccreditations => Set<VeVecAccreditation>();
+    public DbSet<VeCallSignHistory> VeCallSignHistories => Set<VeCallSignHistory>();
+    public DbSet<VeSelfServiceToken> VeSelfServiceTokens => Set<VeSelfServiceToken>();
+    public DbSet<VeEmailChangeRequest> VeEmailChangeRequests => Set<VeEmailChangeRequest>();
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
     public DbSet<JobRunHistory> JobRunHistories => Set<JobRunHistory>();
     public DbSet<SystemSettings> SystemSettings => Set<SystemSettings>();
@@ -124,9 +131,87 @@ public class AppDbContext(DbContextOptions<AppDbContext> options, IDataProtectio
 
         modelBuilder.Entity<VolunteerExaminer>(b =>
         {
-            // A VE is matched by (TeamId, CallSign) during roster sync — see VolunteerExaminerSyncService.
-            b.HasIndex(v => new { v.TeamId, v.CallSign }).IsUnique();
-            b.HasOne(v => v.Team).WithMany().HasForeignKey(v => v.TeamId).OnDelete(DeleteBehavior.Restrict);
+            // FRN is unique where present — it is the stable identity, and two people cannot share
+            // one. Filtered, because almost every row has none: ExamTools never reports an FRN, so
+            // it only arrives once the ULS sweep backfills it. SQLite treats NULLs as distinct in a
+            // unique index anyway; the filter states the intent for a reader.
+            b.HasIndex(v => v.Frn).IsUnique().HasFilter("\"Frn\" IS NOT NULL");
+
+            // **CallSign is deliberately NOT unique**, though only one person holds a given call at
+            // any moment. Two reasons, both practical rather than theoretical:
+            //
+            //   1. The identity signal is weaker than the identity concept. Merging the old
+            //      per-team rows can only match on call sign, and a call sign released and reissued
+            //      to a *different* person would merge two humans irreversibly. The migration
+            //      therefore merges only when the name agrees too and leaves the rest alone — which
+            //      a unique index would reject outright, turning a data-quality question into a
+            //      migration that cannot run.
+            //   2. Those survivors are surfaced as "possible duplicates" for an admin to resolve
+            //      (phase 2). A constraint cannot express "probably the same person, ask someone".
+            //
+            // Uniqueness is enforced where it is actually knowable: on Frn above.
+            b.HasIndex(v => v.CallSign);
+
+            b.HasOne(v => v.MergedIntoVolunteerExaminer)
+                .WithMany()
+                .HasForeignKey(v => v.MergedIntoVolunteerExaminerId)
+                .OnDelete(DeleteBehavior.Restrict);
+
+            // **A merged duplicate disappears from every query at once.** The alternative — asking
+            // each query to remember to exclude them — is an invariant that one future query will
+            // forget, and the symptom would be a person appearing twice on a screen long after
+            // someone merged them. Merged rows are still reachable via IgnoreQueryFilters() for the
+            // audit trail and for an un-merge.
+            b.HasQueryFilter(v => v.MergedIntoVolunteerExaminerId == null);
+        });
+
+        modelBuilder.Entity<VeTeamMembership>(b =>
+        {
+            b.HasIndex(m => new { m.VolunteerExaminerId, m.TeamId }).IsUnique();
+            b.HasOne(m => m.VolunteerExaminer).WithMany(v => v.TeamMemberships).HasForeignKey(m => m.VolunteerExaminerId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(m => m.Team).WithMany().HasForeignKey(m => m.TeamId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<VeTag>(b =>
+        {
+            b.HasIndex(t => new { t.TeamId, t.Name }).IsUnique();
+            b.HasOne(t => t.Team).WithMany().HasForeignKey(t => t.TeamId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<VeTagAssignment>(b =>
+        {
+            b.HasKey(a => new { a.VeTeamMembershipId, a.VeTagId });
+            b.HasOne(a => a.VeTeamMembership).WithMany(m => m.TagAssignments).HasForeignKey(a => a.VeTeamMembershipId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(a => a.VeTag).WithMany(t => t.Assignments).HasForeignKey(a => a.VeTagId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<VeVecAccreditation>(b =>
+        {
+            b.HasIndex(a => new { a.VolunteerExaminerId, a.VecId }).IsUnique();
+            b.HasOne(a => a.VolunteerExaminer).WithMany(v => v.VecAccreditations).HasForeignKey(a => a.VolunteerExaminerId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(a => a.Vec).WithMany().HasForeignKey(a => a.VecId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<VeSelfServiceToken>(b =>
+        {
+            // Unique: a presented token resolves to exactly one row or none. A collision would be a
+            // 256-bit coincidence, but a unique index turns "cannot happen" into "cannot be stored".
+            b.HasIndex(t => t.TokenHash).IsUnique();
+            b.HasOne(t => t.VolunteerExaminer).WithMany().HasForeignKey(t => t.VolunteerExaminerId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<VeEmailChangeRequest>(b =>
+        {
+            b.HasIndex(r => r.TokenHash).IsUnique();
+            b.HasOne(r => r.VolunteerExaminer).WithMany().HasForeignKey(r => r.VolunteerExaminerId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<VeCallSignHistory>(b =>
+        {
+            // Not unique: a call sign can legitimately appear twice — released by one person and
+            // later reissued to another — and this table is the record of that, not a constraint on it.
+            b.HasIndex(h => h.CallSign);
+            b.HasOne(h => h.VolunteerExaminer).WithMany(v => v.CallSignHistory).HasForeignKey(h => h.VolunteerExaminerId).OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<User>(b =>

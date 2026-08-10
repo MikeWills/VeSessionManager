@@ -97,6 +97,22 @@ would be pure duplication — and goes straight to `CHANGELOG.md` instead. Non-p
 redesigns, hardening passes) start here and move to `CHANGELOG.md` once the section is at/over the
 cap and a newer entry needs to be added; oldest goes first.
 
+- **VE management, license tracking, self-service and invitations (2026-08-07).** Issues #142 and
+  #107, built together because neither could answer its own question alone. See
+  `docs/ve-management.md` (the person model), `docs/ve-license-tracking.md`,
+  `docs/ve-import-export.md`, `docs/ve-self-service.md` and `docs/ve-session-invitations.md`.
+  **`VolunteerExaminer` is now a person, not a per-team row** — `TeamId` gone, `VeTeamMembership`
+  added, identity on `Id` then `Frn` and never the call sign, since a call sign changes and the
+  person does not. #107's ULS sweep is what backfills that FRN, which is why the two shipped
+  together; it also answers "can this VE legally serve on Saturday?" on Session Detail's chips, which
+  needed #142's accreditations to be more than half an answer. **Three things real data caught that
+  the tests could not:** ExamTools' literal `<UNKNOWN>` fused two different people (hence
+  `Core/CallSign.IsUsable`, now the one definition of "is this a call sign"), an FRN collision aborted
+  the whole sweep for want of a per-row guard, and an admin could not set a VE's email at all — so
+  nobody could ever start self-service. Self-service is the app's **first unauthenticated endpoint
+  reaching personal data**: separate cookie scheme, three independent barriers from the admin app, and
+  `/VeSelfService` added to the global rate limiter.
+
 - **Job Schedule page: when every background job runs next (2026-08-06).** See
   `docs/job-schedule.md`. "When does the next run happen?" was answerable only by reading the Worker's
   source — Job History records what happened, never what will. New `JobSchedules` registry in Core is
@@ -198,18 +214,6 @@ cap and a newer entry needs to be added; oldest goes first.
   left `Running` by a Worker restart wedged that team's queue forever — now reclaimed after
   `StaleRunningThreshold` and **resumed at the interrupted chunk** via `Skip(ChunksCompleted)`. Team
   Settings' STARTTLS checkbox gained its hidden `false` sibling (it could never be turned off).
-- **Public-internet hardening pass (2026-08-03).** See `docs/security-hardening-2026-08-03.md`
-  (Tier 1 of `docs/audit-2026-08-03-tasks.md`). Rate limiting on `/Account/*` (20/min per IP, global
-  limiter + no-limiter partition elsewhere) — which **required adding `UseForwardedHeaders`**, or
-  behind the Apache proxy the whole internet shares one bucket; security response headers incl. a
-  CSP whose `style-src`/`font-src` allowances are load-bearing (Google Fonts + ~139 inline
-  `style=""` attributes — tightening them without removing those breaks the site's typography);
-  password-reset links now built from `App:PublicBaseUrl` instead of the request Host (which was an
-  admin-account-takeover vector) plus `AllowedHosts` pinned — **a deployment under any other
-  hostname now 400s until both are updated**; the youth-rate attestation enforced server-side
-  (`[Required]` on a non-nullable bool is client-side only — it always passes on the server); Square
-  webhook body capped at 64KB.
-
 Everything through Phase 0-10's initial build (ExamTools ingestion, Zoom/Discord, Square, email
 notifications, FCC ULS watcher, payment reminders, VE tracking, VEC submission tracker, admin
 auth/config/candidate-actions, PII purge), the public privacy page, and everything dated 2026-08-01
@@ -312,6 +316,7 @@ To pick up updates: `/plugin marketplace update claude-tools`
 - **Deploy topology (2026-07-21):** two systemd services, `vesessionmanager-worker`/`vesessionmanager-web`, run as a dedicated `vesessionmanager` system account (not `www-data` — NcsScheduler's account on the same box) at `/opt/vesessionmanager/{worker,web}/`. They share one SQLite DB at `/var/lib/vesessionmanager/vesessionmanager.db`, deliberately **outside** the app path so `deploy.yml`'s `rsync --delete` can never touch it regardless of exclude flags (unlike NcsScheduler, whose DB sits inside its own synced app directory and is protected only by an `--exclude` flag every run). Deploy triggers only on a pushed version tag (`v*.*.*`), never on an ordinary commit. Because both Worker and Web call `dbContext.Database.Migrate()` at startup, the deploy workflow starts Worker first and confirms it's active before starting Web, to avoid both processes racing to apply the same SQLite migration concurrently. `appsettings.Production.json` needs no manual server-side editing — it carries no secrets (every real integration credential is per-`Team` in the DB, never in appsettings) and syncs automatically like any other file.
 - **Duplicative-with-ExamTools features removed (reported 2026-07-21, removed 2026-07-21).** Phase 9b originally built "add walk-in candidate" and "move candidate to a different session" as in-app Session Manager actions, but both are already handled by ExamTools itself — a walk-in registered there, or a candidate moved between sessions there, already flows into this app through `SessionIngestionService`'s normal polling, same as any other candidate/session change. Building (and maintaining) a duplicate in-app path for either was unnecessary, so both were removed entirely: `CandidateActionService.AddWalkInAsync`/`MoveAsync`/`CandidateMoveResult`, their page handlers/modals/menu items in `Pages/SessionManager/Detail.cshtml(.cs)` (including the `CanMove`/`MoveTargetSessions` UI plumbing), their test coverage, and the corresponding spec.md bullet-list lines. **Third instance, removed 2026-08-07: session detail's VE roster editing** (`VolunteerExaminerRosterService` + the "+ Add VE" modal and per-chip remove) — `VolunteerExaminerSyncService` fully reconciles each session's roster from ExamTools on every poll, so an edit made here was reverted on the next tick precisely when ExamTools disagreed, i.e. whenever the button was worth pressing. The roster is now display-only. See Established Patterns above for the general lesson.
 - **Worker Service reads `DOTNET_ENVIRONMENT`, not `ASPNETCORE_ENVIRONMENT`.** `VeSessionManager.Worker` is a plain generic Host (`Host.CreateApplicationBuilder`), which only honors `DOTNET_ENVIRONMENT`. Only the Web project (`WebApplication.CreateBuilder`) reads `ASPNETCORE_ENVIRONMENT` (and falls back to `DOTNET_ENVIRONMENT`). The generic Host's own default when neither is set is `Production` — so running the Worker's built DLL directly (bypassing `launchSettings.json`, which sets `DOTNET_ENVIRONMENT=Development` for `dotnet run`) silently picks up `appsettings.Production.json`'s Linux-only paths and fails on a dev machine. Always use `dotnet run --project ...` locally for the Worker, not the raw `.dll`.
+- **Every ExamTools action this app takes is attributed to the stored credential's account, and ExamTools is starting to show its audit log to VEs** (alpha site already; reported 2026-08-07). The end user who clicked is invisible there — every entry reads as whichever VE's login is in `Team.ExamToolsUsername`. Harmless while the app is read-only against ExamTools, which it is today; it becomes a real cost the moment any write-back feature is considered, because this app's audit log would know who acted and ExamTools' would not. Weigh it alongside the "check whether ExamTools already does it" pattern above. See README's Configuration & Secrets note.
 - **ExamTools login returns HTTP 200 on bad credentials** — failure is an `{"error": ...}` body, not a status code. Any code touching `POST /api/ve/login` must check the body (see `ExamToolsClient` and `docs/examtools-api.md`).
 - **ExamTools has no "cancelled" session state** — cancellations are detected by a known session id disappearing from the team feed, reschedules by a changed `date` on the same id. Don't go looking for a status flag that isn't there.
 - **Zoom Server-to-Server OAuth tokens have no refresh token** — they just expire after an hour; the only way to get a new one is to call `/oauth/token` again with the same `account_credentials` grant. `ZoomClient` caches and re-requests a minute before expiry rather than reacting to a 401.

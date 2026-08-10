@@ -1,0 +1,243 @@
+@page "{id:int}"
+@using VeSessionManager.Core.Entities
+@model VeSessionManager.Web.Pages.SessionManager.VeDetailModel
+@{
+    ViewData["Title"] = Model.Person.Name;
+    ViewData["ActiveNav"] = "VeDirectory";
+    Layout = "_AppLayout";
+}
+
+<div class="page-head">
+    <div>
+        <p class="eyebrow"><a asp-page="/SessionManager/VeDirectory">VE Directory</a></p>
+        <h1>@Model.Person.Name @if (Model.Person.CallSign is { } call) { <span class="mono">@call</span> }</h1>
+    </div>
+</div>
+
+<div class="ve-panel">
+    <h2>Contact details</h2>
+    <p class="session-sub">
+        Shared across every team this VE serves, and visible only to team admins and to the VE
+        themselves. This is their home address — not the address on their public FCC record.
+    </p>
+
+    <form method="post" asp-page-handler="Contact">
+        <div asp-validation-summary="ModelOnly" class="vesm-alert error"></div>
+
+        <div class="field">
+            <label asp-for="Contact.Name">Name</label>
+            <input asp-for="Contact.Name" />
+            <span asp-validation-for="Contact.Name"></span>
+        </div>
+
+        <div class="field">
+            <label asp-for="Contact.Email">Email</label>
+            <input asp-for="Contact.Email" type="email" />
+            <span asp-validation-for="Contact.Email"></span>
+            <span class="session-sub">
+                This is where the VE's self-service sign-in links go, so changing it changes who can
+                sign in as them. The change is recorded in the audit log. A VE can also change it
+                themselves, which is confirmed from their existing address first.
+            </span>
+        </div>
+
+        <div class="field">
+            <label asp-for="Contact.Phone">Phone</label>
+            <input asp-for="Contact.Phone" />
+        </div>
+
+        <div class="field">
+            <label asp-for="Contact.AddressLine1">Address</label>
+            <input asp-for="Contact.AddressLine1" placeholder="Street address" />
+            <input asp-for="Contact.AddressLine2" placeholder="Apt, suite (optional)" />
+        </div>
+
+        <div class="field-row">
+            <div class="field"><label asp-for="Contact.City">City</label><input asp-for="Contact.City" /></div>
+            <div class="field"><label asp-for="Contact.State">State</label><input asp-for="Contact.State" /></div>
+            <div class="field"><label asp-for="Contact.PostalCode">ZIP</label><input asp-for="Contact.PostalCode" /></div>
+        </div>
+
+        <div class="field">
+            <label asp-for="Contact.DiscordUsername">Discord username</label>
+            <input asp-for="Contact.DiscordUsername" />
+        </div>
+
+        <div class="field">
+            <label asp-for="Contact.ContactPreference">Contact preference</label>
+            <select asp-for="Contact.ContactPreference">
+                <option value="@((int)VeContactPreference.Email)">Email</option>
+                @* Text and Both are deliberately disabled until SMS exists — offering a preference
+                   the app cannot honour would quietly stop a VE being contacted at all. *@
+                <option value="@((int)VeContactPreference.Text)" disabled>Text (not available yet)</option>
+                <option value="@((int)VeContactPreference.Both)" disabled>Email and text (not available yet)</option>
+            </select>
+        </div>
+
+        <div class="field">
+            <label asp-for="Contact.Notes">Notes</label>
+            <textarea asp-for="Contact.Notes" rows="3"></textarea>
+            <span class="session-sub">Admin-facing only; never shown to the VE.</span>
+        </div>
+
+        <button type="submit" class="btn-primary btn-sm">Save contact details</button>
+    </form>
+</div>
+
+@{
+    var licenseStatus = Model.Person.DeriveSnapshotStatus(Model.UtcNow);
+    var licenseDays = WatchedLicenseStatusExtensions.DaysUntil(Model.Person.LicenseExpiresUtc, Model.UtcNow);
+}
+<div class="ve-panel">
+    <h2>FCC license</h2>
+    <p class="session-sub">
+        Public FCC record data, refreshed automatically each morning from ExamTools' ULS mirror.
+        Nothing here is edited by hand.
+    </p>
+
+    <div class="meta-grid">
+        <div class="meta-item">
+            <span class="session-sub">Status</span>
+            <div><span class="chip @licenseStatus.ChipClass()">@licenseStatus.Label()</span></div>
+        </div>
+        <div class="meta-item">
+            <span class="session-sub">Class</span>
+            <div>@(Model.Person.OperatorClass == LicenseClass.None ? "Unknown" : Model.Person.OperatorClass.ToString())</div>
+        </div>
+        <div class="meta-item">
+            <span class="session-sub">Expires</span>
+            <div>
+                @(Model.Person.LicenseExpiresUtc?.ToString("MMM d, yyyy") ?? "—")
+                @if (licenseDays is { } days && days <= 90)
+                {
+                    <span class="session-sub">(@days d)</span>
+                }
+            </div>
+        </div>
+        <div class="meta-item">
+            <span class="session-sub">FRN</span>
+            <div class="mono">@(Model.Person.Frn ?? "—")</div>
+        </div>
+        <div class="meta-item">
+            <span class="session-sub">Last refreshed</span>
+            <div>@(Model.Person.LicenseLastCheckedUtc?.ToString("MMM d, yyyy HH:mm") ?? "Never")</div>
+        </div>
+    </div>
+
+    @if (licenseStatus == WatchedLicenseStatus.NoCallSign)
+    {
+        <p class="session-sub">
+            ExamTools has no call sign for this VE, so there is nothing to look up. Their license
+            cannot be checked until a call sign is recorded upstream.
+        </p>
+    }
+</div>
+
+<div class="ve-panel">
+    <h2>Teams and tags</h2>
+    <p class="session-sub">
+        Tags are for reporting only and grant no access to this app. A VE with no tag is treated as a
+        guest. Membership itself comes from ExamTools — a VE joins a team by working one of its sessions.
+    </p>
+
+    @foreach (var view in Model.Memberships)
+    {
+        <div class="ve-panel-inset">
+            <div class="section-head" style="margin:0 0 8px;">
+                <h3 style="margin:0;">
+                    @view.Membership.Team.Name
+                    @if (!view.Membership.IsActive)
+                    {
+                        <span class="chip chip-brick">Retired</span>
+                    }
+                </h3>
+                <form method="post" asp-page-handler="MembershipActive">
+                    <input type="hidden" name="membershipId" value="@view.Membership.Id" />
+                    <input type="hidden" name="isActive" value="@((!view.Membership.IsActive).ToString().ToLowerInvariant())" />
+                    <button type="submit" class="btn-secondary btn-sm">
+                        @(view.Membership.IsActive ? "Retire from team" : "Reactivate")
+                    </button>
+                </form>
+            </div>
+
+            @if (view.TeamTags.Count == 0)
+            {
+                <p class="session-sub">This team has no tags defined yet.</p>
+            }
+            else
+            {
+                <form method="post" asp-page-handler="Tags">
+                    <input type="hidden" name="membershipId" value="@view.Membership.Id" />
+                    @foreach (var tag in view.TeamTags)
+                    {
+                        <label class="inline-check">
+                            <input type="checkbox" name="tagIds" value="@tag.Id" @(view.SelectedTagIds.Contains(tag.Id) ? "checked" : "") />
+                            <span>@tag.Name</span>
+                        </label>
+                    }
+                    <button type="submit" class="btn-secondary btn-sm">Save tags</button>
+                </form>
+            }
+        </div>
+    }
+</div>
+
+<div class="ve-panel">
+    <h2>VEC accreditations</h2>
+    <p class="session-sub">
+        Which VECs this VE is accredited with. Hand-entered — no VEC publishes this to the app.
+        Keeping the accreditation itself current is the VE's own responsibility, so no number or
+        expiry is tracked here.
+    </p>
+
+    <div class="table-scroll">
+    <table class="cards">
+        <thead><tr><th>VEC</th><th></th></tr></thead>
+        <tbody>
+            @if (Model.Person.VecAccreditations.Count == 0)
+            {
+                <tr><td colspan="2">No accreditations recorded.</td></tr>
+            }
+            @foreach (var accreditation in Model.Person.VecAccreditations.OrderBy(a => a.Vec.Name))
+            {
+                <tr>
+                    <td>@accreditation.Vec.Name</td>
+                    <td>
+                        <form method="post" asp-page-handler="RemoveAccreditation">
+                            <input type="hidden" name="accreditationId" value="@accreditation.Id" />
+                            <button type="submit" class="btn-secondary btn-sm">Remove</button>
+                        </form>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+    </div>
+
+    <form method="post" asp-page-handler="AddAccreditation" class="field-row" style="margin-top:12px;">
+        <div class="field">
+            <label for="vecId">VEC</label>
+            <select id="vecId" name="vecId" required>
+                @foreach (var vec in Model.AvailableVecs)
+                {
+                    <option value="@vec.Id">@vec.Name</option>
+                }
+            </select>
+        </div>
+        <button type="submit" class="btn-secondary btn-sm">Add</button>
+    </form>
+</div>
+
+@if (Model.Person.CallSignHistory.Count > 0)
+{
+    <div class="ve-panel">
+        <h2>Previous call signs</h2>
+        <p class="session-sub">Kept so a session worked under an old call still resolves to this person.</p>
+        <ul>
+            @foreach (var history in Model.Person.CallSignHistory.OrderByDescending(h => h.ReplacedUtc))
+            {
+                <li><span class="mono">@history.CallSign</span> — until @history.ReplacedUtc.ToString("MMM d, yyyy")</li>
+            }
+        </ul>
+    </div>
+}

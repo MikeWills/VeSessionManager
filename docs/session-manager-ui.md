@@ -8,6 +8,11 @@ modal components, light+dark via `data-theme`) and a small vanilla-JS file (`www
 framework — theme toggle + kebab-menu open/close + modal open/close), not the mockup's static
 per-file `<script>` blocks.
 
+> VE-facing screens have since grown well past this page. See
+> [`docs/ve-management.md`](ve-management.md) for the directory, tags, merge and the person model,
+> and [`docs/ve-session-invitations.md`](ve-session-invitations.md) for the invite flow reached from
+> Session Detail.
+
 ## Business logic lives in Core services, pages are thin wiring
 
 - `CandidateActions/CandidateActionService` — mark failed, delete/no-show with immediate PII null,

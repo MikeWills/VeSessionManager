@@ -124,6 +124,7 @@
 
     document.querySelectorAll("table.cards").forEach(labelCardTable);
     document.querySelectorAll("table[data-sortable]").forEach(initSortableTable);
+    initInvitePicker();
   });
 
   // ---- Row menus inside a scrolling table ------------------------------------------------------
@@ -399,4 +400,75 @@
       else writeStoredSort(table, null, null);
     }
   }
+  // ---- VE invitation picker -------------------------------------------------------------------
+  // A team can have 150+ VEs, which made the compose box and the Send button sit 9,000 pixels down
+  // the page — the button was reported as missing, which it effectively was. The message now comes
+  // first and the actions live in a sticky bar; this adds the three things that make a list that
+  // long usable: a filter, select-all/none over whatever is currently visible, and a live count so
+  // the sticky bar says what Send will actually do.
+  //
+  // Opt-in via [data-ve-picker], same convention as data-sortable. No inline script anywhere: the
+  // CSP is script-src 'self'.
+  function initInvitePicker() {
+    var picker = document.querySelector("[data-ve-picker]");
+    if (!picker) return;
+
+    var boxes = Array.prototype.slice.call(picker.querySelectorAll("input[type=checkbox][name=SelectedVeIds]"));
+    var counter = document.querySelector("[data-ve-selected-count]");
+    var filter = picker.querySelector("[data-ve-filter]");
+
+    function rowOf(box) { return box.closest("tr"); }
+    function visible(box) { return rowOf(box) && rowOf(box).style.display !== "none"; }
+
+    function updateCount() {
+      if (!counter) return;
+      var n = boxes.filter(function (b) { return b.checked; }).length;
+      counter.textContent = n === 1 ? "1 VE selected" : n + " VEs selected";
+    }
+
+    boxes.forEach(function (b) { b.addEventListener("change", updateCount); });
+
+    picker.addEventListener("click", function (event) {
+      var action = event.target.getAttribute && event.target.getAttribute("data-ve-select");
+      if (!action) return;
+      event.preventDefault();
+      boxes.forEach(function (b) {
+        // Never tick a disabled box — those are VEs with no email address, who cannot be sent to.
+        // And only touch what the filter is currently showing, or "select all" would quietly pick
+        // people the user cannot see.
+        if (!b.disabled && visible(b)) b.checked = action === "all";
+      });
+      updateCount();
+    });
+
+    // Text and tag filters are ANDed through one apply(), not two independent handlers: with a
+    // handler each, whichever ran last would undo the other's hiding, and "Team Member" + "granger"
+    // would show everyone named Granger.
+    var tagFilter = picker.querySelector("[data-ve-tag-filter]");
+    var UNTAGGED = " untagged";
+
+    function apply() {
+      var term = filter ? filter.value.trim().toLowerCase() : "";
+      var tag = tagFilter ? tagFilter.value : "";
+
+      boxes.forEach(function (b) {
+        var row = rowOf(b);
+        if (!row) return;
+
+        var matchesText = !term || row.textContent.toLowerCase().indexOf(term) !== -1;
+
+        var rowTags = (row.getAttribute("data-ve-tags") || "").split("|").filter(Boolean);
+        var matchesTag = !tag
+          || (tag === UNTAGGED ? rowTags.length === 0 : rowTags.indexOf(tag) !== -1);
+
+        row.style.display = matchesText && matchesTag ? "" : "none";
+      });
+    }
+
+    if (filter) filter.addEventListener("input", apply);
+    if (tagFilter) tagFilter.addEventListener("change", apply);
+
+    updateCount();
+  }
+
 })();

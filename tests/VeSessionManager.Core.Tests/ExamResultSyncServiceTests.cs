@@ -111,7 +111,7 @@ public class ExamResultSyncServiceTests
     private static async Task<Candidate> SeedCandidateAsync(
         AppDbContext dbContext, Session session, string examToolsApplicantId = "applicant-1",
         CandidateApplicationStatus status = CandidateApplicationStatus.Unmatched, bool tested = false,
-        LicenseClass? newLicenseClass = null)
+        LicenseClass? newLicenseClass = null, int? resultMarkedByUserId = null)
     {
         var candidate = new Candidate
         {
@@ -122,7 +122,8 @@ public class ExamResultSyncServiceTests
             DateRegisteredUtc = Now,
             ApplicationStatus = status,
             Tested = tested,
-            NewLicenseClass = newLicenseClass
+            NewLicenseClass = newLicenseClass,
+            ResultMarkedByUserId = resultMarkedByUserId
         };
         dbContext.Candidates.Add(candidate);
         await dbContext.SaveChangesAsync();
@@ -203,8 +204,13 @@ public class ExamResultSyncServiceTests
         Assert.Equal(expectedNew, updated.NewLicenseClass);
     }
 
+    /// <summary>
+    /// **The John Davey case** (reported live at HRCC, 2026-08-09): reached for General, missed it, but
+    /// passed Technician in the same sitting, so he walks away newly licensed. The old logic keyed on
+    /// "did anything fail?" and called him Failed with no license class at all.
+    /// </summary>
     [Fact]
-    public async Task AnyGradedFailedElement_MarksFailed_EvenIfAnotherElementInSameSittingPassed()
+    public async Task PassedLowerElementButFailedHigherOne_IsNotFailed_AndEarnsTheClassTheyPassed()
     {
         await using var dbContext = CreateContext();
         var team = await SeedTeamAsync(dbContext);
@@ -217,8 +223,92 @@ public class ExamResultSyncServiceTests
 
         var result = await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
 
-        Assert.Equal(1, result.CandidatesMarkedFailed);
+        Assert.Equal(0, result.CandidatesMarkedFailed);
+        Assert.Equal(1, result.CandidatesMarkedTested);
+        var updated = await dbContext.Candidates.SingleAsync();
+        Assert.NotEqual(CandidateApplicationStatus.Failed, updated.ApplicationStatus);
+        Assert.True(updated.Tested);
+        // The failed Element 3 must not drag the earned class up to General.
+        Assert.Equal(LicenseClass.None, updated.InitialLicenseClass);
+        Assert.Equal(LicenseClass.Technician, updated.NewLicenseClass);
+    }
+
+    /// <summary>
+    /// The retake-within-one-sitting case Mike also described: fail it, sit it again, pass. The failed
+    /// attempt is still on the record and must not decide the outcome.
+    /// </summary>
+    [Fact]
+    public async Task FailedThenPassedTheSameElement_CountsAsPassed()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        var session = await SeedSessionAsync(dbContext, team);
+        var candidate = await SeedCandidateAsync(dbContext, session);
+        var client = new FakeExamToolsClient();
+        client.SetDetail(candidate.ExamToolsApplicantId!,
+            new ExamToolsExamResult { Element = 3, Graded = true, Passed = false },
+            new ExamToolsExamResult { Element = 3, Graded = true, Passed = true });
+
+        var result = await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+
+        Assert.Equal(0, result.CandidatesMarkedFailed);
+        var updated = await dbContext.Candidates.SingleAsync();
+        Assert.Equal(LicenseClass.General, updated.NewLicenseClass);
+    }
+
+    /// <summary>
+    /// The self-healing half. Someone the old logic already wrote off is re-examined and put right on
+    /// the next poll. Without this, the very people the bug harmed would be the only ones it never
+    /// reached, since Failed used to be a permanent exclusion from the scan.
+    /// </summary>
+    [Fact]
+    public async Task AutoFailedCandidateWhoActuallyPassedSomething_IsCorrectedOnTheNextPoll()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        var session = await SeedSessionAsync(dbContext, team);
+        var candidate = await SeedCandidateAsync(dbContext, session,
+            status: CandidateApplicationStatus.Failed, tested: true, resultMarkedByUserId: null);
+        var client = new FakeExamToolsClient();
+        client.SetDetail(candidate.ExamToolsApplicantId!,
+            new ExamToolsExamResult { Element = 2, Graded = true, Passed = true },
+            new ExamToolsExamResult { Element = 3, Graded = true, Passed = false });
+
+        var result = await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+
+        Assert.Equal(1, result.CandidatesAutoFailedCorrected);
+        Assert.Equal(0, result.CandidatesBackfilledLicenseClass); // counted once, not in both buckets
+        var updated = await dbContext.Candidates.SingleAsync();
+        // Back to Unmatched so UlsWatcherService carries them on to Received/Granted.
+        Assert.Equal(CandidateApplicationStatus.Unmatched, updated.ApplicationStatus);
+        Assert.Equal(LicenseClass.Technician, updated.NewLicenseClass);
+        Assert.Null(updated.ResultMarkedUtc);
+        Assert.Contains(dbContext.AuditLogs, a => a.Action == "CandidateAutoFailedCorrected");
+    }
+
+    /// <summary>
+    /// The other side of no longer excluding Failed from the scan: a genuinely failed candidate gets
+    /// re-polled for the rest of the window, and must not re-audit or re-count an unchanged verdict
+    /// every time.
+    /// </summary>
+    [Fact]
+    public async Task AutoFailedCandidateWhoReallyFailedEverything_IsRepolledButNotReAudited()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        var session = await SeedSessionAsync(dbContext, team);
+        var candidate = await SeedCandidateAsync(dbContext, session,
+            status: CandidateApplicationStatus.Failed, tested: true);
+        var client = new FakeExamToolsClient();
+        client.SetDetail(candidate.ExamToolsApplicantId!,
+            new ExamToolsExamResult { Element = 3, Graded = true, Passed = false });
+
+        var result = await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+
+        Assert.Single(client.DetailFetches);
+        Assert.Equal(0, result.CandidatesMarkedFailed);
         Assert.Equal(CandidateApplicationStatus.Failed, (await dbContext.Candidates.SingleAsync()).ApplicationStatus);
+        Assert.DoesNotContain(dbContext.AuditLogs, a => a.Action == "CandidateAutoMarkedFailed");
     }
 
     [Fact]
@@ -270,13 +360,19 @@ public class ExamResultSyncServiceTests
         Assert.Empty(client.DetailFetches);
     }
 
+    /// <summary>
+    /// A HUMAN Failed verdict stays final. Auto-failed rows are re-examined (see the correction tests
+    /// above), but a Session Manager who marked someone failed must not be overruled by a feed.
+    /// <c>ResultMarkedByUserId</c> is what tells the two apart.
+    /// </summary>
     [Fact]
-    public async Task FailedApplicationStatus_IsNeverRechecked()
+    public async Task ManuallyFailedCandidate_IsNeverRechecked()
     {
         await using var dbContext = CreateContext();
         var team = await SeedTeamAsync(dbContext);
         var session = await SeedSessionAsync(dbContext, team);
-        await SeedCandidateAsync(dbContext, session, status: CandidateApplicationStatus.Failed, tested: true);
+        await SeedCandidateAsync(dbContext, session, status: CandidateApplicationStatus.Failed,
+            tested: true, resultMarkedByUserId: 42);
         var client = new FakeExamToolsClient();
 
         await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);

@@ -103,6 +103,7 @@ public static class JobSchedules
     public const string PiiPurge = "PiiPurge";
     public const string UlsWatcher = "UlsWatcher";
     public const string LicenseWatch = "LicenseWatch";
+    public const string VeLicenseWatch = "VeLicenseWatch";
 
     /// <summary>Eastern hour the renewal-monitor refresh is pinned to — after FCC's 02:00 ET run, before the morning.</summary>
     public const int LicenseWatchStartHourEt = 6;
@@ -177,6 +178,19 @@ public static class JobSchedules
         new(LicenseWatch,
             "Renewal monitor refresh",
             "Refreshes the watched call signs on the Renewal Monitor from ExamTools' ULS mirror.",
+            JobCadenceKind.AnchoredToEasternHour,
+            "Jobs:UlsWatcherIntervalHours",
+            DefaultIntervalHours: 12,
+            StartHourEt: 8,
+            SettingsSource: JobSettingsSource.UlsWatcher,
+            TickIntervalSeconds: 3600),
+
+        // Runs inside the same tick as the entry above and on the same slot — same nightly FCC data
+        // through the same mirror. Listed separately because it writes its own JobRunHistory row, so
+        // the page would otherwise report a job that visibly runs and has no schedule.
+        new(VeLicenseWatch,
+            "VE license refresh",
+            "Refreshes the license state of VEs on active team rosters from ExamTools' ULS mirror.",
             JobCadenceKind.AnchoredToEasternHour,
             "Jobs:UlsWatcherIntervalHours",
             DefaultIntervalHours: 12,

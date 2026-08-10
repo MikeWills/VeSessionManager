@@ -1,0 +1,29 @@
+@page
+@using VeSessionManager.Core.VolunteerExaminers
+@model VeSessionManager.Web.Pages.VeSelfService.ConfirmEmailModel
+@{
+    ViewData["Title"] = "Confirm your email address";
+    Layout = "_PublicLayout";
+}
+
+<div class="auth-wrap">
+    <div class="auth-card">
+        @if (Model.Result == VeEmailChangeResult.Confirmed)
+        {
+            <h1>Email address updated</h1>
+            <p>Your VE team now holds <strong>@Model.NewEmail</strong> for you, and future sign-in links will go there.</p>
+            <a class="btn-primary" asp-page="/VeSelfService/SignIn">Sign in with the new address</a>
+        }
+        else if (Model.Result == VeEmailChangeResult.AlreadyInUse)
+        {
+            <h1>That address is taken</h1>
+            <p>Another volunteer examiner has started using that address since the change was requested, so it was not applied. Ask your team admin.</p>
+        }
+        else
+        {
+            <h1>That link no longer works</h1>
+            <p>Confirmation links work once and expire after 24 hours. Nothing has changed — sign in and request the change again if you still want it.</p>
+            <a class="btn-primary" asp-page="/VeSelfService/SignIn">Sign in</a>
+        }
+    </div>
+</div>

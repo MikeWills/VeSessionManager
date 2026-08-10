@@ -950,6 +950,211 @@ namespace VeSessionManager.Core.Migrations
                     b.ToTable("UserTeams");
                 });
 
+            modelBuilder.Entity("VeSessionManager.Core.Entities.VeCallSignHistory", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("CallSign")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("FirstSeenUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("ReplacedUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("VolunteerExaminerId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CallSign");
+
+                    b.HasIndex("VolunteerExaminerId");
+
+                    b.ToTable("VeCallSignHistories");
+                });
+
+            modelBuilder.Entity("VeSessionManager.Core.Entities.VeEmailChangeRequest", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ConfirmationSentToEmail")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("ConfirmedUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("ExpiresUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("NewEmail")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("VolunteerExaminerId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique();
+
+                    b.HasIndex("VolunteerExaminerId");
+
+                    b.ToTable("VeEmailChangeRequests");
+                });
+
+            modelBuilder.Entity("VeSessionManager.Core.Entities.VeSelfServiceToken", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("ConsumedUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("ExpiresUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SentToEmail")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("VolunteerExaminerId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique();
+
+                    b.HasIndex("VolunteerExaminerId");
+
+                    b.ToTable("VeSelfServiceTokens");
+                });
+
+            modelBuilder.Entity("VeSessionManager.Core.Entities.VeTag", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("CreatedUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("TeamId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TeamId", "Name")
+                        .IsUnique();
+
+                    b.ToTable("VeTags");
+                });
+
+            modelBuilder.Entity("VeSessionManager.Core.Entities.VeTagAssignment", b =>
+                {
+                    b.Property<int>("VeTeamMembershipId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("VeTagId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("CreatedUtc")
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("VeTeamMembershipId", "VeTagId");
+
+                    b.HasIndex("VeTagId");
+
+                    b.ToTable("VeTagAssignments");
+                });
+
+            modelBuilder.Entity("VeSessionManager.Core.Entities.VeTeamMembership", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("CreatedUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("InactivatedUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("TeamId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("VolunteerExaminerId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TeamId");
+
+                    b.HasIndex("VolunteerExaminerId", "TeamId")
+                        .IsUnique();
+
+                    b.ToTable("VeTeamMemberships");
+                });
+
+            modelBuilder.Entity("VeSessionManager.Core.Entities.VeVecAccreditation", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("CreatedUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("VecId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("VolunteerExaminerId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("VecId");
+
+                    b.HasIndex("VolunteerExaminerId", "VecId")
+                        .IsUnique();
+
+                    b.ToTable("VeVecAccreditations");
+                });
+
             modelBuilder.Entity("VeSessionManager.Core.Entities.Vec", b =>
                 {
                     b.Property<int>("Id")
@@ -986,23 +1191,88 @@ namespace VeSessionManager.Core.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("AddressLine1")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("AddressLine2")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("CallSign")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("City")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ConflictingFrn")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("ContactPreference")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("CreatedUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DiscordUsername")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Email")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Frn")
                         .HasColumnType("TEXT");
 
+                    b.Property<DateTime?>("LicenseCancellationDateUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("LicenseExpiresUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("LicenseGrantDateUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("LicenseLastCheckedUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("LicenseNotFoundAtFcc")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("LicenseStatus")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("MergedIntoVolunteerExaminerId")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasColumnType("TEXT");
 
-                    b.Property<int>("TeamId")
+                    b.Property<string>("Notes")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("OperatorClass")
                         .HasColumnType("INTEGER");
+
+                    b.Property<string>("Phone")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PostalCode")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("State")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("UpdatedUtc")
+                        .HasColumnType("TEXT");
 
                     b.HasKey("Id");
 
-                    b.HasIndex("TeamId", "CallSign")
-                        .IsUnique();
+                    b.HasIndex("CallSign");
+
+                    b.HasIndex("Frn")
+                        .IsUnique()
+                        .HasFilter("\"Frn\" IS NOT NULL");
+
+                    b.HasIndex("MergedIntoVolunteerExaminerId");
 
                     b.ToTable("VolunteerExaminers");
                 });
@@ -1367,7 +1637,70 @@ namespace VeSessionManager.Core.Migrations
                     b.Navigation("User");
                 });
 
-            modelBuilder.Entity("VeSessionManager.Core.Entities.VolunteerExaminer", b =>
+            modelBuilder.Entity("VeSessionManager.Core.Entities.VeCallSignHistory", b =>
+                {
+                    b.HasOne("VeSessionManager.Core.Entities.VolunteerExaminer", "VolunteerExaminer")
+                        .WithMany("CallSignHistory")
+                        .HasForeignKey("VolunteerExaminerId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("VolunteerExaminer");
+                });
+
+            modelBuilder.Entity("VeSessionManager.Core.Entities.VeEmailChangeRequest", b =>
+                {
+                    b.HasOne("VeSessionManager.Core.Entities.VolunteerExaminer", "VolunteerExaminer")
+                        .WithMany()
+                        .HasForeignKey("VolunteerExaminerId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("VolunteerExaminer");
+                });
+
+            modelBuilder.Entity("VeSessionManager.Core.Entities.VeSelfServiceToken", b =>
+                {
+                    b.HasOne("VeSessionManager.Core.Entities.VolunteerExaminer", "VolunteerExaminer")
+                        .WithMany()
+                        .HasForeignKey("VolunteerExaminerId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("VolunteerExaminer");
+                });
+
+            modelBuilder.Entity("VeSessionManager.Core.Entities.VeTag", b =>
+                {
+                    b.HasOne("VeSessionManager.Core.Entities.Team", "Team")
+                        .WithMany()
+                        .HasForeignKey("TeamId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Team");
+                });
+
+            modelBuilder.Entity("VeSessionManager.Core.Entities.VeTagAssignment", b =>
+                {
+                    b.HasOne("VeSessionManager.Core.Entities.VeTag", "VeTag")
+                        .WithMany("Assignments")
+                        .HasForeignKey("VeTagId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("VeSessionManager.Core.Entities.VeTeamMembership", "VeTeamMembership")
+                        .WithMany("TagAssignments")
+                        .HasForeignKey("VeTeamMembershipId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("VeTag");
+
+                    b.Navigation("VeTeamMembership");
+                });
+
+            modelBuilder.Entity("VeSessionManager.Core.Entities.VeTeamMembership", b =>
                 {
                     b.HasOne("VeSessionManager.Core.Entities.Team", "Team")
                         .WithMany()
@@ -1375,7 +1708,44 @@ namespace VeSessionManager.Core.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.HasOne("VeSessionManager.Core.Entities.VolunteerExaminer", "VolunteerExaminer")
+                        .WithMany("TeamMemberships")
+                        .HasForeignKey("VolunteerExaminerId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
                     b.Navigation("Team");
+
+                    b.Navigation("VolunteerExaminer");
+                });
+
+            modelBuilder.Entity("VeSessionManager.Core.Entities.VeVecAccreditation", b =>
+                {
+                    b.HasOne("VeSessionManager.Core.Entities.Vec", "Vec")
+                        .WithMany()
+                        .HasForeignKey("VecId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("VeSessionManager.Core.Entities.VolunteerExaminer", "VolunteerExaminer")
+                        .WithMany("VecAccreditations")
+                        .HasForeignKey("VolunteerExaminerId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Vec");
+
+                    b.Navigation("VolunteerExaminer");
+                });
+
+            modelBuilder.Entity("VeSessionManager.Core.Entities.VolunteerExaminer", b =>
+                {
+                    b.HasOne("VeSessionManager.Core.Entities.VolunteerExaminer", "MergedIntoVolunteerExaminer")
+                        .WithMany()
+                        .HasForeignKey("MergedIntoVolunteerExaminerId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("MergedIntoVolunteerExaminer");
                 });
 
             modelBuilder.Entity("VeSessionManager.Core.Entities.WatchedLicense", b =>
@@ -1426,6 +1796,16 @@ namespace VeSessionManager.Core.Migrations
                     b.Navigation("UserTeams");
                 });
 
+            modelBuilder.Entity("VeSessionManager.Core.Entities.VeTag", b =>
+                {
+                    b.Navigation("Assignments");
+                });
+
+            modelBuilder.Entity("VeSessionManager.Core.Entities.VeTeamMembership", b =>
+                {
+                    b.Navigation("TagAssignments");
+                });
+
             modelBuilder.Entity("VeSessionManager.Core.Entities.Vec", b =>
                 {
                     b.Navigation("FeeConfigurations");
@@ -1435,7 +1815,13 @@ namespace VeSessionManager.Core.Migrations
 
             modelBuilder.Entity("VeSessionManager.Core.Entities.VolunteerExaminer", b =>
                 {
+                    b.Navigation("CallSignHistory");
+
                     b.Navigation("SessionVolunteerExaminers");
+
+                    b.Navigation("TeamMemberships");
+
+                    b.Navigation("VecAccreditations");
                 });
 #pragma warning restore 612, 618
         }

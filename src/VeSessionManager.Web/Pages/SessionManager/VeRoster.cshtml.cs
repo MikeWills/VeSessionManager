@@ -11,7 +11,13 @@ using VeSessionManager.Core.VolunteerExaminers;
 namespace VeSessionManager.Web.Pages.SessionManager;
 
 /// <summary>
-/// Phase 9b's "VE Roster" nav destination — Phase 7's "simple report: session count per VE,
+/// **Renamed to "VE Session Counts" in the UI (2026-08-07)** — it was never a roster, and once the
+/// VE Directory arrived (issue #142) the old name actively pointed at the wrong page: one is who the
+/// team's VEs are, this one is how many sessions each has worked. The route, file name and ActiveNav
+/// key deliberately still say VeRoster; this page is expected to move into or merge with a stats
+/// screen, so churning URLs for an interim name buys nothing.
+///
+/// Phase 9b's nav destination — Phase 7's "simple report: session count per VE,
 /// filterable by date range" (VolunteerExaminerReportService.GetSessionCountsAsync), finally given
 /// a UI. Not part of the design handoff's four mocked screens (only Sessions/session-detail were
 /// mocked) — styled with the same design-system components (table/chip/eyebrow) since it's a plain
