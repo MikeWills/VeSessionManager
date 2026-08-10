@@ -202,7 +202,7 @@ public class VolunteerExaminerSyncService(
     {
         var rosterCallSigns = roster
             .Where(v => !string.IsNullOrWhiteSpace(v.Call))
-            .Select(v => v.Call.Trim().ToUpperInvariant())
+            .Select(v => CallSign.NormalizeFormat(v.Call)!)
             .ToHashSet();
 
         foreach (var link in session.SessionVolunteerExaminers
@@ -225,7 +225,7 @@ public class VolunteerExaminerSyncService(
                 continue;
             }
 
-            var callSign = ve.Call.Trim().ToUpperInvariant();
+            var callSign = CallSign.NormalizeFormat(ve.Call)!;
             var name = ve.Name.Trim();
 
             // **A placeholder is not an identity.** ExamTools reports the literal "<UNKNOWN>" when it

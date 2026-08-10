@@ -145,6 +145,9 @@ public class SessionActionService(
 
         var now = timeProvider.GetUtcNow().UtcDateTime;
         session.RescheduleFlaggedForReview = false;
+        // Cleared together with the flag it belongs to: leaving the timestamp behind meant a cleared
+        // session still looked flagged to anything reading the column instead of the bool.
+        session.RescheduleFlaggedUtc = null;
 
         dbContext.AddAuditLog(userId, "RescheduleFlagCleared", nameof(Session), session.Id, $"Reschedule review flag cleared for session {session.ExamToolsSessionId}.", now);
         await dbContext.SaveChangesAsync(cancellationToken);

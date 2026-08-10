@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.EntityFrameworkCore;
 using VeSessionManager.Core.Authorization;
+using VeSessionManager.Core;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Entities;
 using VeSessionManager.Core.Uls;
@@ -120,7 +121,10 @@ public class RenewalMonitorModel(
             return RedirectToPage(new { TeamId });
         }
 
-        var callSign = lookup.CallSign.Trim().ToUpperInvariant();
+        // NormalizeFormat, not Normalize: this is the value FCC just returned, so it is already a
+        // real call sign — and the duplicate check below compares it against stored rows, which were
+        // normalized the same way.
+        var callSign = CallSign.NormalizeFormat(lookup.CallSign)!;
         if (await dbContext.WatchedLicenses.AnyAsync(w => w.TeamId == targetTeamId && w.CallSign == callSign, HttpContext.RequestAborted))
         {
             TempData["ErrorMessage"] = $"{callSign} is already on this team's watch list.";

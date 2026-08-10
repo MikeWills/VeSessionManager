@@ -260,6 +260,10 @@ public class SessionActionServiceTests
 
         Assert.Equal(SessionActionResult.Success, result);
         Assert.False(dbContext.Sessions.Single().RescheduleFlaggedForReview);
+        // The timestamp used to be left behind, so a cleared session still read as flagged to
+        // anything looking at the column rather than the bool. This test already seeded the
+        // timestamp and simply never asserted on it, which is why it survived.
+        Assert.Null(dbContext.Sessions.Single().RescheduleFlaggedUtc);
         Assert.Single(dbContext.AuditLogs, a => a.Action == "RescheduleFlagCleared");
     }
 

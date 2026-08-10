@@ -132,7 +132,12 @@ public class DetailModel(
         if (auth is null) return Forbid();
 
         var result = await vecSubmissionService.MarkSubmittedAsync(Id, auth.Value.User.Id, CancellationToken.None);
-        SetStatus(result == VecSubmissionMarkResult.Marked, "Session marked submitted to VEC.", "Session is already marked submitted.");
+        // Was a two-outcome SetStatus, so a SessionNotFound reported "already marked submitted" —
+        // telling the user the opposite of what happened.
+        SetStatus(result == VecSubmissionMarkResult.Marked, "Session marked submitted to VEC.",
+            result == VecSubmissionMarkResult.AlreadySubmitted
+                ? "Session is already marked submitted."
+                : "Session not found.");
         return RedirectToPage(new { id = Id });
     }
 

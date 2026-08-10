@@ -22,6 +22,22 @@ namespace VeSessionManager.Core;
 /// </summary>
 public static class CallSign
 {
+    /// <summary>
+    /// Casing and whitespace only — upper-invariant and trimmed, or null when blank. **Does not
+    /// apply <see cref="IsUsable"/>**, so a placeholder like ExamTools' <c>&lt;UNKNOWN&gt;</c> comes
+    /// back unchanged rather than as null.
+    /// <para>Use this for a value that is stored or displayed as typed, where silently discarding
+    /// input would be wrong — <c>User.CallSign</c> is display/audit only, for instance. Use
+    /// <see cref="Normalize"/> instead whenever the value is about to be used to <b>identify a
+    /// person</b>; that is the one that refuses a placeholder.</para>
+    /// <para>Callers that need both — normalize now, decide usability separately — should call this
+    /// and then <see cref="IsUsable"/> explicitly, which is what VolunteerExaminerSyncService does
+    /// deliberately: it needs the raw roster value in its comparison set even when it is a
+    /// placeholder.</para>
+    /// </summary>
+    public static string? NormalizeFormat(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim().ToUpperInvariant();
+
     /// <summary>Upper-invariant and trimmed, or null when the input is blank or is not call-sign-shaped.</summary>
     public static string? Normalize(string? value)
     {
@@ -30,7 +46,7 @@ public static class CallSign
             return null;
         }
 
-        var trimmed = value.Trim().ToUpperInvariant();
+        var trimmed = NormalizeFormat(value);
         return IsUsable(trimmed) ? trimmed : null;
     }
 

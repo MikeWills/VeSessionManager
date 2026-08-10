@@ -46,12 +46,14 @@ public class UlsWatcherService(
     {
         var result = new UlsWatchResult();
 
-        // Terminal statuses (Granted/Failed/NotTested) and null-FRN candidates are excluded by the
-        // query rather than an explicit check — they are simply never selected again.
+        // Terminal statuses and null-FRN candidates are excluded by the query rather than an
+        // explicit check — they are simply never selected again. Expressed as "not terminal" using
+        // the shared definition, rather than by listing the two non-terminal values: a new
+        // non-terminal status would otherwise have to be remembered here, and forgetting it means
+        // those candidates are silently never watched. Translates to SQL NOT IN.
         var candidates = await dbContext.Candidates
             .Include(c => c.Session)
-            .Where(c => (c.ApplicationStatus == CandidateApplicationStatus.Unmatched
-                         || c.ApplicationStatus == CandidateApplicationStatus.Received)
+            .Where(c => !CandidateApplicationStatusExtensions.TerminalStatuses.Contains(c.ApplicationStatus)
                         && c.Frn != null)
             .ToListAsync(cancellationToken);
 

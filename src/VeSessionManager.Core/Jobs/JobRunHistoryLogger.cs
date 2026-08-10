@@ -81,6 +81,17 @@ public class JobRunHistoryLogger(AppDbContext dbContext, ILogger<JobRunHistoryLo
                 : summary;
             logger.LogInformation("Finished job: {JobLabel} ({ElapsedMs}ms)", jobLabel, stopwatch.ElapsedMilliseconds);
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Host shutdown, not a fault. Recording it as a failed run put a red row on the ops
+            // dashboard every time the Worker was restarted, which trains people to ignore red rows
+            // — the opposite of what the dashboard is for. Still marked not-successful, since the
+            // run genuinely did not finish; ErrorMessage says why in words rather than a stack.
+            failed = true;
+            history.Success = false;
+            history.ErrorMessage = "Cancelled by host shutdown.";
+            logger.LogInformation("Job {JobName} cancelled by host shutdown", jobName);
+        }
         catch (Exception ex)
         {
             failed = true;
@@ -91,7 +102,7 @@ public class JobRunHistoryLogger(AppDbContext dbContext, ILogger<JobRunHistoryLo
         finally
         {
             history.CompletedUtc = DateTime.UtcNow;
-            await TryCompleteHistoryAsync(history, jobLabel, historyTracked, failed, cancellationToken);
+            await TryCompleteHistoryAsync(history, jobLabel, historyTracked, failed);
         }
     }
 
@@ -106,7 +117,7 @@ public class JobRunHistoryLogger(AppDbContext dbContext, ILogger<JobRunHistoryLo
     /// Clearing the tracker on the failure path drops that poisoned state; the history row is then
     /// re-attached on its own so the failure is still recorded.
     /// </summary>
-    private async Task TryCompleteHistoryAsync(JobRunHistory history, string jobLabel, bool historyTracked, bool failed, CancellationToken cancellationToken)
+    private async Task TryCompleteHistoryAsync(JobRunHistory history, string jobLabel, bool historyTracked, bool failed)
     {
         if (!historyTracked)
         {
@@ -125,10 +136,21 @@ public class JobRunHistoryLogger(AppDbContext dbContext, ILogger<JobRunHistoryLo
                 dbContext.Entry(history).State = EntityState.Modified;
             }
 
-            await dbContext.SaveChangesAsync(cancellationToken);
+            // CancellationToken.None on purpose (2026-08-10). This save runs from a finally block,
+            // and the commonest reason to reach it is the token having just been cancelled by host
+            // shutdown — passing it here meant the completion write was itself cancelled, so the row
+            // was left with a null CompletedUtc and showed as perpetually running on the ops
+            // dashboard. Worse, TaskCanceledException is an OperationCanceledException, which the
+            // filter below deliberately does not catch, so it escaped RunCoreAsync entirely: the
+            // exact "bookkeeping takes down the actual work" failure this method exists to prevent.
+            // Recording the outcome is fast, local, and must not be cancellable.
+            await dbContext.SaveChangesAsync(CancellationToken.None);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException)
+        catch (Exception ex)
         {
+            // Catches everything now, including OperationCanceledException. With a None token a
+            // cancellation here is not shutdown, it is a genuine fault — and either way, nothing
+            // this method does is worth propagating.
             logger.LogError(ex, "Could not write the JobRunHistory completion row for {JobLabel} — the job itself already ran; only its dashboard entry is incomplete", jobLabel);
             dbContext.ChangeTracker.Clear();
         }

@@ -32,7 +32,7 @@ public class UserManagementService(UserManager<User> userManager, AppDbContext d
             Email = email,
             EmailConfirmed = true,
             Name = name,
-            CallSign = NormalizeCallSign(callSign),
+            CallSign = CallSign.NormalizeFormat(callSign),
             Role = role,
             // The admin picked this password, so the owner must replace it before doing anything
             // else. Cleared by ChangePasswordAsync below / the self-service page.
@@ -128,7 +128,7 @@ public class UserManagementService(UserManager<User> userManager, AppDbContext d
             return UserActionResult.NotFound;
         }
 
-        user.CallSign = NormalizeCallSign(callSign);
+        user.CallSign = CallSign.NormalizeFormat(callSign);
         await userManager.UpdateAsync(user);
 
         var now = timeProvider.GetUtcNow().UtcDateTime;
@@ -138,9 +138,6 @@ public class UserManagementService(UserManager<User> userManager, AppDbContext d
 
         return UserActionResult.Success;
     }
-
-    private static string? NormalizeCallSign(string? callSign) =>
-        string.IsNullOrWhiteSpace(callSign) ? null : callSign.Trim().ToUpperInvariant();
 
     /// <summary>Replaces a TeamAdmin/SessionManager's team memberships wholesale — the actual
     /// mechanism behind issue #19 (a Session Manager can belong to multiple teams). Diffs the

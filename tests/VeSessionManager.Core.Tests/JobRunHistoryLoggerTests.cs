@@ -18,6 +18,48 @@ public class JobRunHistoryLoggerTests
         return new AppDbContext(options);
     }
 
+    /// <summary>
+    /// A Worker restart cancels every in-flight job. Recording those as ordinary failures put a red
+    /// row on the ops dashboard for every restart, which is how people learn to ignore red rows.
+    /// </summary>
+    [Fact]
+    public async Task RunAsync_WhenCancelledByHostShutdown_RecordsShutdownRatherThanAnException()
+    {
+        await using var dbContext = CreateContext();
+        var sut = new JobRunHistoryLogger(dbContext, NullLogger<JobRunHistoryLogger>.Instance);
+        using var cts = new CancellationTokenSource();
+
+        await sut.RunAsync("TestJob", ct =>
+        {
+            cts.Cancel();
+            ct.ThrowIfCancellationRequested();
+            return Task.CompletedTask;
+        }, null, cts.Token);
+
+        var history = Assert.Single(dbContext.JobRunHistories);
+        Assert.False(history.Success);
+        Assert.Equal("Cancelled by host shutdown.", history.ErrorMessage);
+    }
+
+    /// <summary>
+    /// The guard above keys off the token, not the exception type — an OperationCanceledException
+    /// thrown by the job's own logic while nobody asked for cancellation is a real fault and must
+    /// still be recorded as one.
+    /// </summary>
+    [Fact]
+    public async Task RunAsync_WhenJobThrowsCancellationWithoutShutdown_StillRecordsAFailure()
+    {
+        await using var dbContext = CreateContext();
+        var sut = new JobRunHistoryLogger(dbContext, NullLogger<JobRunHistoryLogger>.Instance);
+
+        await sut.RunAsync("TestJob", _ => throw new OperationCanceledException("an inner timeout"),
+            null, CancellationToken.None);
+
+        var history = Assert.Single(dbContext.JobRunHistories);
+        Assert.False(history.Success);
+        Assert.Equal("an inner timeout", history.ErrorMessage);
+    }
+
     [Fact]
     public async Task RunAsync_OnSuccess_RecordsSuccessfulRun()
     {

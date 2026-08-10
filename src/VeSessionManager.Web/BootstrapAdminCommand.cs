@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using VeSessionManager.Core;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Entities;
 
@@ -71,7 +72,9 @@ public static class BootstrapAdminCommand
             Name = name,
             Email = email,
             UserName = email,
-            CallSign = string.IsNullOrWhiteSpace(callSign) ? null : callSign.ToUpperInvariant(),
+            // Was missing the Trim() every other call site had, so a pasted call sign kept its
+            // trailing space (audit T25). Shared helper now, so it cannot drift again.
+            CallSign = CallSign.NormalizeFormat(callSign),
             Role = UserRole.SystemAdmin,
             // No email-confirmation infrastructure exists (Program.cs sets RequireConfirmedAccount
             // false); marking it confirmed keeps this account consistent with every other one.

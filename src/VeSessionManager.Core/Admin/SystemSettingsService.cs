@@ -76,17 +76,11 @@ public class SystemSettingsService(AppDbContext dbContext, TimeProvider timeProv
         settings.UpdatedByUserId = userId;
         settings.UpdatedUtc = now;
 
-        dbContext.AuditLogs.Add(new AuditLog
-        {
-            UserId = userId,
-            Action = "SystemSettingsUpdated",
-            EntityType = nameof(SystemSettings),
-            EntityId = SingletonId,
-            TimestampUtc = now,
-            // TestModeOverrideEmail is deliberately omitted from the audit trail — it's an admin's
-            // own inbox address, not secret, but no other field here logs a raw email address either.
-            Details = $"PiiRetentionWindowDays={piiRetentionWindowDays?.ToString() ?? "null"}, UlsWatcherIntervalHours={ulsWatcherIntervalHours}, UlsWatcherStartHourEt={ulsWatcherStartHourEt}, SessionIngestionIntervalMinutes={sessionIngestionIntervalMinutes}, TestModeEnabled={testModeEnabled}."
-        });
+        // TestModeOverrideEmail is deliberately omitted from the audit trail — it's an admin's
+        // own inbox address, not secret, but no other field here logs a raw email address either.
+        dbContext.AddAuditLog(userId, "SystemSettingsUpdated", nameof(SystemSettings), SingletonId,
+            $"PiiRetentionWindowDays={piiRetentionWindowDays?.ToString() ?? "null"}, UlsWatcherIntervalHours={ulsWatcherIntervalHours}, UlsWatcherStartHourEt={ulsWatcherStartHourEt}, SessionIngestionIntervalMinutes={sessionIngestionIntervalMinutes}, TestModeEnabled={testModeEnabled}.",
+            now);
 
         await dbContext.SaveChangesAsync(cancellationToken);
         return SystemSettingsActionResult.Success;
