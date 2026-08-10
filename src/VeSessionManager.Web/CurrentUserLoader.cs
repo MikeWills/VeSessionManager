@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using VeSessionManager.Core.Data;
@@ -30,5 +31,39 @@ public static class CurrentUserLoader
             .Include(u => u.UserTeams)
             .Include(u => u.ManagedByUser).ThenInclude(m => m!.UserTeams)
             .FirstOrDefaultAsync(u => u.Id == userId);
+    }
+
+    /// <summary>Key for the per-request cache below. Scoped to this class; nothing else writes it.</summary>
+    private const string CachedUserItemKey = "VeSessionManager.CurrentUser";
+
+    /// <summary>
+    /// Same load, cached for the lifetime of one request.
+    ///
+    /// <para>A signed-in page render loads the user two to three times: once in the page handler and
+    /// once or twice in <c>_AppLayout</c> (which needs the team name and the nav badge counts). Each
+    /// load is a three-table include, and every authenticated page pays it.</para>
+    ///
+    /// <para><b>Use this only for reads.</b> The cached instance comes from the same scoped
+    /// DbContext, so it is the same tracked entity a handler would get — fine for authorization
+    /// checks and display, which is all any caller does today. A handler that wanted to *modify* the
+    /// current user should load it itself and be explicit about that.</para>
+    ///
+    /// <para>Deliberately still routes through <see cref="GetUserWithManagerAsync"/> rather than a
+    /// bare <c>GetUserAsync</c>: a user loaded without <c>UserTeams</c> silently gives every scoped
+    /// role an empty team set (see CLAUDE.md's Known Constraints), and a cache is exactly the place
+    /// that mistake would spread from.</para>
+    /// </summary>
+    public static async Task<User?> GetCachedUserWithManagerAsync(
+        this UserManager<User> userManager, AppDbContext dbContext, HttpContext httpContext, ClaimsPrincipal principal)
+    {
+        if (httpContext.Items.TryGetValue(CachedUserItemKey, out var cached))
+        {
+            // Stored even when null, so an anonymous request does not re-query on every layout read.
+            return (User?)cached;
+        }
+
+        var user = await userManager.GetUserWithManagerAsync(dbContext, principal);
+        httpContext.Items[CachedUserItemKey] = user;
+        return user;
     }
 }

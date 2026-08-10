@@ -63,11 +63,14 @@ public class FeeConfigurationsModel(AppDbContext dbContext, UserManager<User> us
             return;
         }
 
-        var referencedIds = await dbContext.Sessions.Select(s => s.FeeConfigurationId).ToListAsync();
+        // "Is this fee configuration in use?" is a correlated EXISTS, not a list scan. This used to
+        // pull every session's FeeConfigurationId in the deployment into memory — a row per session
+        // ever run, growing forever — purely to test membership for the handful of rows on screen.
         FeeConfigurations = await dbContext.FeeConfigurations
             .Where(f => f.VecId == VecId)
             .OrderByDescending(f => f.EffectiveDate)
-            .Select(f => new FeeConfigRow(f.Id, f.EffectiveDate, f.FeeCollectionEnabled, f.ExamFeeAmount, f.RetainedAmount, f.YouthExamFeeAmount, f.Notes, referencedIds.Contains(f.Id)))
+            .Select(f => new FeeConfigRow(f.Id, f.EffectiveDate, f.FeeCollectionEnabled, f.ExamFeeAmount, f.RetainedAmount, f.YouthExamFeeAmount, f.Notes,
+                dbContext.Sessions.Any(s => s.FeeConfigurationId == f.Id)))
             .ToListAsync();
     }
 

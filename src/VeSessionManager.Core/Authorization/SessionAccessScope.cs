@@ -166,9 +166,15 @@ public class SessionAccessScope
         }
 
         var effectiveTeamIds = GetEffectiveTeamIds(user) ?? [];
-        return effectiveTeamIds
-            .Join(await dbContext.Teams.ToListAsync(), id => id, t => t.Id, (_, t) => new ValueTuple<int, string>(t.Id, t.Name))
-            .OrderBy(t => t.Item2)
-            .ToList();
+
+        // Filter and project in SQL rather than materializing every Team. Loading whole entities
+        // here was not just wasteful: Team's credential columns run through EncryptedStringConverter,
+        // so this decrypted every team's ExamTools/Zoom/Square/SMTP secrets on every page render that
+        // shows the team picker, purely to read two columns it already had one of.
+        return await dbContext.Teams
+            .Where(t => effectiveTeamIds.Contains(t.Id))
+            .OrderBy(t => t.Name)
+            .Select(t => new ValueTuple<int, string>(t.Id, t.Name))
+            .ToListAsync();
     }
 }
