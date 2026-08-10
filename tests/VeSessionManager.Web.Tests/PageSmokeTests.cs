@@ -188,6 +188,40 @@ public class PageSmokeTests : IAsyncLifetime
             $"GET {url} as an anonymous visitor returned {(int)response.StatusCode} — it should challenge or refuse.");
     }
 
+    /// <summary>
+    /// The session list projects its rows rather than loading Session entities, so every cell it
+    /// renders comes from an expression EF has to translate. The crawl above only proves the page
+    /// does not throw — it would pass just as happily with every column blank, which is exactly what
+    /// a projection that dropped a field would look like.
+    /// </summary>
+    [Fact]
+    public async Task TheSessionListRendersItsProjectedColumns()
+    {
+        using var client = _factory.CreateClientAs(UserRole.SystemAdmin);
+
+        // The seeded session is a week old, so the default "Last 7 + Upcoming" range may exclude it.
+        var response = await client.GetAsync("/SessionManager?applied=true&dateRange=&pageSize=25");
+        response.EnsureSuccessStatusCode();
+        var html = await response.Content.ReadAsStringAsync();
+
+        // Assert against the row, not the page. Team names appear in the team-filter dropdown and
+        // "Completed" is one of the status checkboxes, so both are present even when the list renders
+        // zero rows — the first version of this test asserted on those and would have passed against
+        // a projection that returned nothing at all.
+        // Detail is @page "{id:int}", so the row link is path-style, not a query string.
+        var rowLink = $"/SessionManager/Detail/{_factory.Seeded.SessionId}";
+        Assert.Contains(rowLink, html);
+
+        // Everything from here on is inside that one row: the cells the projection has to fill.
+        var row = html[html.IndexOf("<tbody", StringComparison.Ordinal)..html.IndexOf("</tbody>", StringComparison.Ordinal)];
+        Assert.Contains("ARRL", row);       // Vec.Name — replaced an Include
+        Assert.Contains("TEST-TEAM", row);  // Team.Name — replaced an Include
+        Assert.Contains(">1<", row);        // the candidate count that used to cost every candidate row
+        // The seeded session has ExamToolsClosedUtc set and no TestingCompletedUtc — the exact case
+        // that used to render "Active" forever, and the reason Session.IsCompleted exists.
+        Assert.Contains("Completed", row);
+    }
+
     /// <summary>A role without access must be refused rather than shown a VE's home address.</summary>
     [Fact]
     public async Task ASessionManagerCannotReachTheVeDirectory()
