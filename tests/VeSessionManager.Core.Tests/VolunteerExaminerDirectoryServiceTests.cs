@@ -187,7 +187,7 @@ public class VolunteerExaminerDirectoryServiceTests
         var (_, membershipOnA) = await SeedVeAsync(dbContext, teamA, "N2SPG", "Sam Granger");
 
         var management = CreateManagement(dbContext);
-        var (_, teamBTag) = await management.CreateTagAsync(teamB.Id, "Team member", 0, userId: 1, CancellationToken.None);
+        var (_, teamBTag) = await management.CreateTagAsync(teamB.Id, "Team member", 0, null, userId: 1, CancellationToken.None);
 
         var result = await management.SetTagsAsync(membershipOnA.Id, [teamBTag!.Id], userId: 1, CancellationToken.None);
 
@@ -203,8 +203,8 @@ public class VolunteerExaminerDirectoryServiceTests
         var (_, membership) = await SeedVeAsync(dbContext, team, "N2SPG", "Sam Granger");
 
         var management = CreateManagement(dbContext);
-        var (_, member) = await management.CreateTagAsync(team.Id, "Team member", 0, 1, CancellationToken.None);
-        var (_, lead) = await management.CreateTagAsync(team.Id, "Team lead", 1, 1, CancellationToken.None);
+        var (_, member) = await management.CreateTagAsync(team.Id, "Team member", 0, null, 1, CancellationToken.None);
+        var (_, lead) = await management.CreateTagAsync(team.Id, "Team lead", 1, null, 1, CancellationToken.None);
 
         await management.SetTagsAsync(membership.Id, [member!.Id, lead!.Id], 1, CancellationToken.None);
         Assert.Equal(2, dbContext.VeTagAssignments.Count());

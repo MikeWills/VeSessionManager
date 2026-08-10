@@ -247,6 +247,13 @@ tbody tr.row-past:hover { background: var(--row-hover); }
 .chip-amber::before { background: var(--amber); }
 .chip-neutral { background: var(--chip-neutral-bg); color: var(--ink-soft); }
 .chip-neutral::before { background: #9AA39D; }
+/* A VE tag carrying a team-chosen colour. The colour arrives as the --tag-color custom property
+   (validated by VeTagColor on both write and render) and is used as a TINT, not a fill: 18% behind
+   the label, full strength on the dot. That keeps the text legible for every colour a picker can
+   produce — filling the chip would need luminance maths to pick the text colour, which gets it
+   wrong exactly at the mid-tones people choose most. */
+.chip-tag { background: color-mix(in srgb, var(--tag-color) 18%, transparent); color: var(--ink); }
+.chip-tag::before { background: var(--tag-color); }
 .chip-brick { background: var(--brick-dim); color: var(--chip-brick-text); }
 .chip-brick::before { background: var(--brick); }
 .flag { color: var(--amber); font-size: 14px; }
@@ -317,6 +324,27 @@ tbody tr.row-past:hover { background: var(--row-hover); }
 .ve-panel-inset:first-of-type { border-top: none; padding-top: 0; margin-top: 0; }
 .field-row { display: grid; grid-template-columns: 1fr; gap: 0 14px; align-items: end; }
 .inline-check { display: inline-flex; align-items: center; gap: 6px; margin: 0 14px 10px 0; font-size: 14px; }
+
+/* A team panel colour-coded by the VE's highest-priority coloured tag there. A left stripe rather
+   than a background wash: it reads at a glance down a list of teams without putting text on an
+   arbitrary colour. */
+.team-coded { border-left: 4px solid var(--tag-color); padding-left: 12px; }
+
+/* The tag's own colour as a dot beside its checkbox, so the picker on this page and the chips
+   elsewhere agree about which colour belongs to which tag. */
+.tag-label.has-color { display: inline-flex; align-items: center; gap: 6px; }
+.tag-label.has-color::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--tag-color); }
+
+/* Colour picker + its "Use" checkbox. The native swatch is tiny and unlabelled by default, so it
+   gets an explicit size and the same border treatment as the inputs beside it. */
+.color-field { display: inline-flex; align-items: center; gap: 10px; }
+.vesm .color-field input[type="color"] { width: 44px; height: 32px; padding: 2px; border: 1px solid var(--line-strong); border-radius: 5px; background: var(--surface); cursor: pointer; }
+.color-field .inline-check { margin: 0; font-size: 13px; }
+
+/* Two stacked row actions (Save + Delete on the tag table) sit side by side rather than stacking,
+   which is what a bare <form> per button would do. */
+.row-actions-cell { display: flex; gap: 8px; align-items: center; }
+.row-actions-cell form { margin: 0; }
 
 .section-head { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin: 8px 0 12px; }
 .section-head h2 { font-size: 15px; margin: 0; font-weight: 600; }

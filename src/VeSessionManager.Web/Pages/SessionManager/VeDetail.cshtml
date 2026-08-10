@@ -1,6 +1,7 @@
 @page "{id:int}"
 @using VeSessionManager.Core.Entities
 @model VeSessionManager.Web.Pages.SessionManager.VeDetailModel
+@using VeSessionManager.Core.VolunteerExaminers
 @{
     ViewData["Title"] = Model.Person.Name;
     ViewData["ActiveNav"] = "VeDirectory";
@@ -142,7 +143,12 @@
 
     @foreach (var view in Model.Memberships)
     {
-        <div class="ve-panel-inset">
+        @* The team is colour-coded by the highest-priority tag this VE carries here that has a
+           colour — "highest" meaning first in display order, i.e. the LOWEST SortOrder. The rule
+           lives in VeTagColor.ForTags so the screens can't each invent their own. *@
+        var teamColor = VeTagColor.ForTags(view.TeamTags.Where(t => view.SelectedTagIds.Contains(t.Id)));
+        <div class="ve-panel-inset @(teamColor is null ? null : "team-coded")"
+             style="@(teamColor is null ? null : $"--tag-color: {teamColor};")">
             <div class="section-head" style="margin:0 0 8px;">
                 <h3 style="margin:0;">
                     @view.Membership.Team.Name
@@ -160,9 +166,15 @@
                 </form>
             </div>
 
+            @* Both branches link to where the vocabulary is actually maintained. The empty state
+               used to be a dead end: it said tags didn't exist without saying that a page exists to
+               create them, which is exactly the question it prompts. *@
             @if (view.TeamTags.Count == 0)
             {
-                <p class="session-sub">This team has no tags defined yet.</p>
+                <p class="session-sub">
+                    This team has no tags defined yet.
+                    <a asp-page="/SessionManager/VeTags" asp-route-teamId="@view.Membership.TeamId">Add tags for @view.Membership.Team.Name</a>.
+                </p>
             }
             else
             {
@@ -170,13 +182,18 @@
                     <input type="hidden" name="membershipId" value="@view.Membership.Id" />
                     @foreach (var tag in view.TeamTags)
                     {
+                        var checkColor = VeTagColor.ForStyle(tag.Color);
                         <label class="inline-check">
                             <input type="checkbox" name="tagIds" value="@tag.Id" @(view.SelectedTagIds.Contains(tag.Id) ? "checked" : "") />
-                            <span>@tag.Name</span>
+                            <span class="tag-label @(checkColor is null ? null : "has-color")"
+                                  style="@(checkColor is null ? null : $"--tag-color: {checkColor};")">@tag.Name</span>
                         </label>
                     }
                     <button type="submit" class="btn-secondary btn-sm">Save tags</button>
                 </form>
+                <p class="session-sub">
+                    <a asp-page="/SessionManager/VeTags" asp-route-teamId="@view.Membership.TeamId">Manage @view.Membership.Team.Name tags</a>
+                </p>
             }
         </div>
     }

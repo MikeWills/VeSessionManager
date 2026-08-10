@@ -152,6 +152,52 @@ Two consequences of that, both deliberate:
 - The **CSV export is audit-logged** where Job History's is not — a screen someone reads and a file
   they can mail onward are different kinds of exposure.
 
+### Editing and colors (2026-08-09)
+
+A tag was originally **create-and-delete only**. Changing its display order or fixing a typo meant
+deleting it and adding it back — and deleting cascades the assignments away, so correcting a
+*display detail* silently untagged everyone who had it. `SortOrder`'s own doc comment promised a team
+could "put its most-used tags first", which the app had no way to actually do after the fact.
+
+`UpdateTagAsync` edits in place. The row keeps its id, so assignments survive **by construction**
+rather than by care.
+
+Tags also carry an optional `#RRGGBB` **color**, set with a native color picker. It shows three
+places: the tag's chip in the directory, a dot beside its checkbox on the VE page, and — the point of
+the request — a **stripe down the team panel** on a VE's detail page, so a team is identifiable at a
+glance.
+
+**The winning color is the highest-priority tag that has one**, where "highest" means shown first,
+i.e. the **lowest** `SortOrder`. Those two phrasings read like opposites, so the rule lives in one
+place (`VeTagColor.ForTags`) with a test of its own. An *uncolored* higher tag doesn't win by being
+first — it has no color to contribute — because someone who colors only their "Team lead" tag expects
+that color to show.
+
+Two implementation notes worth keeping:
+
+- **A tag color is the first user-supplied value in this app written into a CSS context.** Razor
+  HTML-encodes the attribute, which stops it escaping into *markup* — but not into the *stylesheet*.
+  A stored `red; background-image: url(https://evil/x)` is valid HTML and would be honored as CSS,
+  and the CSP allows inline styles (`style-src 'unsafe-inline'`), so nothing downstream blocks it. The
+  value is pinned to exactly `#RRGGBB` and checked **on write and again on render**
+  (`VeTagColor.ForStyle`) — the second check covers a row that arrived some other way.
+- **The color renders as a tint, not a fill** — 18% behind the label, full strength on the dot.
+  Filling the chip would need luminance math to choose the text color, and that gets it wrong exactly
+  at the mid-tones people pick most.
+- **`<input type="color">` has no empty state.** It always posts a value, and `#000000` is a color a
+  team might genuinely want, so it can't stand in for "none". A paired "Use" checkbox expresses that
+  instead.
+
+### Finding the page
+
+Three links, all added after the VE detail page turned out to be a dead end — it said a team had no
+tags without mentioning that a page exists to create them, which is the exact question it prompts:
+
+- The empty state links to that team's tag page.
+- A team with tags gets a "Manage *team* tags" link under the checkboxes.
+- The directory's team dropdown links to the selected team's tags — omitted on "all teams", where
+  there is no single vocabulary to edit.
+
 ### Tags grant no access
 
 Several starting names ("admin", "session manager", "team lead") match real roles in this app,

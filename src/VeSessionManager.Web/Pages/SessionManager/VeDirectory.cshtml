@@ -1,6 +1,7 @@
 @page
 @using VeSessionManager.Core.Entities
 @model VeSessionManager.Web.Pages.SessionManager.VeDirectoryModel
+@using VeSessionManager.Core.VolunteerExaminers
 @{
     ViewData["Title"] = "VE Directory";
     ViewData["ActiveNav"] = "VeDirectory";
@@ -35,6 +36,13 @@
                 }
                 <hr />
                 <button type="submit" class="item">Apply</button>
+                @* Straight to the tag vocabulary for whichever team is selected — the directory is
+                   where someone notices a tag is missing or misnamed. Omitted on "all teams", where
+                   there is no single vocabulary to edit. *@
+                @if (Model.TeamId is { } selectedTeamId)
+                {
+                    <a class="item" asp-page="/SessionManager/VeTags" asp-route-teamId="@selectedTeamId">Manage this team's tags</a>
+                }
             </div>
         </div>
     }
@@ -125,7 +133,14 @@ else
                         {
                             @foreach (var tag in row.Tags)
                             {
-                                <span class="chip chip-neutral">@tag.Name</span>
+                                @* A tint rather than a flood: the background is the chosen colour at
+                                   low opacity and only the dot is full strength, so the label stays
+                                   legible whatever anyone picks. Flooding the chip would need
+                                   luminance maths to decide the text colour, and that gets it wrong
+                                   at the edges. ForStyle re-validates — see VeTagColor. *@
+                                var tagColor = VeTagColor.ForStyle(tag.Color);
+                                <span class="chip @(tagColor is null ? "chip-neutral" : "chip-tag")"
+                                      style="@(tagColor is null ? null : $"--tag-color: {tagColor};")">@tag.Name</span>
                             }
                         }
                         @if (!row.IsActive)
