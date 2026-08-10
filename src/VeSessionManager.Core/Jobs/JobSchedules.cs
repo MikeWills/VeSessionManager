@@ -104,6 +104,7 @@ public static class JobSchedules
     public const string UlsWatcher = "UlsWatcher";
     public const string LicenseWatch = "LicenseWatch";
     public const string VeLicenseWatch = "VeLicenseWatch";
+    public const string Reconciliation = "Reconciliation";
 
     /// <summary>Eastern hour the renewal-monitor refresh is pinned to — after FCC's 02:00 ET run, before the morning.</summary>
     public const int LicenseWatchStartHourEt = 6;
@@ -121,6 +122,14 @@ public static class JobSchedules
             DefaultIntervalSeconds: 300,
             SettingsSource: JobSettingsSource.SessionIngestion,
             TickIntervalSeconds: 300),
+
+        new(Reconciliation,
+            "ExamTools reconciliation",
+            "Compares ExamTools' closed-session feed against this app's own data and records anything missing. Read-only — it reports, it never repairs.",
+            JobCadenceKind.IntervalFromWorkerStart,
+            "Jobs:ReconciliationIntervalHours",
+            DefaultIntervalHours: 24,
+            TickIntervalSeconds: 86400),
 
         new(HistoricalImport,
             "Historical import",

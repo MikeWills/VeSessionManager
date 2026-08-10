@@ -44,6 +44,10 @@ jobs:
   deploy:
     needs: build-and-test
     runs-on: ubuntu-latest
+    # Needed by the Publish release step below. Scoped to this job rather than the workflow so
+    # build-and-test keeps the default read-only token.
+    permissions:
+      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -176,3 +180,33 @@ jobs:
             sudo journalctl -u $WEB_SERVICE -n 50 --no-pager
             exit 1
           "
+
+      # Everything below runs only once the deploy is proven good. A release is a claim that this
+      # version works somewhere, so publishing one for a failed deploy would be worse than
+      # publishing nothing -- which is why this sits after the health check rather than next to the
+      # publish steps that produced the binaries.
+      - name: Package binaries
+        run: |
+          mkdir -p artifacts
+          (cd publish/worker && zip -qr ../../artifacts/vesessionmanager-worker-${{ github.ref_name }}.zip .)
+          (cd publish/web    && zip -qr ../../artifacts/vesessionmanager-web-${{ github.ref_name }}.zip .)
+          ls -lh artifacts
+
+      # Notes come from the annotated tag message, which is where the release notes for this repo
+      # are already written -- see the v0.2.x tags. --verify-tag refuses to invent a release for a
+      # tag that does not exist, and the || branch makes a re-run of an already-released tag upload
+      # the assets again instead of failing the whole deploy after it has already succeeded.
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh release view "${{ github.ref_name }}" >/dev/null 2>&1; then
+            echo "Release ${{ github.ref_name }} already exists -- updating its assets."
+            gh release upload "${{ github.ref_name }}" artifacts/* --clobber
+          else
+            gh release create "${{ github.ref_name }}" \
+              --title "${{ github.ref_name }}" \
+              --notes-from-tag \
+              --verify-tag \
+              artifacts/*
+          fi

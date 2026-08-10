@@ -49,6 +49,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options, IDataProtectio
     public DbSet<UserTeam> UserTeams => Set<UserTeam>();
     public DbSet<HistoricalImportRequest> HistoricalImportRequests => Set<HistoricalImportRequest>();
     public DbSet<WatchedLicense> WatchedLicenses => Set<WatchedLicense>();
+    public DbSet<ReconciliationFinding> ReconciliationFindings => Set<ReconciliationFinding>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -328,6 +329,20 @@ public class AppDbContext(DbContextOptions<AppDbContext> options, IDataProtectio
             b.HasOne(u => u.ResolvedByUser).WithMany().HasForeignKey(u => u.ResolvedByUserId).OnDelete(DeleteBehavior.Restrict);
             b.HasOne(u => u.MatchedPayment).WithMany().HasForeignKey(u => u.MatchedPaymentId).OnDelete(DeleteBehavior.Restrict);
             b.Property(u => u.AmountUsd).HasPrecision(10, 2);
+        });
+
+        modelBuilder.Entity<ReconciliationFinding>(b =>
+        {
+            // One standing row per (team, kind, remote session) — the sweep refreshes rather than
+            // re-adds, so a discrepancy that persists for a month is one finding, not thirty.
+            // Unique because a duplicate would double-count the badge, which is the one number here
+            // anybody reads at a glance.
+            b.HasIndex(f => new { f.TeamId, f.Kind, f.ExamToolsSessionId }).IsUnique();
+
+            // The findings page and the badge both filter on "still open".
+            b.HasIndex(f => new { f.TeamId, f.ResolvedUtc });
+
+            b.HasOne(f => f.Team).WithMany().HasForeignKey(f => f.TeamId).OnDelete(DeleteBehavior.Cascade);
         });
     }
 }

@@ -8,6 +8,7 @@ using VeSessionManager.Core.Discord;
 using VeSessionManager.Core.Email;
 using VeSessionManager.Core.ExamResults;
 using VeSessionManager.Core.ExamTools;
+using VeSessionManager.Core.Reconciliation;
 using VeSessionManager.Core.Uls;
 using VeSessionManager.Core.Ingestion;
 using VeSessionManager.Core.Jobs;
@@ -105,6 +106,7 @@ builder.Services.AddSingleton<IUlsLookupClient, ExamToolsUlsLookupClient>();
 builder.Services.AddScoped<UlsWatcherService>();
 builder.Services.AddScoped<LicenseWatchService>();
 builder.Services.AddScoped<VolunteerExaminerLicenseWatchService>();
+builder.Services.AddScoped<ReconciliationService>();
 
 builder.Services.Configure<PaymentReminderOptions>(builder.Configuration.GetSection(PaymentReminderOptions.SectionName));
 builder.Services.AddScoped<PaymentReminderService>();
@@ -131,6 +133,7 @@ builder.Services.AddHostedService<PaymentReminderJob>();
 builder.Services.AddHostedService<SquareLinkPurgeJob>();
 builder.Services.AddHostedService<PiiPurgeJob>();
 builder.Services.AddHostedService<HistoricalImportJob>();
+builder.Services.AddHostedService<ReconciliationJob>();
 
 var host = builder.Build();
 

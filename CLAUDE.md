@@ -97,6 +97,10 @@ would be pure duplication — and goes straight to `CHANGELOG.md` instead. Non-p
 redesigns, hardening passes) start here and move to `CHANGELOG.md` once the section is at/over the
 cap and a newer entry needs to be added; oldest goes first.
 
+- **Page smoke tests: every Razor page, actually rendered (2026-08-10).** See `docs/page-smoke-tests.md`. Nothing in this repo rendered Razor — not the build, not the 928 Core tests, not the static-HTML layout harness — and two bugs reached a deployment the same day because of it: a `<form>` carrying both `action=` and `asp-page-handler` (which `FormTagHelper` throws on **at render time**, so the build was clean and the page 500'd for anyone who opened it), and an anchor where `asp-all-route-data` silently discarded `asp-route-id` so every link to a VE pointed at nobody. `WebApplicationFactory` now boots the app in-process against throwaway SQLite and requests **every page discovered from the app's own `EndpointDataSource`**, so a new page is covered the day it exists. **The fake auth scheme is half the value**: every interesting page is `[Authorize]`d, so before this the only way to see one was for a human to log in and click. Seeding happens *before* the host starts because `Program.cs` refuses to start when no account can sign in — the harness satisfies that guard rather than weakening it. And **an empty `href` is the signature of the whole bug class**: the first version of the link test only followed links that had one, and passed with the original bug reintroduced.
+
+- **ExamTools reconciliation: a nightly check that the feed and the database agree (2026-08-10).** See `docs/reconciliation.md`. Every other job trusts ingestion to have worked; nothing checked, which is how the historical import could drop the last day of every calendar month since it was written and only be caught because HRCC's own Discord bot reads the same API directly and disagreed about whether a VE was still active. Per team, daily: diff ExamTools' closed-session feed against ours over a trailing 120 days. Findings are a **standing table plus a nav badge**, not just a run summary — Job History rotates, renders green because the *job* succeeded, and a count inside a sentence cannot be acted on, which is the same shape as the `sent 0, failed 1` incident. Each row carries the import range that would fix it; the job itself is **read-only**. The tests cover the bookkeeping and cannot cover the premise: the bug that prompted it had a full green suite because the fakes shared our own wrong assumption.
+
 - **VE management, license tracking, self-service and invitations (2026-08-07).** Issues #142 and
   #107, built together because neither could answer its own question alone. See
   `docs/ve-management.md` (the person model), `docs/ve-license-tracking.md`,
@@ -194,26 +198,6 @@ cap and a newer entry needs to be added; oldest goes first.
   zooms on focus below that and never zooms back**, which is also why several inline
   `style="…font-size:12px…"` attributes became `.menu-input` — a media query cannot override an
   inline style.
-- **Worker resilience + duplicate-payment index (2026-08-03).** See `docs/worker-resilience.md`.
-  Every job's per-tick work outside `JobRunHistoryLogger` (settings/team loads, queue peeks,
-  `LastIngestionRunUtc` stamps) was unguarded, so one transient "database is locked" stopped the
-  **whole Worker** — the StopHost trap the constructor rule never covered. New
-  `JobTick.GuardedAsync` wraps each tick; `JobRunHistoryLogger` now protects both its saves and
-  clears the change tracker on the failure path (a poisoned entity was retried by its own `finally`).
-  Separately, a filtered unique index on `Payments (CandidateId, Reason)` closes the Web-vs-Worker
-  double-payment race; creation saves per candidate so one collision can't roll back the pass, and
-  the migration deletes only provably-inert duplicates, failing loudly on any that were linked/paid.
-- **Audit P0/P1 batch: PII purge gap, youth idempotency key, wedged imports, STARTTLS (2026-08-03).**
-  See `docs/pii-purge.md`, `docs/youth-payment-confirmation.md`, `docs/historical-import.md`.
-  `CandidatePiiFields.Clear` never nulled `FirstName` (added Phase 4, never added to the helper), so
-  every purged candidate kept their given name — now cleared, guarded by a **reflection test** that
-  fails when a new `Candidate` field isn't explicitly classified, plus a self-healing repair pass for
-  rows already purged under the old definition. `YouthPaymentConfirmationService` minted a fresh
-  Square idempotency key per attempt despite a comment claiming persist-once (duplicate live order on
-  crash-retry) — key now cleared with the standard link it belongs to, then `??=`. Historical import
-  left `Running` by a Worker restart wedged that team's queue forever — now reclaimed after
-  `StaleRunningThreshold` and **resumed at the interrupted chunk** via `Skip(ChunksCompleted)`. Team
-  Settings' STARTTLS checkbox gained its hidden `false` sibling (it could never be turned off).
 Everything through Phase 0-10's initial build (ExamTools ingestion, Zoom/Discord, Square, email
 notifications, FCC ULS watcher, payment reminders, VE tracking, VEC submission tracker, admin
 auth/config/candidate-actions, PII purge), the public privacy page, and everything dated 2026-08-01

@@ -1,0 +1,105 @@
+@page
+@using VeSessionManager.Core.Entities
+@model VeSessionManager.Web.Pages.Admin.ReconciliationModel
+@{
+    ViewData["Title"] = "Reconciliation";
+    ViewData["ActiveNav"] = "Reconciliation";
+    Layout = "_AppLayout";
+}
+
+<div class="page-head">
+    <div>
+        <p class="eyebrow">Admin</p>
+        <h1>Reconciliation</h1>
+    </div>
+</div>
+
+<p class="session-sub" style="margin-bottom:18px;">
+    What ExamTools has that this app doesn't. Checked nightly against the live feed for the last
+    @VeSessionManager.Core.Reconciliation.ReconciliationService.Window.Days days, per team.
+    Nothing here is repaired automatically — a re-import is real load on ExamTools, so it stays a
+    decision rather than a reflex.
+</p>
+
+@if (Model.OpenCount == 0 && !Model.IncludeResolved)
+{
+    <div class="ve-panel">
+        <p><strong>Nothing outstanding.</strong> Every closed session ExamTools reports in the window is present here, with at least as many candidates on it.</p>
+        <p class="session-sub">
+            If that seems too good, check Admin → Job Schedule for when the sweep last ran: an empty
+            list and a sweep that stopped running look identical from here.
+        </p>
+    </div>
+}
+
+<form method="get" class="filters" style="margin-bottom:18px; align-items:flex-start;">
+    <label class="toggle-pill @(Model.IncludeResolved ? "active" : "")">
+        <input type="checkbox" name="includeResolved" value="true" data-autosubmit @(Model.IncludeResolved ? "checked" : "") />
+        <span>Show resolved</span>
+    </label>
+</form>
+
+@if (Model.Findings.Count > 0)
+{
+    <div class="table-scroll">
+    <table class="cards" data-sortable="reconciliation-findings">
+        <thead>
+            <tr>
+                <th>Session date</th>
+                <th>Team</th>
+                <th>What's wrong</th>
+                <th>First seen</th>
+                <th>Status</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var row in Model.Findings)
+            {
+                <tr>
+                    <td data-sort-value="@row.Finding.SessionDateUtc.ToString("o")">
+                        @EasternTimeFormatter.Format(row.Finding.SessionDateUtc, "MMM d, yyyy")
+                    </td>
+                    <td>@row.TeamName</td>
+                    <td>
+                        <span class="chip @(row.Finding.Kind == ReconciliationFindingKind.MissingSession ? "chip-brick" : "chip-amber")">
+                            @(row.Finding.Kind == ReconciliationFindingKind.MissingSession ? "Missing session" : "Candidate count")
+                        </span>
+                        <div class="session-sub">@row.Finding.Detail</div>
+                    </td>
+                    <td data-sort-value="@row.Finding.FirstSeenUtc.ToString("o")">
+                        @EasternTimeFormatter.Format(row.Finding.FirstSeenUtc, "MMM d, yyyy")
+                    </td>
+                    <td>
+                        @if (row.Finding.ResolvedUtc is { } resolved)
+                        {
+                            <span class="chip chip-green">Resolved</span>
+                            <div class="session-sub">@EasternTimeFormatter.Format(resolved, "MMM d")</div>
+                        }
+                        else
+                        {
+                            <span class="chip chip-neutral">Open</span>
+                            @* A stale last-seen on an OPEN finding means the sweep stopped running,
+                               not that the problem went away — worth showing rather than hiding. *@
+                            <div class="session-sub">last seen @EasternTimeFormatter.Format(row.Finding.LastSeenUtc, "MMM d")</div>
+                        }
+                    </td>
+                    <td>
+                        @if (row.Finding.ResolvedUtc is null)
+                        {
+                            <form method="post" asp-page-handler="Import">
+                                <input type="hidden" name="findingId" value="@row.Finding.Id" />
+                                <input type="hidden" name="includeResolved" value="@Model.IncludeResolved" />
+                                <button type="submit" class="btn-secondary btn-sm"
+                                        title="Queues a historical import for @row.ImportStart.ToString("MMMM yyyy") — idempotent, so it adds only what's missing">
+                                    Re-import @row.ImportStart.ToString("MMM yyyy")
+                                </button>
+                            </form>
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+    </div>
+}

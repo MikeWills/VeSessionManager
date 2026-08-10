@@ -452,3 +452,8 @@ app.Run();
 // Required because the --create-admin branch above returns an exit code, which makes the
 // top-level entry point int-returning.
 return 0;
+
+// Makes the top-level entry point reachable by WebApplicationFactory<Program> in
+// VeSessionManager.Web.Tests, which boots this app in-process and renders every page. Top-level
+// statements otherwise compile to an internal Program class the test assembly cannot name.
+public partial class Program;
