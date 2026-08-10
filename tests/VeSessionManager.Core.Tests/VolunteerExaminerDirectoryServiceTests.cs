@@ -211,6 +211,69 @@ public class VolunteerExaminerDirectoryServiceTests
         Assert.Contains(rows, r => r.VolunteerExaminer.CallSign == "W7QQQ");
     }
 
+    /// <summary>
+    /// "Guest" means no tag at all, and it is derived rather than stored — so it can't be picked the
+    /// way a tag name is, and gets a sentinel value instead.
+    /// </summary>
+    [Fact]
+    public async Task FilteringByTheGuestSentinel_ReturnsOnlyPeopleWithNoTags()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext, "TEAM-A");
+        var (_, tagged) = await SeedVeAsync(dbContext, team, "N2SPG", "Sam Granger");
+        await SeedVeAsync(dbContext, team, "K4ZZZ", "Untagged Person");
+
+        var management = CreateManagement(dbContext);
+        var (_, tag) = await management.CreateTagAsync(team.Id, "Member", 0, null, 1, CancellationToken.None);
+        await management.SetTagsAsync(tagged.Id, [tag!.Id], 1, CancellationToken.None);
+
+        var rows = await new VolunteerExaminerDirectoryService(dbContext).GetDirectoryAsync(
+            null, search: null, tagName: VolunteerExaminerDirectoryService.GuestTagFilter,
+            includeInactive: false, CancellationToken.None);
+
+        Assert.Equal("K4ZZZ", Assert.Single(rows).VolunteerExaminer.CallSign);
+    }
+
+    /// <summary>
+    /// The case that decided where this filter is applied. Someone tagged on HRCC and untagged on
+    /// MARC is <b>not</b> a guest — the row shows their HRCC tags and no Guest chip.
+    ///
+    /// <para>Filtering the membership query would have matched their untagged MARC membership and
+    /// returned them anyway, producing a row in a guests-only list that visibly carries tags. The
+    /// filter therefore runs after the grouping, where IsGuest actually exists.</para>
+    /// </summary>
+    [Fact]
+    public async Task SomeoneTaggedOnOneTeamAndUntaggedOnAnotherIsNotAGuest()
+    {
+        await using var dbContext = CreateContext();
+        var teamA = await SeedTeamAsync(dbContext, "TEAM-A");
+        var teamB = await SeedTeamAsync(dbContext, "TEAM-B");
+        var (person, onA) = await SeedVeAsync(dbContext, teamA, "N2SPG", "Sam Granger");
+
+        // Same person, second team, no tags there.
+        dbContext.VeTeamMemberships.Add(new VeTeamMembership { VolunteerExaminerId = person.Id, TeamId = teamB.Id, IsActive = true });
+        await dbContext.SaveChangesAsync();
+
+        var management = CreateManagement(dbContext);
+        var (_, tag) = await management.CreateTagAsync(teamA.Id, "Member", 0, null, 1, CancellationToken.None);
+        await management.SetTagsAsync(onA.Id, [tag!.Id], 1, CancellationToken.None);
+
+        var acrossBothTeams = await new VolunteerExaminerDirectoryService(dbContext).GetDirectoryAsync(
+            null, search: null, tagName: VolunteerExaminerDirectoryService.GuestTagFilter,
+            includeInactive: false, CancellationToken.None);
+
+        Assert.Empty(acrossBothTeams);
+
+        // Scoped to the team where they hold no tag, they ARE a guest — the row's tags narrow to
+        // that team, so the answer narrows with it. That is the collapse being scope-relative, not
+        // a contradiction.
+        var scopedToTeamB = await new VolunteerExaminerDirectoryService(dbContext).GetDirectoryAsync(
+            [teamB.Id], search: null, tagName: VolunteerExaminerDirectoryService.GuestTagFilter,
+            includeInactive: false, CancellationToken.None);
+
+        Assert.Single(scopedToTeamB);
+    }
+
     /// <summary>SQLite's `=` on TEXT is case-sensitive, so a team that typed "member" would drop out of a "Member" filter without this.</summary>
     [Fact]
     public async Task FilteringByTagName_IgnoresCase()

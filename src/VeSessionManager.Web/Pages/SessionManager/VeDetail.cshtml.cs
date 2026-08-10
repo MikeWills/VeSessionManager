@@ -34,6 +34,37 @@ public class VeDetailModel(
     VolunteerExaminerManagementService managementService,
     TimeProvider timeProvider) : PageModel
 {
+    // ---- Where the user came from -------------------------------------------------------------
+    // The directory's filters ride along on the link in and back out again, so returning from a VE
+    // lands on the list the user actually had rather than an unfiltered first page. Purely
+    // navigational — nothing on this page reads them for anything else.
+    //
+    // Explicit route values rather than one returnUrl string: nothing to parse, no open-redirect
+    // surface, and the tag helper encodes them. The cost is that EVERY handler's redirect has to
+    // carry them, which is what SelfRoute exists to stop anyone forgetting.
+
+    [BindProperty(SupportsGet = true)]
+    public int? TeamId { get; set; }
+
+    [BindProperty(SupportsGet = true)]
+    public string? Search { get; set; }
+
+    [BindProperty(SupportsGet = true)]
+    public string? TagName { get; set; }
+
+    [BindProperty(SupportsGet = true)]
+    public bool IncludeInactive { get; set; }
+
+    /// <summary>
+    /// Route values for a redirect back to <i>this</i> page that keep the directory's filters.
+    /// Every POST handler returns through this — dropping them in one handler is exactly how a back
+    /// link silently stops working, and only after a save, which is the hardest kind to notice.
+    /// </summary>
+    private object SelfRoute() => new { id = Id, teamId = TeamId, search = Search, tagName = TagName, includeInactive = IncludeInactive };
+
+    /// <summary>False renders as no query parameter at all, keeping the common URL clean.</summary>
+    public string? IncludeInactiveRouteValue => IncludeInactive ? "true" : null;
+
     [BindProperty(SupportsGet = true)]
     public int Id { get; set; }
 
@@ -111,7 +142,7 @@ public class VeDetailModel(
             HttpContext.RequestAborted);
 
         SetStatus(result, "Contact details saved.");
-        return RedirectToPage(new { id = Id });
+        return RedirectToPage(SelfRoute());
     }
 
     public async Task<IActionResult> OnPostTagsAsync(int membershipId, int[]? tagIds)
@@ -127,7 +158,7 @@ public class VeDetailModel(
 
         var result = await managementService.SetTagsAsync(membershipId, tagIds ?? [], (await CurrentUserAsync()).Id, HttpContext.RequestAborted);
         SetStatus(result, "Tags saved.");
-        return RedirectToPage(new { id = Id });
+        return RedirectToPage(SelfRoute());
     }
 
     public async Task<IActionResult> OnPostMembershipActiveAsync(int membershipId, bool isActive)
@@ -142,7 +173,7 @@ public class VeDetailModel(
 
         var result = await managementService.SetMembershipActiveAsync(membershipId, isActive, (await CurrentUserAsync()).Id, HttpContext.RequestAborted);
         SetStatus(result, isActive ? "VE reactivated on this team." : "VE retired from this team.");
-        return RedirectToPage(new { id = Id });
+        return RedirectToPage(SelfRoute());
     }
 
     public async Task<IActionResult> OnPostAddAccreditationAsync(int vecId)
@@ -152,7 +183,7 @@ public class VeDetailModel(
 
         var result = await managementService.AddAccreditationAsync(Id, vecId, (await CurrentUserAsync()).Id, HttpContext.RequestAborted);
         SetStatus(result, "Accreditation added.");
-        return RedirectToPage(new { id = Id });
+        return RedirectToPage(SelfRoute());
     }
 
     public async Task<IActionResult> OnPostRemoveAccreditationAsync(int accreditationId)
@@ -167,7 +198,7 @@ public class VeDetailModel(
 
         var result = await managementService.RemoveAccreditationAsync(accreditationId, (await CurrentUserAsync()).Id, HttpContext.RequestAborted);
         SetStatus(result, "Accreditation removed.");
-        return RedirectToPage(new { id = Id });
+        return RedirectToPage(SelfRoute());
     }
 
     private Task<User> CurrentUserAsync() =>

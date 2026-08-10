@@ -199,6 +199,37 @@ The filter is now keyed on the tag **name** (`?tagName=`, previously `?tagId=`),
 distinct name, carrying the same color the chips use. Matching is case-insensitive on both sides
 because SQLite's `=` on TEXT is not, and the row-level dedupe was already `OrdinalIgnoreCase`.
 
+### Filtering to guests
+
+"Guest" means no tag at all, and it is **derived rather than stored** — a stored guest tag would need
+adding and removing in step with every other tag change, and would be wrong in between. So it cannot
+be one of the names in the filter list and takes a sentinel value
+(`VolunteerExaminerDirectoryService.GuestTagFilter`, a leading-space string no team can define
+because tag names are trimmed and required non-empty — same trick as the invite picker's untagged
+option).
+
+**It is applied after the grouping, not in the query**, and that placement is the whole design.
+`IsGuest` is a property of the finished row — no tags on *any* team in scope — while the query is
+still per-membership. Filtering memberships would match the untagged half of someone who *is* tagged
+elsewhere, and their row would then appear in a guests-only list visibly carrying tags. Both cases
+are pinned by tests, including the one that makes it look inconsistent and isn't: scoped to the team
+where they hold no tag, that person **is** a guest, because the row's tags narrow to that team too.
+
+### Filters survive a visit to a VE
+
+Clicking into a VE and coming back used to land on an unfiltered first page. The filters now ride
+along on the link in and back out again, as **explicit route values rather than one `returnUrl`
+string** — nothing to parse and no open-redirect surface.
+
+The cost is that every one of `VeDetail`'s POST handlers has to carry them on its redirect, which is
+what `SelfRoute()` exists to stop anyone forgetting: drop them in one handler and the back link
+breaks only after a save, which is the hardest kind of breakage to notice.
+
+**Sort was already remembered** and needed no change — the table sorter persists its column and
+direction per page in `localStorage` (see `app.js`), verified against the real script rather than
+assumed from the comment. One case does discard it by design: a remembered column that no longer
+exists, which the directory can't hit because its Teams column always renders.
+
 ### Finding the page
 
 Three links, all added after the VE detail page turned out to be a dead end — it said a team had no

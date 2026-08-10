@@ -56,10 +56,18 @@
     @if (Model.AvailableTags.Count > 0)
     {
         var activeTag = Model.AvailableTags.FirstOrDefault(t => string.Equals(t.Name, Model.TagName, StringComparison.OrdinalIgnoreCase));
+        var tagLabel = Model.IsGuestFilter ? "Guests" : activeTag?.Name ?? "Any";
         <div class="filter-dropdown">
-            <button type="button" class="kebab @(Model.TagName is not null ? "active" : "")">Tag: @(activeTag?.Name ?? "Any") <i class="bi bi-caret-down-fill" aria-hidden="true"></i></button>
+            <button type="button" class="kebab @(Model.TagName is not null ? "active" : "")">Tag: @tagLabel <i class="bi bi-caret-down-fill" aria-hidden="true"></i></button>
             <div class="menu">
                 <label class="item"><input type="radio" name="tagName" value="" @(Model.TagName is null ? "checked" : "") /> Any tag</label>
+                @* Guests are people with no tag at all, which is derived rather than stored — so it
+                   cannot be one of the names below and takes a sentinel value instead. *@
+                <label class="item">
+                    <input type="radio" name="tagName" value="@VolunteerExaminerDirectoryService.GuestTagFilter"
+                           @(Model.IsGuestFilter ? "checked" : "") />
+                    Guests (no tags)
+                </label>
                 @* One entry per distinct NAME. Two teams both defining "Member" used to produce two
                    identical radio buttons, and picking either hid the other team's people. *@
                 @foreach (var tag in Model.AvailableTags)
@@ -129,7 +137,11 @@ else
                             </a>
                         }
                     </td>
-                    <td><a asp-page="/SessionManager/VeDetail" asp-route-id="@row.VolunteerExaminer.Id">@row.VolunteerExaminer.Name</a></td>
+                    <td><a asp-page="/SessionManager/VeDetail" asp-route-id="@row.VolunteerExaminer.Id"
+                            asp-route-teamId="@Model.TeamId"
+                            asp-route-search="@Model.Search"
+                            asp-route-tagName="@Model.TagName"
+                            asp-route-includeInactive="@(Model.IncludeInactive ? "true" : null)">@row.VolunteerExaminer.Name</a></td>
                     <td>@row.TeamSummary</td>
                     <td>
                         @if (row.IsGuest)
@@ -172,7 +184,11 @@ else
                     <td data-sort-value="@(row.LastWorkedUtc?.ToString("o") ?? "")">
                         @(row.LastWorkedUtc?.ToString("MMM d, yyyy") ?? "Never")
                     </td>
-                    <td><a asp-page="/SessionManager/VeDetail" asp-route-id="@row.VolunteerExaminer.Id">Manage</a></td>
+                    <td><a asp-page="/SessionManager/VeDetail" asp-route-id="@row.VolunteerExaminer.Id"
+                            asp-route-teamId="@Model.TeamId"
+                            asp-route-search="@Model.Search"
+                            asp-route-tagName="@Model.TagName"
+                            asp-route-includeInactive="@(Model.IncludeInactive ? "true" : null)">Manage</a></td>
                 </tr>
             }
         </tbody>

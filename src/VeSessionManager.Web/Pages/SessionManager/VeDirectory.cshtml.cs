@@ -39,9 +39,12 @@ public class VeDirectoryModel(
     [BindProperty(SupportsGet = true)]
     public string? Search { get; set; }
 
-    /// <summary>The tag NAME being filtered on — see AvailableTags for why this is not an id.</summary>
+    /// <summary>The tag NAME being filtered on — see AvailableTags for why this is not an id. Also carries the guest sentinel.</summary>
     [BindProperty(SupportsGet = true)]
     public string? TagName { get; set; }
+
+    /// <summary>Whether the tag filter is currently the "no tags at all" sentinel rather than a real tag name.</summary>
+    public bool IsGuestFilter => string.Equals(TagName, VolunteerExaminerDirectoryService.GuestTagFilter, StringComparison.Ordinal);
 
     [BindProperty(SupportsGet = true)]
     public bool IncludeInactive { get; set; }
