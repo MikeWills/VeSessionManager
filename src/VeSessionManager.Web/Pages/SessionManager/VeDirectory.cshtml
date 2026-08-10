@@ -217,7 +217,7 @@ else
                             </a>
                         }
                     </td>
-                    <td><a asp-page="/SessionManager/VeDetail" asp-route-id="@row.VolunteerExaminer.Id" asp-all-route-data="@Model.FilterRoute">@row.VolunteerExaminer.Name</a></td>
+                    <td><a asp-page="/SessionManager/VeDetail" asp-all-route-data="@Model.DetailRoute(row.VolunteerExaminer.Id)">@row.VolunteerExaminer.Name</a></td>
                     <td>@row.TeamSummary</td>
                     <td>
                         @if (row.IsGuest)
@@ -260,7 +260,7 @@ else
                     <td data-sort-value="@(row.LastWorkedUtc?.ToString("o") ?? "")">
                         @(row.LastWorkedUtc?.ToString("MMM d, yyyy") ?? "Never")
                     </td>
-                    <td><a asp-page="/SessionManager/VeDetail" asp-route-id="@row.VolunteerExaminer.Id" asp-all-route-data="@Model.FilterRoute">Manage</a></td>
+                    <td><a asp-page="/SessionManager/VeDetail" asp-all-route-data="@Model.DetailRoute(row.VolunteerExaminer.Id)">Manage</a></td>
                 </tr>
             }
         </tbody>
