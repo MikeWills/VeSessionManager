@@ -50,6 +50,31 @@ public class VeDirectoryModel(
     [BindProperty(SupportsGet = true)]
     public bool IncludeInactive { get; set; }
 
+    /// <summary>The derived FCC status a row must have — the same value its License chip shows.</summary>
+    [BindProperty(SupportsGet = true)]
+    public WatchedLicenseStatus? LicenseStatus { get; set; }
+
+    /// <summary>Which "last worked" bucket is chosen — see VeDirectoryFilterRoute for the keys.</summary>
+    [BindProperty(SupportsGet = true)]
+    public string? Worked { get; set; }
+
+    [BindProperty(SupportsGet = true)]
+    public DateTime? WorkedFrom { get; set; }
+
+    [BindProperty(SupportsGet = true)]
+    public DateTime? WorkedTo { get; set; }
+
+    /// <summary>
+    /// Every filter as route values, for links that must come back to this exact list. Built in one
+    /// place because a link that forgets one filter breaks the round trip silently, and only for the
+    /// filter nobody remembered.
+    /// </summary>
+    public Dictionary<string, string?> FilterRoute => VeDirectoryFilterRoute.Build(
+        TeamId, Search, TagName, IncludeInactive, LicenseStatus, Worked, WorkedFrom, WorkedTo);
+
+    /// <summary>Every status a VE row can actually show, for the filter menu. Ordered as the enum declares them: unknown-ish first, then healthy, then increasingly wrong.</summary>
+    public static IReadOnlyList<WatchedLicenseStatus> LicenseStatuses => Enum.GetValues<WatchedLicenseStatus>();
+
     public bool HasTeamContext { get; private set; }
     public string TeamSummaryLabel { get; private set; } = "All teams";
     public IReadOnlyList<(int Id, string Name)> AvailableTeams { get; private set; } = [];
@@ -160,7 +185,7 @@ public class VeDirectoryModel(
             };
         }
 
-        return RedirectToPage(new { teamId = TeamId, search = Search, tagName = TagName, includeInactive = IncludeInactive });
+        return RedirectToPage(FilterRoute);
     }
 
     public async Task OnGetAsync()
@@ -195,6 +220,20 @@ public class VeDirectoryModel(
             .Select(g => new TagOption(g.First().Name, VeTagColor.ForTags(g)))
             .OrderBy(o => o.Name, StringComparer.OrdinalIgnoreCase)];
 
-        Rows = await directoryService.GetDirectoryAsync(teamIds, Search, TagName, IncludeInactive, HttpContext.RequestAborted);
+        var (workedFromUtc, workedToUtc) = VeDirectoryFilterRoute.Resolve(Worked, WorkedFrom, WorkedTo, UtcNow);
+
+        Rows = await directoryService.GetDirectoryAsync(
+            teamIds,
+            new VeDirectoryFilter
+            {
+                Search = Search,
+                TagName = TagName,
+                IncludeInactive = IncludeInactive,
+                LicenseStatus = LicenseStatus,
+                WorkedFromUtc = workedFromUtc,
+                WorkedToUtc = workedToUtc
+            },
+            UtcNow,
+            HttpContext.RequestAborted);
     }
 }

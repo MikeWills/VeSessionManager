@@ -11,11 +11,7 @@
 <div class="page-head">
     <div>
         @* Carries the filters back, so returning from a VE lands on the list the user left. *@
-        <p class="eyebrow"><a asp-page="/SessionManager/VeDirectory"
-                              asp-route-teamId="@Model.TeamId"
-                              asp-route-search="@Model.Search"
-                              asp-route-tagName="@Model.TagName"
-                              asp-route-includeInactive="@Model.IncludeInactiveRouteValue">VE Directory</a></p>
+        <p class="eyebrow"><a asp-page="/SessionManager/VeDirectory" asp-all-route-data="@Model.FilterRoute">VE Directory</a></p>
         <h1>@Model.Person.Name @if (Model.Person.CallSign is { } call) { <span class="mono">@call</span> }</h1>
     </div>
 </div>

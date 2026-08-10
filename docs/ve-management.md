@@ -215,6 +215,42 @@ elsewhere, and their row would then appear in a guests-only list visibly carryin
 are pinned by tests, including the one that makes it look inconsistent and isn't: scoped to the team
 where they hold no tag, that person **is** a guest, because the row's tags narrow to that team too.
 
+### License status and last worked
+
+Added 2026-08-10. Both narrow the directory the same way the guest filter does — **after the
+grouping**, because both are properties of the finished row: the license status is derived in C# from
+the cached snapshot (`DeriveSnapshotStatus` does not translate to SQL) and last-worked is the maximum
+across the teams in scope. Filtering memberships would answer a different question than the column
+shows.
+
+**License status** offers the same values the row's own chip displays, so the filter and the column
+can never disagree about what a status is called.
+
+**Last worked** offers Any time / Last 3 months / Last 6 months / Last year / Over a year ago /
+Custom range. "Over a year ago" is an **upper** bound where every other option is a lower one — it is
+the one anyone actually reaches for, since it answers "who has gone quiet", and the one whose
+direction is easiest to invert by accident, so it has its own test.
+
+**Someone who has never worked a session matches none of the time options.** Both readings are claims
+about a date that does not exist, so a hand-added prospect appears only in the unfiltered list rather
+than being filed under "gone quiet" alongside a genuinely lapsed VE.
+
+Custom dates arrive as plain calendar dates and are anchored to **Eastern** midnight and end-of-day.
+Treating them as UTC would drop an evening session on the boundary date, since every session here
+runs after 8pm local — the same trap the year-boundary count had to avoid.
+
+### One place builds the filter route
+
+The filters have to survive list → VE → save → back to the same list, so every link and every
+redirect on both pages carries every filter. That was four repeated `asp-route-*` attributes at five
+sites and would have become seven. `VeDirectoryFilterRoute.Build` is now the single source, used by
+the row links, the CSV export, the add-VE form, the breadcrumb back, and `VeDetail`'s own redirects. A
+forgotten attribute breaks the round trip silently, and only for the filter nobody remembered.
+
+For the same reason the service takes a **`VeDirectoryFilter` record** rather than a parameter list:
+five filters of nullable strings and bools in positional order is where a call site quietly passes
+the wrong one.
+
 ### Filters survive a visit to a VE
 
 Clicking into a VE and coming back used to land on an unfiltered first page. The filters now ride

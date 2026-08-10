@@ -51,14 +51,19 @@ public class VolunteerExaminerDirectoryService(AppDbContext dbContext)
     /// context and returns nothing.</param>
     /// <param name="includeInactive">Retired memberships are hidden by default: the roster answers
     /// "who can we call on", and a list that keeps everyone who ever served would stop being that.</param>
-    /// <param name="tagName">Filters by tag <b>name</b> rather than id, matching how the rows render.
-    /// Tags are per-team vocabulary, so "Member" on HRCC and "Member" on MARC are two rows with one
-    /// meaning; the directory already collapses them into a single chip, and filtering by id would
-    /// have shown one of them and silently hidden the other's people. Pass
-    /// <see cref="GuestTagFilter"/> for "no tags at all".</param>
+    /// <param name="filter">Everything the screen can narrow by. A record rather than a growing
+    /// parameter list: this reached five filters, and positional booleans next to nullable strings
+    /// are exactly where a call site silently passes the wrong one.</param>
+    /// <param name="nowUtc">Taken once by the caller so every row's license status is derived against
+    /// the same instant — a list evaluated across a day boundary could otherwise disagree with
+    /// itself about who is expiring.</param>
     public async Task<IReadOnlyList<VeDirectoryRow>> GetDirectoryAsync(
-        IReadOnlyList<int>? teamIds, string? search, string? tagName, bool includeInactive, CancellationToken cancellationToken)
+        IReadOnlyList<int>? teamIds, VeDirectoryFilter filter, DateTime nowUtc, CancellationToken cancellationToken)
     {
+        var search = filter.Search;
+        var tagName = filter.TagName;
+        var includeInactive = filter.IncludeInactive;
+
         var query = dbContext.VeTeamMemberships
             .Include(m => m.VolunteerExaminer)
             .Include(m => m.Team)
@@ -174,7 +179,19 @@ public class VolunteerExaminerDirectoryService(AppDbContext dbContext)
                     person.CallSign is { } call && duplicateCallSigns.Contains(call));
             })
             .OrderBy(r => r.VolunteerExaminer.Name)
-            .Where(r => !guestsOnly || r.IsGuest)];
+            .Where(r => !guestsOnly || r.IsGuest)
+            // License status and last-worked join guests on this side of the grouping, and for the
+            // same reason: both are properties of the finished ROW. LastWorkedUtc is the max across
+            // the teams in scope, and the license status is derived in C# from the cached snapshot
+            // (DeriveSnapshotStatus is not translatable to SQL). Filtering memberships would answer
+            // a different question than the column shows.
+            .Where(r => filter.LicenseStatus is not { } status
+                || r.VolunteerExaminer.DeriveSnapshotStatus(nowUtc) == status)
+            // A row with no last-worked date satisfies NEITHER "worked since X" nor "not worked
+            // since X": both are claims about a date that does not exist. A hand-added prospect is
+            // therefore only ever in the unfiltered list, which is the honest answer.
+            .Where(r => filter.WorkedFromUtc is not { } from || (r.LastWorkedUtc is { } d && d >= from))
+            .Where(r => filter.WorkedToUtc is not { } to || (r.LastWorkedUtc is { } d && d <= to))];
     }
 
     /// <summary>Everything one person's detail screen needs, or null when the id doesn't exist.</summary>
@@ -207,4 +224,30 @@ public record VeDirectoryRow(
     public bool IsActive => Teams.Any(t => t.IsActive);
 
     public string TeamSummary => string.Join(", ", Teams.Select(t => t.IsActive ? t.Name : $"{t.Name} (retired)"));
+}
+
+/// <summary>
+/// What the VE Directory can narrow by. A record rather than a parameter list, because this reached
+/// five filters and a row of positional nullable strings and bools is where a call site quietly
+/// passes the wrong one.
+/// </summary>
+public record VeDirectoryFilter
+{
+    /// <summary>Call sign, name or email, case-insensitive.</summary>
+    public string? Search { get; init; }
+
+    /// <summary>A tag name, or <see cref="VolunteerExaminerDirectoryService.GuestTagFilter"/> for "no tags at all".</summary>
+    public string? TagName { get; init; }
+
+    /// <summary>Retired memberships are hidden by default: the directory answers "who can we call on".</summary>
+    public bool IncludeInactive { get; init; }
+
+    /// <summary>The derived FCC status a row must have — the same value its License chip shows.</summary>
+    public WatchedLicenseStatus? LicenseStatus { get; init; }
+
+    /// <summary>Last worked on or after this instant.</summary>
+    public DateTime? WorkedFromUtc { get; init; }
+
+    /// <summary>Last worked on or before this instant — how "hasn't worked in over a year" is expressed.</summary>
+    public DateTime? WorkedToUtc { get; init; }
 }
