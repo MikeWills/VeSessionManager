@@ -56,15 +56,34 @@ public class VeDetailModel(
     [BindProperty(SupportsGet = true)]
     public bool IncludeInactive { get; set; }
 
+    [BindProperty(SupportsGet = true)]
+    public WatchedLicenseStatus? LicenseStatus { get; set; }
+
+    [BindProperty(SupportsGet = true)]
+    public string? Worked { get; set; }
+
+    [BindProperty(SupportsGet = true)]
+    public DateTime? WorkedFrom { get; set; }
+
+    [BindProperty(SupportsGet = true)]
+    public DateTime? WorkedTo { get; set; }
+
+    /// <summary>The directory's filters, for the link back. Same builder the directory itself uses, so the two cannot disagree about which filters exist.</summary>
+    public Dictionary<string, string?> FilterRoute => VeDirectoryFilterRoute.Build(
+        TeamId, Search, TagName, IncludeInactive, LicenseStatus, Worked, WorkedFrom, WorkedTo);
+
     /// <summary>
     /// Route values for a redirect back to <i>this</i> page that keep the directory's filters.
     /// Every POST handler returns through this — dropping them in one handler is exactly how a back
     /// link silently stops working, and only after a save, which is the hardest kind to notice.
     /// </summary>
-    private object SelfRoute() => new { id = Id, teamId = TeamId, search = Search, tagName = TagName, includeInactive = IncludeInactive };
+    private RouteValueDictionary SelfRoute()
+    {
+        var values = new RouteValueDictionary(FilterRoute) { ["id"] = Id };
+        return values;
+    }
 
-    /// <summary>False renders as no query parameter at all, keeping the common URL clean.</summary>
-    public string? IncludeInactiveRouteValue => IncludeInactive ? "true" : null;
+
 
     [BindProperty(SupportsGet = true)]
     public int Id { get; set; }

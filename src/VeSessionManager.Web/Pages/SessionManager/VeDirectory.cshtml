@@ -15,12 +15,8 @@
     </div>
     @* Carries the current filters, so the file matches the list on screen rather than silently
        exporting everything. *@
-    <a class="btn-secondary btn-sm"
-       asp-page-handler="Export"
-       asp-route-teamId="@Model.TeamId"
-       asp-route-search="@Model.Search"
-       asp-route-tagName="@Model.TagName"
-       asp-route-includeInactive="@Model.IncludeInactive">Export CSV</a>
+    @* Export-what-you-see: every filter, or the file and the screen disagree about who is on it. *@
+    <a class="btn-secondary btn-sm" asp-page-handler="Export" asp-all-route-data="@Model.FilterRoute">Export CSV</a>
 </div>
 
 <form method="get" class="filters" style="margin-bottom:20px; align-items:flex-start;">
@@ -87,6 +83,42 @@
 
     @* Retired memberships are hidden by default: the directory answers "who can we call on", and a
        list that keeps everyone who ever served stops being that. *@
+    <div class="filter-dropdown">
+        <button type="button" class="kebab @(Model.LicenseStatus is not null ? "active" : "")">License: @(Model.LicenseStatus?.Label() ?? "Any") <i class="bi bi-caret-down-fill" aria-hidden="true"></i></button>
+        <div class="menu">
+            <label class="item"><input type="radio" name="licenseStatus" value="" @(Model.LicenseStatus is null ? "checked" : "") /> Any status</label>
+            @foreach (var status in VeDirectoryModel.LicenseStatuses)
+            {
+                <label class="item">
+                    <input type="radio" name="licenseStatus" value="@status" @(Model.LicenseStatus == status ? "checked" : "") />
+                    @status.Label()
+                </label>
+            }
+            <hr />
+            <button type="submit" class="item">Apply</button>
+        </div>
+    </div>
+
+    @* "Over a year ago" is an upper bound where the others are lower bounds — it is the one anyone
+       actually reaches for, since it answers "who has gone quiet". A VE with no last-worked date at
+       all matches none of these: both readings are claims about a date that does not exist. *@
+    <div class="filter-dropdown">
+        <button type="button" class="kebab @(Model.Worked is not null ? "active" : "")">Worked: @VeDirectoryFilterRoute.Label(Model.Worked) <i class="bi bi-caret-down-fill" aria-hidden="true"></i></button>
+        <div class="menu">
+            <label class="item"><input type="radio" name="worked" value="" @(Model.Worked is null ? "checked" : "") /> Any time</label>
+            <label class="item"><input type="radio" name="worked" value="@VeDirectoryFilterRoute.Last3Months" @(Model.Worked == VeDirectoryFilterRoute.Last3Months ? "checked" : "") /> Last 3 months</label>
+            <label class="item"><input type="radio" name="worked" value="@VeDirectoryFilterRoute.Last6Months" @(Model.Worked == VeDirectoryFilterRoute.Last6Months ? "checked" : "") /> Last 6 months</label>
+            <label class="item"><input type="radio" name="worked" value="@VeDirectoryFilterRoute.LastYear" @(Model.Worked == VeDirectoryFilterRoute.LastYear ? "checked" : "") /> Last year</label>
+            <label class="item"><input type="radio" name="worked" value="@VeDirectoryFilterRoute.OverAYear" @(Model.Worked == VeDirectoryFilterRoute.OverAYear ? "checked" : "") /> Over a year ago</label>
+            <hr />
+            <label class="item"><input type="radio" name="worked" value="@VeDirectoryFilterRoute.Custom" @(Model.Worked == VeDirectoryFilterRoute.Custom ? "checked" : "") /> Custom range</label>
+            <label class="item">From <input type="date" name="workedFrom" value="@Model.WorkedFrom?.ToString("yyyy-MM-dd")" class="menu-input" /></label>
+            <label class="item">To <input type="date" name="workedTo" value="@Model.WorkedTo?.ToString("yyyy-MM-dd")" class="menu-input" /></label>
+            <hr />
+            <button type="submit" class="item">Apply</button>
+        </div>
+    </div>
+
     <label class="toggle-pill @(Model.IncludeInactive ? "active" : "")">
         <input type="checkbox" name="includeInactive" value="true" data-autosubmit @(Model.IncludeInactive ? "checked" : "") />
         <span>Show retired</span>
@@ -99,7 +131,7 @@
 }
 else
 {
-    @* Adding a VE by hand covers the one person ExamTools can never supply: a prospect the team is
+@* Adding a VE by hand covers the one person ExamTools can never supply: a prospect the team is
    watching who has not worked a session yet. Everyone else arrives through ingestion. *@
 <details class="ve-add">
     <summary>Add a VE</summary>
@@ -109,7 +141,7 @@ else
         duplicated.
     </p>
     <form method="post" asp-page-handler="Add" asp-antiforgery="true"
-          action="@Url.Page("/SessionManager/VeDirectory", "Add", new { teamId = Model.TeamId, search = Model.Search, tagName = Model.TagName, includeInactive = Model.IncludeInactive })"
+          action="@Url.Page("/SessionManager/VeDirectory", "Add", Model.FilterRoute)"
           class="field-row">
         <div class="field">
             <label for="addTeamId">Team</label>
@@ -178,11 +210,7 @@ else
                             </a>
                         }
                     </td>
-                    <td><a asp-page="/SessionManager/VeDetail" asp-route-id="@row.VolunteerExaminer.Id"
-                            asp-route-teamId="@Model.TeamId"
-                            asp-route-search="@Model.Search"
-                            asp-route-tagName="@Model.TagName"
-                            asp-route-includeInactive="@(Model.IncludeInactive ? "true" : null)">@row.VolunteerExaminer.Name</a></td>
+                    <td><a asp-page="/SessionManager/VeDetail" asp-route-id="@row.VolunteerExaminer.Id" asp-all-route-data="@Model.FilterRoute">@row.VolunteerExaminer.Name</a></td>
                     <td>@row.TeamSummary</td>
                     <td>
                         @if (row.IsGuest)
@@ -225,11 +253,7 @@ else
                     <td data-sort-value="@(row.LastWorkedUtc?.ToString("o") ?? "")">
                         @(row.LastWorkedUtc?.ToString("MMM d, yyyy") ?? "Never")
                     </td>
-                    <td><a asp-page="/SessionManager/VeDetail" asp-route-id="@row.VolunteerExaminer.Id"
-                            asp-route-teamId="@Model.TeamId"
-                            asp-route-search="@Model.Search"
-                            asp-route-tagName="@Model.TagName"
-                            asp-route-includeInactive="@(Model.IncludeInactive ? "true" : null)">Manage</a></td>
+                    <td><a asp-page="/SessionManager/VeDetail" asp-route-id="@row.VolunteerExaminer.Id" asp-all-route-data="@Model.FilterRoute">Manage</a></td>
                 </tr>
             }
         </tbody>

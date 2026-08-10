@@ -94,7 +94,7 @@ public class VolunteerExaminerDirectoryServiceTests
         await dbContext.SaveChangesAsync();
 
         var rows = await new VolunteerExaminerDirectoryService(dbContext)
-            .GetDirectoryAsync([team.Id], search: null, tagName: null, includeInactive: false, CancellationToken.None);
+            .GetDirectoryAsync([team.Id], new VeDirectoryFilter(), Now, CancellationToken.None);
 
         Assert.Equal(past.ScheduledStartUtc, Assert.Single(rows).LastWorkedUtc);
     }
@@ -123,12 +123,12 @@ public class VolunteerExaminerDirectoryServiceTests
         var service = new VolunteerExaminerDirectoryService(dbContext);
 
         // One person, one row, both teams named on it.
-        var merged = Assert.Single(await service.GetDirectoryAsync(null, null, null, false, CancellationToken.None));
+        var merged = Assert.Single(await service.GetDirectoryAsync(null, new VeDirectoryFilter(), Now, CancellationToken.None));
         Assert.Equal(2, merged.Teams.Count);
         Assert.Equal(forB.ScheduledStartUtc, merged.LastWorkedUtc);   // the more recent of the two
 
         // Filtered to team A, it answers team A's question.
-        var scoped = Assert.Single(await service.GetDirectoryAsync([teamA.Id], null, null, false, CancellationToken.None));
+        var scoped = Assert.Single(await service.GetDirectoryAsync([teamA.Id], new VeDirectoryFilter(), Now, CancellationToken.None));
         Assert.Equal(forA.ScheduledStartUtc, scoped.LastWorkedUtc);
         Assert.Equal("TEAM-A", Assert.Single(scoped.Teams).Name);
     }
@@ -141,7 +141,7 @@ public class VolunteerExaminerDirectoryServiceTests
         await SeedVeAsync(dbContext, team, "N2SPG", "Sam Granger");
 
         var rows = await new VolunteerExaminerDirectoryService(dbContext)
-            .GetDirectoryAsync([team.Id], search: null, tagName: null, includeInactive: false, CancellationToken.None);
+            .GetDirectoryAsync([team.Id], new VeDirectoryFilter(), Now, CancellationToken.None);
 
         Assert.True(Assert.Single(rows).IsGuest);
     }
@@ -157,8 +157,8 @@ public class VolunteerExaminerDirectoryServiceTests
             await CreateManagement(dbContext).SetMembershipActiveAsync(membership.Id, false, userId: 1, CancellationToken.None));
 
         var service = new VolunteerExaminerDirectoryService(dbContext);
-        Assert.Empty(await service.GetDirectoryAsync([team.Id], null, null, includeInactive: false, CancellationToken.None));
-        Assert.Single(await service.GetDirectoryAsync([team.Id], null, null, includeInactive: true, CancellationToken.None));
+        Assert.Empty(await service.GetDirectoryAsync([team.Id], new VeDirectoryFilter(), Now, CancellationToken.None));
+        Assert.Single(await service.GetDirectoryAsync([team.Id], new VeDirectoryFilter { IncludeInactive = true }, Now, CancellationToken.None));
     }
 
     /// <summary>Retiring someone must never remove the row — their session history references them by id.</summary>
@@ -203,7 +203,7 @@ public class VolunteerExaminerDirectoryServiceTests
         await management.SetTagsAsync(onB.Id, [tagOnB!.Id], 1, CancellationToken.None);
 
         var rows = await new VolunteerExaminerDirectoryService(dbContext)
-            .GetDirectoryAsync(null, search: null, tagName: "Member", includeInactive: false, CancellationToken.None);
+            .GetDirectoryAsync(null, new VeDirectoryFilter { TagName = "Member" }, Now, CancellationToken.None);
 
         // Both, not just whichever team's tag happened to be picked from the menu.
         Assert.Equal(2, rows.Count);
@@ -228,8 +228,8 @@ public class VolunteerExaminerDirectoryServiceTests
         await management.SetTagsAsync(tagged.Id, [tag!.Id], 1, CancellationToken.None);
 
         var rows = await new VolunteerExaminerDirectoryService(dbContext).GetDirectoryAsync(
-            null, search: null, tagName: VolunteerExaminerDirectoryService.GuestTagFilter,
-            includeInactive: false, CancellationToken.None);
+            null, new VeDirectoryFilter { TagName = VolunteerExaminerDirectoryService.GuestTagFilter },
+            Now, CancellationToken.None);
 
         Assert.Equal("K4ZZZ", Assert.Single(rows).VolunteerExaminer.CallSign);
     }
@@ -259,8 +259,8 @@ public class VolunteerExaminerDirectoryServiceTests
         await management.SetTagsAsync(onA.Id, [tag!.Id], 1, CancellationToken.None);
 
         var acrossBothTeams = await new VolunteerExaminerDirectoryService(dbContext).GetDirectoryAsync(
-            null, search: null, tagName: VolunteerExaminerDirectoryService.GuestTagFilter,
-            includeInactive: false, CancellationToken.None);
+            null, new VeDirectoryFilter { TagName = VolunteerExaminerDirectoryService.GuestTagFilter },
+            Now, CancellationToken.None);
 
         Assert.Empty(acrossBothTeams);
 
@@ -268,8 +268,8 @@ public class VolunteerExaminerDirectoryServiceTests
         // that team, so the answer narrows with it. That is the collapse being scope-relative, not
         // a contradiction.
         var scopedToTeamB = await new VolunteerExaminerDirectoryService(dbContext).GetDirectoryAsync(
-            [teamB.Id], search: null, tagName: VolunteerExaminerDirectoryService.GuestTagFilter,
-            includeInactive: false, CancellationToken.None);
+            [teamB.Id], new VeDirectoryFilter { TagName = VolunteerExaminerDirectoryService.GuestTagFilter },
+            Now, CancellationToken.None);
 
         Assert.Single(scopedToTeamB);
     }
@@ -287,7 +287,7 @@ public class VolunteerExaminerDirectoryServiceTests
         await management.SetTagsAsync(membership.Id, [tag!.Id], 1, CancellationToken.None);
 
         var rows = await new VolunteerExaminerDirectoryService(dbContext)
-            .GetDirectoryAsync(null, search: null, tagName: "  MEMBER  ", includeInactive: false, CancellationToken.None);
+            .GetDirectoryAsync(null, new VeDirectoryFilter { TagName = "  MEMBER  " }, Now, CancellationToken.None);
 
         Assert.Single(rows);
     }
@@ -342,7 +342,7 @@ public class VolunteerExaminerDirectoryServiceTests
         await SeedVeAsync(dbContext, team, "NP2UU", "Uma Unwin");
 
         var rows = await new VolunteerExaminerDirectoryService(dbContext)
-            .GetDirectoryAsync([team.Id], null, null, includeInactive: false, CancellationToken.None);
+            .GetDirectoryAsync([team.Id], new VeDirectoryFilter(), Now, CancellationToken.None);
 
         Assert.Equal(2, rows.Count(r => r.HasDuplicateCallSign));
         Assert.False(rows.Single(r => r.VolunteerExaminer.CallSign == "NP2UU").HasDuplicateCallSign);
@@ -363,7 +363,7 @@ public class VolunteerExaminerDirectoryServiceTests
         await SeedVeAsync(dbContext, teamB, "<UNKNOWN>", "<UNKNOWN>");
 
         var rows = await new VolunteerExaminerDirectoryService(dbContext)
-            .GetDirectoryAsync(null, null, null, includeInactive: false, CancellationToken.None);
+            .GetDirectoryAsync(null, new VeDirectoryFilter(), Now, CancellationToken.None);
 
         Assert.Equal(2, rows.Count);
         Assert.All(rows, r => Assert.False(r.HasDuplicateCallSign));
