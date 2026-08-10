@@ -8,6 +8,28 @@ that window, or immediately if it's phase-numbered work already summarized in "C
 design rationale for any entry still lives in its linked `/docs/*.md` file, not here or in
 CLAUDE.md — this file, like CLAUDE.md's Change Log, is pointers only.
 
+- **Worker resilience + duplicate-payment index (2026-08-03).** See `docs/worker-resilience.md`.
+  Every job's per-tick work outside `JobRunHistoryLogger` (settings/team loads, queue peeks,
+  `LastIngestionRunUtc` stamps) was unguarded, so one transient "database is locked" stopped the
+  **whole Worker** — the StopHost trap the constructor rule never covered. New
+  `JobTick.GuardedAsync` wraps each tick; `JobRunHistoryLogger` now protects both its saves and
+  clears the change tracker on the failure path (a poisoned entity was retried by its own `finally`).
+  Separately, a filtered unique index on `Payments (CandidateId, Reason)` closes the Web-vs-Worker
+  double-payment race; creation saves per candidate so one collision can't roll back the pass, and
+  the migration deletes only provably-inert duplicates, failing loudly on any that were linked/paid.
+
+- **Audit P0/P1 batch: PII purge gap, youth idempotency key, wedged imports, STARTTLS (2026-08-03).**
+  See `docs/pii-purge.md`, `docs/youth-payment-confirmation.md`, `docs/historical-import.md`.
+  `CandidatePiiFields.Clear` never nulled `FirstName` (added Phase 4, never added to the helper), so
+  every purged candidate kept their given name — now cleared, guarded by a **reflection test** that
+  fails when a new `Candidate` field isn't explicitly classified, plus a self-healing repair pass for
+  rows already purged under the old definition. `YouthPaymentConfirmationService` minted a fresh
+  Square idempotency key per attempt despite a comment claiming persist-once (duplicate live order on
+  crash-retry) — key now cleared with the standard link it belongs to, then `??=`. Historical import
+  left `Running` by a Worker restart wedged that team's queue forever — now reclaimed after
+  `StaleRunningThreshold` and **resumed at the interrupted chunk** via `Skip(ChunksCompleted)`. Team
+  Settings' STARTTLS checkbox gained its hidden `false` sibling (it could never be turned off).
+
 - **Public-internet hardening pass (2026-08-03).** See `docs/security-hardening-2026-08-03.md`
   (Tier 1 of `docs/audit-2026-08-03-tasks.md`). Rate limiting on `/Account/*` (20/min per IP, global
   limiter + no-limiter partition elsewhere) — which **required adding `UseForwardedHeaders`**, or

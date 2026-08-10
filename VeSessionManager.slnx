@@ -12,5 +12,6 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/VeSessionManager.Core.Tests/VeSessionManager.Core.Tests.csproj" />
+    <Project Path="tests/VeSessionManager.Web.Tests/VeSessionManager.Web.Tests.csproj" />
   </Folder>
 </Solution>
