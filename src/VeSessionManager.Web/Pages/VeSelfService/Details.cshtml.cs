@@ -22,9 +22,17 @@ namespace VeSessionManager.Web.Pages.VeSelfService;
 /// VE would be bounced. Naming the scheme is what makes it work, and it is also what stops the
 /// reverse: no admin page names this scheme, so a VE cookie opens nothing else.</para>
 ///
-/// <para>What a VE may change is deliberately narrow: their contact details, and their email through
-/// a confirmation sent to the address already on file. Not their tags, not their accreditations, not
-/// the admin-facing notes — those belong to the team, and one of them they should not even see.</para>
+/// <para>What a VE may change: their contact details, their email (through a confirmation sent to the
+/// address already on file), and <b>their VEC accreditations</b>. Not their tags and not the
+/// admin-facing notes — those are the team's opinion of the VE rather than facts about them, and one
+/// of them they should not even see.</para>
+///
+/// <para><b>Accreditations moved here 2026-08-10, reversing the original decision</b> that they
+/// belonged to the team. They never really did: no VEC publishes accreditation to this app, so an
+/// admin typing it is transcribing something the VE told them, and keeping it current was already
+/// documented as the VE's own responsibility (which is why number and expiry were dropped). Letting
+/// the holder maintain it removes a copy step rather than adding trust. Admins keep their own path
+/// for the VE who will not use self-service.</para>
 /// </summary>
 [Authorize(AuthenticationSchemes = VeSelfServiceAuth.Scheme)]
 public class DetailsModel(
@@ -41,6 +49,9 @@ public class DetailsModel(
 
     public VolunteerExaminer Person { get; private set; } = null!;
     public IReadOnlyList<string> Teams { get; private set; } = [];
+
+    /// <summary>Every VEC, for the add picker. Already-held ones are filtered out in the view so the list cannot offer a duplicate.</summary>
+    public IReadOnlyList<Vec> AllVecs { get; private set; } = [];
 
     public class InputModel
     {
@@ -126,6 +137,39 @@ public class DetailsModel(
         return RedirectToPage();
     }
 
+    public async Task<IActionResult> OnPostAddAccreditationAsync(int vecId)
+    {
+        var loaded = await LoadAsync();
+        if (loaded is not null) return loaded;
+
+        // userId null == "the VE did this themselves", which is what makes the audit entry honest
+        // about who asserted it.
+        var result = await managementService.AddAccreditationAsync(Person.Id, vecId, null, HttpContext.RequestAborted);
+
+        TempData[result == VeManagementResult.Success ? "StatusMessage" : "ErrorMessage"] = result switch
+        {
+            VeManagementResult.Success => "Accreditation added.",
+            VeManagementResult.AlreadyAccredited => "That VEC is already on your list.",
+            _ => "Could not add that accreditation."
+        };
+        return RedirectToPage();
+    }
+
+    public async Task<IActionResult> OnPostRemoveAccreditationAsync(int accreditationId)
+    {
+        var loaded = await LoadAsync();
+        if (loaded is not null) return loaded;
+
+        // mustBelongTo is the load-bearing argument: the id comes from a form, and without it a
+        // signed-in VE could delete another VE's accreditation by changing the number.
+        var result = await managementService.RemoveAccreditationAsync(
+            accreditationId, null, HttpContext.RequestAborted, mustBelongToVolunteerExaminerId: Person.Id);
+
+        TempData[result == VeManagementResult.Success ? "StatusMessage" : "ErrorMessage"] =
+            result == VeManagementResult.Success ? "Accreditation removed." : "Could not remove that accreditation.";
+        return RedirectToPage();
+    }
+
     public async Task<IActionResult> OnPostSignOutAsync()
     {
         await HttpContext.SignOutAsync(VeSelfServiceAuth.Scheme);
@@ -144,6 +188,7 @@ public class DetailsModel(
 
         var person = await dbContext.VolunteerExaminers
             .Include(v => v.TeamMemberships).ThenInclude(m => m.Team)
+            .Include(v => v.VecAccreditations).ThenInclude(a => a.Vec)
             .FirstOrDefaultAsync(v => v.Id == id.Value, HttpContext.RequestAborted);
 
         if (person is null)
@@ -156,6 +201,7 @@ public class DetailsModel(
 
         Person = person;
         Teams = [.. person.TeamMemberships.Where(m => m.IsActive).Select(m => m.Team.Name).OrderBy(n => n)];
+        AllVecs = await dbContext.Vecs.OrderBy(v => v.Name).ToListAsync(HttpContext.RequestAborted);
         return null;
     }
 }

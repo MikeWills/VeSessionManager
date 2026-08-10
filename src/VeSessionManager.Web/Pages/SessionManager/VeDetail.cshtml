@@ -205,11 +205,64 @@
 </div>
 
 <div class="ve-panel">
+    <h2>Sessions worked</h2>
+    <p class="session-sub">
+        Counts completed sessions only — one they're merely booked for doesn't count yet. Scoped to
+        the teams you can see.
+    </p>
+
+    @if (Model.SessionHistory.Total == 0)
+    {
+        <p class="session-sub">No completed sessions yet.</p>
+    }
+    else
+    {
+        <div class="stat-row">
+            <div class="stat"><span class="stat-value">@Model.SessionHistory.Total</span><span class="stat-label">Total</span></div>
+            <div class="stat"><span class="stat-value">@Model.SessionHistory.ThisYear</span><span class="stat-label">@Model.CurrentYear</span></div>
+        </div>
+
+        @if (Model.SessionHistory.ByTeam.Count > 1)
+        {
+            <table class="cards">
+                <thead><tr><th>Team</th><th>Total</th><th>@Model.CurrentYear</th></tr></thead>
+                <tbody>
+                    @foreach (var team in Model.SessionHistory.ByTeam)
+                    {
+                        <tr>
+                            <td>@team.TeamName</td>
+                            <td class="count">@team.Total</td>
+                            <td class="count">@team.ThisYear</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+
+        <h3>Most recent</h3>
+        <table class="cards">
+            <thead><tr><th>Date</th><th>Session</th><th>Team</th></tr></thead>
+            <tbody>
+                @foreach (var session in Model.SessionHistory.Recent)
+                {
+                    <tr>
+                        <td data-sort-value="@session.ScheduledStartUtc.ToString("o")">@EasternTimeFormatter.Format(session.ScheduledStartUtc, "MMM d, yyyy")</td>
+                        <td><a asp-page="/SessionManager/Detail" asp-route-id="@session.SessionId">@session.Title</a></td>
+                        <td>@session.TeamName</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</div>
+
+<div class="ve-panel">
     <h2>VEC accreditations</h2>
     <p class="session-sub">
         Which VECs this VE is accredited with. Hand-entered — no VEC publishes this to the app.
         Keeping the accreditation itself current is the VE's own responsibility, so no number or
-        expiry is tracked here.
+        expiry is tracked here. <strong>VEs can maintain this themselves</strong> from their own
+        self-service page; this is here for the ones who won't.
     </p>
 
     <div class="table-scroll">

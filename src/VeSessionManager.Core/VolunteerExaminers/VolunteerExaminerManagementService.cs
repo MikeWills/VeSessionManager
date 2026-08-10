@@ -204,8 +204,11 @@ public class VolunteerExaminerManagementService(AppDbContext dbContext, TimeProv
     /// 2026-08-09: keeping accreditation current is the VE's own job, and a date nobody refreshes
     /// would be presented as fact and start refusing people.
     /// </summary>
+    /// <param name="userId">The admin who did it, or <b>null when the VE did it themselves</b> from
+    /// self-service — the same convention <c>VeEmailChangeService</c> uses, and what decides whether
+    /// the audit entry reads "…BySelf".</param>
     public async Task<VeManagementResult> AddAccreditationAsync(
-        int volunteerExaminerId, int vecId, int userId, CancellationToken cancellationToken)
+        int volunteerExaminerId, int vecId, int? userId, CancellationToken cancellationToken)
     {
         var person = await dbContext.VolunteerExaminers.FirstOrDefaultAsync(v => v.Id == volunteerExaminerId, cancellationToken);
         if (person is null)
@@ -231,13 +234,20 @@ public class VolunteerExaminerManagementService(AppDbContext dbContext, TimeProv
             CreatedUtc = now
         });
 
-        dbContext.AddAuditLog(userId, "VeAccreditationAdded", nameof(VolunteerExaminer), volunteerExaminerId,
-            $"Accreditation added for {person.CallSign ?? person.Name}.", now);
+        dbContext.AddAuditLog(userId, userId is null ? "VeAccreditationAddedBySelf" : "VeAccreditationAdded",
+            nameof(VolunteerExaminer), volunteerExaminerId,
+            $"Accreditation added for {person.CallSign ?? person.Name}{(userId is null ? " by the VE themselves" : "")}.", now);
         await dbContext.SaveChangesAsync(cancellationToken);
         return VeManagementResult.Success;
     }
 
-    public async Task<VeManagementResult> RemoveAccreditationAsync(int accreditationId, int userId, CancellationToken cancellationToken)
+    /// <param name="userId">Null when the VE removed it themselves — see AddAccreditationAsync.</param>
+    /// <param name="mustBelongToVolunteerExaminerId">Set by the self-service caller. An accreditation
+    /// id is just a number in a form, and without this a signed-in VE could delete someone else's
+    /// simply by changing it. The admin path passes null because it is already authorised for every
+    /// VE it can see.</param>
+    public async Task<VeManagementResult> RemoveAccreditationAsync(
+        int accreditationId, int? userId, CancellationToken cancellationToken, int? mustBelongToVolunteerExaminerId = null)
     {
         var accreditation = await dbContext.VeVecAccreditations
             .Include(a => a.VolunteerExaminer)
@@ -247,14 +257,22 @@ public class VolunteerExaminerManagementService(AppDbContext dbContext, TimeProv
             return VeManagementResult.NotFound;
         }
 
+        if (mustBelongToVolunteerExaminerId is { } ownerId && accreditation.VolunteerExaminerId != ownerId)
+        {
+            // Deliberately NotFound rather than a distinct "not yours": a VE probing ids learns
+            // nothing about whether one exists.
+            return VeManagementResult.NotFound;
+        }
+
         var now = timeProvider.GetUtcNow().UtcDateTime;
         dbContext.VeVecAccreditations.Remove(accreditation);
 
         // Unlike a person or a membership, an accreditation row is safe to delete outright: nothing
         // references it, and a wrongly-entered one should not linger as a claim that someone is
         // accredited when they are not.
-        dbContext.AddAuditLog(userId, "VeAccreditationRemoved", nameof(VolunteerExaminer), accreditation.VolunteerExaminerId,
-            $"Accreditation removed for {accreditation.VolunteerExaminer.CallSign ?? accreditation.VolunteerExaminer.Name}.", now);
+        dbContext.AddAuditLog(userId, userId is null ? "VeAccreditationRemovedBySelf" : "VeAccreditationRemoved",
+            nameof(VolunteerExaminer), accreditation.VolunteerExaminerId,
+            $"Accreditation removed for {accreditation.VolunteerExaminer.CallSign ?? accreditation.VolunteerExaminer.Name}{(userId is null ? " by the VE themselves" : "")}.", now);
         await dbContext.SaveChangesAsync(cancellationToken);
         return VeManagementResult.Success;
     }

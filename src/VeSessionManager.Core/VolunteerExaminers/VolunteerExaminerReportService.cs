@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Entities;
+using VeSessionManager.Core.Uls;
 
 namespace VeSessionManager.Core.VolunteerExaminers;
 
@@ -52,6 +53,81 @@ public class VolunteerExaminerReportService(AppDbContext dbContext)
     /// wildcard, and EF exposes no escape-character overload. Lowering both sides sidesteps both
     /// problems and translates on either provider.</para>
     /// </param>
+    /// <summary>
+    /// One person's session history for their detail page: how many they have worked in total, how
+    /// many this year, and the most recent few.
+    ///
+    /// <para><b>"Worked" is not <c>Status == Active</c>.</b> That only ever means "not cancelled" —
+    /// it is never set to Completed — so counting on it includes sessions the VE is merely booked
+    /// for next month, and reports a future date as their last worked. This app has hit that trap
+    /// three times; the answer is the same pair of fields the Sessions list derives its Completed
+    /// chip from, and it is why this shares the filter with GetSessionCountsAsync above.</para>
+    ///
+    /// <para><b>The year boundary is Eastern, not UTC.</b> Sessions run in the evening, so a January
+    /// 1st 00:30 UTC session is the previous December 31st to everyone who was at it — and the page
+    /// renders every date in ET. Counting on the raw UTC year would put it in the wrong one.</para>
+    ///
+    /// <para>Scoped to the teams the viewer may see, so a TeamAdmin does not read another team's
+    /// session titles off a shared person's page.</para>
+    /// </summary>
+    public async Task<VeSessionHistory> GetPersonSessionHistoryAsync(
+        int volunteerExaminerId, IReadOnlyList<int>? teamIds, DateTime nowUtc, int recentCount, CancellationToken cancellationToken)
+    {
+        var worked = dbContext.SessionVolunteerExaminers
+            .Where(sve => sve.VolunteerExaminerId == volunteerExaminerId
+                && (teamIds == null || teamIds.Contains(sve.Session.TeamId))
+                && sve.Session.Status == SessionStatus.Active
+                && (sve.Session.TestingCompletedUtc != null || sve.Session.ExamToolsClosedUtc != null));
+
+        var yearStartUtc = EasternYearStartUtc(nowUtc);
+
+        // Grouped counts are materialised BEFORE ordering. EF InMemory cannot translate an OrderBy
+        // chained straight onto a GroupBy(...).Select(...) projection — the trap CLAUDE.md records
+        // from this very service's GetSessionCountsAsync.
+        var byTeam = await worked
+            .GroupBy(sve => new { sve.Session.TeamId, sve.Session.Team.Name })
+            .Select(g => new VeTeamSessionCount(
+                g.Key.TeamId,
+                g.Key.Name,
+                g.Count(),
+                g.Count(sve => sve.Session.ScheduledStartUtc >= yearStartUtc)))
+            .ToListAsync(cancellationToken);
+
+        // Summed from the per-team rows rather than queried again: two round trips that could
+        // disagree if a session landed between them would be worse than one that cannot.
+        var total = byTeam.Sum(t => t.Total);
+        var thisYear = byTeam.Sum(t => t.ThisYear);
+
+        var recent = await worked
+            .OrderByDescending(sve => sve.Session.ScheduledStartUtc)
+            .Take(recentCount)
+            .Select(sve => new VeWorkedSession(
+                sve.Session.Id,
+                sve.Session.Title,
+                sve.Session.TeamId,
+                sve.Session.Team.Name,
+                sve.Session.ScheduledStartUtc))
+            .ToListAsync(cancellationToken);
+
+        return new VeSessionHistory(total, thisYear, EasternYear(nowUtc), [.. byTeam.OrderBy(t => t.TeamName)], recent);
+    }
+
+    /// <summary>
+    /// Midnight on January 1st of the current Eastern year, expressed in UTC — the cutoff for
+    /// "this year". Converting the boundary once and comparing stored UTC values against it keeps
+    /// the whole comparison translatable to SQL; converting each row's date to Eastern would not be.
+    /// </summary>
+    /// <summary>The Eastern calendar year "this year" refers to. Reported alongside the count so a page states the year rather than leaving the reader to assume their own.</summary>
+    public static int EasternYear(DateTime nowUtc) =>
+        TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(nowUtc, DateTimeKind.Utc), UlsSchedule.EasternTimeZone).Year;
+
+    internal static DateTime EasternYearStartUtc(DateTime nowUtc)
+    {
+        var easternNow = TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(nowUtc, DateTimeKind.Utc), UlsSchedule.EasternTimeZone);
+        var yearStart = new DateTime(easternNow.Year, 1, 1, 0, 0, 0, DateTimeKind.Unspecified);
+        return TimeZoneInfo.ConvertTimeToUtc(yearStart, UlsSchedule.EasternTimeZone);
+    }
+
     public async Task<IReadOnlyList<VeSessionCount>> GetSessionCountsAsync(
         IReadOnlyList<int>? teamIds, DateTime? fromUtc, DateTime? toUtc, string? search, CancellationToken cancellationToken)
     {
@@ -101,3 +177,13 @@ public class VolunteerExaminerReportService(AppDbContext dbContext)
 }
 
 public record VeSessionCount(int VolunteerExaminerId, string Name, string? CallSign, string TeamName, int SessionCount);
+
+/// <param name="Total">Sessions actually worked, ever, within the viewer's team scope.</param>
+/// <param name="ThisYear">The same, since January 1st Eastern.</param>
+/// <param name="ByTeam">The same two numbers per team. A VE who serves several teams is one person with several histories, and the split is the interesting part.</param>
+/// <param name="Recent">Most recent first.</param>
+public record VeSessionHistory(int Total, int ThisYear, int Year, IReadOnlyList<VeTeamSessionCount> ByTeam, IReadOnlyList<VeWorkedSession> Recent);
+
+public record VeTeamSessionCount(int TeamId, string TeamName, int Total, int ThisYear);
+
+public record VeWorkedSession(int SessionId, string Title, int TeamId, string TeamName, DateTime ScheduledStartUtc);

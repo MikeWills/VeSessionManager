@@ -32,6 +32,7 @@ public class VeDetailModel(
     SessionAccessScope accessScope,
     VolunteerExaminerDirectoryService directoryService,
     VolunteerExaminerManagementService managementService,
+    VolunteerExaminerReportService reportService,
     TimeProvider timeProvider) : PageModel
 {
     // ---- Where the user came from -------------------------------------------------------------
@@ -74,6 +75,15 @@ public class VeDetailModel(
     public VolunteerExaminer Person { get; private set; } = null!;
     public IReadOnlyList<MembershipView> Memberships { get; private set; } = [];
     public IReadOnlyList<Vec> AvailableVecs { get; private set; } = [];
+
+    /// <summary>Sessions actually worked — total, this year, per team, and the most recent few.</summary>
+    public VeSessionHistory SessionHistory { get; private set; } = new(0, 0, 0, [], []);
+
+    /// <summary>The Eastern year the "this year" count covers — stated on the page rather than left for the reader to assume.</summary>
+    public int CurrentYear => SessionHistory.Year;
+
+    /// <summary>How many recent sessions the page lists. Mike asked for five.</summary>
+    public const int RecentSessionCount = 5;
 
     /// <summary>One instant for the whole render, so the status chip and the day count cannot disagree.</summary>
     public DateTime UtcNow { get; private set; }
@@ -255,6 +265,12 @@ public class VeDetailModel(
                 [.. m.TagAssignments.Select(a => a.VeTagId)]))];
 
         AvailableVecs = await dbContext.Vecs.OrderBy(v => v.Name).ToListAsync(HttpContext.RequestAborted);
+
+        // Scoped to the teams this admin can see rather than the person's whole history: a TeamAdmin
+        // sharing a VE with another team has no business reading that team's session titles.
+        SessionHistory = await reportService.GetPersonSessionHistoryAsync(
+            person.Id, teamIds, UtcNow, RecentSessionCount, HttpContext.RequestAborted);
+
         return null;
     }
 

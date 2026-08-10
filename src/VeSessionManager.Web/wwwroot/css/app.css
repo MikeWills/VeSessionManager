@@ -341,6 +341,13 @@ tbody tr.row-past:hover { background: var(--row-hover); }
 .vesm .color-field input[type="color"] { width: 44px; height: 32px; padding: 2px; border: 1px solid var(--line-strong); border-radius: 5px; background: var(--surface); cursor: pointer; }
 .color-field .inline-check { margin: 0; font-size: 13px; }
 
+/* Headline counts (the VE detail page's sessions-worked block). Wraps rather than scrolls, so two
+   or three of these stay readable on a phone. */
+.stat-row { display: flex; flex-wrap: wrap; gap: 28px; margin: 4px 0 18px; }
+.stat { display: flex; flex-direction: column; gap: 2px; }
+.stat-value { font-size: 26px; font-weight: 600; line-height: 1; }
+.stat-label { font-family: "IBM Plex Mono", monospace; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-soft); }
+
 /* The "Add a VE" panel on the directory. Collapsed by default: it is the exception (a prospect who
    has never worked a session), and everyone else arrives through ingestion — so it must not read as
    the normal way VEs get here. */

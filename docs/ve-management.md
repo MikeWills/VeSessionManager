@@ -307,6 +307,52 @@ session, rather than when the mistake was made.
 The panel is collapsed by default. Everyone else arrives through ingestion, and this must not read as
 the normal way VEs get onto the list.
 
+## Sessions worked, on the VE detail page
+
+Added 2026-08-10: total, this year, split per team, and the five most recent with dates.
+
+Two things here are quietly easy to get wrong.
+
+**"Worked" is not `Status == Active`.** That only ever means "not cancelled" — it is never set to
+Completed — so counting on it includes sessions the VE is merely *booked* for and reports a future
+date as recent history. This codebase has hit that trap three times, which is why this query shares
+the `TestingCompletedUtc != null || ExamToolsClosedUtc != null` filter with the session-count report
+rather than restating it.
+
+**The year boundary is Eastern, not UTC.** Sessions run in the evening, so a session stored as
+January 1st 00:30 UTC was December 31st to everyone who was there — and the page renders every date
+in ET. The boundary is converted once and compared against stored UTC values, which keeps the
+comparison translatable to SQL; converting each row to Eastern would not be. The year is reported
+alongside the counts so the page can *say* 2026 rather than leave the reader assuming their own.
+
+Counts are **scoped to the teams the viewer may see**, so a TeamAdmin sharing a VE with another team
+does not read that team's session titles off a shared person's page. The per-team split is shown only
+when there is more than one team to split across.
+
+**The VE does not see any of this on their own page.** The counts are the team's operational view of
+who is carrying the load, not a fact about the person, and `VeSelfServiceShowsNoStatsTests` guards it
+— the risk is a copy, since the two pages look alike and nothing would fail if someone moved the
+panel across.
+
+## VEs maintain their own accreditations
+
+Moved to self-service 2026-08-10, **reversing the original decision** that accreditations belonged to
+the team. They never really did: no VEC publishes accreditation to this app, so an admin typing one is
+transcribing what the VE told them, and keeping it current was already documented as the VE's own
+responsibility (the reason number and expiry were dropped). Letting the holder maintain it removes a
+copy step rather than adding trust. Admins keep their own path for the VE who will not use
+self-service.
+
+Two details:
+
+- **The ownership check is the whole protection.** An accreditation id is a number in a form and
+  self-service is reachable by anyone holding a sign-in link, so the remove path takes a
+  `mustBelongToVolunteerExaminerId` and returns `NotFound` — not a distinct "not yours" — when it
+  fails, so probing ids reveals nothing. The admin path passes null, being already authorized.
+- **The audit says who asserted it.** A null user id means "the VE did this themselves", the same
+  convention `VeEmailChangeService` uses, and the action reads `…BySelf`. Transcription and
+  self-attestation are different provenances and the log should not flatten them.
+
 ## Deliberately not built
 
 - **Editing the roster in-app.** Removed 2026-08-07; ExamTools reconciles it every poll. See
