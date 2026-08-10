@@ -31,6 +31,7 @@ public class VeDirectoryModel(
     UserManager<User> userManager,
     SessionAccessScope accessScope,
     VolunteerExaminerDirectoryService directoryService,
+    VolunteerExaminerImportService importService,
     TimeProvider timeProvider) : PageModel
 {
     [BindProperty(SupportsGet = true)]
@@ -121,6 +122,45 @@ public class VeDirectoryModel(
 
         var stamp = UtcNow.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture);
         return File(CsvExport.ToBytes(csv), "text/csv", $"ve-directory-{stamp}.csv");
+    }
+
+    /// <summary>
+    /// Add one VE by hand — someone the team is watching before they ever work a session.
+    ///
+    /// <para>Runs through the CSV importer's own add path, so a hand-added person matches an existing
+    /// record exactly as an imported one would: already here means nothing changes, and someone
+    /// serving another team gains a membership rather than a rival record.</para>
+    /// </summary>
+    public async Task<IActionResult> OnPostAddAsync(int addTeamId, string? callSign, string? name, string? email, string? phone)
+    {
+        var user = await userManager.GetUserWithManagerAsync(dbContext, User)
+            ?? throw new InvalidOperationException("No authenticated user for an [Authorize]d page.");
+
+        // A posted team must be one this user can actually see. Without this, the team id is just a
+        // number in a form and anyone could file a VE onto someone else's roster.
+        var allowed = await accessScope.GetAvailableTeamsAsync(dbContext, user);
+        if (!allowed.Any(t => t.Id == addTeamId))
+        {
+            return Forbid();
+        }
+
+        var result = await importService.AddOneAsync(addTeamId, callSign, name, email, phone, user.Id, HttpContext.RequestAborted);
+
+        if (result.Error is not null)
+        {
+            TempData["ErrorMessage"] = result.Error;
+        }
+        else
+        {
+            TempData["StatusMessage"] = result.Action switch
+            {
+                VeImportAction.Create => "VE added.",
+                VeImportAction.AddToTeam => "That VE already existed on another team and has been added to this one.",
+                _ => "That VE is already on this team — no changes made."
+            };
+        }
+
+        return RedirectToPage(new { teamId = TeamId, search = Search, tagName = TagName, includeInactive = IncludeInactive });
     }
 
     public async Task OnGetAsync()

@@ -271,6 +271,42 @@ collapse safe rather than lossy. Per-team detail lives on the VE's own page.
 so filtering on it reports a VE booked for next month as having already worked that session — a
 *future* "last worked" date.
 
+## Adding a VE by hand
+
+Added 2026-08-10, so a team can tag and monitor someone they are considering — a prospect who has
+never worked one of their sessions.
+
+**This passes the "does ExamTools already do it?" test**, which every in-app admin action here has to
+(three were built and then removed for failing it). ExamTools only knows a VE once they are rostered
+onto a session. A prospect being watched has never been on one, so ingestion will never produce them
+and **nothing else in the app can create this row**. That is the whole justification, and it is worth
+re-checking if the feature ever grows.
+
+It runs through the **CSV importer's own add path** rather than a second implementation.
+`ApplyRowAsync` — match, then create-or-fill, then ensure the membership — is now shared by both. Two
+duplicate-generating paths into the same table each owning a copy of those rules is precisely how the
+per-team refresh pipeline drifted before `TeamPipeline` existed.
+
+So a hand-add behaves exactly as the equivalent CSV row would:
+
+- **Already on this team** — nothing changes; blank fields get filled.
+- **Serving another team** — they gain a membership here, never a second identity. Splitting one
+  person's history in two is the failure the person model exists to prevent.
+- **A placeholder call sign is refused.** `<UNKNOWN>` fused two real people once already.
+- **A typed value never overwrites a stored one.** Blank means "no opinion", same as the import.
+- **FRN is not accepted from the form at all**, for the same reason the importer ignores it: it is the
+  unique identity key, and the ULS sweep fills it from FCC. A typo would either collide with a real
+  person's record or attach the wrong identity to this one.
+
+The reconciliation that makes it safe is that the ExamTools sync matches on a usable call sign across
+the whole table, so a hand-added prospect who later works a real session is **matched, not
+duplicated**. That is asserted by its own test, because if it ever stopped being true the feature
+would quietly become a duplicate factory — and the duplicate would surface weeks later, at the
+session, rather than when the mistake was made.
+
+The panel is collapsed by default. Everyone else arrives through ingestion, and this must not read as
+the normal way VEs get onto the list.
+
 ## Deliberately not built
 
 - **Editing the roster in-app.** Removed 2026-08-07; ExamTools reconciles it every poll. See

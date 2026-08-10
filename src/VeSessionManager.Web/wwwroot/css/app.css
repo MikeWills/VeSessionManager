@@ -341,6 +341,13 @@ tbody tr.row-past:hover { background: var(--row-hover); }
 .vesm .color-field input[type="color"] { width: 44px; height: 32px; padding: 2px; border: 1px solid var(--line-strong); border-radius: 5px; background: var(--surface); cursor: pointer; }
 .color-field .inline-check { margin: 0; font-size: 13px; }
 
+/* The "Add a VE" panel on the directory. Collapsed by default: it is the exception (a prospect who
+   has never worked a session), and everyone else arrives through ingestion — so it must not read as
+   the normal way VEs get here. */
+.ve-add { border: 1px solid var(--line); border-radius: 10px; background: var(--surface); padding: 12px 16px; margin-bottom: 18px; }
+.ve-add > summary { cursor: pointer; font-weight: 600; }
+.ve-add .field-row { margin-top: 12px; }
+
 /* Two stacked row actions (Save + Delete on the tag table) sit side by side rather than stacking,
    which is what a bare <form> per button would do. */
 .row-actions-cell { display: flex; gap: 8px; align-items: center; }
