@@ -374,8 +374,11 @@ public class IndexModel(
             // agrees with the roster on Session Detail. A NotTested row is someone who left the
             // session; counting them made a session look fuller than it is.
             "candidates" => Order(s => s.Candidates.Count(c => c.ApplicationStatus != CandidateApplicationStatus.NotTested)),
-            // Must stay in step with ToRow's chip and the Status filter above — all three encode
-            // the same four states, and a mismatch between them was a real reported bug once.
+            // Spelled out rather than calling SessionChips: this runs inside an EF expression tree,
+            // which cannot invoke a method. It must stay in step with SessionChips.Status — same four
+            // states, same priority order — and SessionChipsTests asserts exactly that, because a
+            // mismatch here sorts a column by something the user cannot see, which was a real
+            // reported bug once.
             "status" => Order(s =>
                 s.Status == SessionStatus.Cancelled ? "Cancelled"
                 : s.RescheduleFlaggedForReview ? "Reschedule flagged"
@@ -684,19 +687,11 @@ public class IndexModel(
             subParts.Add("Cancelled");
         }
 
-        // A session is Completed once it is finished by *either* route: a Session Manager marking it,
-        // or ExamTools closing it (ExamToolsClosedUtc, 2026-07-31). Only the manual route ever set
-        // anything before, so a past session nobody had marked read "Active" indefinitely — which is
-        // what made every old session look live. Deliberately one state, not two: closed is completed.
-        // The Status filter and the "status" sort key encode this same rule; change all three together.
-        var (statusClass, statusLabel) = s.Status == SessionStatus.Cancelled ? ("chip-brick", "Cancelled")
-            : s.RescheduleFlaggedForReview ? ("chip-amber", "Reschedule flagged")
-            : s.IsCompleted ? ("chip-neutral", "Completed")
-            : ("chip-green", "Active");
-
-        var (vecClass, vecLabel) = s.Status == SessionStatus.Cancelled ? ("chip-neutral", "—")
-            : s.VecSubmissionStatus == VecSubmissionStatus.Submitted ? ("chip-green", "Submitted")
-            : ("chip-neutral", "Not submitted");
+        // Both chips come from SessionChips so the list, session detail and the sort key below cannot
+        // drift apart. The Status *filter* still spells its rule out separately — it has to translate
+        // to SQL, which a C# switch cannot.
+        var (statusClass, statusLabel) = SessionChips.Status(s.Status, s.RescheduleFlaggedForReview, s.IsCompleted);
+        var (vecClass, vecLabel) = SessionChips.VecSubmission(s.Status, s.VecSubmissionStatus);
 
         // Same availability rules the session Detail page applies to the same actions, so a control
         // never appears here that would be absent (or 403) there. Cancelled sessions expose nothing

@@ -11,7 +11,10 @@
         <partial name="_ParentCrumb" model='new ParentCrumb("./Vecs", "VECs", "Per VEC", "SystemAdmin")' />
         <h1>Fee Configurations</h1>
     </div>
-    @if (Model.VecId is not null)
+    @* AvailableVecs.Count is part of the condition because the createFeeModal this opens is rendered
+       inside the `else` branch below. With no VECs configured but an explicit ?vecId= in the URL,
+       VecId binds non-null, the button rendered, the modal did not, and clicking it did nothing. *@
+    @if (Model.VecId is not null && Model.AvailableVecs.Count > 0)
     {
         <button type="button" class="btn-primary" data-open-modal="createFeeModal">+ New fee configuration</button>
     }

@@ -392,8 +392,10 @@ public class DetailModel(
             session.CompletedUtc is { } completedUtc
                 ? $"Completed {EasternTimeFormatter.Format(completedUtc, "MMM d, yyyy")}"
                 : "Not yet completed",
-            session.VecSubmissionStatus == VecSubmissionStatus.Submitted ? "chip-green" : "chip-neutral",
-            session.VecSubmissionStatus == VecSubmissionStatus.Submitted ? "Submitted" : "Not submitted",
+            // Was its own copy of this switch, and had drifted: it lacked the list's cancelled
+            // branch, so a cancelled session read "Not submitted" here and "—" there.
+            SessionChips.VecSubmission(session.Status, session.VecSubmissionStatus).Class,
+            SessionChips.VecSubmission(session.Status, session.VecSubmissionStatus).Label,
             session.VecSubmissionStatus == VecSubmissionStatus.Submitted,
             session.RescheduleFlaggedForReview,
             session.TestingCompletedUtc is not null,
