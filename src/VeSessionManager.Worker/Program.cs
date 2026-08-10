@@ -135,6 +135,18 @@ builder.Services.AddHostedService<PiiPurgeJob>();
 builder.Services.AddHostedService<HistoricalImportJob>();
 builder.Services.AddHostedService<ReconciliationJob>();
 
+// A mistyped switch used to be ignored in silence: the Worker started normally, did none of the
+// one-off work that was asked for, and looked identical to a successful run. Checked before the
+// host is even built so it costs nothing and cannot be missed.
+string[] knownSwitches = ["--migrate-team-secrets", "--run-uls"];
+var unknownSwitches = args.Where(a => a.StartsWith("--") && !knownSwitches.Contains(a)).ToList();
+if (unknownSwitches.Count > 0)
+{
+    Console.Error.WriteLine($"Unknown switch(es): {string.Join(", ", unknownSwitches)}");
+    Console.Error.WriteLine($"Known switches: {string.Join(", ", knownSwitches)}");
+    return 1;
+}
+
 var host = builder.Build();
 
 using (var scope = host.Services.CreateScope())
@@ -154,7 +166,7 @@ using (var scope = host.Services.CreateScope())
         var migrationService = scope.ServiceProvider.GetRequiredService<TeamSecretsMigrationService>();
         await migrationService.MigrateAsync(CancellationToken.None);
         migrationLogger.LogInformation("Team secrets migration complete — exiting without starting the normal Worker jobs.");
-        return;
+        return 0;
     }
 
     // Human-triggered ULS watcher run. Same exit-immediately shape as the flag above. Replaced
@@ -172,7 +184,7 @@ using (var scope = host.Services.CreateScope())
         ulsLogger.LogInformation("Running ULS watcher on demand (--run-uls)...");
         await jobRunHistoryLogger.RunAsync("UlsWatcher", watcher.RunAsync, null, CancellationToken.None);
         ulsLogger.LogInformation("On-demand ULS run complete — exiting without starting the normal Worker jobs.");
-        return;
+        return 0;
     }
 
     var startupLogger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
@@ -189,3 +201,4 @@ using (var scope = host.Services.CreateScope())
 }
 
 host.Run();
+return 0;

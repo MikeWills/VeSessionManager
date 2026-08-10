@@ -82,7 +82,7 @@ public class ExamToolsUlsLookupClient(
             {
                 Found = true,
                 UniqueSystemIdentifier = r.UId,
-                CallSign = string.IsNullOrWhiteSpace(r.CallSign) ? null : r.CallSign.Trim().ToUpperInvariant(),
+                CallSign = CallSign.NormalizeFormat(r.CallSign),
                 LicenseStatus = r.LicenseStatus,
                 OperatorClass = ParseLicenseClass(r.LicenseClass),
                 PreviousOperatorClass = ParseLicenseClass(r.PrevLicenseClass),

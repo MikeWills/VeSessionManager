@@ -213,7 +213,7 @@ public class SessionEventSchedulingService(
     {
         if (team.IsZoomConfigured)
         {
-            var zoomCredentials = new ZoomCredentials(team.Id, team.ZoomAccountId!, team.ZoomClientId!, team.ZoomClientSecret!, team.ZoomUserId ?? "me");
+            var zoomCredentials = team.ToZoomCredentials();
             var zoomRequest = new ZoomMeetingRequest(session.Title, session.ScheduledStartUtc, session.DurationMinutes, team.ZoomBreakoutRoomCount);
             if (session.ZoomMeetingId is null)
             {
@@ -344,17 +344,11 @@ public class SessionEventSchedulingService(
             }
             else
             {
-                var zoomCredentials = new ZoomCredentials(team.Id, team.ZoomAccountId!, team.ZoomClientId!, team.ZoomClientSecret!, team.ZoomUserId ?? "me");
+                var zoomCredentials = team.ToZoomCredentials();
                 await zoomClient.DeleteMeetingAsync(zoomCredentials, session.ZoomMeetingId, cancellationToken);
-                dbContext.AuditLogs.Add(new AuditLog
-                {
-                    UserId = null, // system action, not a person
-                    Action = "ZoomMeetingCancelled",
-                    EntityType = nameof(Session),
-                    EntityId = session.Id,
-                    TimestampUtc = now,
-                    Details = $"Zoom meeting {session.ZoomMeetingId} cancelled for ExamTools session {session.ExamToolsSessionId}."
-                });
+                // userId null = system action, not a person.
+                dbContext.AddAuditLog(null, "ZoomMeetingCancelled", nameof(Session), session.Id,
+                    $"Zoom meeting {session.ZoomMeetingId} cancelled for ExamTools session {session.ExamToolsSessionId}.", now);
                 session.ZoomMeetingId = null;
                 session.ZoomJoinUrl = null;
             }
@@ -370,15 +364,8 @@ public class SessionEventSchedulingService(
             else
             {
                 await discordEventClient.DeleteEventAsync(team.DiscordGuildId.Value, session.DiscordEventId, cancellationToken);
-                dbContext.AuditLogs.Add(new AuditLog
-                {
-                    UserId = null,
-                    Action = "DiscordEventCancelled",
-                    EntityType = nameof(Session),
-                    EntityId = session.Id,
-                    TimestampUtc = now,
-                    Details = $"Discord scheduled event {session.DiscordEventId} deleted for ExamTools session {session.ExamToolsSessionId}."
-                });
+                dbContext.AddAuditLog(null, "DiscordEventCancelled", nameof(Session), session.Id,
+                    $"Discord scheduled event {session.DiscordEventId} deleted for ExamTools session {session.ExamToolsSessionId}.", now);
                 session.DiscordEventId = null;
             }
         }

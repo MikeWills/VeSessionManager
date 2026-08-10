@@ -615,15 +615,10 @@ public class SessionIngestionService(
 
         local.RescheduleFlaggedForReview = true;
         local.RescheduleFlaggedUtc = now;
-        dbContext.AuditLogs.Add(new AuditLog
-        {
-            UserId = null, // system action, not a person
-            Action = "RescheduleFlaggedForReview",
-            EntityType = nameof(Session),
-            EntityId = local.Id,
-            TimestampUtc = now,
-            Details = $"ExamTools session {local.ExamToolsSessionId} moved from {local.ScheduledStartUtc:u} to {remote.Date:u} while it has registered candidates; stored time left unchanged pending review."
-        });
+        // userId null = system action, not a person.
+        dbContext.AddAuditLog(null, "RescheduleFlaggedForReview", nameof(Session), local.Id,
+            $"ExamTools session {local.ExamToolsSessionId} moved from {local.ScheduledStartUtc:u} to {remote.Date:u} while it has registered candidates; stored time left unchanged pending review.",
+            now);
         result.SessionsFlaggedForReview++;
         logger.LogWarning("Session {ExamToolsSessionId} rescheduled {OldStart:u} -> {NewStart:u} but has candidates — flagged for review, stored time unchanged",
             local.ExamToolsSessionId, local.ScheduledStartUtc, remote.Date);

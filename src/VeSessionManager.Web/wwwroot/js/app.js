@@ -2,7 +2,7 @@
 // three interactive-but-static-in-the-mockup behaviors the design handoff calls out: theme toggle
 // (persisted to localStorage, same key/behavior as the mockup), per-row kebab dropdown menus
 // (click to open, click-outside to close — the mockup notes this wasn't wired in the static HTML),
-// and the small inline "add VE" / "walk-in" modals. Plus click-to-sort table headers (see the
+// and the small inline modals. Plus click-to-sort table headers (see the
 // "Sortable tables" section at the bottom).
 (function () {
   "use strict";

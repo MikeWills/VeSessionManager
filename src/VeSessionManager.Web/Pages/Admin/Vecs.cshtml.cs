@@ -61,7 +61,10 @@ public class VecsModel(AppDbContext dbContext, UserManager<User> userManager, Ve
         {
             VecActionResult.Success => $"VEC '{name}' created.",
             VecActionResult.DuplicateExamToolsCode => DuplicateCodeMessage(examToolsCode ?? name),
-            _ => $"A VEC named '{name}' already exists."
+            VecActionResult.DuplicateName => $"A VEC named '{name}' already exists.",
+            // NotFound is unreachable on the create path; naming it beats a catch-all that would
+            // report "already exists" for something else entirely.
+            _ => $"Could not create VEC '{name}'."
         };
         return RedirectToPage();
     }
