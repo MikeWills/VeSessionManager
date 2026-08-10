@@ -11,8 +11,14 @@ namespace VeSessionManager.Core.Entities;
 /// could only ever answer the license half on its own, which is why the two features landed
 /// together.</para>
 ///
+/// <para><b>Presence only — no number, no expiry (simplified 2026-08-09).</b> Both were dropped at
+/// Mike's request: keeping an accreditation current is the VE's own responsibility, and this app has
+/// no way to verify either field. A stored expiry that nobody refreshes is worse than no expiry at
+/// all, because the screens would present it as fact and start refusing people on the strength of a
+/// date somebody typed once.</para>
+///
 /// <para><b>Hand-entered.</b> No VEC exposes an accreditation API to this app, so nothing verifies
-/// these rows — anywhere the "can they serve?" answer is shown has to be honest that half of it is
+/// these rows — anywhere the "can they serve?" answer is shown has to be honest that it rests on
 /// someone's data entry rather than a live check.</para>
 /// </summary>
 public class VeVecAccreditation
@@ -24,12 +30,6 @@ public class VeVecAccreditation
 
     public int VecId { get; set; }
     public Vec Vec { get; set; } = null!;
-
-    /// <summary>The VEC's own identifier for this accreditation, when the team records one. Optional — not every VEC issues a number a VE keeps to hand.</summary>
-    public string? AccreditationNumber { get; set; }
-
-    /// <summary>Optional: some VECs re-accredit on a cycle, others do not. Null means "no expiry recorded", which must not be shown as expired.</summary>
-    public DateTime? ExpiresUtc { get; set; }
 
     public DateTime CreatedUtc { get; set; }
 }

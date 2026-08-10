@@ -185,23 +185,23 @@
 <div class="ve-panel">
     <h2>VEC accreditations</h2>
     <p class="session-sub">
-        Hand-entered — no VEC publishes this to the app, so nothing here is verified.
+        Which VECs this VE is accredited with. Hand-entered — no VEC publishes this to the app.
+        Keeping the accreditation itself current is the VE's own responsibility, so no number or
+        expiry is tracked here.
     </p>
 
     <div class="table-scroll">
     <table class="cards">
-        <thead><tr><th>VEC</th><th>Number</th><th>Expires</th><th></th></tr></thead>
+        <thead><tr><th>VEC</th><th></th></tr></thead>
         <tbody>
             @if (Model.Person.VecAccreditations.Count == 0)
             {
-                <tr><td colspan="4">No accreditations recorded.</td></tr>
+                <tr><td colspan="2">No accreditations recorded.</td></tr>
             }
             @foreach (var accreditation in Model.Person.VecAccreditations.OrderBy(a => a.Vec.Name))
             {
                 <tr>
                     <td>@accreditation.Vec.Name</td>
-                    <td class="mono">@(accreditation.AccreditationNumber ?? "—")</td>
-                    <td>@(accreditation.ExpiresUtc?.ToString("MMM d, yyyy") ?? "No expiry recorded")</td>
                     <td>
                         <form method="post" asp-page-handler="RemoveAccreditation">
                             <input type="hidden" name="accreditationId" value="@accreditation.Id" />
@@ -224,8 +224,6 @@
                 }
             </select>
         </div>
-        <div class="field"><label for="accreditationNumber">Number</label><input id="accreditationNumber" name="accreditationNumber" /></div>
-        <div class="field"><label for="expiresUtc">Expires</label><input id="expiresUtc" name="expiresUtc" type="date" /></div>
         <button type="submit" class="btn-secondary btn-sm">Add</button>
     </form>
 </div>

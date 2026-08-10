@@ -117,10 +117,11 @@ is exactly who needs to know a VE cannot serve it.
 `VeEligibility` reports **problem**, **unverified**, or **clear**. Collapsing the middle one would let
 a VE nobody has checked render as cleared, which is worse than saying nothing.
 
-- *Problem* — expired by the session date, cancelled, not found at FCC, below the General minimum, or
-  accreditation expiring before the session.
+- *Problem* — expired by the session date, cancelled, not found at FCC, or below the General minimum.
 - *Unverified* — no usable call sign, never swept, no expiry recorded, or no accreditation on file
-  for this session's VEC.
+  for this session's VEC. Accreditation is presence-only (simplified 2026-08-09): a missing one is
+  never a *problem*, because the app cannot tell "not accredited" from "nobody recorded it", and
+  treating the second as the first would refuse people over missing data entry.
 - *Clear* — checked, and every test passed.
 
 The two markers differ in **glyph as well as colour**, so they survive a colour-blind reader and a

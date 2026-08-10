@@ -145,12 +145,12 @@ public class VeDetailModel(
         return RedirectToPage(new { id = Id });
     }
 
-    public async Task<IActionResult> OnPostAddAccreditationAsync(int vecId, string? accreditationNumber, DateTime? expiresUtc)
+    public async Task<IActionResult> OnPostAddAccreditationAsync(int vecId)
     {
         var loaded = await LoadAsync();
         if (loaded is not null) return loaded;
 
-        var result = await managementService.AddAccreditationAsync(Id, vecId, accreditationNumber, expiresUtc, (await CurrentUserAsync()).Id, HttpContext.RequestAborted);
+        var result = await managementService.AddAccreditationAsync(Id, vecId, (await CurrentUserAsync()).Id, HttpContext.RequestAborted);
         SetStatus(result, "Accreditation added.");
         return RedirectToPage(new { id = Id });
     }

@@ -200,12 +200,12 @@ public class VolunteerExaminerManagementService(AppDbContext dbContext, TimeProv
     }
 
     /// <summary>
-    /// Records that a VE is accredited with a VEC. Hand-entered — no VEC exposes this to the app, so
-    /// anywhere the "can they serve?" answer is shown has to be honest that this half is data entry
-    /// rather than a live check.
+    /// Records that a VE is accredited with a VEC — presence only. Number and expiry were dropped
+    /// 2026-08-09: keeping accreditation current is the VE's own job, and a date nobody refreshes
+    /// would be presented as fact and start refusing people.
     /// </summary>
     public async Task<VeManagementResult> AddAccreditationAsync(
-        int volunteerExaminerId, int vecId, string? accreditationNumber, DateTime? expiresUtc, int userId, CancellationToken cancellationToken)
+        int volunteerExaminerId, int vecId, int userId, CancellationToken cancellationToken)
     {
         var person = await dbContext.VolunteerExaminers.FirstOrDefaultAsync(v => v.Id == volunteerExaminerId, cancellationToken);
         if (person is null)
@@ -228,8 +228,6 @@ public class VolunteerExaminerManagementService(AppDbContext dbContext, TimeProv
         {
             VolunteerExaminerId = volunteerExaminerId,
             VecId = vecId,
-            AccreditationNumber = Blank(accreditationNumber),
-            ExpiresUtc = expiresUtc,
             CreatedUtc = now
         });
 

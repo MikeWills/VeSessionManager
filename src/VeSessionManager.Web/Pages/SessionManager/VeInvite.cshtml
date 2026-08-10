@@ -25,11 +25,55 @@
 
 <form method="post">
     <div class="ve-panel">
+        <h2>Message</h2>
+        <p class="session-sub">
+            Placeholders:
+            @foreach (var placeholder in VeSessionManager.Web.Pages.SessionManager.VeInviteModel.Placeholders)
+            {
+                <code>@("{{" + placeholder + "}}")</code><text> </text>
+            }
+        </p>
+
+        <div class="field">
+            <label asp-for="Subject">Subject</label>
+            <input asp-for="Subject" />
+        </div>
+
+        <div class="field">
+            <label asp-for="Body">Message</label>
+            <textarea asp-for="Body" rows="10"></textarea>
+            <span class="session-sub">HTML is allowed. Sent from your team's own email address.</span>
+        </div>
+
+    </div>
+    <div class="ve-panel" data-ve-picker>
         <h2>Who to invite</h2>
         <p class="session-sub">
             Active VEs on @Model.Session.Team.Name. A warning means they could not legally serve on
             this session's date — see their record for why.
         </p>
+
+        <div class="filters" style="margin-bottom:12px;">
+            <label class="ve-search">
+                <span class="visually-hidden">Filter this list</span>
+                <i class="bi bi-search" aria-hidden="true"></i>
+                <input type="search" data-ve-filter placeholder="Filter by name, call sign or tag" />
+            </label>
+            @if (Model.TagNames.Count > 0)
+            {
+                <select data-ve-tag-filter class="filter-select" aria-label="Filter by tag">
+                    <option value="">Any tag</option>
+                    @foreach (var tag in Model.TagNames)
+                    {
+                        <option value="@tag">@tag</option>
+                    }
+                    @* Untagged means guest, derived rather than stored — see docs/ve-management.md. *@
+                    <option value="@VeSessionManager.Web.Pages.SessionManager.VeInviteModel.UntaggedFilterValue">Untagged (guests)</option>
+                </select>
+            }
+            <button type="button" class="btn-secondary btn-sm" data-ve-select="all">Select all shown</button>
+            <button type="button" class="btn-secondary btn-sm" data-ve-select="none">Clear selection</button>
+        </div>
 
         <div class="table-scroll">
         <table class="cards">
@@ -41,7 +85,7 @@
                 }
                 @foreach (var candidate in Model.Candidates)
                 {
-                    <tr>
+                    <tr data-ve-tags="@string.Join("|", candidate.Tags)">
                         <td>
                             <input type="checkbox" name="SelectedVeIds" value="@candidate.VolunteerExaminer.Id"
                                    @(candidate.HasEmail ? "" : "disabled")
@@ -88,28 +132,14 @@
         </div>
     </div>
 
-    <div class="ve-panel">
-        <h2>Message</h2>
-        <p class="session-sub">
-            Placeholders:
-            @foreach (var placeholder in VeSessionManager.Web.Pages.SessionManager.VeInviteModel.Placeholders)
-            {
-                <code>@("{{" + placeholder + "}}")</code><text> </text>
-            }
-        </p>
 
-        <div class="field">
-            <label asp-for="Subject">Subject</label>
-            <input asp-for="Subject" />
-        </div>
-
-        <div class="field">
-            <label asp-for="Body">Message</label>
-            <textarea asp-for="Body" rows="10"></textarea>
-            <span class="session-sub">HTML is allowed. Sent from your team's own email address.</span>
-        </div>
-
-        <button type="submit" class="btn-primary btn-sm">Send invitations</button>
-        <a class="btn-secondary btn-sm" asp-page="/SessionManager/Detail" asp-route-id="@Model.Session.Id">Cancel</a>
+    @* Sticky, because a 158-VE team pushed this 9,000 pixels down the page and the Send button was
+       reported as missing — which, in every way that matters, it was. *@
+    <div class="ve-action-bar">
+        <span class="session-sub" data-ve-selected-count>0 VEs selected</span>
+        <span>
+            <a class="btn-secondary btn-sm" asp-page="/SessionManager/Detail" asp-route-id="@Model.Session.Id">Cancel</a>
+            <button type="submit" class="btn-primary btn-sm">Send invitations</button>
+        </span>
     </div>
 </form>

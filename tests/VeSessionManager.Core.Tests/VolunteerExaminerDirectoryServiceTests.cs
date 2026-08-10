@@ -324,9 +324,9 @@ public class VolunteerExaminerDirectoryServiceTests
 
         var management = CreateManagement(dbContext);
         Assert.Equal(VeManagementResult.Success,
-            await management.AddAccreditationAsync(person.Id, vec.Id, "12345", null, 1, CancellationToken.None));
+            await management.AddAccreditationAsync(person.Id, vec.Id, 1, CancellationToken.None));
         Assert.Equal(VeManagementResult.AlreadyAccredited,
-            await management.AddAccreditationAsync(person.Id, vec.Id, "12345", null, 1, CancellationToken.None));
+            await management.AddAccreditationAsync(person.Id, vec.Id, 1, CancellationToken.None));
 
         Assert.Single(dbContext.VeVecAccreditations);
     }

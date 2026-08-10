@@ -21,8 +21,7 @@ public class VeSessionEligibilityTests
         bool everChecked = true,
         bool notFound = false,
         DateTime? cancelled = null,
-        int? accreditedWithVecId = ArrlVecId,
-        DateTime? accreditationExpires = null)
+        int? accreditedWithVecId = ArrlVecId)
     {
         var person = new VolunteerExaminer
         {
@@ -44,7 +43,6 @@ public class VeSessionEligibilityTests
             {
                 VolunteerExaminerId = person.Id,
                 VecId = vecId,
-                ExpiresUtc = accreditationExpires,
                 CreatedUtc = Now
             });
         }
@@ -121,23 +119,7 @@ public class VeSessionEligibilityTests
         Assert.Contains(result.Unknowns, u => u.Contains("no accreditation recorded with this session's VEC"));
     }
 
-    [Fact]
-    public void AccreditationExpiringBeforeTheSession_IsAProblem()
-    {
-        var result = VeSessionEligibility.For(
-            Ve(Now.AddYears(4), accreditationExpires: Now.AddDays(5)), Now.AddDays(30), ArrlVecId);
 
-        Assert.Contains(result.Problems, p => p.Contains("accreditation with this VEC expires before this session"));
-    }
-
-    /// <summary>No recorded expiry is not an expired accreditation — some VECs simply do not re-accredit on a cycle.</summary>
-    [Fact]
-    public void AccreditationWithNoExpiry_IsNotTreatedAsExpired()
-    {
-        var result = VeSessionEligibility.For(Ve(Now.AddYears(4), accreditationExpires: null), Now.AddDays(30), ArrlVecId);
-
-        Assert.True(result.IsClear);
-    }
 
     /// <summary>
     /// "We could not check" must never collapse into "nothing wrong". A VE with no usable call sign

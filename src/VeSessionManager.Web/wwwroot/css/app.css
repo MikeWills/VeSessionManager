@@ -364,6 +364,14 @@ footer.roster { margin-top: 28px; background: var(--surface); border: 1px solid 
    screenshot. Bootstrap Icons rather than a Unicode symbol: a bare character renders only if the
    device happens to have a font containing it, which is how a marker became a tofu box on an
    iPhone once already. */
+/* Sticky action bar for a long picker (the VE invitation screen). Sits inside the form so the
+   submit still belongs to it. `bottom: 0` on a sticky element only works while the element is in
+   normal flow — do not give it position:fixed, which would take it out and let the page scroll
+   underneath the last table row. */
+.ve-action-bar { position: sticky; bottom: 0; z-index: 4; display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap;
+                 background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 16px; margin-bottom: 22px;
+                 box-shadow: 0 -6px 18px rgba(20, 24, 26, .10); }
+
 .ve-flag-problem { color: var(--brick); }
 .ve-flag-unknown { color: var(--ink-soft); }
 

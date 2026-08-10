@@ -16,7 +16,7 @@ namespace VeSessionManager.Core.VolunteerExaminers;
 /// against today.</para>
 ///
 /// <para><b>Honest about what it does not know.</b> The license half is a cached snapshot up to a
-/// day old, and the accreditation half is hand-entered and verified by nobody. "No problem found" is
+/// day old, and the accreditation half is hand-entered presence-only data verified by nobody. "No problem found" is
 /// therefore never phrased as "cleared" — see <see cref="VeEligibility.Summary"/>.</para>
 /// </summary>
 public static class VeSessionEligibility
@@ -74,15 +74,12 @@ public static class VeSessionEligibility
 
         // Accreditation must be with THIS session's VEC. A VE accredited with one VEC cannot serve a
         // session run under another, which is invisible on a roster that only lists names.
-        var accreditation = volunteerExaminer.VecAccreditations.FirstOrDefault(a => a.VecId == sessionVecId);
-        if (accreditation is null)
+        // Presence only since 2026-08-09 — see VeVecAccreditation. Absence is "unverified", never a
+        // problem: this app cannot tell "not accredited" from "nobody recorded it", and reporting the
+        // second as the first would have the screen refuse people over missing data entry.
+        if (!volunteerExaminer.VecAccreditations.Any(a => a.VecId == sessionVecId))
         {
             unknowns.Add("no accreditation recorded with this session's VEC");
-        }
-        else if (accreditation.ExpiresUtc is { } accreditationExpiry
-                 && WatchedLicenseStatusExtensions.DaysUntil(accreditationExpiry, sessionStartUtc) < 0)
-        {
-            problems.Add("their accreditation with this VEC expires before this session");
         }
 
         return new VeEligibility(problems, unknowns, volunteerExaminer.LicenseLastCheckedUtc);

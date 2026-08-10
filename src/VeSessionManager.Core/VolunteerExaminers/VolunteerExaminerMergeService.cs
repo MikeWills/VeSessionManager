@@ -199,7 +199,11 @@ public class VolunteerExaminerMergeService(
         }
     }
 
-    /// <summary>Unique on <c>(VolunteerExaminerId, VecId)</c>. The richer record wins: a recorded number, then a later expiry, since both mean someone entered more than the other side had.</summary>
+    /// <summary>
+    /// Unique on <c>(VolunteerExaminerId, VecId)</c>. Since an accreditation is now presence-only,
+    /// two rows for the same VEC carry identical information and the duplicate is simply dropped —
+    /// there is no longer a richer one to prefer.
+    /// </summary>
     private void MergeAccreditations(VolunteerExaminer survivor, VolunteerExaminer duplicate)
     {
         foreach (var accreditation in duplicate.VecAccreditations.ToList())
@@ -210,12 +214,6 @@ public class VolunteerExaminerMergeService(
                 accreditation.VolunteerExaminerId = survivor.Id;
                 survivor.VecAccreditations.Add(accreditation);
                 continue;
-            }
-
-            existing.AccreditationNumber ??= accreditation.AccreditationNumber;
-            if (accreditation.ExpiresUtc is { } candidate && (existing.ExpiresUtc is null || candidate > existing.ExpiresUtc))
-            {
-                existing.ExpiresUtc = candidate;
             }
 
             dbContext.VeVecAccreditations.Remove(accreditation);

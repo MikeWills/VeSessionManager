@@ -21,7 +21,7 @@ change (issues #17/#19).
 | `VolunteerExaminer` | The person: name, call sign, FRN, contact details, cached FCC license state |
 | `VeTeamMembership` | One person on one team — active/retired, and where tags hang |
 | `VeTag` / `VeTagAssignment` | A team's own vocabulary, applied per membership |
-| `VeVecAccreditation` | Person ⇄ VEC, hand-entered |
+| `VeVecAccreditation` | Person ⇄ VEC, hand-entered, presence only |
 | `VeCallSignHistory` | Call signs they used to hold |
 
 Tags hang off the *membership*, not the person, because someone can be a full member of their home
@@ -98,7 +98,7 @@ that collide:
 - **Session links** repoint; where both records worked the *same* session the two collapse to one.
   Not data loss — one person cannot be on a roster twice, so a count of 1 is the correct answer.
 - **Team memberships** fold on `(VeId, TeamId)`: active beats retired, tags union.
-- **Accreditations** fold on `(VeId, VecId)`: a recorded number or a later expiry wins.
+- **Accreditations** fold on `(VeId, VecId)`: presence-only, so the duplicate is simply dropped.
 - **Call sign history** moves, and the retired record's own call sign becomes history if it differs.
 - **Contact details fill blanks, never overwrite** — nothing a human typed on the survivor is
   replaced by whichever record happened to lose.
