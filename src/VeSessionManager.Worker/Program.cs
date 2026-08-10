@@ -177,6 +177,8 @@ using (var scope = host.Services.CreateScope())
 
     var startupLogger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
     await EmailDefaultsSeeder.SeedAsync(dbContext, startupLogger);
+    // Before DevDataSeeder, which reuses the ARRL row this creates rather than making a second one.
+    await VecDefaultsSeeder.SeedAsync(dbContext, startupLogger);
 
     if (builder.Environment.IsDevelopment())
     {
