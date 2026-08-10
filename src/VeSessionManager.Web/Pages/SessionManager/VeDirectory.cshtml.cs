@@ -72,6 +72,25 @@ public class VeDirectoryModel(
     public Dictionary<string, string?> FilterRoute => VeDirectoryFilterRoute.Build(
         TeamId, Search, TagName, IncludeInactive, LicenseStatus, Worked, WorkedFrom, WorkedTo);
 
+    /// <summary>
+    /// The filters <b>plus</b> the VE being linked to — one dictionary, because
+    /// <c>asp-all-route-data</c> and <c>asp-route-id</c> cannot be combined.
+    ///
+    /// <para><b>They fight rather than merge.</b> Both feed the tag helper's single RouteValues
+    /// dictionary, but <c>asp-all-route-data</c> <i>assigns</i> it while <c>asp-route-*</c>
+    /// <i>adds</i> an entry — so whichever the generated code reaches last wins. With the dictionary
+    /// written second, it replaced the id outright and every row linked to the detail page with no
+    /// id at all. Nothing errors: the link renders, and the page it lands on cannot find the VE.</para>
+    /// </summary>
+    public Dictionary<string, string?> DetailRoute(int volunteerExaminerId)
+    {
+        var values = new Dictionary<string, string?>(FilterRoute)
+        {
+            ["id"] = volunteerExaminerId.ToString(System.Globalization.CultureInfo.InvariantCulture)
+        };
+        return values;
+    }
+
     /// <summary>Every status a VE row can actually show, for the filter menu. Ordered as the enum declares them: unknown-ish first, then healthy, then increasingly wrong.</summary>
     public static IReadOnlyList<WatchedLicenseStatus> LicenseStatuses => Enum.GetValues<WatchedLicenseStatus>();
 
