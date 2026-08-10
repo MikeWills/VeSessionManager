@@ -45,6 +45,14 @@
         _ => ""
     };
 
+    // The user menu's trigger answers "who am I signed in as", so it shows the name. Role and team
+    // scope moved inside the menu (2026-08-07): "System Admin All Teams" on the button read as a
+    // filter or a page title rather than an account, which is confusing precisely because it never
+    // said whose account it was. Email is the fallback for a row with no display name.
+    var displayName = !string.IsNullOrWhiteSpace(currentUser?.Name) ? currentUser!.Name
+        : !string.IsNullOrWhiteSpace(currentUser?.Email) ? currentUser!.Email!
+        : "Account";
+
     var activeNav = ViewData["ActiveNav"] as string;
     var mainClass = "vesm-main" + (ViewData["WideMain"] is true ? " wide" : "");
 
@@ -175,8 +183,12 @@
         </nav>
         <div class="who">
             <div class="user-menu">
-                <button type="button" class="kebab"><span class="role">@roleLabel</span> @teamName <i class="bi bi-caret-down-fill" aria-hidden="true"></i></button>
+                <button type="button" class="kebab">@displayName <i class="bi bi-caret-down-fill" aria-hidden="true"></i></button>
                 <div class="menu">
+                    @* Not an action — the role and the team scope this account sees, kept because
+                       they are worth knowing, just not on the button. *@
+                    <div class="menu-head">@roleLabel &middot; @teamName</div>
+                    <hr>
                     <a class="item" asp-page="/Account/ChangePassword">Change password</a>
                     <form method="post" asp-page="/Account/Logout">
                         <button type="submit" class="item">Log out</button>
