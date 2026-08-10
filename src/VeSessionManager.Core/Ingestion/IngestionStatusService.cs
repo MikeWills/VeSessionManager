@@ -63,8 +63,22 @@ public class IngestionStatusService(
             query = query.Where(t => teamIds.Contains(t.Id));
         }
 
-        var teams = await query.OrderBy(t => t.Name).ToListAsync(cancellationToken);
-        var rows = teams.Select(t => BuildRow(t, intervalMinutes, now)).ToList();
+        // Projected, not materialized. This service backs the site-wide health banner, so it runs on
+        // every page render — and a whole Team entity drags all five credential columns through
+        // EncryptedStringConverter on the way out. Nothing here needs a decrypted secret.
+        //
+        // ExamToolsPassword is the only encrypted one of the three fields IsExamToolsConfigured
+        // reads, and it only ever asks whether it is present. Presence survives encryption — a
+        // non-empty ciphertext means a non-empty plaintext — so it is tested in SQL and never
+        // decrypted. The two plaintext fields keep their exact IsNullOrWhiteSpace semantics in
+        // memory below.
+        var projected = await query
+            .OrderBy(t => t.Name)
+            .Select(t => new TeamStatusFields(
+                t.Id, t.Name, t.LastIngestionRunUtc, t.ExamToolsTeamCode, t.ExamToolsUsername,
+                t.ExamToolsPassword != null && t.ExamToolsPassword != ""))
+            .ToListAsync(cancellationToken);
+        var rows = projected.Select(t => BuildRow(t, intervalMinutes, now)).ToList();
 
         var staleAfter = TimeSpan.FromMinutes(intervalMinutes * StaleIntervalMultiplier);
         var health = !anyTeams ? IngestionHealthState.NoTeams
@@ -75,15 +89,32 @@ public class IngestionStatusService(
         return new IngestionStatusReport(rows, intervalMinutes, newestAcrossAllTeams, health, staleAfter, now);
     }
 
-    private TeamIngestionStatus BuildRow(Team team, int intervalMinutes, DateTime now)
+    private TeamIngestionStatus BuildRow(TeamStatusFields team, int intervalMinutes, DateTime now)
     {
-        var isDue = scheduleService.IsDue(team, intervalMinutes, now);
+        var isDue = scheduleService.IsDue(team.LastIngestionRunUtc, intervalMinutes, now);
         // Null LastIngestionRunUtc means "never run, always due" per IngestionScheduleService, so
         // there is no meaningful next-due instant to show — the row reads "due now" instead.
         var nextDueUtc = team.LastIngestionRunUtc?.AddMinutes(intervalMinutes);
+
+        // Mirrors Team.IsExamToolsConfigured. The password half was already decided in SQL; these
+        // two keep the entity's IsNullOrWhiteSpace semantics exactly.
+        var isExamToolsConfigured =
+            !string.IsNullOrWhiteSpace(team.ExamToolsTeamCode)
+            && !string.IsNullOrWhiteSpace(team.ExamToolsUsername)
+            && team.HasExamToolsPassword;
+
         return new TeamIngestionStatus(
-            team.Id, team.Name, team.LastIngestionRunUtc, nextDueUtc, isDue, team.IsExamToolsConfigured);
+            team.Id, team.Name, team.LastIngestionRunUtc, nextDueUtc, isDue, isExamToolsConfigured);
     }
+
+    /// <summary>Only the columns this service reads — see the projection above for why.</summary>
+    private sealed record TeamStatusFields(
+        int Id,
+        string Name,
+        DateTime? LastIngestionRunUtc,
+        string? ExamToolsTeamCode,
+        string? ExamToolsUsername,
+        bool HasExamToolsPassword);
 }
 
 public record TeamIngestionStatus(

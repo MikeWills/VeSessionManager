@@ -88,10 +88,6 @@ public class AdminAccessScope(SessionAccessScope sessionAccessScope)
         _ => false
     };
 
-    /// <summary>Vec management (shared/global reference data) and deployment-wide SystemSettings are SystemAdmin-only — TeamAdmin has no notion of "their own" VEC or deployment setting.</summary>
-    public bool CanAccessVecManagement(User actingUser) => actingUser.Role == UserRole.SystemAdmin;
-
-    public bool CanAccessSystemSettings(User actingUser) => actingUser.Role == UserRole.SystemAdmin;
 
     public bool CanCreateTeam(User actingUser) => actingUser.Role == UserRole.SystemAdmin;
 

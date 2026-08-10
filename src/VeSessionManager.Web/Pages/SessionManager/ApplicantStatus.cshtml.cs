@@ -101,17 +101,30 @@ public class ApplicantStatusModel(
         var now = timeProvider.GetUtcNow().UtcDateTime;
 
         var pending = await dbContext.Candidates
+            .AsNoTracking()
             .Include(c => c.Session)
-            .Include(c => c.Payments)   // needed by DaysPendingCssClass's unpaid-payment gate
             .Where(c => (teamIds == null || teamIds.Contains(c.Session.TeamId))
                 && c.Tested
                 && (c.ApplicationStatus == CandidateApplicationStatus.Unmatched || c.ApplicationStatus == CandidateApplicationStatus.Received))
             .OrderBy(c => c.ApplicationDateEnteredUtc ?? c.DateRegisteredUtc)
             .ToListAsync();
-        Pending = pending.Select(c => ToPendingRow(c, now)).ToList();
+
+        // DaysPendingCssClass needs one boolean per candidate — "does this person owe money" — which
+        // used to be paid for with Include(c => c.Payments): every payment row of every pending
+        // candidate, materialized so that Any() could be called on it. One id query instead.
+        var pendingIds = pending.Select(c => c.Id).ToList();
+        var candidatesWithUnpaid = (await dbContext.Payments
+            .AsNoTracking()
+            .Where(p => pendingIds.Contains(p.CandidateId) && p.Status == PaymentStatus.Unpaid)
+            .Select(p => p.CandidateId)
+            .Distinct()
+            .ToListAsync()).ToHashSet();
+
+        Pending = pending.Select(c => ToPendingRow(c, now, candidatesWithUnpaid.Contains(c.Id))).ToList();
 
         var cutoffUtc = now.AddDays(-RecentlyIssuedWindowDays);
         var recentlyIssued = await dbContext.Candidates
+            .AsNoTracking()
             .Include(c => c.Session)
             .Where(c => (teamIds == null || teamIds.Contains(c.Session.TeamId))
                 && c.ApplicationStatus == CandidateApplicationStatus.Granted
@@ -122,7 +135,7 @@ public class ApplicantStatusModel(
         RecentlyIssued = recentlyIssued.Select(ToRecentlyIssuedRow).ToList();
     }
 
-    private PendingRow ToPendingRow(Candidate c, DateTime now)
+    private PendingRow ToPendingRow(Candidate c, DateTime now, bool hasUnpaidPayment)
     {
         // Counts only from ApplicationDateEnteredUtc — FCC's own Last Action Date on the matched
         // application, i.e. the moment FCC actually had something to work on. Null (still Unmatched /
@@ -150,7 +163,7 @@ public class ApplicantStatusModel(
             FccStatusLabel(c),
             FccFeeLabel(c),
             daysPending,
-            DaysPendingCssClass(daysPending, c),
+            DaysPendingCssClass(daysPending, hasUnpaidPayment),
             FccUlsLinks.License(c.FccUlsLicenseKey));
     }
 
@@ -169,9 +182,12 @@ public class ApplicantStatusModel(
     private string TeamNameFor(Candidate c) =>
         AvailableTeams.FirstOrDefault(t => t.Id == c.Session.TeamId).Name ?? "—";
 
-    private static string DaysPendingCssClass(int? daysPending, Candidate candidate)
+    /// <summary>
+    /// Takes the unpaid flag rather than reading candidate.Payments — the page no longer loads them,
+    /// see the id query in OnGetAsync.
+    /// </summary>
+    private static string DaysPendingCssClass(int? daysPending, bool hasUnpaidPayment)
     {
-        var hasUnpaidPayment = candidate.Payments.Any(p => p.Status == PaymentStatus.Unpaid);
         if (daysPending is not { } days || !hasUnpaidPayment)
         {
             return string.Empty;

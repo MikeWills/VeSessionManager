@@ -20,13 +20,21 @@ namespace VeSessionManager.Core.Ingestion;
 /// </summary>
 public class IngestionScheduleService
 {
-    public bool IsDue(Team team, int normalIntervalMinutes, DateTime nowUtc)
+    public bool IsDue(Team team, int normalIntervalMinutes, DateTime nowUtc) =>
+        IsDue(team.LastIngestionRunUtc, normalIntervalMinutes, nowUtc);
+
+    /// <summary>
+    /// Timestamp overload, for callers holding a projection rather than a Team — IngestionStatusService
+    /// projects its rows so it never decrypts a credential it does not need. The rule is identical;
+    /// this is the whole of it, and the Team overload delegates here.
+    /// </summary>
+    public bool IsDue(DateTime? lastIngestionRunUtc, int normalIntervalMinutes, DateTime nowUtc)
     {
-        if (team.LastIngestionRunUtc is null)
+        if (lastIngestionRunUtc is null)
         {
             return true;
         }
 
-        return nowUtc - team.LastIngestionRunUtc.Value >= TimeSpan.FromMinutes(normalIntervalMinutes);
+        return nowUtc - lastIngestionRunUtc.Value >= TimeSpan.FromMinutes(normalIntervalMinutes);
     }
 }
