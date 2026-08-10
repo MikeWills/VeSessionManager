@@ -50,7 +50,15 @@ public class NavBadgeCountService(AppDbContext dbContext)
             .Where(u => teamIds == null || teamIds.Contains(u.TeamId))
             .CountAsync(cancellationToken);
 
-        return new NavBadgeCounts(applicantsPendingGrant, sessionsPendingVecSubmission, unresolvedUnmatchedPayments);
+        // The whole reason the reconciliation sweep writes findings to a table rather than only into
+        // its run summary: a count on the chassis is seen without going looking, and "ExamTools has
+        // sessions we don't" is not something anyone thinks to check for.
+        var openReconciliationFindings = await dbContext.ReconciliationFindings
+            .Where(f => f.ResolvedUtc == null)
+            .Where(f => teamIds == null || teamIds.Contains(f.TeamId))
+            .CountAsync(cancellationToken);
+
+        return new NavBadgeCounts(applicantsPendingGrant, sessionsPendingVecSubmission, unresolvedUnmatchedPayments, openReconciliationFindings);
     }
 
     /// <summary>
@@ -112,7 +120,7 @@ public class NavBadgeCountService(AppDbContext dbContext)
 }
 
 /// <summary>Zero means "nothing outstanding" — the nav hides the badge entirely rather than rendering a "0".</summary>
-public record NavBadgeCounts(int ApplicantsPendingGrant, int SessionsPendingVecSubmission, int UnresolvedUnmatchedPayments);
+public record NavBadgeCounts(int ApplicantsPendingGrant, int SessionsPendingVecSubmission, int UnresolvedUnmatchedPayments, int OpenReconciliationFindings);
 
 /// <summary>
 /// Reading a per-team count dictionary safely. The grouped queries above omit teams with nothing

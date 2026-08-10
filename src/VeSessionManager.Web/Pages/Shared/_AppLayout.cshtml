@@ -33,7 +33,7 @@
     }
 
     var badges = currentUser is null
-        ? new NavBadgeCounts(0, 0, 0)
+        ? new NavBadgeCounts(0, 0, 0, 0)
         : await NavBadgeCounts.GetCountsAsync(effectiveTeamIds, Context.RequestAborted);
 
     var roleLabel = currentUser?.Role switch
@@ -62,7 +62,7 @@
     var applicantsGroupActive = activeNav is "ApplicantStatus" or "RenewalMonitor";
     var vesGroupActive = activeNav is "VeRoster" or "VeDirectory" or "VeTags" or "VeImport";
     var settingsGroupActive = activeNav is "AdminTeams" or "AdminTeamSettings" or "AdminUsers" or "AdminEmailTemplates"
-        or "AdminFees" or "AdminVecs" or "AdminAuditLog" or "AdminJobHistory" or "AdminJobSchedule" or "AdminSystemSettings";
+        or "AdminFees" or "AdminVecs" or "AdminAuditLog" or "AdminJobHistory" or "AdminJobSchedule" or "Reconciliation" or "AdminSystemSettings";
 }
 <!DOCTYPE html>
 <html lang="en">
@@ -176,6 +176,16 @@
                         <a class="item @(activeNav == "AdminAuditLog" ? "active" : "")" asp-page="/Admin/AuditLog">Audit Log</a>
                         <a class="item @(activeNav == "AdminJobHistory" ? "active" : "")" asp-page="/Admin/JobRunHistory">Job History</a>
                         <a class="item @(activeNav == "AdminJobSchedule" ? "active" : "")" asp-page="/Admin/JobSchedule">Job Schedule</a>
+                        @* Beside Job History and Job Schedule because it is the same kind of thing —
+                           is the machinery actually doing its job — and the badge is what makes it
+                           worth having rather than another page to remember to open. *@
+                        <a class="item @(activeNav == "Reconciliation" ? "active" : "")" asp-page="/Admin/Reconciliation">
+                            Reconciliation
+                            @if (badges.OpenReconciliationFindings > 0)
+                            {
+                                <span class="nav-badge">@badges.OpenReconciliationFindings</span>
+                            }
+                        </a>
                         @if (currentUser?.Role is UserRole.SystemAdmin)
                         {
                             <hr>
