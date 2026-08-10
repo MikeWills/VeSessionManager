@@ -192,6 +192,43 @@ public class IndexModel(
 
     public async Task OnGetAsync()
     {
+        ResolveFilterState();
+        BuildSummaryLabels();
+
+        var user = await userManager.GetUserWithManagerAsync(dbContext, User) ?? throw new InvalidOperationException("No authenticated user for an [Authorize]d page.");
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+
+        AvailableTeams = await accessScope.GetAvailableTeamsAsync(dbContext, user);
+        TeamSummaryLabel = TeamId is not null
+            ? AvailableTeams.FirstOrDefault(t => t.Id == TeamId).Name ?? "All teams"
+            : "All teams";
+
+        var query = ApplyFilters(accessScope.Scope(dbContext.Sessions, user, TeamId), now, out var defaultsToNewestFirst);
+        query = ApplySort(query, defaultsToNewestFirst);
+
+        TotalCount = await query.CountAsync();
+        TotalPages = Math.Max(1, (int)Math.Ceiling(TotalCount / (double)PageSize));
+        PageNumber = Math.Min(PageNumber, TotalPages);
+
+        // Projected, not materialized: this used to Include(s => s.Candidates) and pull every
+        // candidate row of up to 100 sessions purely to render a count. The projection also removes
+        // the Vec/Team includes, since only their names are shown.
+        var rows = await query
+            .Skip((PageNumber - 1) * PageSize)
+            .Take(PageSize)
+            .Select(SessionListRow.Projection)
+            .ToListAsync();
+
+        Sessions = rows.Select(r => ToRow(r, now, user)).ToList();
+    }
+
+    /// <summary>
+    /// Reconciles the three sources of filter state — the submitted form, the remembered cookie, and
+    /// this page's defaults — and clamps every value to a known-good one before it reaches a query
+    /// or a cookie.
+    /// </summary>
+    private void ResolveFilterState()
+    {
         // [BindProperty(SupportsGet = true)] can leave a string property null rather than its C#
         // default when the request's query string omits the key entirely (confirmed live 2026-07-29,
         // e.g. unchecking every Status checkbox and submitting) — unlike Status (List<string>) and
@@ -222,13 +259,18 @@ public class IndexModel(
         }
 
         Status = Status.Where(s => KnownStatuses.Contains(s)).Distinct().ToList();
+        PageNumber = Math.Max(1, PageNumber);
+    }
+
+    /// <summary>The "what am I filtered to" text on each dropdown button.</summary>
+    private void BuildSummaryLabels()
+    {
         StatusSummaryLabel = Status.Count switch
         {
             0 => "All",
             1 => StatusLabel(Status[0]),
             _ => $"{Status.Count} selected"
         };
-        PageNumber = Math.Max(1, PageNumber);
 
         DateRangeSummaryLabel = (DateFrom, DateTo) switch
         {
@@ -239,20 +281,15 @@ public class IndexModel(
             _ when DateRange == Last7PlusUpcomingDateRangeKey => "Last 7 + Upcoming",
             _ => DateRangePresets.TryGetValue(DateRange, out var preset) ? preset.Label : "Any time"
         };
+    }
 
-        var user = await userManager.GetUserWithManagerAsync(dbContext, User) ?? throw new InvalidOperationException("No authenticated user for an [Authorize]d page.");
-        var now = timeProvider.GetUtcNow().UtcDateTime;
-
-        AvailableTeams = await accessScope.GetAvailableTeamsAsync(dbContext, user);
-        TeamSummaryLabel = TeamId is not null
-            ? AvailableTeams.FirstOrDefault(t => t.Id == TeamId).Name ?? "All teams"
-            : "All teams";
-
-        IQueryable<Session> query = accessScope.Scope(dbContext.Sessions, user, TeamId)
-            .Include(s => s.Vec)
-            .Include(s => s.Team)
-            .Include(s => s.Candidates);
-
+    /// <summary>
+    /// Status and date-range filtering. <paramref name="defaultsToNewestFirst"/> is returned rather
+    /// than recomputed by the caller because it depends on the resolved date range, which only this
+    /// method works out.
+    /// </summary>
+    private IQueryable<Session> ApplyFilters(IQueryable<Session> query, DateTime now, out bool defaultsToNewestFirst)
+    {
         // These mirror ToRow's statusLabel priority exactly (Cancelled > Reschedule flagged >
         // Completed > Active) so a checked box always matches what the Status column shows.
         var wantActive = Status.Contains("Active");
@@ -264,9 +301,9 @@ public class IndexModel(
         {
             query = query.Where(s =>
                 // "Completed" means finished by either route — a Session Manager marking it, or
-                // ExamTools closing it (2026-07-31). Before ExamToolsClosedUtc existed only the
-                // manual route set anything, so every past session nobody had marked stayed
-                // "Active" forever. Deliberately not a fifth status: closed is closed.
+                // ExamTools closing it (2026-07-31). Session.IsCompleted is this same rule for an
+                // already-materialized session; EF cannot translate that property, so the rule is
+                // spelled out here and SessionCompletionRuleTests pins the two spellings together.
                 (wantActive && s.Status == SessionStatus.Active && !s.RescheduleFlaggedForReview && s.TestingCompletedUtc == null && s.ExamToolsClosedUtc == null)
                 || (wantRescheduleFlagged && s.Status == SessionStatus.Active && s.RescheduleFlaggedForReview)
                 || (wantCompleted && s.Status == SessionStatus.Active && !s.RescheduleFlaggedForReview && (s.TestingCompletedUtc != null || s.ExamToolsClosedUtc != null))
@@ -295,14 +332,9 @@ public class IndexModel(
         // *soonest* session, so they keep the default ascending sort instead of flipping.
         var isForwardLookingPreset = (DateRange == UpcomingDateRangeKey || DateRange == Last7PlusUpcomingDateRangeKey)
             && DateFrom is null && DateTo is null;
-        query = ApplySort(query, (dateFromUtc is not null || dateToUtc is not null) && !isForwardLookingPreset);
+        defaultsToNewestFirst = (dateFromUtc is not null || dateToUtc is not null) && !isForwardLookingPreset;
 
-        TotalCount = await query.CountAsync();
-        TotalPages = Math.Max(1, (int)Math.Ceiling(TotalCount / (double)PageSize));
-        PageNumber = Math.Min(PageNumber, TotalPages);
-
-        var sessions = await query.Skip((PageNumber - 1) * PageSize).Take(PageSize).ToListAsync();
-        Sessions = sessions.Select(s => ToRow(s, now, user)).ToList();
+        return query;
     }
 
     /// <summary>
@@ -581,12 +613,69 @@ public class IndexModel(
         });
     }
 
-    private SessionRow ToRow(Session s, DateTime now, User user)
+    /// <summary>
+    /// The columns the session list actually renders, and nothing else. Exists so the query can
+    /// project instead of materializing entities: the list previously did
+    /// <c>Include(s =&gt; s.Candidates)</c> and loaded every candidate row of up to 100 sessions to
+    /// display one number per row.
+    ///
+    /// <para><see cref="Projection"/> is a static expression rather than an inline
+    /// <c>Select(...)</c> so it is impossible to have two subtly different versions of it, and so
+    /// the candidate-count rule below sits next to the sort key that has to agree with it.</para>
+    /// </summary>
+    public record SessionListRow(
+        int Id,
+        int TeamId,
+        string? ExtId,
+        DateTime ScheduledStartUtc,
+        int DurationMinutes,
+        bool HasZoom,
+        SessionStatus Status,
+        bool RescheduleFlaggedForReview,
+        DateTime? TestingCompletedUtc,
+        DateTime? ExamToolsClosedUtc,
+        VecSubmissionStatus VecSubmissionStatus,
+        string VecName,
+        string TeamName,
+        int CandidateCount)
+    {
+        public static readonly System.Linq.Expressions.Expression<Func<Session, SessionListRow>> Projection =
+            s => new SessionListRow(
+                s.Id,
+                s.TeamId,
+                s.ExtId,
+                s.ScheduledStartUtc,
+                s.DurationMinutes,
+                s.ZoomMeetingId != null,
+                s.Status,
+                s.RescheduleFlaggedForReview,
+                s.TestingCompletedUtc,
+                s.ExamToolsClosedUtc,
+                s.VecSubmissionStatus,
+                s.Vec.Name,
+                s.Team.Name,
+                // Withdrawn candidates are excluded here, in the "candidates" sort key, and on
+                // Session Detail's roster — all three must agree. A NotTested row is someone who
+                // left the session; counting them made a session look fuller than it is.
+                s.Candidates.Count(c => c.ApplicationStatus != CandidateApplicationStatus.NotTested));
+
+        /// <summary>
+        /// Mirrors <see cref="Session.CompletedUtc"/> for a projected row. Same rule, and the same
+        /// reason it is not <c>Status</c>: Status only ever leaves Active on cancellation.
+        /// SessionCompletionRuleTests pins this against the entity and against the query filter.
+        /// </summary>
+        public bool IsCompleted => TestingCompletedUtc is not null || ExamToolsClosedUtc is not null;
+
+        /// <summary>Mirrors <see cref="Session.HasEnded"/> — see that member for why `now` is passed in.</summary>
+        public bool HasEnded(DateTime now) => ScheduledStartUtc.AddMinutes(DurationMinutes) <= now;
+    }
+
+    private SessionRow ToRow(SessionListRow s, DateTime now, User user)
     {
         // ExtId gets its own column (issue #35 — "know whose session is whose"), not repeated in
         // the sub-line the way it used to be.
         var subParts = new List<string>();
-        if (s.ZoomMeetingId is not null)
+        if (s.HasZoom)
         {
             subParts.Add("Zoom");
         }
@@ -602,7 +691,7 @@ public class IndexModel(
         // The Status filter and the "status" sort key encode this same rule; change all three together.
         var (statusClass, statusLabel) = s.Status == SessionStatus.Cancelled ? ("chip-brick", "Cancelled")
             : s.RescheduleFlaggedForReview ? ("chip-amber", "Reschedule flagged")
-            : s.TestingCompletedUtc is not null || s.ExamToolsClosedUtc is not null ? ("chip-neutral", "Completed")
+            : s.IsCompleted ? ("chip-neutral", "Completed")
             : ("chip-green", "Active");
 
         var (vecClass, vecLabel) = s.Status == SessionStatus.Cancelled ? ("chip-neutral", "—")
@@ -612,7 +701,7 @@ public class IndexModel(
         // Same availability rules the session Detail page applies to the same actions, so a control
         // never appears here that would be absent (or 403) there. Cancelled sessions expose nothing
         // but Delete — there's nothing left to complete or submit for a session that never ran.
-        var canEdit = accessScope.CanEdit(user, s);
+        var canEdit = accessScope.CanEdit(user, s.TeamId);
         var notCancelled = s.Status != SessionStatus.Cancelled;
         var canMarkSubmitted = canEdit && notCancelled && s.VecSubmissionStatus == VecSubmissionStatus.NotSubmitted;
         var canMarkCompleted = canEdit && notCancelled && s.TestingCompletedUtc is null;
@@ -624,9 +713,9 @@ public class IndexModel(
             s.ExtId ?? "—",
             EasternTimeFormatter.Format(s.ScheduledStartUtc, "ddd, MMM d"),
             string.Join(" · ", subParts),
-            s.Vec.Name,
-            s.Team.Name,
-            s.Candidates.Count(c => c.ApplicationStatus != CandidateApplicationStatus.NotTested),
+            s.VecName,
+            s.TeamName,
+            s.CandidateCount,
             s.RescheduleFlaggedForReview,
             statusClass, statusLabel,
             vecClass, vecLabel,

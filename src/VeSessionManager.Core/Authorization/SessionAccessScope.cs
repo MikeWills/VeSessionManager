@@ -88,28 +88,38 @@ public class SessionAccessScope
     /// CanEdit, TeamLead is not carved out here: a TeamLead assigned to a team can view that team's
     /// sessions, just never edit them.
     /// </summary>
-    public bool CanView(User user, Session session)
+    public bool CanView(User user, Session session) => CanView(user, session.TeamId);
+
+    /// <summary>
+    /// Team-id overload, for callers holding a projection rather than a loaded Session — the session
+    /// list projects its rows instead of materializing every candidate (see SessionListRow). Both
+    /// overloads only ever read TeamId, so this is the whole rule, not a weaker version of it.
+    /// </summary>
+    public bool CanView(User user, int teamId)
     {
         if (user.Role == UserRole.SystemAdmin)
         {
             return true;
         }
 
-        return GetEffectiveTeamIds(user)?.Contains(session.TeamId) ?? false;
+        return GetEffectiveTeamIds(user)?.Contains(teamId) ?? false;
     }
 
     /// <summary>
     /// Whether the given user may edit (not just view) the given session. TeamLead is always
     /// read-only, per spec, pending explicit sign-off on any TeamLead write access.
     /// </summary>
-    public bool CanEdit(User user, Session session)
+    public bool CanEdit(User user, Session session) => CanEdit(user, session.TeamId);
+
+    /// <summary>Team-id overload — see the CanView overload for why this exists.</summary>
+    public bool CanEdit(User user, int teamId)
     {
         if (user.Role == UserRole.TeamLead)
         {
             return false;
         }
 
-        return CanView(user, session);
+        return CanView(user, teamId);
     }
 
     /// <summary>

@@ -191,7 +191,7 @@ public class VolunteerExaminerSyncService(
     /// <c>Status</c> — that only ever means "not cancelled" (see CLAUDE.md).
     /// </summary>
     private static bool IsFinished(Session session, DateTime now) =>
-        session.ExamToolsClosedUtc is not null || session.TestingCompletedUtc is not null || session.HasEnded(now);
+        session.IsCompleted || session.HasEnded(now);
 
     private void ReconcileSession(
         Team team, Session session, IReadOnlyList<ExamToolsVe> roster,

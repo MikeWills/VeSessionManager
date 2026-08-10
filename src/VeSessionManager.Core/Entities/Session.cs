@@ -108,6 +108,30 @@ public class Session
     public List<Candidate> Candidates { get; } = [];
     public List<SessionVolunteerExaminer> SessionVolunteerExaminers { get; } = [];
 
+    /// <summary>
+    /// When this session finished, by whichever route got there first — a Session Manager marking it
+    /// (<see cref="TestingCompletedUtc"/>) or ExamTools closing it (<see cref="ExamToolsClosedUtc"/>).
+    /// Null means still open.
+    ///
+    /// <para><b>This is the definition of "completed", and it is deliberately not
+    /// <see cref="Status"/>.</b> Status only ever leaves Active on *cancellation* — it is never set
+    /// to Completed — so <c>Status == Active</c> means "not cancelled", and a query filtered on it
+    /// returns every session the team has ever run. That misreading has shipped twice: it made
+    /// VolunteerExaminerSyncService re-poll a team's entire history hourly for months, and then came
+    /// back in the VE Roster's "sessions worked" count, where a VE rostered onto a *future* session
+    /// already had it in their total.</para>
+    ///
+    /// <para><b>Not EF-mapped.</b> Use it on a materialized Session; query-side, spell the same rule
+    /// out as <c>s.TestingCompletedUtc != null || s.ExamToolsClosedUtc != null</c> so EF can
+    /// translate it. SessionCompletionRuleTests pins those two spellings together, since the
+    /// language cannot.</para>
+    /// </summary>
+    public DateTime? CompletedUtc => TestingCompletedUtc ?? ExamToolsClosedUtc;
+
+    /// <summary>Whether the session is finished — see <see cref="CompletedUtc"/> for the rule and
+    /// for why this is not <c>Status</c>. Not EF-mapped.</summary>
+    public bool IsCompleted => CompletedUtc is not null;
+
     /// <summary>True once the session's scheduled window has fully elapsed — used to keep
     /// backfilled/late-ingested past sessions (see SessionIngestionService's completed-session
     /// backfill) from triggering live Zoom/Discord scheduling or a "you're registered" email for

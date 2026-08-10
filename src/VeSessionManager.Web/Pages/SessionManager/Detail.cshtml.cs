@@ -384,7 +384,7 @@ public class DetailModel(
             // Same rule as the session list's Status chip: completed by either route — a Session
             // Manager marking it, or ExamTools closing it (ExamToolsClosedUtc). Preferring the
             // manual timestamp keeps the more specific fact when both exist.
-            (session.TestingCompletedUtc ?? session.ExamToolsClosedUtc) is { } completedUtc
+            session.CompletedUtc is { } completedUtc
                 ? $"Completed {EasternTimeFormatter.Format(completedUtc, "MMM d, yyyy")}"
                 : "Not yet completed",
             session.VecSubmissionStatus == VecSubmissionStatus.Submitted ? "chip-green" : "chip-neutral",
