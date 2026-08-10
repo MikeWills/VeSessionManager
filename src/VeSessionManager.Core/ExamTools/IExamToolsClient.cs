@@ -15,12 +15,20 @@ public interface IExamToolsClient
     Task<IReadOnlyList<ExamToolsSession>> GetTeamSessionsAsync(ExamToolsCredentials credentials, CancellationToken cancellationToken);
 
     /// <summary>
-    /// Closed ("done") sessions for the team whose date falls within [startDateUtc, endDateUtc) —
-    /// a completely separate feed from <see cref="GetTeamSessionsAsync"/>, which never surfaces
-    /// closed sessions at all. See docs/examtools-api.md's "Closed sessions are a separate feed"
-    /// section for how this was discovered.
+    /// Closed ("done") sessions for the team on or between the two dates — <b>both ends
+    /// inclusive</b>. A completely separate feed from <see cref="GetTeamSessionsAsync"/>, which
+    /// never surfaces closed sessions at all. See docs/examtools-api.md's "Closed sessions are a
+    /// separate feed" section for how this was discovered.
+    ///
+    /// <para><b>ExamTools' own bound is exclusive</b> and the implementation compensates by asking
+    /// for one day more. This used to be documented as half-open and left to the caller, which cost
+    /// months of silent data loss: the historical import chunks by calendar month and passed an
+    /// inclusive month-end, so <i>every chunk dropped its final day</i> — found 2026-08-10 when a VE
+    /// who had worked on 31 May appeared to have been inactive since the previous August. An API
+    /// whose contract is the opposite of what every caller means is the wrong place to be clever, so
+    /// the adjustment lives here, once, rather than at each call site.</para>
     /// </summary>
-    Task<IReadOnlyList<ExamToolsSession>> GetTeamClosedSessionsAsync(ExamToolsCredentials credentials, DateOnly startDateUtc, DateOnly endDateUtc, CancellationToken cancellationToken);
+    Task<IReadOnlyList<ExamToolsSession>> GetTeamClosedSessionsAsync(ExamToolsCredentials credentials, DateOnly startDateUtc, DateOnly endDateInclusiveUtc, CancellationToken cancellationToken);
 
     /// <summary>Registered applicants for one session, including PII — handle results per the PII logging rules.</summary>
     Task<IReadOnlyList<ExamToolsApplicant>> GetSessionApplicantsAsync(ExamToolsCredentials credentials, string examToolsSessionId, CancellationToken cancellationToken);

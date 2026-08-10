@@ -37,14 +37,29 @@ public sealed class ExamToolsClient : IExamToolsClient, IDisposable
     }
 
     public async Task<IReadOnlyList<ExamToolsSession>> GetTeamClosedSessionsAsync(
-        ExamToolsCredentials credentials, DateOnly startDateUtc, DateOnly endDateUtc, CancellationToken cancellationToken)
+        ExamToolsCredentials credentials, DateOnly startDateUtc, DateOnly endDateInclusiveUtc, CancellationToken cancellationToken)
     {
         var sessions = await GetJsonAsync<List<ExamToolsSession>>(
             credentials,
-            $"/api/veUser/sessions/{startDateUtc:yyyy-MM-dd}/{endDateUtc:yyyy-MM-dd}?group=all&team={Uri.EscapeDataString(credentials.TeamCode)}",
+            ClosedSessionsPath(credentials.TeamCode, startDateUtc, endDateInclusiveUtc),
             cancellationToken);
         return sessions ?? [];
     }
+
+    /// <summary>
+    /// The closed-sessions URL for an <b>inclusive</b> date range.
+    ///
+    /// <para><b>ExamTools' end bound is exclusive</b>, verified against the live feed on 2026-08-10:
+    /// asking for 2026-04-01..2026-04-30 returned 25 sessions ending on the 29th, while
+    /// 2026-04-01..2026-05-01 returned 27 — the two sessions held on the 30th — and still nothing
+    /// from 1 May. So the day is added here, and every caller gets the inclusive range it meant.</para>
+    ///
+    /// <para>Public for its test. The bug this fixes was invisible in every other way: the request
+    /// succeeded, the response was valid, and the only symptom was sessions that quietly did not
+    /// exist.</para>
+    /// </summary>
+    public static string ClosedSessionsPath(string teamCode, DateOnly startDateUtc, DateOnly endDateInclusiveUtc) =>
+        $"/api/veUser/sessions/{startDateUtc:yyyy-MM-dd}/{endDateInclusiveUtc.AddDays(1):yyyy-MM-dd}?group=all&team={Uri.EscapeDataString(teamCode)}";
 
     public async Task<IReadOnlyList<ExamToolsApplicant>> GetSessionApplicantsAsync(ExamToolsCredentials credentials, string examToolsSessionId, CancellationToken cancellationToken)
     {
