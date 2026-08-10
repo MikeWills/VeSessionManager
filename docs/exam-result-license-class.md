@@ -119,7 +119,7 @@ that page shows many candidates at once and the per-candidate detail page is the
 ## Applicant Status page
 
 Built 2026-07-29 (`Pages/SessionManager/ApplicantStatus.cshtml(.cs)`, nav link added to
-`_AppLayout.cshtml`) per the TODO.md feature request — a team-wide (not per-session) worklist for
+`_AppLayout.cshtml`) in response to a feature request — a team-wide (not per-session) worklist for
 tracking who's still waiting on the FCC, since the per-session Detail page only shows one session at
 a time and nothing else surfaced this across the whole team.
 

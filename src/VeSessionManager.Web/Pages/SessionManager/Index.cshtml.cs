@@ -18,7 +18,7 @@ namespace VeSessionManager.Web.Pages.SessionManager;
 /// SessionManager (not just SystemAdmin/SessionManager, the original 9a placeholder's attribute)
 /// because SessionAccessScope already treats TeamAdmin as an equal-scope superset of SessionManager
 /// for session visibility — see docs/admin-auth.md's role hierarchy. TeamLead was added in the
-/// TeamLead-read-only-view fix (see TODO.md) — SessionAccessScope.Scope already resolves a
+/// TeamLead-read-only-view fix (see docs/admin-auth.md) — SessionAccessScope.Scope already resolves a
 /// TeamLead's effective teams the same way as everyone else, this page just needed the role added.
 ///
 /// Multi-team (issue #19) + team filter/column (issue #17): a user belonging to more than one team
@@ -119,7 +119,7 @@ public class IndexModel(
     // Completed session may or may not still owe VEC paperwork — that's the separate VEC Submission
     // column). It lives in the same checkbox group because the group already ORs its members, so
     // ticking only this one yields exactly the "still owes paperwork" worklist. Added 2026-07-30 when
-    // the standalone VEC Submission page was removed as redundant — see TODO.md.
+    // the standalone VEC Submission page was removed as redundant — see docs/vec-submission-tracker.md.
     private static readonly string[] KnownStatuses = ["Active", "RescheduleFlagged", "Completed", "Cancelled", "PendingVecSubmission"];
 
     /// <summary>Sortable columns, keyed by the value that travels in the query string. Anything not

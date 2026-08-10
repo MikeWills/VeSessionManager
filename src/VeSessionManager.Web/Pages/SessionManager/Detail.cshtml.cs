@@ -25,7 +25,7 @@ namespace VeSessionManager.Web.Pages.SessionManager;
 /// on their own since they're called from elsewhere too (e.g. background jobs have no "acting
 /// user" to scope against).
 ///
-/// TeamLead access (see TODO.md's "TeamLead has no real view yet"): the page-load gate uses
+/// TeamLead access (see docs/admin-auth.md): the page-load gate uses
 /// SessionAccessScope.CanView (not CanEdit) so a TeamLead can actually see the page — CanEdit is
 /// always false for TeamLead by design. Every POST handler still gates on CanEdit via
 /// AuthorizeAsync() below, unchanged, so TeamLead is denied server-side regardless of the UI; the
@@ -137,7 +137,7 @@ public class DetailModel(
     }
 
     /// <summary>
-    /// TeamAdmin/SystemAdmin-only destructive cleanup action (see TODO.md's "delete a session
+    /// TeamAdmin/SystemAdmin-only destructive cleanup action (see docs/session-manager-ui.md's "delete a session
     /// outright" feature request) — gated by AdminAccessScope.CanManageTeam, deliberately not
     /// SessionAccessScope.CanEdit, since this is out of scope for routine Session Manager work.
     /// </summary>

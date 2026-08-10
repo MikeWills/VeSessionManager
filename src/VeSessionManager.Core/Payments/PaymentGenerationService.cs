@@ -27,7 +27,7 @@ namespace VeSessionManager.Core.Payments;
 /// on every retry, so a crash between Square's call succeeding and PaymentLinkUrl being saved
 /// replays the same request (Square returns the original link) instead of creating a duplicate —
 /// same bug class as the Discord/Zoom duplicate-event issue fixed in SessionEventSchedulingService,
-/// see TODO.md.
+/// see docs/square-payments.md.
 /// </summary>
 public class PaymentGenerationService(
     AppDbContext dbContext,
@@ -229,7 +229,7 @@ public class PaymentGenerationService(
         // Persisted *before* calling Square, and reused as-is if already set from a previous
         // attempt — a crash between Square's API call succeeding and PaymentLinkUrl being saved
         // would otherwise generate a second, different link for the same fee on the next poll
-        // (same class of bug as the Discord/Zoom duplicate-event issue, see TODO.md). Square's own
+        // (same class of bug as the Discord/Zoom duplicate-event issue, see docs/square-payments.md). Square's own
         // idempotency guarantee means replaying the same key returns the original link instead of
         // creating a new one.
         if (payment.SquareIdempotencyKey is null)

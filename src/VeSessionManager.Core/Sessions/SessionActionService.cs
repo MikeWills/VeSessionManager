@@ -154,7 +154,7 @@ public class SessionActionService(
 
     /// <summary>
     /// Feature request (2026-07-29, prompted by orphaned walk-in-candidate rows found while
-    /// verifying the license-class backfill — see TODO.md/docs/exam-result-license-class.md): a
+    /// verifying the license-class backfill — see docs/exam-result-license-class.md): a
     /// genuine hard delete of a Session and everything attached to it, unlike the rest of this
     /// app's usual "PII nulled in place, row kept for stats" pattern — the whole point here is
     /// removing a stale/orphaned local row outright, not retaining it. Candidate.SessionId and

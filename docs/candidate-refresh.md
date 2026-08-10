@@ -42,7 +42,7 @@ run synchronously in the Razor Pages request instead of a background tick.
 (and the background job) triggers — confirm how many emails a candidate actually receives and when,
 across registration confirmation/day-before-reminder/payment-reminder paths, before this on-demand
 trigger trains Session Managers to expect "one click, one email" if the real behavior turns out to
-be noisier. See `docs/email-reference.md` and `TODO.md`'s Deferred section.
+be noisier. See `docs/email-reference.md` and [issue #193](https://github.com/MikeWills/VeSessionManager/issues/193).
 
 ## Superseded design (2026-07-21 – 2026-07-23)
 

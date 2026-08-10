@@ -17,7 +17,7 @@ namespace VeSessionManager.Web.Pages.SessionManager;
 /// but hasn't yet been confirmed Granted by the FCC watcher (Pending), plus a short "Recently
 /// issued" section for anyone Granted in the last <see cref="RecentlyIssuedWindowDays"/> days —
 /// requested 2026-07-29 so a Session Manager can confirm a given person's license/upgrade actually
-/// came through before they age out of Pending entirely. See TODO.md's "Feature requests" entry.
+/// came through before they age out of Pending entirely. See docs/session-manager-ui.md.
 ///
 /// Deliberately narrow: Pending is Tested + not Failed/NotTested/Granted — the same "already earned
 /// a license class this sitting" candidates ExamResultSyncService computes InitialLicenseClass/

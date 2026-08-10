@@ -90,7 +90,8 @@ Identity's job.
 
 ## Not yet verified live
 
-**No SMTP has ever been configured on any deployment** (see `TODO.md`), so nothing in this app has
+**No SMTP has ever been configured on any deployment** (see
+[issue #181](https://github.com/MikeWills/VeSessionManager/issues/181)), so nothing in this app has
 sent a real email — including this. The flow is unit-tested end to end with a fake sender, but the
 first real send will be the first real proof. Configure Admin → System Settings → System Email, then
 walk one reset through with a throwaway account before relying on it.

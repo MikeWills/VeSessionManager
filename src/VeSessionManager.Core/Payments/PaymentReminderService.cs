@@ -32,7 +32,7 @@ namespace VeSessionManager.Core.Payments;
 /// instead" behavior the spec calls for, achieved here as a side effect of the date-null filter
 /// rather than a separate status check.
 ///
-/// Retest gotcha (see TODO.md's "Retest payment reminders" entry): a retest Payment's owning
+/// Retest gotcha (see docs/payment-reminders.md): a retest Payment's owning
 /// Candidate is always ApplicationStatus=Failed (terminal, and permanently so — nothing in this app
 /// ever moves a Candidate off Failed once set) and has no FCC application of its own to gate on, so
 /// ApplicationDateEnteredUtc-based gating can never fire for it. Both passes therefore carry a
