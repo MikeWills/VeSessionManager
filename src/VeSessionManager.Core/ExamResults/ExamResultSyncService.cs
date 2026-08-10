@@ -18,8 +18,8 @@ namespace VeSessionManager.Core.ExamResults;
 ///
 /// Scan-based like every other phase: every poll, for each Active session whose start has already
 /// passed, checks every non-terminal, not-yet-Tested candidate's exams[]. A candidate with any
-/// graded-and-failed element is flipped straight to ApplicationStatus=Failed (same fields
-/// CandidateActionService.MarkFailedAsync sets, but ResultMarkedByUserId stays null — nobody manually
+/// candidate who passed NO graded element is flipped straight to ApplicationStatus=Failed (same
+/// fields CandidateActionService.MarkFailedAsync sets, but ResultMarkedByUserId stays null — nobody manually
 /// clicked anything, so there's no user to attribute it to) — this also makes PaymentReminderService's
 /// existing Reason=Retest reminder logic (which is gated on ResultMarkedUtc) fire automatically for
 /// these candidates for the first time, closing a second latent gap along with the first. A candidate
@@ -143,10 +143,20 @@ public class ExamResultSyncService(
 
     private async Task SyncSessionCandidatesAsync(ExamToolsCredentials credentials, Session session, DateTime now, ExamResultSyncResult result, CancellationToken cancellationToken)
     {
+        // Failed is NOT the permanent exclusion it used to be — that is what made the pass-one-fail-one
+        // bug unrecoverable rather than merely wrong. A candidate the app auto-failed under the old
+        // logic (ResultMarkedByUserId is null, and no license class was ever resolved) is looked at
+        // again, so a re-examined result corrects itself on the next poll with no migration and no
+        // manual intervention. A HUMAN Failed verdict is still final — a Session Manager who marked
+        // someone failed must not be quietly overruled by a feed.
+        //
+        // Cost of re-examining a genuinely failed candidate: one applicant-detail call per poll for
+        // the 14 days their session stays inside ResultSyncWindow, then never again. ApplyResult is
+        // idempotent for them — no repeat audit entry, no repeat count.
         var pendingCandidates = session.Candidates
             .Where(c => c.ExamToolsApplicantId is not null
-                && c.ApplicationStatus != CandidateApplicationStatus.Failed
                 && c.ApplicationStatus != CandidateApplicationStatus.NotTested
+                && (c.ApplicationStatus != CandidateApplicationStatus.Failed || c.ResultMarkedByUserId is null)
                 && (!c.Tested || c.NewLicenseClass is null))
             .ToList();
 
@@ -174,15 +184,38 @@ public class ExamResultSyncService(
             return;
         }
 
-        if (gradedExams.Any(e => !e.Passed))
+        // **The outcome is decided by what they PASSED, not by whether anything failed** (corrected
+        // 2026-08-09, reported live on John Davey at HRCC).
+        //
+        // The old test was `Any(e => !e.Passed)` -> Failed, which is wrong for the ordinary case of
+        // reaching above your current class and missing: pass Element 2 and fail Element 3 and you
+        // walk out a newly licensed Technician, but the app called you Failed, set no license class,
+        // and — because the scan filter skips Failed candidates — never looked at you again. Someone
+        // who genuinely earned a call sign was recorded as having earned nothing.
+        //
+        // It also mishandled a retake within one sitting: fail Element 3, pass it on a second
+        // attempt, and the failed attempt still poisoned the result.
+        //
+        // A failed element only matters when NOTHING passed. Which is exactly what this now says.
+        var passedElements = gradedExams.Where(e => e.Passed).Select(e => e.Element).ToList();
+
+        var wasAutoFailed = candidate.ApplicationStatus == CandidateApplicationStatus.Failed;
+
+        if (passedElements.Count == 0)
         {
-            candidate.ApplicationStatus = CandidateApplicationStatus.Failed;
             candidate.Tested = true;
+
+            // Already Failed, still failing: say nothing. Re-auditing and re-counting an unchanged
+            // verdict every poll for 14 days would bury the real entries under noise — the price of
+            // no longer excluding Failed from the scan.
+            if (wasAutoFailed) return;
+
+            candidate.ApplicationStatus = CandidateApplicationStatus.Failed;
             candidate.ResultMarkedUtc = now;
             candidate.ResultMarkedByUserId = null;
 
             dbContext.AddAuditLog(null, "CandidateAutoMarkedFailed", nameof(Candidate), candidate.Id,
-                $"Candidate {candidate.Id} auto-marked Failed from ExamTools' graded exam result.", now);
+                $"Candidate {candidate.Id} auto-marked Failed — every graded element was failed.", now);
             result.CandidatesMarkedFailed++;
         }
         else
@@ -190,14 +223,37 @@ public class ExamResultSyncService(
             var wasAlreadyTested = candidate.Tested;
             candidate.Tested = true;
 
+            if (wasAutoFailed)
+            {
+                // Wrongly failed by the old logic, and they passed something. Back to Unmatched —
+                // the state a passing candidate would have been left in — so UlsWatcherService picks
+                // them up and walks them on to Received/Granted like anyone else. Anything else would
+                // leave them Tested with a license class but stuck in a terminal status the watcher
+                // skips.
+                candidate.ApplicationStatus = CandidateApplicationStatus.Unmatched;
+                candidate.ResultMarkedUtc = null;
+
+                dbContext.AddAuditLog(null, "CandidateAutoFailedCorrected", nameof(Candidate), candidate.Id,
+                    $"Candidate {candidate.Id} was auto-marked Failed but passed element(s) {string.Join(", ", passedElements.OrderBy(e => e))} — status cleared and the earned license class recorded.", now);
+                result.CandidatesAutoFailedCorrected++;
+            }
+
             if (candidate.NewLicenseClass is null)
             {
-                var (initial, newClass) = ResolveLicenseClasses(gradedExams.Select(e => e.Element));
+                // Only the passed elements. A failed attempt at a higher class must not drag the
+                // earned class up, and a failed lower element cannot lower it either.
+                var (initial, newClass) = ResolveLicenseClasses(passedElements);
                 candidate.InitialLicenseClass = initial;
                 candidate.NewLicenseClass = newClass;
             }
 
-            if (wasAlreadyTested)
+            // A correction is already counted above. It would otherwise also land in the backfill
+            // bucket — a wrongly-failed candidate is Tested — and be double-reported.
+            if (wasAutoFailed)
+            {
+                // counted as CandidatesAutoFailedCorrected
+            }
+            else if (wasAlreadyTested)
             {
                 result.CandidatesBackfilledLicenseClass++;
             }
@@ -238,6 +294,9 @@ public class ExamResultSyncResult
     /// <summary>Already-Tested candidates (from before this field existed, or from a prior code version) that only got InitialLicenseClass/NewLicenseClass filled in on this pass — not a new pass/fail result.</summary>
     public int CandidatesBackfilledLicenseClass { get; set; }
 
+    /// <summary>Candidates the old any-element-failed logic wrongly marked Failed, put right on this pass. Counted separately so a repair is never mistaken for a fresh result on the ops dashboard.</summary>
+    public int CandidatesAutoFailedCorrected { get; set; }
+
     public override string ToString() =>
-        $"marked Failed {CandidatesMarkedFailed}, marked Tested (passed) {CandidatesMarkedTested}, backfilled license class {CandidatesBackfilledLicenseClass}";
+        $"marked Failed {CandidatesMarkedFailed}, marked Tested (passed) {CandidatesMarkedTested}, backfilled license class {CandidatesBackfilledLicenseClass}, corrected wrongly-failed {CandidatesAutoFailedCorrected}";
 }
