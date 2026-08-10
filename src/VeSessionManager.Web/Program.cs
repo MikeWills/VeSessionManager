@@ -330,6 +330,10 @@ using (var scope = app.Services.CreateScope())
 
     var startupLogger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
 
+    // Fails the host rather than running with credentials it cannot read — see
+    // DataProtectionKeyRingGuard for why that state is otherwise completely silent.
+    await DataProtectionKeyRingGuard.VerifyAsync(dbContext, startupLogger);
+
     if (app.Environment.IsDevelopment())
     {
         await DevAuthSeeder.SeedAsync(scope.ServiceProvider, startupLogger);

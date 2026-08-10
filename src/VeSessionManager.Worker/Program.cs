@@ -154,6 +154,13 @@ using (var scope = host.Services.CreateScope())
     var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
     dbContext.Database.Migrate();
 
+    // Fails the host rather than running with credentials it cannot read — see
+    // DataProtectionKeyRingGuard. Deliberately before the one-off switches below: a
+    // --migrate-team-secrets run against the wrong key ring would rewrite every credential with the
+    // undecryptable value it just read back, destroying the originals.
+    await DataProtectionKeyRingGuard.VerifyAsync(
+        dbContext, scope.ServiceProvider.GetRequiredService<ILogger<Program>>());
+
     // One-off, human-triggered CLI flag (2026-07-30, see TeamSecretsMigrationService) — never runs
     // automatically on a normal startup, since it touches every real team's live external-service
     // credentials. Exits immediately after, rather than falling through to the normal
