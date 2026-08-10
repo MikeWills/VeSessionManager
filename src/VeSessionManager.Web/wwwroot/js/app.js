@@ -61,6 +61,30 @@
       setNavOpen(false);
     });
 
+    // Filter controls that re-run their form the moment they change.
+    //
+    // A data attribute rather than an inline `onchange=`, because the CSP is `script-src 'self'`
+    // and that silently drops inline handlers — the obvious spelling produces a control that looks
+    // right, reads right in the markup, and does nothing at all when clicked. Two shipped that way
+    // (VE Directory's "Show retired", the session list's page-size picker) and neither failed
+    // loudly; only the browser console said so. InlineEventHandlerTests now guards it.
+    //
+    // Delegated from the document so any page can opt in with one attribute. `control.form` is used
+    // ahead of a closest() walk so a control bound to a form by id — the page-size picker sits
+    // outside its own <form> — still finds it.
+    document.addEventListener("change", function (event) {
+      var control = event.target.closest("[data-autosubmit]");
+      if (!control) return;
+
+      var form = control.form || control.closest("form");
+      if (!form) return;
+
+      // requestSubmit() over submit(): it fires validation and the submit event, where submit()
+      // bypasses both.
+      if (form.requestSubmit) form.requestSubmit();
+      else form.submit();
+    });
+
     // Kebab row-action menus: click the trigger toggles its own .menu, closes any other open one;
     // click outside any open menu closes it.
     document.addEventListener("click", function (event) {

@@ -401,7 +401,11 @@ app.UseHttpsRedirection();
 //     are ~139 inline style="" attributes across the pages. Removing those is the prerequisite for
 //     tightening this, not something to do blind.
 //   - font-src fonts.gstatic.com: what the Google Fonts stylesheet itself pulls.
-// script-src stays 'self' — there is no inline JavaScript anywhere in Pages/ (verified).
+// script-src stays 'self'. There is no inline JavaScript anywhere in Pages/ — and that is now
+// enforced by InlineEventHandlerTests rather than asserted, because the failure mode is silent:
+// an inline onchange= renders fine, reads correctly in the markup, and simply never runs. Two
+// controls shipped dead that way before anyone noticed. Use app.js's data-autosubmit (or another
+// delegated handler) instead.
 app.Use(async (context, next) =>
 {
     var headers = context.Response.Headers;

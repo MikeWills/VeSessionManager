@@ -64,8 +64,8 @@
 
     @* Retired memberships are hidden by default: the directory answers "who can we call on", and a
        list that keeps everyone who ever served stops being that. *@
-    <label class="ve-search" style="gap:8px;">
-        <input type="checkbox" name="includeInactive" value="true" @(Model.IncludeInactive ? "checked" : "") onchange="this.form.submit()" />
+    <label class="toggle-pill @(Model.IncludeInactive ? "active" : "")">
+        <input type="checkbox" name="includeInactive" value="true" data-autosubmit @(Model.IncludeInactive ? "checked" : "") />
         <span>Show retired</span>
     </label>
 </form>
