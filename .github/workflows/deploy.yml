@@ -19,6 +19,10 @@ on:
 env:
   DEPLOY_PATH: /opt/vesessionmanager
   DB_PATH: /var/lib/vesessionmanager/vesessionmanager.db
+  # Deliberately NOT under /var/lib/vesessionmanager -- see docs/deployment.md. The key ring and the
+  # ciphertext it opens must not end up in one archive, so the two backups below stay in separate
+  # directories rather than one tidy bundle.
+  KEYRING_PATH: /var/lib/vesessionmanager-keys
   WORKER_SERVICE: vesessionmanager-worker
   WEB_SERVICE: vesessionmanager-web
   # Must match ASPNETCORE_URLS in the web systemd unit -- change this (and the unit file) if it
@@ -99,6 +103,26 @@ jobs:
         run: |
           ssh -i ~/.ssh/deploy_key "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
             "sudo rsync --ignore-missing-args '$DB_PATH' '$DB_PATH.bak-\$(date +%Y%m%d%H%M%S)'"
+
+      - name: Backup Data Protection key ring
+        # Losing the key ring while the database survives makes every stored team credential
+        # permanently unrecoverable, so it earns the same pre-deploy snapshot the database gets.
+        #
+        # The snapshot stays INSIDE $KEYRING_PATH rather than next to the database on purpose. A
+        # backup that puts the key ring beside the ciphertext undoes the reason the two directories
+        # were separated at all (#157) -- one leaked archive would then carry both halves.
+        #
+        # Same rsync --ignore-missing-args idiom as the database step above, for the same reason: on
+        # a box that has not had the key ring created yet this is a clean no-op rather than a failed
+        # deploy, and `sudo test -f` is not available to the deploy user (see the note above).
+        # /usr/bin/rsync is already in the sudoers allowlist, so this needs no new grant.
+        #
+        # NOTE: this is a rollback snapshot, not a backup. It lives on the same disk as the thing it
+        # protects. Real off-box backup of $KEYRING_PATH is still a manual, separate job -- see
+        # docs/deployment.md.
+        run: |
+          ssh -i ~/.ssh/deploy_key "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
+            "sudo rsync -a --ignore-missing-args '$KEYRING_PATH/' '$KEYRING_PATH/.bak-\$(date +%Y%m%d%H%M%S)/'"
 
       - name: Stop services
         # One service per command, deliberately. The deploy user's sudoers allowlist grants each
