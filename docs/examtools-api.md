@@ -42,6 +42,28 @@ credentials/session data live there, verified directly against the API) — this
   still in state `"pend"` (observed live on the dev feed: sessions from 2023/2024). Ingestion
   refuses to first-ingest a `"pend"` session more than a day past its start so downstream phases
   never create Zoom/Discord events for dead sessions.
+- **The closed-sessions `endDate` is EXCLUSIVE (found live 2026-08-10, fixed same day).** Measured
+  against the real feed: `2026-04-01/2026-04-30` returned 25 sessions ending on the 29th, while
+  `2026-04-01/2026-05-01` returned 27 — the two sessions held on the 30th — and still nothing from
+  1 May, so it is a strict `<` rather than an off-by-one that happens to help.
+
+  This cost **months of silent data loss**. `HistoricalImportService.Chunks` splits a range into
+  calendar months and yields inclusive month-ends, which went straight to the endpoint, so **every
+  chunk dropped its final day** — roughly twelve days a year, for every team and every range ever
+  imported. Nothing failed anywhere: the request succeeded, the response was valid, and the sessions
+  simply were not there afterwards. It surfaced only because a VE who worked on 31 May 2026 showed
+  as inactive since the previous August, and HRCC's own bot — reading this same API directly —
+  disagreed.
+
+  **`ExamToolsClient.ClosedSessionsPath` now adds the day**, so `GetTeamClosedSessionsAsync` takes an
+  **inclusive** range like every caller already assumed. The adjustment lives in the client rather
+  than at the call sites: the contract had been documented as half-open and the one caller *still*
+  got it wrong, invisibly, which is the argument for making the API mean what people read it to
+  mean. `ExamToolsClosedSessionRangeTests` pins it, including month, year and leap boundaries.
+
+  **Anything imported before 2026-08-10 is missing its month-end sessions** and needs re-importing to
+  backfill — the import is idempotent, so re-running a range is safe.
+
 - **Closed sessions are a separate feed, not a `state` value in the pend list (found live 2026-07-28,
   fixed same day).** Issue #22's original implementation checked `remote.State == "done"` on the
   result of `GetTeamSessionsAsync` — logically correct, but that endpoint **never** returns a
