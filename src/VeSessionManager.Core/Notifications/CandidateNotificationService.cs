@@ -403,8 +403,13 @@ public class CandidateNotificationService(
         return true;
     }
 
+    /// <summary>
+    /// Delegates to SessionTimeFormatter so both services — and both halves of what a candidate
+    /// receives — cannot disagree about the wording. This used to be a byte-identical copy in each
+    /// file, rendering UTC.
+    /// </summary>
     private static string FormatSessionDate(DateTime scheduledStartUtc) =>
-        scheduledStartUtc.ToString("dddd, MMMM d, yyyy 'at' h:mm tt", CultureInfo.InvariantCulture) + " UTC";
+        SessionTimeFormatter.ForCandidate(scheduledStartUtc);
 
     /// <summary>Blank when the session's Vec doesn't support the youth program, or the InitialExam
     /// Payment has no token (fee collection disabled) — a Team's template copy for a

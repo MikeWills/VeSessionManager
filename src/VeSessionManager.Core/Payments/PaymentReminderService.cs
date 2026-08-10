@@ -5,6 +5,7 @@ using Microsoft.Extensions.Options;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Email;
 using VeSessionManager.Core.Entities;
+using VeSessionManager.Core.Notifications;
 
 namespace VeSessionManager.Core.Payments;
 
@@ -269,6 +270,11 @@ public class PaymentReminderService(
         }
     }
 
+    /// <summary>
+    /// Delegates to SessionTimeFormatter so both services — and both halves of what a candidate
+    /// receives — cannot disagree about the wording. This used to be a byte-identical copy in each
+    /// file, rendering UTC.
+    /// </summary>
     private static string FormatSessionDate(DateTime scheduledStartUtc) =>
-        scheduledStartUtc.ToString("dddd, MMMM d, yyyy 'at' h:mm tt", CultureInfo.InvariantCulture) + " UTC";
+        SessionTimeFormatter.ForCandidate(scheduledStartUtc);
 }
