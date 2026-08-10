@@ -94,7 +94,7 @@ public class VolunteerExaminerDirectoryServiceTests
         await dbContext.SaveChangesAsync();
 
         var rows = await new VolunteerExaminerDirectoryService(dbContext)
-            .GetDirectoryAsync([team.Id], search: null, tagId: null, includeInactive: false, CancellationToken.None);
+            .GetDirectoryAsync([team.Id], search: null, tagName: null, includeInactive: false, CancellationToken.None);
 
         Assert.Equal(past.ScheduledStartUtc, Assert.Single(rows).LastWorkedUtc);
     }
@@ -141,7 +141,7 @@ public class VolunteerExaminerDirectoryServiceTests
         await SeedVeAsync(dbContext, team, "N2SPG", "Sam Granger");
 
         var rows = await new VolunteerExaminerDirectoryService(dbContext)
-            .GetDirectoryAsync([team.Id], search: null, tagId: null, includeInactive: false, CancellationToken.None);
+            .GetDirectoryAsync([team.Id], search: null, tagName: null, includeInactive: false, CancellationToken.None);
 
         Assert.True(Assert.Single(rows).IsGuest);
     }
@@ -175,6 +175,58 @@ public class VolunteerExaminerDirectoryServiceTests
         var stored = Assert.Single(dbContext.VeTeamMemberships);
         Assert.False(stored.IsActive);
         Assert.Equal(Now, stored.InactivatedUtc);
+    }
+
+    /// <summary>
+    /// Filtering by tag name spans teams, because the tag NAME is the thing with a shared meaning.
+    ///
+    /// <para>Tags are per-team vocabulary, so two teams each defining "Member" are two rows. The
+    /// filter used to key on the id, which meant the dropdown listed "Member" twice — identical and
+    /// unlabelled — and choosing either one silently excluded the other team's people. The rows had
+    /// always collapsed same-named tags into a single chip, so the filter disagreed with the column
+    /// it was filtering.</para>
+    /// </summary>
+    [Fact]
+    public async Task FilteringByTagName_MatchesThatNameOnEveryTeam()
+    {
+        await using var dbContext = CreateContext();
+        var teamA = await SeedTeamAsync(dbContext, "TEAM-A");
+        var teamB = await SeedTeamAsync(dbContext, "TEAM-B");
+        var (_, onA) = await SeedVeAsync(dbContext, teamA, "N2SPG", "Sam Granger");
+        var (_, onB) = await SeedVeAsync(dbContext, teamB, "W7QQQ", "Dana Reeve");
+        await SeedVeAsync(dbContext, teamA, "K4ZZZ", "Untagged Person");
+
+        var management = CreateManagement(dbContext);
+        var (_, tagOnA) = await management.CreateTagAsync(teamA.Id, "Member", 0, null, 1, CancellationToken.None);
+        var (_, tagOnB) = await management.CreateTagAsync(teamB.Id, "Member", 0, null, 1, CancellationToken.None);
+        await management.SetTagsAsync(onA.Id, [tagOnA!.Id], 1, CancellationToken.None);
+        await management.SetTagsAsync(onB.Id, [tagOnB!.Id], 1, CancellationToken.None);
+
+        var rows = await new VolunteerExaminerDirectoryService(dbContext)
+            .GetDirectoryAsync(null, search: null, tagName: "Member", includeInactive: false, CancellationToken.None);
+
+        // Both, not just whichever team's tag happened to be picked from the menu.
+        Assert.Equal(2, rows.Count);
+        Assert.Contains(rows, r => r.VolunteerExaminer.CallSign == "N2SPG");
+        Assert.Contains(rows, r => r.VolunteerExaminer.CallSign == "W7QQQ");
+    }
+
+    /// <summary>SQLite's `=` on TEXT is case-sensitive, so a team that typed "member" would drop out of a "Member" filter without this.</summary>
+    [Fact]
+    public async Task FilteringByTagName_IgnoresCase()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext, "TEAM-A");
+        var (_, membership) = await SeedVeAsync(dbContext, team, "N2SPG", "Sam Granger");
+
+        var management = CreateManagement(dbContext);
+        var (_, tag) = await management.CreateTagAsync(team.Id, "Member", 0, null, 1, CancellationToken.None);
+        await management.SetTagsAsync(membership.Id, [tag!.Id], 1, CancellationToken.None);
+
+        var rows = await new VolunteerExaminerDirectoryService(dbContext)
+            .GetDirectoryAsync(null, search: null, tagName: "  MEMBER  ", includeInactive: false, CancellationToken.None);
+
+        Assert.Single(rows);
     }
 
     /// <summary>Tags are a team's private vocabulary; an id from another team must be rejected rather than quietly applied.</summary>

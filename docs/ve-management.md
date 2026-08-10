@@ -188,6 +188,17 @@ Two implementation notes worth keeping:
   team might genuinely want, so it can't stand in for "none". A paired "Use" checkbox expresses that
   instead.
 
+### The tag filter groups by name
+
+Same reasoning as the directory rows, applied one control later. On "all teams" the filter listed
+every tag row, so two teams each defining "Member" produced **two identical, unlabelled radio
+buttons** — and picking either one silently excluded the other team's people. The rows had always
+collapsed same-named tags into one chip, so the filter disagreed with the column it filtered.
+
+The filter is now keyed on the tag **name** (`?tagName=`, previously `?tagId=`), one entry per
+distinct name, carrying the same color the chips use. Matching is case-insensitive on both sides
+because SQLite's `=` on TEXT is not, and the row-level dedupe was already `OrdinalIgnoreCase`.
+
 ### Finding the page
 
 Three links, all added after the VE detail page turned out to be a dead end — it said a team had no

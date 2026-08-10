@@ -39,8 +39,9 @@ public class VeDirectoryModel(
     [BindProperty(SupportsGet = true)]
     public string? Search { get; set; }
 
+    /// <summary>The tag NAME being filtered on — see AvailableTags for why this is not an id.</summary>
     [BindProperty(SupportsGet = true)]
-    public int? TagId { get; set; }
+    public string? TagName { get; set; }
 
     [BindProperty(SupportsGet = true)]
     public bool IncludeInactive { get; set; }
@@ -49,7 +50,21 @@ public class VeDirectoryModel(
     public string TeamSummaryLabel { get; private set; } = "All teams";
     public IReadOnlyList<(int Id, string Name)> AvailableTeams { get; private set; } = [];
     public IReadOnlyList<VeDirectoryRow> Rows { get; private set; } = [];
-    public IReadOnlyList<VeTag> AvailableTags { get; private set; } = [];
+    /// <summary>
+    /// The tag filter's options, <b>one per distinct name</b>.
+    ///
+    /// <para>Tags are per-team vocabulary, so on "all teams" the raw list repeated "Member",
+    /// "Session Manager" and "Team Lead" once per team that defined them — several identical,
+    /// unlabelled radio buttons, where picking one silently excluded the other team's people. The
+    /// rows already collapse same-named tags into a single chip, so the filter now agrees with what
+    /// it is filtering.</para>
+    ///
+    /// <para>The colour shown is the one the chips use for that name, resolved by the same
+    /// highest-priority rule.</para>
+    /// </summary>
+    public IReadOnlyList<TagOption> AvailableTags { get; private set; } = [];
+
+    public record TagOption(string Name, string? Color);
 
     /// <summary>Taken once per request so every row's license status and day count are derived against the same instant — otherwise a list rendered across midnight ET could disagree with itself.</summary>
     public DateTime UtcNow { get; private set; }
@@ -127,11 +142,16 @@ public class VeDirectoryModel(
             ? AvailableTeams.FirstOrDefault(t => t.Id == TeamId).Name ?? "All teams"
             : "All teams";
 
-        AvailableTags = await dbContext.VeTags
+        var tags = await dbContext.VeTags
             .Where(t => teamIds == null || teamIds.Contains(t.TeamId))
             .OrderBy(t => t.SortOrder).ThenBy(t => t.Name)
             .ToListAsync(HttpContext.RequestAborted);
 
-        Rows = await directoryService.GetDirectoryAsync(teamIds, Search, TagId, IncludeInactive, HttpContext.RequestAborted);
+        AvailableTags = [.. tags
+            .GroupBy(t => t.Name, StringComparer.OrdinalIgnoreCase)
+            .Select(g => new TagOption(g.First().Name, VeTagColor.ForTags(g)))
+            .OrderBy(o => o.Name, StringComparer.OrdinalIgnoreCase)];
+
+        Rows = await directoryService.GetDirectoryAsync(teamIds, Search, TagName, IncludeInactive, HttpContext.RequestAborted);
     }
 }
