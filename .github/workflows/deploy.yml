@@ -166,17 +166,52 @@ jobs:
             "sudo systemctl start $WEB_SERVICE"
 
       - name: Health check
+        # Asserts on the status code, not merely on having received one.
+        #
+        # This used to accept anything other than curl's 000 ("no response at all"), so a 400, a 404
+        # or a 500 on every request all counted as a healthy deploy -- it proved the process was bound
+        # to the port and nothing more, and the release below was published on the strength of it.
+        #
+        # It was almost certainly passing on a 400 in practice: AllowedHosts is pinned in
+        # appsettings.Production.json, and a request to http://localhost:PORT/ carries Host: localhost,
+        # which host-filtering middleware rejects with 400 before the request ever reaches the app. So
+        # the reassuring "Web responded with HTTP 400" line was the check working as written.
+        #
+        # The Host header is taken from AllowedHosts itself rather than restated here, so the two
+        # cannot drift; AllowedHosts may be a semicolon-separated list, hence the cut. Requesting
+        # localhost with the right Host header tests the app directly, deliberately bypassing Apache
+        # and TLS -- proxy problems are a different failure with a different fix.
+        #
+        # 2xx and 3xx both pass: "/" is public today and returns 200, but a redirect to the login page
+        # would equally prove the app is processing requests, which is what this step is for. 4xx/5xx
+        # fail. A response that is merely absent keeps the loop waiting, since the service may still be
+        # starting.
         run: |
+          PUBLIC_HOST=$(grep -oP '"AllowedHosts"\s*:\s*"\K[^"]+' \
+            src/VeSessionManager.Web/appsettings.Production.json | cut -d';' -f1)
+          if [ -z "$PUBLIC_HOST" ]; then
+            echo "Could not read AllowedHosts from appsettings.Production.json — refusing to guess."
+            exit 1
+          fi
+          echo "Health-checking as Host: $PUBLIC_HOST"
           ssh -i ~/.ssh/deploy_key "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" "
+            last=000
             for i in \$(seq 1 30); do
-              code=\$(curl -s -o /dev/null -w '%{http_code}' http://localhost:$WEB_PORT/)
-              if [ \"\$code\" != \"000\" ]; then
-                echo \"Web responded with HTTP \$code\"
-                exit 0
-              fi
+              last=\$(curl -s -o /dev/null -w '%{http_code}' -H 'Host: $PUBLIC_HOST' http://localhost:$WEB_PORT/)
+              case \"\$last\" in
+                2*|3*)
+                  echo \"Web healthy — HTTP \$last\"
+                  exit 0
+                  ;;
+              esac
               sleep 3
             done
-            echo 'Web failed to respond within 90s; recent logs:'
+            if [ \"\$last\" = '000' ]; then
+              echo 'Web never responded within 90s.'
+            else
+              echo \"Web responded with HTTP \$last — the process is up but not serving successfully.\"
+            fi
+            echo 'Recent logs:'
             sudo journalctl -u $WEB_SERVICE -n 50 --no-pager
             exit 1
           "
