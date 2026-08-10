@@ -239,6 +239,34 @@ Three failure cases are reported differently on purpose: endpoint unreachable ("
 no such record ("check the call sign"), and already on the list. Telling someone their perfectly good
 call sign does not exist, because ExamTools happened to be down, would be worse than useless.
 
+## The page is two lists, like Applicant Status (2026-08-10)
+
+The page renders a **Watch list** table and a **Recently renewed** table below it, the same shape as
+Applicant Status's "Pending FCC grant" / "Recently issued" pair — a finished outcome is worth seeing
+once, but it is not what the working list is for. Before this, a renewed row stayed mixed into the
+one list wearing a green chip, sorted below everything needing attention, where a reader scanning for
+work had to skip past it and a reader looking for the outcome had to hunt for it.
+
+**Membership of both tables is decided by the derived status alone** — a row is in Recently renewed
+iff `DeriveStatus` returns `Renewed`, i.e. `RenewalConfirmedUtc` is inside `RenewedHighlightWindow`
+(30 days). No second date test in the page, and no stored flag: `DeriveStatus` already owns "is this
+renewal recent enough to still be worth reporting", so the section and the status chip cannot come to
+different conclusions the way two copies of the rule would.
+
+**Where the analogy with Applicant Status stops.** A granted candidate leaves that page for good —
+the grant is the end of the story, and after seven days there is nothing left to say. A renewed
+license goes **back into the Watch list** when the window passes, because it is still being watched,
+just for a term ten years out. The section heading says so ("returns to the watch list after that")
+rather than leaving a reader to conclude the row was dropped. The two windows are also deliberately
+different lengths — 7 days there, 30 here — because the underlying events are: FCC grants arrive in a
+steady stream, a renewal happens once a decade and its outcome is worth surfacing for longer.
+
+Two smaller decisions in the second table: **no day pill** on the expiration (a freshly renewed
+license expires ten years out, so the escalation would never fire and only add noise), and **the row
+action menu is kept** even though Applicant Status's second table has none — removing a license is
+this page's one action and a row sits here for a month, so hiding it that long would be a regression.
+The remove modals are emitted from `AllRows`, covering both tables.
+
 ## Follow-ups
 
 - **VE license tracking** — the other half of the original request, deliberately deferred.

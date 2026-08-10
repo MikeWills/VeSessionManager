@@ -6,6 +6,7 @@
     ViewData["ActiveNav"] = "RenewalMonitor";
     Layout = "_AppLayout";
     var utcNow = DateTime.UtcNow;
+    var showTeamColumn = Model.TeamId is null && Model.AvailableTeams.Count > 1;
 }
 
 <div class="page-head">
@@ -34,6 +35,15 @@
 }
 else
 {
+    @* Split into "watch list" and "recently renewed" on the same pattern as Applicant Status's
+       pending/recently-issued pair — see the RecentlyRenewed doc comment for where the two differ. *@
+    <div class="page-head" style="margin-top:8px;">
+        <div>
+            <h2 style="font-size:16px;">Watch list</h2>
+            <p class="eyebrow" style="margin-top:0;">Every license being tracked — moves below once a renewal is issued</p>
+        </div>
+    </div>
+
     @* Both treatments, like every other table here: cards below 768px, wrapper scroll above it.
        See docs/responsive-ui.md. *@
     <div class="table-scroll">
@@ -47,7 +57,7 @@ else
                 <th>FRN</th>
                 <th>Name</th>
                 <th>Class</th>
-                @if (Model.TeamId is null && Model.AvailableTeams.Count > 1)
+                @if (showTeamColumn)
                 {
                     <th>Team</th>
                 }
@@ -61,7 +71,7 @@ else
         <tbody>
             @if (Model.Licenses.Count == 0)
             {
-                <tr><td colspan="10">Nothing on the watch list yet. Add a call sign to start tracking its expiration.</td></tr>
+                <tr><td colspan="@(showTeamColumn ? 10 : 9)">@(Model.RecentlyRenewed.Count == 0 ? "Nothing on the watch list yet. Add a call sign to start tracking its expiration." : "Nothing waiting — every watched license was renewed recently.")</td></tr>
             }
             @foreach (var row in Model.Licenses)
             {
@@ -73,7 +83,7 @@ else
                     <td class="mono frn-cell" title="@(row.License.Frn is null ? "No FRN on the FCC record" : "Click to select, for FCC's application search")">@(row.License.Frn ?? "—")</td>
                     <td>@(row.License.LicenseeName ?? "—")</td>
                     <td>@(row.License.OperatorClass == LicenseClass.None ? "—" : row.License.OperatorClass.ToString())</td>
-                    @if (Model.TeamId is null && Model.AvailableTeams.Count > 1)
+                    @if (showTeamColumn)
                     {
                         <td>@row.License.Team?.Name</td>
                     }
@@ -116,7 +126,74 @@ else
     </table>
     </div>
 
-    @foreach (var row in Model.Licenses)
+    <div class="page-head" style="margin-top:28px;">
+        <div>
+            <h2 style="font-size:16px;">Recently renewed</h2>
+            @* States the return, not just the disappearance: unlike a granted candidate on Applicant
+               Status, one of these rows has somewhere to go back to. *@
+            <p class="eyebrow" style="margin-top:0;">Issued in the last @VeSessionManager.Web.Pages.SessionManager.RenewalMonitorModel.RecentlyRenewedWindowDays days — returns to the watch list after that</p>
+        </div>
+    </div>
+    <div class="table-scroll">
+    <table class="cards" data-sortable="recently-renewed">
+        <thead>
+            <tr>
+                <th>Call sign</th>
+                <th>FRN</th>
+                <th>Name</th>
+                <th>Class</th>
+                @if (showTeamColumn)
+                {
+                    <th>Team</th>
+                }
+                <th>New expiration</th>
+                <th>Renewed</th>
+                <th>Note</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            @if (Model.RecentlyRenewed.Count == 0)
+            {
+                <tr><td colspan="@(showTeamColumn ? 9 : 8)">No renewals issued in the last @VeSessionManager.Web.Pages.SessionManager.RenewalMonitorModel.RecentlyRenewedWindowDays days.</td></tr>
+            }
+            @foreach (var row in Model.RecentlyRenewed)
+            {
+                <tr>
+                    <td class="mono session-title">@row.License.CallSign</td>
+                    <td class="mono frn-cell" title="@(row.License.Frn is null ? "No FRN on the FCC record" : "Click to select, for FCC's application search")">@(row.License.Frn ?? "—")</td>
+                    <td>@(row.License.LicenseeName ?? "—")</td>
+                    <td>@(row.License.OperatorClass == LicenseClass.None ? "—" : row.License.OperatorClass.ToString())</td>
+                    @if (showTeamColumn)
+                    {
+                        <td>@row.License.Team?.Name</td>
+                    }
+                    @* No day pill here — a freshly renewed license expires ten years out, so the
+                       escalation the watch list uses would never fire and only add noise. *@
+                    <td class="count" data-sort-value="@row.ExpiresSortValue">@row.ExpiresDisplay</td>
+                    <td class="mono" data-sort-value="@row.RenewedSortValue">@row.RenewedDisplay</td>
+                    <td class="session-sub">@(row.License.Note ?? "")</td>
+                    <td class="row-actions">
+                        @* Kept rather than dropped as Applicant Status does: removing a license is this
+                           page's one action, and a row sits here for a month. *@
+                        <button type="button" class="kebab" aria-label="Actions"><i class="bi bi-three-dots-vertical" aria-hidden="true"></i></button>
+                        <div class="menu">
+                            @if (row.License.LastCheckedUtc is { } checkedUtc)
+                            {
+                                <div class="item session-sub" style="cursor:default;">Checked @checkedUtc.ToString("MMM d, HH:mm") UTC</div>
+                                <hr />
+                            }
+                            <button type="button" class="item danger" data-open-modal="removeLicenseModal-@row.License.Id">Remove from watch list</button>
+                        </div>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+    </div>
+
+    @* Both tables, so a remove button in either one has its modal. *@
+    @foreach (var row in Model.AllRows)
     {
         <div class="modal-backdrop" id="removeLicenseModal-@row.License.Id">
             <div class="modal">

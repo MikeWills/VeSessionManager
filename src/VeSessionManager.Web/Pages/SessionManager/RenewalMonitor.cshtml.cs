@@ -41,7 +41,27 @@ public class RenewalMonitorModel(
     public bool HasTeamContext { get; private set; }
     public IReadOnlyList<(int Id, string Name)> AvailableTeams { get; private set; } = [];
     public string TeamSummaryLabel { get; private set; } = "All teams";
+
+    /// <summary>The watch list proper — everything except the rows currently sitting in <see cref="RecentlyRenewed"/>.</summary>
     public IReadOnlyList<WatchedLicenseRow> Licenses { get; private set; } = [];
+
+    /// <summary>
+    /// Renewals confirmed inside <see cref="WatchedLicenseStatusExtensions.RenewedHighlightWindow"/>,
+    /// shown in their own section below the watch list — the same shape as Applicant Status's
+    /// "Recently issued", and for the same reason: a finished outcome is worth seeing once, but it is
+    /// not what the working list is for.
+    ///
+    /// <para><b>Where the two pages part company:</b> a granted candidate leaves Applicant Status for
+    /// good, because there is nothing left to watch. A renewed license goes back into the watch list
+    /// once the window passes — it is still being watched, just for a term ten years out.</para>
+    /// </summary>
+    public IReadOnlyList<WatchedLicenseRow> RecentlyRenewed { get; private set; } = [];
+
+    /// <summary>The highlight window, in days, for the section heading. Read from the one definition in Core rather than restated here.</summary>
+    public static int RecentlyRenewedWindowDays => WatchedLicenseStatusExtensions.RenewedHighlightWindow.Days;
+
+    /// <summary>Every row on the page, so the per-row remove modals cover both tables.</summary>
+    public IEnumerable<WatchedLicenseRow> AllRows => Licenses.Concat(RecentlyRenewed);
 
     /// <summary>Which team a newly added license is filed under. Only meaningful — and only rendered — when the user can see more than one.</summary>
     [BindProperty]
@@ -185,13 +205,24 @@ public class RenewalMonitorModel(
         var rows = await query.ToListAsync(HttpContext.RequestAborted);
         var utcNow = timeProvider.GetUtcNow().UtcDateTime;
 
-        // Status is derived, so the ordering that depends on it has to happen in memory. The set is
-        // one team's watch list — tens of rows, not thousands — so this is not the N+1 shape the
-        // report queries have to worry about.
-        Licenses = [.. rows
-            .Select(w => new WatchedLicenseRow(w, w.DeriveStatus(utcNow)))
+        // Status is derived, so the split and the ordering that depends on it both have to happen in
+        // memory. The set is one team's watch list — tens of rows, not thousands — so this is not the
+        // N+1 shape the report queries have to worry about.
+        var all = rows.Select(w => new WatchedLicenseRow(w, w.DeriveStatus(utcNow))).ToList();
+
+        // Membership of both lists is decided by the derived status alone, never by a stored flag or a
+        // second date test here: DeriveStatus already owns "is this renewal recent enough to still be
+        // worth reporting", and a row leaves this section for the watch list the moment it stops
+        // saying Renewed. One rule, so the section and the chip cannot disagree.
+        Licenses = [.. all
+            .Where(r => r.Status is not WatchedLicenseStatus.Renewed)
             .OrderByDescending(r => r.Status.NeedsAttention())
             .ThenBy(r => r.License.ExpiredDateUtc ?? DateTime.MaxValue)
+            .ThenBy(r => r.License.CallSign)];
+
+        RecentlyRenewed = [.. all
+            .Where(r => r.Status is WatchedLicenseStatus.Renewed)
+            .OrderByDescending(r => r.License.RenewalConfirmedUtc ?? DateTime.MinValue)
             .ThenBy(r => r.License.CallSign)];
     }
 
@@ -201,6 +232,15 @@ public class RenewalMonitorModel(
 
         /// <summary>Round-trip value for the client-side table sorter — "Apr 2" does not sort against "Mar 30" as text.</summary>
         public string ExpiresSortValue => License.ExpiredDateUtc?.ToString("o") ?? "";
+
+        /// <summary>
+        /// When the renewal was confirmed, for the Recently renewed section. Carries the year, unlike
+        /// the compact "Issued MMM d" in <see cref="RenewalDisplay"/> — this is the column a reader is
+        /// looking at directly rather than a note beside a status chip.
+        /// </summary>
+        public string RenewedDisplay => License.RenewalConfirmedUtc?.ToString("MMM d, yyyy") ?? "—";
+
+        public string RenewedSortValue => License.RenewalConfirmedUtc?.ToString("o") ?? "";
 
         /// <summary>Delegates to the shared definition in WatchedLicenseStatusExtensions — a second copy here is exactly how the pill and the status chip would come to disagree.</summary>
         public int? DaysUntilExpiry(DateTime utcNow) => License.DaysUntilExpiry(utcNow);
