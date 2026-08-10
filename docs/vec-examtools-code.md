@@ -67,7 +67,61 @@ Those two facts are provider behaviour, so they are pinned against real SQLite.
 
 ## Seeding the codes
 
-ExamTools has no endpoint that lists VECs globally. The codes are readable from
+**Resolved 2026-08-10 (issue #83) — all fourteen are now seeded automatically. The section below is
+kept because it explains why the codes are treated as untouchable data rather than a guess.**
+
+### Where the full list came from
+
+The `From VEC` filter on <https://hamstudy.org/sessions> lists every VEC, each linking to
+`/sessions/{code}/inperson` — and that slug is the same code space ExamTools puts on a session's
+`vec` field. There are exactly fourteen entries, which is the number of FCC-accredited VECs, so the
+list is complete rather than a subset of whoever is onboarded. Three of the codes (`arrl`,
+`lagroup`, `sandarc`) had already been confirmed against live ExamTools data, and all three agree
+with the filter — that agreement is what makes the other eleven trustworthy rather than guessed.
+
+It corrected two things believed here previously: `sandarc` displays as **"SANDARC"**, not
+"SANDARC-VEC", and ARRL displays as **"ARRL-VEC"**, so the reasoning that ARRL's code equals its
+name holds only because this deployment happens to have named the row "ARRL". **Nine of the fourteen
+have a code that differs from the display name** — GLAARG was never the exception it looked like.
+
+The one caveat: this is a session-search facet, not a documented registry endpoint. Better than
+guessing, which is what the rule below exists to prevent, but still inference from a UI.
+
+### `KnownVecs` and `VecDefaultsSeeder`
+
+`KnownVecs.All` (Core/Admin) is the fourteen rows as data. `VecDefaultsSeeder` runs from Worker
+startup next to `EmailDefaultsSeeder` — in **every** environment, since a team onboarding under an
+unseeded VEC is exactly the silent-skip case this whole document is about.
+
+**It only ever fills gaps; no existing row is modified.** A VEC is considered already present when
+its `ExamToolsCode ?? Name` matches a known code case-insensitively, so a deployment that named its
+row "ARRL" or coded GLAARG by hand keeps its own name, notes and youth-program flag. Verified
+against a copy of the dev database: five hand-made rows in, five untouched, nine added, no second
+ARRL.
+
+Two cases it deliberately declines to fix, because both mean a human has to look:
+
+- **The name is taken by a row resolving to a different code.** `IX_Vecs_Name` is unique, so
+  inserting would throw and take Worker startup down with it. Skips with a warning instead — this is
+  almost certainly the same real VEC with a wrong code, i.e. the original bug.
+- **An existing row's match code isn't one of the fourteen.** The code space is closed, so that row
+  can never match a session; it is a typo or has been silently doing nothing. One warning per row.
+  Worth reading, because the seeder may have just added the correctly-coded row beside it, leaving
+  any `FeeConfiguration` attached to the dead one.
+
+**A newly accredited VEC is a code change, not a feature.** The FCC accrediting a fifteenth VEC is
+rare enough that the right response is adding a row to `KnownVecs` once it exists and its code has
+been read from real data — not building admin tooling (a code picker, an import) to anticipate it.
+Admin → VECs still allows a hand-made row for the gap between accreditation and the next deploy.
+
+`DevDataSeeder`'s guard had to change with this: it checked `Vecs.AnyAsync()`, which is now always
+true by the time it runs, so it would have seeded nothing on a fresh dev database. It checks for a
+`FeeConfiguration` instead and looks the ARRL row up rather than creating it — the same
+specific-rows-not-table-wide rule that `DevAuthSeeder` learned in CLAUDE.md's Known Constraints.
+
+### The original per-team discovery route
+
+ExamTools has no endpoint that lists VECs globally. The codes are also readable from
 `GET https://alpha.exam.tools/api/teams/team`, which returns **the calling VE's own team
 memberships** — each `teamDoc.vecs` is a string array of the codes that team may run under (the
 sibling `delegateVecCreds` lists the subset it holds delegated credentials for). An authenticated VE
@@ -80,16 +134,14 @@ Read live 2026-08-01 across the five teams on Mike's account:
 |---|---|---|---|
 | `arrl` | ARRL VEC | HRCC, San Diego ARRL VE Team, WX0MIK, MARC | **Confirmed** — live ingestion since Phase 1. Code equals name, so `ExamToolsCode` stays null |
 | `lagroup` | GLAARG | HRCC, San Diego Area Licensing Exams | **Confirmed** — the code in the Worker log that prompted this fix |
-| `sandarc` | SANDARC-VEC | HRCC | **Code confirmed, name inferred** — the display name has not been verified against ExamTools or the FCC's VEC list |
+| `sandarc` | SANDARC | HRCC | Code confirmed here; **name later corrected from "SANDARC-VEC"** by the HamStudy list above |
 
-Two caveats on treating this as *the* seed list:
-
-- **It is scoped to one VE's teams, not to every VEC that exists.** The FCC recognizes roughly a
-  dozen more (W5YI, Laurel, MRAC, W4VEC, …), none of which appear here simply because none of these
-  teams run under them. Expect to add rows as other teams onboard.
-- **Only the code is authoritative here; the display name is not.** The endpoint carries the code
-  and nothing else about the VEC.
+Why this route could never be the seed list on its own: **it is scoped to one VE's teams, not to
+every VEC that exists**, and it carries the code and nothing else — no display name. It stays useful
+as the way to confirm a code against ExamTools' own data, which is a stronger source than the
+session-search facet.
 
 **Do not guess a code.** A wrong one fails exactly the way the original bug did: silently, with
-sessions quietly missing. Add a VEC only once its code has been read from real ExamTools data —
-re-run the fetch above as the VE for the team in question.
+sessions quietly missing. Add a VEC by hand only once its code has been read from real ExamTools
+data — re-run the fetch above as the VE for the team in question. The seeded fourteen should already
+cover it.
