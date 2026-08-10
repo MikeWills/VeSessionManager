@@ -199,6 +199,37 @@ The filter is now keyed on the tag **name** (`?tagName=`, previously `?tagId=`),
 distinct name, carrying the same color the chips use. Matching is case-insensitive on both sides
 because SQLite's `=` on TEXT is not, and the row-level dedupe was already `OrdinalIgnoreCase`.
 
+### Filtering to guests
+
+"Guest" means no tag at all, and it is **derived rather than stored** — a stored guest tag would need
+adding and removing in step with every other tag change, and would be wrong in between. So it cannot
+be one of the names in the filter list and takes a sentinel value
+(`VolunteerExaminerDirectoryService.GuestTagFilter`, a leading-space string no team can define
+because tag names are trimmed and required non-empty — same trick as the invite picker's untagged
+option).
+
+**It is applied after the grouping, not in the query**, and that placement is the whole design.
+`IsGuest` is a property of the finished row — no tags on *any* team in scope — while the query is
+still per-membership. Filtering memberships would match the untagged half of someone who *is* tagged
+elsewhere, and their row would then appear in a guests-only list visibly carrying tags. Both cases
+are pinned by tests, including the one that makes it look inconsistent and isn't: scoped to the team
+where they hold no tag, that person **is** a guest, because the row's tags narrow to that team too.
+
+### Filters survive a visit to a VE
+
+Clicking into a VE and coming back used to land on an unfiltered first page. The filters now ride
+along on the link in and back out again, as **explicit route values rather than one `returnUrl`
+string** — nothing to parse and no open-redirect surface.
+
+The cost is that every one of `VeDetail`'s POST handlers has to carry them on its redirect, which is
+what `SelfRoute()` exists to stop anyone forgetting: drop them in one handler and the back link
+breaks only after a save, which is the hardest kind of breakage to notice.
+
+**Sort was already remembered** and needed no change — the table sorter persists its column and
+direction per page in `localStorage` (see `app.js`), verified against the real script rather than
+assumed from the comment. One case does discard it by design: a remembered column that no longer
+exists, which the directory can't hit because its Teams column always renders.
+
 ### Finding the page
 
 Three links, all added after the VE detail page turned out to be a dead end — it said a team had no
@@ -239,6 +270,88 @@ collapse safe rather than lossy. Per-team detail lives on the VE's own page.
 `Session.Status` trap for the third time in this codebase: `Status` only ever means "not cancelled",
 so filtering on it reports a VE booked for next month as having already worked that session — a
 *future* "last worked" date.
+
+## Adding a VE by hand
+
+Added 2026-08-10, so a team can tag and monitor someone they are considering — a prospect who has
+never worked one of their sessions.
+
+**This passes the "does ExamTools already do it?" test**, which every in-app admin action here has to
+(three were built and then removed for failing it). ExamTools only knows a VE once they are rostered
+onto a session. A prospect being watched has never been on one, so ingestion will never produce them
+and **nothing else in the app can create this row**. That is the whole justification, and it is worth
+re-checking if the feature ever grows.
+
+It runs through the **CSV importer's own add path** rather than a second implementation.
+`ApplyRowAsync` — match, then create-or-fill, then ensure the membership — is now shared by both. Two
+duplicate-generating paths into the same table each owning a copy of those rules is precisely how the
+per-team refresh pipeline drifted before `TeamPipeline` existed.
+
+So a hand-add behaves exactly as the equivalent CSV row would:
+
+- **Already on this team** — nothing changes; blank fields get filled.
+- **Serving another team** — they gain a membership here, never a second identity. Splitting one
+  person's history in two is the failure the person model exists to prevent.
+- **A placeholder call sign is refused.** `<UNKNOWN>` fused two real people once already.
+- **A typed value never overwrites a stored one.** Blank means "no opinion", same as the import.
+- **FRN is not accepted from the form at all**, for the same reason the importer ignores it: it is the
+  unique identity key, and the ULS sweep fills it from FCC. A typo would either collide with a real
+  person's record or attach the wrong identity to this one.
+
+The reconciliation that makes it safe is that the ExamTools sync matches on a usable call sign across
+the whole table, so a hand-added prospect who later works a real session is **matched, not
+duplicated**. That is asserted by its own test, because if it ever stopped being true the feature
+would quietly become a duplicate factory — and the duplicate would surface weeks later, at the
+session, rather than when the mistake was made.
+
+The panel is collapsed by default. Everyone else arrives through ingestion, and this must not read as
+the normal way VEs get onto the list.
+
+## Sessions worked, on the VE detail page
+
+Added 2026-08-10: total, this year, split per team, and the five most recent with dates.
+
+Two things here are quietly easy to get wrong.
+
+**"Worked" is not `Status == Active`.** That only ever means "not cancelled" — it is never set to
+Completed — so counting on it includes sessions the VE is merely *booked* for and reports a future
+date as recent history. This codebase has hit that trap three times, which is why this query shares
+the `TestingCompletedUtc != null || ExamToolsClosedUtc != null` filter with the session-count report
+rather than restating it.
+
+**The year boundary is Eastern, not UTC.** Sessions run in the evening, so a session stored as
+January 1st 00:30 UTC was December 31st to everyone who was there — and the page renders every date
+in ET. The boundary is converted once and compared against stored UTC values, which keeps the
+comparison translatable to SQL; converting each row to Eastern would not be. The year is reported
+alongside the counts so the page can *say* 2026 rather than leave the reader assuming their own.
+
+Counts are **scoped to the teams the viewer may see**, so a TeamAdmin sharing a VE with another team
+does not read that team's session titles off a shared person's page. The per-team split is shown only
+when there is more than one team to split across.
+
+**The VE does not see any of this on their own page.** The counts are the team's operational view of
+who is carrying the load, not a fact about the person, and `VeSelfServiceShowsNoStatsTests` guards it
+— the risk is a copy, since the two pages look alike and nothing would fail if someone moved the
+panel across.
+
+## VEs maintain their own accreditations
+
+Moved to self-service 2026-08-10, **reversing the original decision** that accreditations belonged to
+the team. They never really did: no VEC publishes accreditation to this app, so an admin typing one is
+transcribing what the VE told them, and keeping it current was already documented as the VE's own
+responsibility (the reason number and expiry were dropped). Letting the holder maintain it removes a
+copy step rather than adding trust. Admins keep their own path for the VE who will not use
+self-service.
+
+Two details:
+
+- **The ownership check is the whole protection.** An accreditation id is a number in a form and
+  self-service is reachable by anyone holding a sign-in link, so the remove path takes a
+  `mustBelongToVolunteerExaminerId` and returns `NotFound` — not a distinct "not yours" — when it
+  fails, so probing ids reveals nothing. The admin path passes null, being already authorized.
+- **The audit says who asserted it.** A null user id means "the VE did this themselves", the same
+  convention `VeEmailChangeService` uses, and the action reads `…BySelf`. Transcription and
+  self-attestation are different provenances and the log should not flatten them.
 
 ## Deliberately not built
 

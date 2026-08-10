@@ -56,10 +56,18 @@
     @if (Model.AvailableTags.Count > 0)
     {
         var activeTag = Model.AvailableTags.FirstOrDefault(t => string.Equals(t.Name, Model.TagName, StringComparison.OrdinalIgnoreCase));
+        var tagLabel = Model.IsGuestFilter ? "Guests" : activeTag?.Name ?? "Any";
         <div class="filter-dropdown">
-            <button type="button" class="kebab @(Model.TagName is not null ? "active" : "")">Tag: @(activeTag?.Name ?? "Any") <i class="bi bi-caret-down-fill" aria-hidden="true"></i></button>
+            <button type="button" class="kebab @(Model.TagName is not null ? "active" : "")">Tag: @tagLabel <i class="bi bi-caret-down-fill" aria-hidden="true"></i></button>
             <div class="menu">
                 <label class="item"><input type="radio" name="tagName" value="" @(Model.TagName is null ? "checked" : "") /> Any tag</label>
+                @* Guests are people with no tag at all, which is derived rather than stored — so it
+                   cannot be one of the names below and takes a sentinel value instead. *@
+                <label class="item">
+                    <input type="radio" name="tagName" value="@VolunteerExaminerDirectoryService.GuestTagFilter"
+                           @(Model.IsGuestFilter ? "checked" : "") />
+                    Guests (no tags)
+                </label>
                 @* One entry per distinct NAME. Two teams both defining "Member" used to produce two
                    identical radio buttons, and picking either hid the other team's people. *@
                 @foreach (var tag in Model.AvailableTags)
@@ -91,7 +99,48 @@
 }
 else
 {
-    <div class="table-scroll">
+    @* Adding a VE by hand covers the one person ExamTools can never supply: a prospect the team is
+   watching who has not worked a session yet. Everyone else arrives through ingestion. *@
+<details class="ve-add">
+    <summary>Add a VE</summary>
+    <p class="session-sub">
+        For someone your team is watching who hasn't worked a session yet — VEs who have appear here
+        on their own. If they already exist on another team, they'll be added to this one rather than
+        duplicated.
+    </p>
+    <form method="post" asp-page-handler="Add" asp-antiforgery="true"
+          action="@Url.Page("/SessionManager/VeDirectory", "Add", new { teamId = Model.TeamId, search = Model.Search, tagName = Model.TagName, includeInactive = Model.IncludeInactive })"
+          class="field-row">
+        <div class="field">
+            <label for="addTeamId">Team</label>
+            <select id="addTeamId" name="addTeamId" class="filter-select" required>
+                @foreach (var team in Model.AvailableTeams)
+                {
+                    <option value="@team.Id" selected="@(team.Id == Model.TeamId)">@team.Name</option>
+                }
+            </select>
+        </div>
+        <div class="field">
+            <label for="addCallSign">Call sign</label>
+            <input id="addCallSign" name="callSign" class="menu-input" />
+        </div>
+        <div class="field">
+            <label for="addName">Name</label>
+            <input id="addName" name="name" class="menu-input" />
+        </div>
+        <div class="field">
+            <label for="addEmail">Email</label>
+            <input id="addEmail" name="email" type="email" class="menu-input" />
+        </div>
+        <div class="field">
+            <label for="addPhone">Phone</label>
+            <input id="addPhone" name="phone" class="menu-input" />
+        </div>
+        <button type="submit" class="btn-primary btn-sm">Add VE</button>
+    </form>
+</details>
+
+<div class="table-scroll">
     <table class="cards" data-sortable="ve-directory">
         <thead>
             <tr>
@@ -129,7 +178,11 @@ else
                             </a>
                         }
                     </td>
-                    <td><a asp-page="/SessionManager/VeDetail" asp-route-id="@row.VolunteerExaminer.Id">@row.VolunteerExaminer.Name</a></td>
+                    <td><a asp-page="/SessionManager/VeDetail" asp-route-id="@row.VolunteerExaminer.Id"
+                            asp-route-teamId="@Model.TeamId"
+                            asp-route-search="@Model.Search"
+                            asp-route-tagName="@Model.TagName"
+                            asp-route-includeInactive="@(Model.IncludeInactive ? "true" : null)">@row.VolunteerExaminer.Name</a></td>
                     <td>@row.TeamSummary</td>
                     <td>
                         @if (row.IsGuest)
@@ -172,7 +225,11 @@ else
                     <td data-sort-value="@(row.LastWorkedUtc?.ToString("o") ?? "")">
                         @(row.LastWorkedUtc?.ToString("MMM d, yyyy") ?? "Never")
                     </td>
-                    <td><a asp-page="/SessionManager/VeDetail" asp-route-id="@row.VolunteerExaminer.Id">Manage</a></td>
+                    <td><a asp-page="/SessionManager/VeDetail" asp-route-id="@row.VolunteerExaminer.Id"
+                            asp-route-teamId="@Model.TeamId"
+                            asp-route-search="@Model.Search"
+                            asp-route-tagName="@Model.TagName"
+                            asp-route-includeInactive="@(Model.IncludeInactive ? "true" : null)">Manage</a></td>
                 </tr>
             }
         </tbody>

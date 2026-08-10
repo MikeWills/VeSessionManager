@@ -163,59 +163,10 @@ public class VolunteerExaminerImportService(AppDbContext dbContext, TimeProvider
 
         foreach (var row in preview.Rows.Where(r => r.IsValid))
         {
-            var person = row.MatchedVolunteerExaminerId is { } matchedId
-                ? await dbContext.VolunteerExaminers
-                    .Include(v => v.TeamMemberships)
-                    .FirstAsync(v => v.Id == matchedId, cancellationToken)
-                : null;
-
-            if (person is null)
-            {
-                person = new VolunteerExaminer { Name = row.Name, CallSign = row.CallSign, CreatedUtc = now };
-                dbContext.VolunteerExaminers.Add(person);
-                created++;
-            }
-            else if (row.Action == VeImportAction.AddToTeam)
-            {
-                addedToTeam++;
-            }
-            else
-            {
-                updated++;
-            }
-
-            // Blank means "no opinion". Only values actually present in the file are written, and a
-            // name is only replaced when the file supplies one.
-            if (!string.IsNullOrWhiteSpace(row.Name)) person.Name = row.Name;
-            person.Email ??= row.Email;
-            person.Phone ??= row.Phone;
-            person.AddressLine1 ??= row.AddressLine1;
-            person.AddressLine2 ??= row.AddressLine2;
-            person.City ??= row.City;
-            person.State ??= row.State;
-            person.PostalCode ??= row.PostalCode;
-            person.DiscordUsername ??= row.Discord;
-            person.UpdatedUtc = now;
-
-            // FRN is not taken from a spreadsheet. It is the identity key, it is unique, and the ULS
-            // sweep already fills it from FCC — accepting a typo here would either collide with a
-            // real person's record or quietly attach the wrong identity to this one.
-
-            await dbContext.SaveChangesAsync(cancellationToken);
-
-            if (!person.TeamMemberships.Any(m => m.TeamId == teamId))
-            {
-                var membership = new VeTeamMembership
-                {
-                    VolunteerExaminerId = person.Id,
-                    TeamId = teamId,
-                    IsActive = true,
-                    CreatedUtc = now
-                };
-                person.TeamMemberships.Add(membership);
-                dbContext.VeTeamMemberships.Add(membership);
-                await dbContext.SaveChangesAsync(cancellationToken);
-            }
+            var action = await ApplyRowAsync(row, teamId, now, cancellationToken);
+            if (action == VeImportAction.Create) created++;
+            else if (action == VeImportAction.AddToTeam) addedToTeam++;
+            else updated++;
         }
 
         dbContext.AddAuditLog(userId, "VeDirectoryImported", nameof(VolunteerExaminer), 0,
@@ -223,6 +174,135 @@ public class VolunteerExaminerImportService(AppDbContext dbContext, TimeProvider
         await dbContext.SaveChangesAsync(cancellationToken);
 
         return new VeImportResult(created, updated, addedToTeam, preview.Rows.Count(r => !r.IsValid), null);
+    }
+
+    /// <summary>
+    /// Writes one resolved row: create the person, or fill their blanks, and make sure they hold a
+    /// membership on this team.
+    ///
+    /// <para><b>Shared by the CSV import and the single manual add on purpose.</b> Both are
+    /// duplicate-generating paths into the same table, and the moment they each own a copy of
+    /// "match, then create-or-fill, then ensure membership" the copies drift — which is exactly how
+    /// the per-team refresh pipeline went wrong before <c>TeamPipeline</c> existed.</para>
+    /// </summary>
+    private async Task<VeImportAction> ApplyRowAsync(VeImportRow row, int teamId, DateTime now, CancellationToken cancellationToken)
+    {
+        var person = row.MatchedVolunteerExaminerId is { } matchedId
+            ? await dbContext.VolunteerExaminers
+                .Include(v => v.TeamMemberships)
+                .FirstAsync(v => v.Id == matchedId, cancellationToken)
+            : null;
+
+        var action = person is null ? VeImportAction.Create : row.Action;
+
+        if (person is null)
+        {
+            person = new VolunteerExaminer { Name = row.Name, CallSign = row.CallSign, CreatedUtc = now };
+            dbContext.VolunteerExaminers.Add(person);
+        }
+
+        // Blank means "no opinion", never "delete". Only values actually supplied are written, and a
+        // name is only replaced when there is one to replace it with.
+        if (!string.IsNullOrWhiteSpace(row.Name)) person.Name = row.Name;
+        person.Email ??= row.Email;
+        person.Phone ??= row.Phone;
+        person.AddressLine1 ??= row.AddressLine1;
+        person.AddressLine2 ??= row.AddressLine2;
+        person.City ??= row.City;
+        person.State ??= row.State;
+        person.PostalCode ??= row.PostalCode;
+        person.DiscordUsername ??= row.Discord;
+        person.UpdatedUtc = now;
+
+        // FRN is never taken from a spreadsheet or a form. It is the identity key, it is unique, and
+        // the ULS sweep already fills it from FCC — accepting a typo here would either collide with
+        // a real person's record or quietly attach the wrong identity to this one.
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        if (!person.TeamMemberships.Any(m => m.TeamId == teamId))
+        {
+            var membership = new VeTeamMembership
+            {
+                VolunteerExaminerId = person.Id,
+                TeamId = teamId,
+                IsActive = true,
+                CreatedUtc = now
+            };
+            person.TeamMemberships.Add(membership);
+            dbContext.VeTeamMemberships.Add(membership);
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+
+        row.AppliedVolunteerExaminerId = person.Id;
+        return action;
+    }
+
+    /// <summary>
+    /// Add <b>one</b> VE by hand (requested 2026-08-10) — someone a team is watching before they ever
+    /// work a session.
+    ///
+    /// <para><b>This is not a duplicate of something ExamTools does</b>, which is the test every
+    /// in-app admin action here has to pass (three were built and removed for failing it). ExamTools
+    /// only knows a VE once they are rostered onto a session; a prospect being monitored to join has
+    /// never worked one, so ingestion will never produce them. Nothing else can create this row.</para>
+    ///
+    /// <para>Matching is the importer's, unchanged: an existing person on this team is left alone, and
+    /// one already serving another team gains a membership here rather than a second record. Adding
+    /// someone who later turns up on a real ExamTools roster is therefore safe — the sync matches the
+    /// same way and finds this record instead of creating a rival.</para>
+    /// </summary>
+    public async Task<VeAddResult> AddOneAsync(
+        int teamId, string? callSign, string? name, string? email, string? phone, int userId, CancellationToken cancellationToken)
+    {
+        var normalized = CallSign.Normalize(callSign);
+        name = string.IsNullOrWhiteSpace(name) ? null : name.Trim();
+
+        if (!string.IsNullOrWhiteSpace(callSign) && normalized is null)
+        {
+            return new VeAddResult(null, null, $"'{callSign.Trim()}' is not a usable call sign.");
+        }
+
+        if (name is null && normalized is null)
+        {
+            return new VeAddResult(null, null, "Enter a name or a call sign.");
+        }
+
+        var existing = await dbContext.VolunteerExaminers
+            .Include(v => v.TeamMemberships)
+            .ToListAsync(cancellationToken);
+
+        var match = normalized is null
+            ? null
+            : existing.FirstOrDefault(v => CallSign.IsUsable(v.CallSign)
+                && string.Equals(v.CallSign, normalized, StringComparison.OrdinalIgnoreCase));
+
+        var alreadyOnTeam = match?.TeamMemberships.Any(m => m.TeamId == teamId) ?? false;
+
+        var row = new VeImportRow(
+            0, normalized, name ?? match?.Name ?? normalized!,
+            string.IsNullOrWhiteSpace(email) ? null : email.Trim(),
+            string.IsNullOrWhiteSpace(phone) ? null : phone.Trim(),
+            null, null, null, null, null, null, null,
+            match?.Id,
+            match is null ? VeImportAction.Create : alreadyOnTeam ? VeImportAction.Update : VeImportAction.AddToTeam,
+            null);
+
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+        var action = await ApplyRowAsync(row, teamId, now, cancellationToken);
+
+        var who = normalized ?? row.Name;
+        dbContext.AddAuditLog(userId, "VeAddedByHand", nameof(VolunteerExaminer), row.AppliedVolunteerExaminerId ?? 0,
+            action switch
+            {
+                VeImportAction.Create => $"VE {who} added by hand.",
+                VeImportAction.AddToTeam => $"Existing VE {who} added to this team by hand.",
+                _ => $"VE {who} was already on this team; details filled in."
+            },
+            now);
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        return new VeAddResult(row.AppliedVolunteerExaminerId, action, null);
     }
 
     private static List<string> SplitLines(string text) =>
@@ -316,6 +396,9 @@ public record VeImportRow(
 {
     public bool IsValid => Action != VeImportAction.Invalid;
 
+    /// <summary>Set by the apply step so the caller can link to the person it just wrote. Not part of the parse.</summary>
+    public int? AppliedVolunteerExaminerId { get; set; }
+
     public static VeImportRow Invalid(int lineNumber, string? callSign, string? name, string problem) =>
         new(lineNumber, callSign, name ?? "", null, null, null, null, null, null, null, null, null, null, VeImportAction.Invalid, problem);
 }
@@ -330,3 +413,8 @@ public record VeImportPreview(IReadOnlyList<VeImportRow> Rows, string? Error)
 }
 
 public record VeImportResult(int Created, int Updated, int AddedToTeam, int Skipped, string? Error);
+
+/// <param name="VolunteerExaminerId">The person written, for linking straight to them.</param>
+/// <param name="Action">Whether they were created, added to this team, or already here.</param>
+/// <param name="Error">Set when nothing was written.</param>
+public record VeAddResult(int? VolunteerExaminerId, VeImportAction? Action, string? Error);

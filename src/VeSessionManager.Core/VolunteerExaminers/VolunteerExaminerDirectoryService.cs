@@ -21,6 +21,18 @@ namespace VeSessionManager.Core.VolunteerExaminers;
 public class VolunteerExaminerDirectoryService(AppDbContext dbContext)
 {
     /// <summary>
+    /// Pass as <c>tagName</c> to filter to <b>guests</b> — people carrying no tag at all on any team
+    /// in scope. "Guest" is derived rather than stored (a stored guest tag would need adding and
+    /// removing in step with every other tag change, and would be wrong in between), so it cannot be
+    /// selected the way a real tag name is, and needs a sentinel.
+    ///
+    /// <para>The leading space is what makes the sentinel safe: tag names are trimmed and required
+    /// non-empty, so no team can ever define one that collides with this. Same trick as
+    /// <c>VeInviteModel.UntaggedFilterValue</c>.</para>
+    /// </summary>
+    public const string GuestTagFilter = " guest";
+
+    /// <summary>
     /// <b>One row per person</b>, with the teams they serve listed in it (changed 2026-08-07).
     ///
     /// <para>It was one row per person per team, mirroring the session-count report — but that report
@@ -42,7 +54,8 @@ public class VolunteerExaminerDirectoryService(AppDbContext dbContext)
     /// <param name="tagName">Filters by tag <b>name</b> rather than id, matching how the rows render.
     /// Tags are per-team vocabulary, so "Member" on HRCC and "Member" on MARC are two rows with one
     /// meaning; the directory already collapses them into a single chip, and filtering by id would
-    /// have shown one of them and silently hidden the other's people.</param>
+    /// have shown one of them and silently hidden the other's people. Pass
+    /// <see cref="GuestTagFilter"/> for "no tags at all".</param>
     public async Task<IReadOnlyList<VeDirectoryRow>> GetDirectoryAsync(
         IReadOnlyList<int>? teamIds, string? search, string? tagName, bool includeInactive, CancellationToken cancellationToken)
     {
@@ -62,7 +75,14 @@ public class VolunteerExaminerDirectoryService(AppDbContext dbContext)
             query = query.Where(m => m.IsActive);
         }
 
-        if (!string.IsNullOrWhiteSpace(tagName))
+        // The guest filter is deliberately NOT applied here. "Guest" is a property of the whole
+        // row — no tags on ANY team in scope — and this query is still per-membership. Filtering
+        // memberships would match the untagged half of someone who IS tagged on another team, and
+        // that row then renders with tags and no Guest chip: a result that contradicts itself.
+        // Applied after the grouping instead, where IsGuest actually exists.
+        var guestsOnly = string.Equals(tagName, GuestTagFilter, StringComparison.Ordinal);
+
+        if (!guestsOnly && !string.IsNullOrWhiteSpace(tagName))
         {
             // Lower-cased on both sides rather than StringComparison, which EF cannot translate, and
             // matching the OrdinalIgnoreCase grouping the rows use — SQLite's `=` on TEXT is
@@ -153,7 +173,8 @@ public class VolunteerExaminerDirectoryService(AppDbContext dbContext)
                     mostRecent,
                     person.CallSign is { } call && duplicateCallSigns.Contains(call));
             })
-            .OrderBy(r => r.VolunteerExaminer.Name)];
+            .OrderBy(r => r.VolunteerExaminer.Name)
+            .Where(r => !guestsOnly || r.IsGuest)];
     }
 
     /// <summary>Everything one person's detail screen needs, or null when the id doesn't exist.</summary>

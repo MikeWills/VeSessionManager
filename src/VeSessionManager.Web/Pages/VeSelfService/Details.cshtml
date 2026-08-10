@@ -78,6 +78,58 @@
 </div>
 
 <div class="ve-panel">
+    <h2>VEC accreditations</h2>
+    <p class="session-sub">
+        Which VECs you're accredited with. Nobody publishes this to us, so it's yours to keep
+        accurate — your team sees it when they're working out who can serve at a session.
+    </p>
+
+    <table class="cards">
+        <thead><tr><th>VEC</th><th></th></tr></thead>
+        <tbody>
+            @if (Model.Person.VecAccreditations.Count == 0)
+            {
+                <tr><td colspan="2">None recorded yet.</td></tr>
+            }
+            @foreach (var accreditation in Model.Person.VecAccreditations.OrderBy(a => a.Vec.Name))
+            {
+                <tr>
+                    <td>@accreditation.Vec.Name</td>
+                    <td>
+                        <form method="post" asp-page-handler="RemoveAccreditation">
+                            <input type="hidden" name="accreditationId" value="@accreditation.Id" />
+                            <button type="submit" class="btn-secondary btn-sm">Remove</button>
+                        </form>
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+
+    @* Only VECs they don't already hold, so the picker can't offer a duplicate. The service rejects
+       one anyway; this keeps the list from suggesting it. *@
+    @{
+        var held = Model.Person.VecAccreditations.Select(a => a.VecId).ToHashSet();
+        var addable = Model.AllVecs.Where(v => !held.Contains(v.Id)).ToList();
+    }
+    @if (addable.Count > 0)
+    {
+        <form method="post" asp-page-handler="AddAccreditation" class="field-row">
+            <div class="field">
+                <label for="vecId">VEC</label>
+                <select id="vecId" name="vecId" class="filter-select" required>
+                    @foreach (var vec in addable)
+                    {
+                        <option value="@vec.Id">@vec.Name</option>
+                    }
+                </select>
+            </div>
+            <button type="submit" class="btn-secondary btn-sm">Add</button>
+        </form>
+    }
+</div>
+
+<div class="ve-panel">
     <form method="post" asp-page-handler="SignOut">
         <button type="submit" class="btn-secondary btn-sm">Sign out</button>
     </form>
