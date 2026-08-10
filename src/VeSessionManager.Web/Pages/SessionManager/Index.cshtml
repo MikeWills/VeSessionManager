@@ -225,7 +225,7 @@
     {
         <span></span>
     }
-    <select name="pageSize" form="sessionFilters" class="filter-select" onchange="document.getElementById('sessionFilters').submit()">
+    <select name="pageSize" form="sessionFilters" class="filter-select" data-autosubmit>
         @foreach (var size in VeSessionManager.Web.Pages.SessionManager.IndexModel.AllowedPageSizes)
         {
             <option value="@size" selected="@(size == Model.PageSize)">@size per page</option>

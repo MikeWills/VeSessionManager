@@ -1,5 +1,6 @@
 @page
 @model VeSessionManager.Web.Pages.SessionManager.VeTagsModel
+@using VeSessionManager.Core.VolunteerExaminers
 @{
     ViewData["Title"] = "VE Tags";
     ViewData["ActiveNav"] = "VeTags";
@@ -51,22 +52,52 @@ else
 
         <div class="table-scroll">
         <table class="cards">
-            <thead><tr><th>Name</th><th>Order</th><th>VEs tagged</th><th></th></tr></thead>
+            <thead><tr><th>Name</th><th>Order</th><th>Color</th><th>VEs tagged</th><th></th></tr></thead>
             <tbody>
                 @if (Model.Tags.Count == 0)
                 {
-                    <tr><td colspan="4">No tags yet. Add the ones your team actually uses below.</td></tr>
+                    <tr><td colspan="5">No tags yet. Add the ones your team actually uses below.</td></tr>
                 }
                 @foreach (var row in Model.Tags)
                 {
+                    var rowColor = VeTagColor.ForStyle(row.Tag.Color);
+                    @* Edited in place rather than delete-and-re-add. The tag keeps its id, so every
+                       assignment survives by construction — re-adding cascades them away, which made
+                       "I want this one listed first" silently untag everyone who had it.
+
+                       The inputs live outside their <form> and are bound to it by form="tag-N".
+                       A nested form is invalid HTML and the browser drops it, so the alternative
+                       would be one form wrapping the whole row — which cannot also contain the
+                       separate Delete form. *@
                     <tr>
-                        <td>@row.Tag.Name</td>
-                        <td class="count">@row.Tag.SortOrder</td>
-                        <td class="count">@row.AssignedCount</td>
                         <td>
+                            <input form="tag-@row.Tag.Id" name="name" value="@row.Tag.Name" required
+                                   class="menu-input" aria-label="Tag name" />
+                        </td>
+                        <td>
+                            <input form="tag-@row.Tag.Id" name="sortOrder" type="number" value="@row.Tag.SortOrder"
+                                   class="menu-input" style="width:80px;" aria-label="Display order" />
+                        </td>
+                        <td>
+                            <span class="color-field">
+                                <input form="tag-@row.Tag.Id" name="color" type="color"
+                                       value="@(rowColor ?? VeTagsModel.DefaultSwatch)" aria-label="Tag color" />
+                                <label class="inline-check">
+                                    <input form="tag-@row.Tag.Id" type="checkbox" name="useColor" value="true" @(rowColor is not null ? "checked" : "") />
+                                    <span>Use</span>
+                                </label>
+                            </span>
+                        </td>
+                        <td class="count">@row.AssignedCount</td>
+                        <td class="row-actions-cell">
                             @* asp-page-handler builds the action from the route only and DROPS the
                                query string, so this posted without teamId and the page 403'd its own
                                form. The hidden field re-supplies it. See CLAUDE.md. *@
+                            <form method="post" asp-page-handler="Update" id="tag-@row.Tag.Id">
+                                <input type="hidden" name="teamId" value="@Model.ResolvedTeamId" />
+                                <input type="hidden" name="tagId" value="@row.Tag.Id" />
+                                <button type="submit" class="btn-primary btn-sm">Save</button>
+                            </form>
                             <form method="post" asp-page-handler="Delete">
                                 <input type="hidden" name="teamId" value="@Model.ResolvedTeamId" />
                                 <input type="hidden" name="tagId" value="@row.Tag.Id" />
@@ -95,6 +126,14 @@ else
                 <label for="sortOrder">Order</label>
                 <input id="sortOrder" name="sortOrder" type="number" value="0" />
                 <span class="session-sub">Lower shows first.</span>
+            </div>
+            <div class="field">
+                <label for="color">Color</label>
+                <span class="color-field">
+                    <input id="color" name="color" type="color" value="@VeTagsModel.DefaultSwatch" />
+                    <label class="inline-check"><input type="checkbox" name="useColor" value="true" checked /> <span>Use</span></label>
+                </span>
+                <span class="session-sub">Color-codes the team on a VE's page.</span>
             </div>
             <button type="submit" class="btn-primary btn-sm">Add tag</button>
         </form>

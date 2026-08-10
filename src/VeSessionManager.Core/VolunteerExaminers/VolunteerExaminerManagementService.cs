@@ -261,12 +261,17 @@ public class VolunteerExaminerManagementService(AppDbContext dbContext, TimeProv
 
     // ---- Tag vocabulary (per team) ------------------------------------------------------------
 
-    public async Task<(VeManagementResult Result, VeTag? Tag)> CreateTagAsync(int teamId, string name, int sortOrder, int userId, CancellationToken cancellationToken)
+    public async Task<(VeManagementResult Result, VeTag? Tag)> CreateTagAsync(int teamId, string name, int sortOrder, string? color, int userId, CancellationToken cancellationToken)
     {
         name = name.Trim();
         if (string.IsNullOrWhiteSpace(name))
         {
             return (VeManagementResult.NameRequired, null);
+        }
+
+        if (!VeTagColor.TryNormalize(color, out var normalizedColor))
+        {
+            return (VeManagementResult.InvalidColor, null);
         }
 
         if (await dbContext.VeTags.AnyAsync(t => t.TeamId == teamId && t.Name == name, cancellationToken))
@@ -275,13 +280,72 @@ public class VolunteerExaminerManagementService(AppDbContext dbContext, TimeProv
         }
 
         var now = timeProvider.GetUtcNow().UtcDateTime;
-        var tag = new VeTag { TeamId = teamId, Name = name, SortOrder = sortOrder, CreatedUtc = now };
+        var tag = new VeTag { TeamId = teamId, Name = name, SortOrder = sortOrder, Color = normalizedColor, CreatedUtc = now };
         dbContext.VeTags.Add(tag);
         await dbContext.SaveChangesAsync(cancellationToken); // assigns Id for the audit row
 
         dbContext.AddAuditLog(userId, "VeTagCreated", nameof(VeTag), tag.Id, $"VE tag '{name}' created.", now);
         await dbContext.SaveChangesAsync(cancellationToken);
         return (VeManagementResult.Success, tag);
+    }
+
+    /// <summary>
+    /// Rename a tag, reorder it, or recolour it (added 2026-08-09).
+    ///
+    /// <para>Until this existed the only way to change a tag's order was <b>delete and re-add</b> —
+    /// which cascades the assignments away, so correcting a display detail silently untagged every
+    /// VE who had it. Editing in place keeps the id, so assignments are untouched by construction
+    /// rather than by care.</para>
+    ///
+    /// <para>The duplicate-name check excludes this tag by id. Note the id is a plain <c>int</c>, not
+    /// <c>int?</c>: an "exclude this row" predicate written against a nullable would match nothing at
+    /// all under SQL null semantics, and EF InMemory would not reproduce it — the trap CLAUDE.md
+    /// records from <c>VecManagementService.MatchCodeIsTakenAsync</c>.</para>
+    /// </summary>
+    public async Task<VeManagementResult> UpdateTagAsync(int tagId, string name, int sortOrder, string? color, int userId, CancellationToken cancellationToken)
+    {
+        var tag = await dbContext.VeTags.FirstOrDefaultAsync(t => t.Id == tagId, cancellationToken);
+        if (tag is null)
+        {
+            return VeManagementResult.NotFound;
+        }
+
+        name = name.Trim();
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return VeManagementResult.NameRequired;
+        }
+
+        if (!VeTagColor.TryNormalize(color, out var normalizedColor))
+        {
+            return VeManagementResult.InvalidColor;
+        }
+
+        if (await dbContext.VeTags.AnyAsync(t => t.TeamId == tag.TeamId && t.Id != tagId && t.Name == name, cancellationToken))
+        {
+            return VeManagementResult.DuplicateTagName;
+        }
+
+        var previousName = tag.Name;
+        var changes = new List<string>();
+        if (!string.Equals(previousName, name, StringComparison.Ordinal)) changes.Add($"renamed from '{previousName}'");
+        if (tag.SortOrder != sortOrder) changes.Add($"order {tag.SortOrder} to {sortOrder}");
+        if (!string.Equals(tag.Color, normalizedColor, StringComparison.OrdinalIgnoreCase)) changes.Add("colour changed");
+
+        if (changes.Count == 0)
+        {
+            return VeManagementResult.Success;
+        }
+
+        tag.Name = name;
+        tag.SortOrder = sortOrder;
+        tag.Color = normalizedColor;
+
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+        dbContext.AddAuditLog(userId, "VeTagUpdated", nameof(VeTag), tag.Id,
+            $"VE tag '{name}' updated: {string.Join(", ", changes)}.", now);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return VeManagementResult.Success;
     }
 
     /// <summary>Deleting a tag removes it from everyone who had it — the assignments cascade. That is the intent: the vocabulary changed.</summary>
@@ -336,6 +400,10 @@ public enum VeManagementResult
     NameRequired,
     DuplicateTagName,
     TagNotOnThisTeam,
+
+    /// <summary>A tag colour that isn't #RRGGBB. Rejected rather than dropped, so a bad value is never silently stored — see VeTagColor.</summary>
+    InvalidColor,
+
     AlreadyAccredited,
 
     /// <summary>Another VE already uses that address — sign-in could not tell them apart.</summary>

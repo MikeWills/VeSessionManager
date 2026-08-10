@@ -39,8 +39,12 @@ public class VolunteerExaminerDirectoryService(AppDbContext dbContext)
     /// context and returns nothing.</param>
     /// <param name="includeInactive">Retired memberships are hidden by default: the roster answers
     /// "who can we call on", and a list that keeps everyone who ever served would stop being that.</param>
+    /// <param name="tagName">Filters by tag <b>name</b> rather than id, matching how the rows render.
+    /// Tags are per-team vocabulary, so "Member" on HRCC and "Member" on MARC are two rows with one
+    /// meaning; the directory already collapses them into a single chip, and filtering by id would
+    /// have shown one of them and silently hidden the other's people.</param>
     public async Task<IReadOnlyList<VeDirectoryRow>> GetDirectoryAsync(
-        IReadOnlyList<int>? teamIds, string? search, int? tagId, bool includeInactive, CancellationToken cancellationToken)
+        IReadOnlyList<int>? teamIds, string? search, string? tagName, bool includeInactive, CancellationToken cancellationToken)
     {
         var query = dbContext.VeTeamMemberships
             .Include(m => m.VolunteerExaminer)
@@ -58,9 +62,13 @@ public class VolunteerExaminerDirectoryService(AppDbContext dbContext)
             query = query.Where(m => m.IsActive);
         }
 
-        if (tagId is { } id)
+        if (!string.IsNullOrWhiteSpace(tagName))
         {
-            query = query.Where(m => m.TagAssignments.Any(a => a.VeTagId == id));
+            // Lower-cased on both sides rather than StringComparison, which EF cannot translate, and
+            // matching the OrdinalIgnoreCase grouping the rows use — SQLite's `=` on TEXT is
+            // case-sensitive, so "Member" and "member" would otherwise be different filters.
+            var tag = tagName.Trim().ToLower();
+            query = query.Where(m => m.TagAssignments.Any(a => a.VeTag.Name.ToLower() == tag));
         }
 
         if (!string.IsNullOrWhiteSpace(search))

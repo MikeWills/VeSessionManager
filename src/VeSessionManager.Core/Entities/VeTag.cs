@@ -28,6 +28,17 @@ public class VeTag
     /// <summary>Display order on the VE screens, so a team can put its most-used tags first rather than living with alphabetical.</summary>
     public int SortOrder { get; set; }
 
+    /// <summary>
+    /// Optional <c>#RRGGBB</c> colour, used to colour-code the tag's chip and — via the
+    /// highest-priority tag a membership carries — the team panel on the VE detail page.
+    ///
+    /// <para>Null means "no colour", which renders exactly as it did before colours existed. Never
+    /// read this straight into a view: go through <c>VeTagColor.ForStyle</c>, which re-validates on
+    /// the way out. The value lands in a CSS custom property, and HTML-encoding does not make a
+    /// string safe in a stylesheet.</para>
+    /// </summary>
+    public string? Color { get; set; }
+
     public DateTime CreatedUtc { get; set; }
 
     public List<VeTagAssignment> Assignments { get; } = [];

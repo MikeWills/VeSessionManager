@@ -51,7 +51,13 @@ public class VeTagsModel(
         return Page();
     }
 
-    public async Task<IActionResult> OnPostCreateAsync(string name, int sortOrder)
+    /// <summary>
+    /// The swatch a colour picker starts on before anyone chooses. The app's own panel green, so an
+    /// unconsidered "Use" tick still produces something that belongs on these screens.
+    /// </summary>
+    public const string DefaultSwatch = "#2f4f4a";
+
+    public async Task<IActionResult> OnPostCreateAsync(string name, int sortOrder, string? color, bool useColor)
     {
         await LoadAsync();
         if (ResolvedTeamId is not { } teamId)
@@ -60,17 +66,46 @@ public class VeTagsModel(
         }
 
         var user = await CurrentUserAsync();
-        var (result, _) = await managementService.CreateTagAsync(teamId, name ?? "", sortOrder, user.Id, HttpContext.RequestAborted);
+        var (result, _) = await managementService.CreateTagAsync(teamId, name ?? "", sortOrder, ChosenColor(color, useColor), user.Id, HttpContext.RequestAborted);
 
-        TempData[result == VeManagementResult.Success ? "StatusMessage" : "ErrorMessage"] = result switch
-        {
-            VeManagementResult.Success => $"Tag '{name}' created.",
-            VeManagementResult.DuplicateTagName => "This team already has a tag with that name.",
-            VeManagementResult.NameRequired => "A tag name is required.",
-            _ => "Could not create that tag."
-        };
+        TempData[result == VeManagementResult.Success ? "StatusMessage" : "ErrorMessage"] = Describe(result, name, created: true);
         return RedirectToPage(new { teamId = TeamId });
     }
+
+    public async Task<IActionResult> OnPostUpdateAsync(int tagId, string name, int sortOrder, string? color, bool useColor)
+    {
+        await LoadAsync();
+
+        // Same ownership check as Delete: the posted id must be one this page actually listed, so a
+        // tag from another team's vocabulary can't be edited by crafting a form post.
+        if (Tags.All(t => t.Tag.Id != tagId))
+        {
+            return Forbid();
+        }
+
+        var user = await CurrentUserAsync();
+        var result = await managementService.UpdateTagAsync(tagId, name ?? "", sortOrder, ChosenColor(color, useColor), user.Id, HttpContext.RequestAborted);
+
+        TempData[result == VeManagementResult.Success ? "StatusMessage" : "ErrorMessage"] = Describe(result, name, created: false);
+        return RedirectToPage(new { teamId = TeamId });
+    }
+
+    /// <summary>
+    /// An <c>&lt;input type="color"&gt;</c> has no empty state — it always posts a value, and
+    /// #000000 is a colour a team might genuinely pick, so it can't stand in for "none". The
+    /// paired checkbox is what expresses "no colour"; unticked, whatever the picker holds is
+    /// discarded.
+    /// </summary>
+    private static string? ChosenColor(string? color, bool useColor) => useColor ? color : null;
+
+    private static string Describe(VeManagementResult result, string? name, bool created) => result switch
+    {
+        VeManagementResult.Success => created ? $"Tag '{name}' created." : $"Tag '{name}' saved.",
+        VeManagementResult.DuplicateTagName => "This team already has a tag with that name.",
+        VeManagementResult.NameRequired => "A tag name is required.",
+        VeManagementResult.InvalidColor => "That color wasn't a valid #RRGGBB value.",
+        _ => created ? "Could not create that tag." : "Could not save that tag."
+    };
 
     public async Task<IActionResult> OnPostDeleteAsync(int tagId)
     {
