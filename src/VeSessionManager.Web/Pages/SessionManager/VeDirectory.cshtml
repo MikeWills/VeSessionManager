@@ -140,7 +140,14 @@ else
         on their own. If they already exist on another team, they'll be added to this one rather than
         duplicated.
     </p>
-    <form method="post" asp-page-handler="Add" asp-antiforgery="true"
+    @* The explicit action carries the filters through the POST, which asp-page-handler cannot: it
+       builds the action from the route alone and drops the query string. It must therefore be the
+       ONLY routing attribute here — FormTagHelper throws outright if an explicit action= sits
+       beside asp-page-handler, and the handler name is already in the Url.Page call. The
+       asp-antiforgery is the other half of the pair: with an explicit action the tag helper stops
+       emitting the token by itself, and every POST then 400s in middleware with no server-side log.
+       Both halves are documented in CLAUDE.md. *@
+    <form method="post" asp-antiforgery="true"
           action="@Url.Page("/SessionManager/VeDirectory", "Add", Model.FilterRoute)"
           class="field-row">
         <div class="field">
