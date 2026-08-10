@@ -108,11 +108,10 @@ each with its own migration:
 `FccUlsWatcherService` never needed this treatment — it already matches candidates across every
 session/team in one pass, by design (FCC data has no concept of "which team").
 
-**Onboarding a second team** is now just inserting a new `Team` row (direct DB edit — no admin UI
-yet) with its own ExamTools/Zoom/Square/Email credentials and Discord guild id. Every job (ingestion,
-scheduling, payment generation, notifications, reminders) picks it up automatically on its next
-poll — no restart, no separate backfill step. See `TODO.md`'s Multi-Team Foundation section for the
-exact checklist.
+**Onboarding a second team** is now just creating a `Team` (Admin → Teams; a direct DB edit at the
+time this was written) with its own ExamTools/Zoom/Square/Email credentials and Discord guild id.
+Every job (ingestion, scheduling, payment generation, notifications, reminders) picks it up
+automatically on its next poll — no restart, no separate backfill step.
 
 ## Migration follow-up — required before ExamTools polling works again
 
@@ -123,4 +122,5 @@ user-secrets. `ExamToolsUsername`/`ExamToolsPassword` are left `NULL` on that se
 
 **Real ExamTools polling stops working the moment this migration deploys**, until someone manually
 sets those two columns on the seeded `Team` row via direct DB edit (same "hand-edit in the DB, no
-admin UI yet" pattern as `EmailSettings`/`EmailTemplates`) — see `TODO.md`.
+admin UI yet" pattern as `EmailSettings`/`EmailTemplates`). Historical: this was the state at the
+time of the migration; Team Settings has since gained a UI for these columns.

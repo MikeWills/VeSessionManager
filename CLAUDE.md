@@ -4,18 +4,24 @@ This is a Visual Studio project that is designed to automate many of the mundane
 
 ## Current State
 
-- **All phases of `docs/spec.md` are implemented, Phase 0 through Phase 10** (Phase 0 foundation, Phase 1 ExamTools session/candidate ingestion, Phase 2 Zoom + Discord event scheduling, Phase 3 Square payment links + webhook, Phase 4 candidate notification emails + templates, Phase 5 ULS application/license watcher (rewritten 2026-07-31 onto ExamTools' ULS API — see `docs/uls-watcher.md`), Phase 6 payment reminder & expiration job, Phase 7 VE tracking, Phase 8 VEC submission tracker, Phase 9a-9d admin backend auth/scaffolding/candidate actions/config screens/privacy page, Phase 10 PII purge job) — see spec.md's own Backlog section for unscoped future work (VEC discount programs, no-FRN batch export) and TODO.md for known gaps.
-- **Outstanding review findings live in [`docs/audit-2026-08-03-tasks.md`](docs/audit-2026-08-03-tasks.md)
-  — check it before starting unrelated work.** A six-agent review (security, optimization/dead code,
-  and traceability across four layers) produced 39 findings as self-contained tasks: problem, files,
-  fix, acceptance criteria. **14 are done, 25 remain.** The completed ones were the P0/P1 tier —
-  authorization, public-internet hardening, Worker resilience, the payment race, the PII purge gap,
-  and the Square/ExamTools config drift (T04, done 2026-08-06 before live payment testing). What's
-  left is led by **T12** (the Data Protection key ring sitting beside the SQLite database, so one
-  leaked backup carries both ciphertext and key), then a long tail of quality work. That file also records what the review verified as **clean**, so
-  those areas don't need re-auditing. This pointer is deliberately here rather than in the Change Log
-  below, which rotates entries out to `CHANGELOG.md` and would eventually take the only reference
-  with it.
+- **All phases of `docs/spec.md` are implemented, Phase 0 through Phase 10** (Phase 0 foundation, Phase 1 ExamTools session/candidate ingestion, Phase 2 Zoom + Discord event scheduling, Phase 3 Square payment links + webhook, Phase 4 candidate notification emails + templates, Phase 5 ULS application/license watcher (rewritten 2026-07-31 onto ExamTools' ULS API — see `docs/uls-watcher.md`), Phase 6 payment reminder & expiration job, Phase 7 VE tracking, Phase 8 VEC submission tracker, Phase 9a-9d admin backend auth/scaffolding/candidate actions/config screens/privacy page, Phase 10 PII purge job) — remaining work of every kind (unscoped future features, operational setup, review findings) is in GitHub issues, per the next bullet.
+- **GitHub issues are the single list of outstanding work (consolidated 2026-08-10) — check them
+  before starting anything, and file new work there, not in a markdown file.** `TODO.md`,
+  `docs/audit-2026-08-03-tasks.md` and `docs/spec.md`'s Backlog were each a separate list of "what's
+  left"; all three are now stubs pointing at issues. Useful labels: `ops` (configuration/server work,
+  not code), `audit-2026-08-03`, `needs-design`, `security`, `tech-debt`. Leading items are
+  **[#157](https://github.com/MikeWills/VeSessionManager/issues/157)** (the Data Protection key ring
+  sits beside the SQLite database, so one leaked backup carries both ciphertext and key) and
+  **[#185](https://github.com/MikeWills/VeSessionManager/issues/185)** (no production account can
+  sign in until the first SystemAdmin exists).
+- **[`docs/audit-2026-08-03-tasks.md`](docs/audit-2026-08-03-tasks.md) is still worth reading for its
+  "Verified clean" section** — what the six-agent review checked and found sound (zero raw SQL, IDOR
+  re-checks on every id-taking POST handler, CSRF correct, and a list of deliberate patterns not to
+  "fix"). That record exists nowhere else, and its value is negative work: knowing what *not* to
+  re-audit. The 25 open findings from it are issues now; **their line numbers are from commit
+  `2898817` and several files have moved since — a starting point, not an address.** These two
+  pointers stay here rather than in the Change Log below, which rotates entries out to `CHANGELOG.md`
+  and would eventually take the only reference with it.
 - Build/test/run: `dotnet build`, `dotnet test`, `dotnet run --project src/VeSessionManager.Worker`, `dotnet run --project src/VeSessionManager.Web` (see README, and Known Constraints below, for the `DOTNET_ENVIRONMENT` gotcha). Tests are xUnit in `tests/VeSessionManager.Core.Tests`, using the EF InMemory provider and fake client implementations — follow `SessionIngestionServiceTests`/`SessionEventSchedulingServiceTests`/`PaymentGenerationServiceTests`/`CandidateNotificationServiceTests`/`UlsWatcherServiceTests`/`PaymentReminderServiceTests` as the pattern.
 
 ## Established Patterns

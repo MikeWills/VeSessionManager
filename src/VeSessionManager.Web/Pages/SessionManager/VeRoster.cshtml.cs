@@ -22,7 +22,7 @@ namespace VeSessionManager.Web.Pages.SessionManager;
 /// a UI. Not part of the design handoff's four mocked screens (only Sessions/session-detail were
 /// mocked) — styled with the same design-system components (table/chip/eyebrow) since it's a plain
 /// report, not something that needed its own visual design pass. TeamLead was added in the
-/// TeamLead-read-only-view fix (see TODO.md) — this page is purely a read-only report already, so
+/// TeamLead-read-only-view fix (see docs/admin-auth.md) — this page is purely a read-only report already, so
 /// no write-gating was needed, just the role.
 ///
 /// Multi-team (issue #19): the report is per-team, so a user belonging to more than one team picks

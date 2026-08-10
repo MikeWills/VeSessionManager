@@ -42,7 +42,7 @@ public class Payment
     /// every retry for this Payment — Square's own idempotency guarantee means a retried request
     /// with the same key returns the original link/order rather than creating a second one. Guards
     /// against a crash between Square's API call succeeding and PaymentLinkUrl being saved (same
-    /// class of bug as the Discord/Zoom duplicate-event issue, see TODO.md).
+    /// class of bug as the Discord/Zoom duplicate-event issue, see docs/square-payments.md).
     /// </summary>
     public string? SquareIdempotencyKey { get; set; }
 

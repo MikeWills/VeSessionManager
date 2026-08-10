@@ -160,7 +160,8 @@ by anyone who can reach FCC's search — it is simply not rendered as a link.
 **Better direction if application visibility is wanted:** `pendingApplications[].history[]` already
 returns human-readable entries (`code_text: "Redlight Review Completed"`) with dates, and the watcher
 currently discards everything but the hold flag. Surfacing that timeline inline would give more than
-the FCC page would, with no dependency on a site that won't load. Logged in TODO.md.
+the FCC page would, with no dependency on a site that won't load. See
+[issue #195](https://github.com/MikeWills/VeSessionManager/issues/195).
 
 ## Risks worth revisiting
 
@@ -168,5 +169,6 @@ Undocumented and unauthenticated, so it can change shape, add auth, or rate-limi
 and it is ExamTools' mirror rather than FCC direct, so it inherits their refresh behaviour (the
 `/lookup/` vs `/lookup2/` disagreement is direct evidence their indexing has moving parts). **Asking
 ExamTools whether this endpoint is supported, and at what polling rate, is still an open action** —
-see TODO.md. If the answer is "internal, please don't", the fallback is FCC's files, recoverable from
+see [issue #194](https://github.com/MikeWills/VeSessionManager/issues/194). If the answer is
+"internal, please don't", the fallback is FCC's files, recoverable from
 git history.

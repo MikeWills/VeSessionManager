@@ -181,7 +181,7 @@ then a real browser click-through: logged in as `sessionmanager@example.com`, la
 `/SessionManager`; navigated to `/SystemAdmin` and got redirected to `/Account/AccessDenied`
 (correctly blocked); logged out, logged in as `teamlead@example.com`, landed on `/TeamLead`. Not
 yet live-tested: Google/Microsoft sign-in (no real OAuth app credentials configured yet — see
-`TODO.md`).
+[issue #185](https://github.com/MikeWills/VeSessionManager/issues/185)).
 
 ## TeamLead read-only view (added 2026-07-22)
 

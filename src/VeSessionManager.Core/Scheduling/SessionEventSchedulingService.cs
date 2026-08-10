@@ -180,7 +180,7 @@ public class SessionEventSchedulingService(
 
     /// <summary>
     /// Mirrors LogUnconfiguredIntegrations for the cleanup side (found live 2026-07-29 — see
-    /// TODO.md's "SessionEventScheduling repeats a real [ERR] every tick" bug entry): a cancelled
+    /// docs/zoom-discord-scheduling.md): a cancelled
     /// session's stale Zoom meeting/Discord event still needs tearing down eventually even if the
     /// team's config for that integration was removed (or never finished) since it was created, but
     /// that must not mean a repeating [ERR] every single poll in the meantime — one aggregate INFO
@@ -266,7 +266,7 @@ public class SessionEventSchedulingService(
             if (session.DiscordEventId is null)
             {
                 // Guard against a previous poll that crashed/restarted after Discord's API call
-                // succeeded but before the returned id was persisted (see TODO.md's "Duplicate
+                // succeeded but before the returned id was persisted (see docs/zoom-discord-scheduling.md's "Duplicate
                 // Discord scheduled events" entry) — adopt a matching existing event instead of
                 // creating a second one for the same session.
                 var existingEvent = await FindExistingEventAsync(guildId, session, cancellationToken);
