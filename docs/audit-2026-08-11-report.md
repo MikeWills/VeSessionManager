@@ -194,6 +194,44 @@ registration is missing and no singleton captures a scoped service.
 
 ---
 
+## Verification status of the shipped fixes (added 2026-08-11, after the fact)
+
+Every fix below was shipped on the audit's reasoning. Each was later checked the only way that
+settles it — **revert the fix, run the tests, see whether anything fails.** The results were not
+uniform, and the differences are the useful part.
+
+| Issue | Fix | Verdict |
+|---|---|---|
+| #288 | LicenseWatchJob slot guard | **Real.** Test fails against the single-name guard, and only that test. |
+| #231 | VE sweep: scoped detach, not `Clear()` | **Real.** Test fails against `ChangeTracker.Clear()`. |
+| #249 | Watch list: per-row catch | **Real.** Test fails without the catch. |
+| #232 | Ingestion stamp → `ExecuteUpdateAsync` | **Misdiagnosed.** Does not reproduce; see below. |
+| #233 | Roster sync: scoped detach | **Unexercised.** Reverting it leaves the full suite green. |
+| #234 | Merge: clear tracker after rollback | **Unexercised.** Same — both clears can be removed with nothing failing. |
+
+**#232 is the one to learn from.** The audit said a failed pipeline step clears the tracker,
+detaching the team, so the throttle stamp silently wrote nothing — *in production*. It does not: the
+clear happens, but `TryCompleteHistoryAsync` then calls `Attach(history)`, and **`Attach` takes the
+whole entity graph** — so with a real `teamId`, EF's relationship fixup had already populated
+`history.Team`, and attaching the history row drags the team back in. The stamp survived *by
+accident*. Pass `teamId: null`, as `LicenseWatchJob` and `UlsWatcherJob` do, and the described failure
+**is** real — just not where it was reported. Pinned by `JobRunHistoryLoggerTrackerTests`.
+
+**#233 and #234 are unexercised for a defensible reason, but it should be said out loud.** Both are
+defensive handlers whose *causes* were removed by sibling fixes in the same PR — #283 removed the
+duplicate-key save failure #233 guards, and the merge conserves sessions by construction, so #234's
+rollback branch cannot be provoked from outside. Reaching either now would need a seam that does not
+exist. They are plausible and cheap; they are not verified, and a future change that makes those paths
+reachable again will not be caught by anything.
+
+**Two process notes, both of which cost real time:**
+
+- `DbContext.Entry(x)` **begins tracking** an untracked entity and reports `Unchanged`, so it can
+  never answer "is this detached?" — it always says no. Use `ChangeTracker.Entries<T>()` with
+  `ReferenceEquals`.
+- A guard test that has only ever been seen to pass proves nothing. Three of the six rows above
+  changed meaning once the fix was actually reverted.
+
 ## Where the effort is best spent
 
 1. **Two NUL bytes** (10 minutes). Unblocks grep for every future review, including the follow-up work
