@@ -23,15 +23,23 @@ public class PiiPurgeJob(
 
         do
         {
-            await JobTick.GuardedAsync(logger, "PiiPurge", async () =>
-            {
-                using var scope = scopeFactory.CreateScope();
-                var jobRunHistoryLogger = scope.ServiceProvider.GetRequiredService<JobRunHistoryLogger>();
-                var purgeService = scope.ServiceProvider.GetRequiredService<PiiPurgeService>();
-
-                await jobRunHistoryLogger.RunAsync("PiiPurge", purgeService.RunAsync, null, stoppingToken);
-            });
+            await JobTick.GuardedAsync(logger, "PiiPurge", () => RunTickAsync(stoppingToken));
         }
         while (await timer.WaitForNextTickAsync(stoppingToken));
     }
+
+    /// <summary>
+    /// One iteration of this job's work, separated from the timer loop so it can be driven directly
+    /// by a test (issue #325). The loop above is three lines of framework usage; every bug this job
+    /// has had lived in here.
+    /// </summary>
+    internal async Task RunTickAsync(CancellationToken stoppingToken)
+    {
+        using var scope = scopeFactory.CreateScope();
+        var jobRunHistoryLogger = scope.ServiceProvider.GetRequiredService<JobRunHistoryLogger>();
+        var purgeService = scope.ServiceProvider.GetRequiredService<PiiPurgeService>();
+
+        await jobRunHistoryLogger.RunAsync("PiiPurge", purgeService.RunAsync, null, stoppingToken);
+    }
+
 }
