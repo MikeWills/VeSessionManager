@@ -427,8 +427,6 @@ public class LicenseWatchServiceTests
             Frn = "0004717963",
             LicenseStatus = "Active",
             OperatorClass = LicenseClass.General,
-            // "Technician Plus" is a legacy spelling the class parser has to accept.
-            PreviousOperatorClass = LicenseClass.Technician,
             GrantDateUtc = new DateTime(2016, 7, 1, 8, 0, 0, DateTimeKind.Utc),
             EffectiveDateUtc = new DateTime(2016, 7, 1, 8, 0, 0, DateTimeKind.Utc),
             ExpiredDateUtc = new DateTime(2026, 8, 7, 8, 0, 0, DateTimeKind.Utc),

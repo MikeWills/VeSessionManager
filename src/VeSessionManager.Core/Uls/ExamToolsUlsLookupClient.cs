@@ -85,7 +85,6 @@ public class ExamToolsUlsLookupClient(
                 CallSign = CallSign.NormalizeFormat(r.CallSign),
                 LicenseStatus = r.LicenseStatus,
                 OperatorClass = ParseLicenseClass(r.LicenseClass),
-                PreviousOperatorClass = ParseLicenseClass(r.PrevLicenseClass),
                 GrantDateUtc = AsUtcDate(r.GrantDate),
                 EffectiveDateUtc = AsUtcDate(r.EffectiveDate),
                 ExpiredDateUtc = AsUtcDate(r.ExpiredDate),
