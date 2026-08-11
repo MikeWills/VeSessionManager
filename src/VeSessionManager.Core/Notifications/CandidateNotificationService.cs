@@ -137,15 +137,32 @@ public class CandidateNotificationService(
         return result;
     }
 
+    /// <summary>
+    /// How far ahead of a session its reminder goes out. A duration rather than a time of day on
+    /// purpose — see the window comment below.
+    /// </summary>
+    public const int PreSessionReminderHours = 24;
+
     public async Task<EmailNotificationResult> SendDayBeforeRemindersAsync(Team team, CancellationToken cancellationToken)
     {
         var result = new EmailNotificationResult();
         var now = timeProvider.GetUtcNow().UtcDateTime;
-        // "Tomorrow" evaluated as a UTC calendar date, consistent with every other date stored in
-        // this app — sessions occurring right around UTC midnight may read as "tomorrow" a little
-        // earlier/later than the Session Manager's own local calendar day.
-        var tomorrowStartUtc = now.Date.AddDays(1);
-        var tomorrowEndUtc = tomorrowStartUtc.AddDays(1);
+
+        // A rolling 24-hour window ending at the session start — NOT a calendar date (#220).
+        //
+        // This used to compare against "tomorrow" as a UTC calendar date, which broke in two ways at
+        // once. Sessions run in the evening Eastern, and anything from ~8pm ET onward is already
+        // tomorrow in raw UTC — so a Monday-evening session is stored on Tuesday, "tomorrow in UTC"
+        // is the session's own Eastern day, and the "day before" reminder went out on the day of the
+        // session. On top of that the job ticks on an interval from Worker start, so which side of
+        // UTC midnight it landed depended on when the Worker was last deployed: the same session
+        // could be reminded anywhere from ~36 hours out to ~3 hours out.
+        //
+        // Comparing two instants removes the whole class: there is no calendar date, so there is no
+        // timezone to get wrong, and a restart shifts a reminder by minutes rather than a day. Drift
+        // of one tick is acceptable and was Mike's explicit call — "24 hours before the test, no
+        // matter the time zone, +/- job run time is fine".
+        var windowEndUtc = now.AddHours(PreSessionReminderHours);
 
         var emailSettings = await dbContext.EmailSettings.FirstOrDefaultAsync(e => e.TeamId == team.Id, cancellationToken);
         if (emailSettings is null)
@@ -162,8 +179,11 @@ public class CandidateNotificationService(
                         && c.DayBeforeReminderSentUtc == null
                         && c.Session.TeamId == team.Id
                         && c.Session.Status == SessionStatus.Active
-                        && c.Session.ScheduledStartUtc >= tomorrowStartUtc
-                        && c.Session.ScheduledStartUtc < tomorrowEndUtc)
+                        // Starts within the next 24 hours, and has not started yet. The upper bound
+                        // is what makes this a reminder rather than a notification about something
+                        // already under way; DayBeforeReminderSentUtc keeps it to once.
+                        && c.Session.ScheduledStartUtc > now
+                        && c.Session.ScheduledStartUtc <= windowEndUtc)
             .ToListAsync(cancellationToken);
 
         if (candidates.Count > 0 && !team.IsEmailConfigured)

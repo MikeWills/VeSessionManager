@@ -30,7 +30,8 @@ public static class EmailTemplateTriggers
             EmailTemplatePhase.PreSession,
             "Automatic",
             "To the candidate",
-            "Once, the day before their session, from the daily reminder job. Includes a payment link only if they still owe a fee."),
+            "Once, when their session is within the next 24 hours — so roughly a day ahead, wherever they are. " +
+            "Includes a payment link only if they still owe a fee."),
 
         ["PaymentReminder5Day"] = new(
             EmailTemplatePhase.PostSession,
