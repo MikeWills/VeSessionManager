@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
 using VeSessionManager.Core;
@@ -348,7 +349,11 @@ builder.Services.AddAuthorization(options =>
 });
 
 // Add services to the container.
-builder.Services.AddRazorPages();
+// StaleAuthCookieFilter runs on every page: a cookie can outlive the account it names, and without
+// it that lands as a 500 the person cannot act on. See the filter's own remarks.
+builder.Services.AddScoped<StaleAuthCookieFilter>();
+builder.Services.AddRazorPages(options =>
+    options.Conventions.ConfigureFilter(new ServiceFilterAttribute(typeof(StaleAuthCookieFilter))));
 
 var app = builder.Build();
 
