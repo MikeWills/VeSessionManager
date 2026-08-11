@@ -282,6 +282,50 @@ public class PageSmokeTests : IAsyncLifetime
             + "nothing inside this app would log it. Its real gate is HMAC signature verification.");
     }
 
+    /// <summary>
+    /// A cookie can outlive the account it names — the row is deleted, or the database is restored
+    /// beneath a browser that still holds a valid, correctly-signed cookie. Authorization is
+    /// satisfied, so the page runs, looks the user up, gets null and throws.
+    ///
+    /// <para>Nineteen call sites across twelve pages did exactly that, and the person saw a 500 for
+    /// something that was not their fault and that they could not fix — the one action that would
+    /// have helped, signing out, is what an error page does not offer. StaleAuthCookieFilter now
+    /// resolves it before any handler runs.</para>
+    /// </summary>
+    [Theory]
+    [InlineData("/SessionManager")]
+    [InlineData("/SessionManager/ApplicantStatus")]
+    [InlineData("/SessionManager/VeDirectory")]
+    [InlineData("/Admin/Reconciliation")]
+    public async Task AStaleCookieRedirectsToLoginRatherThanThrowing(string url)
+    {
+        using var client = _factory.CreateClientWithStaleCookie();
+
+        var response = await client.GetAsync(url);
+
+        Assert.False(response.StatusCode == HttpStatusCode.InternalServerError,
+            $"GET {url} with a cookie naming a deleted user returned 500. It should sign the cookie "
+            + "out and redirect to login — see StaleAuthCookieFilter.");
+
+        Assert.True(response.StatusCode is HttpStatusCode.Redirect or HttpStatusCode.Found,
+            $"GET {url} with a stale cookie returned {(int)response.StatusCode}; expected a redirect to login.");
+        Assert.Contains("/Account/Login", response.Headers.Location?.OriginalString ?? "");
+    }
+
+    /// <summary>
+    /// The control: a real signed-in user must be entirely unaffected. A filter that runs on every
+    /// page is exactly the thing that could quietly log everyone out.
+    /// </summary>
+    [Fact]
+    public async Task AValidSessionIsUntouchedByTheStaleCookieFilter()
+    {
+        using var client = _factory.CreateClientAs(UserRole.SystemAdmin);
+
+        var response = await client.GetAsync("/SessionManager");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
     /// <summary>A role without access must be refused rather than shown a VE's home address.</summary>
     [Fact]
     public async Task ASessionManagerCannotReachTheVeDirectory()
