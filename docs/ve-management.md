@@ -343,6 +343,63 @@ session, rather than when the mistake was made.
 The panel is collapsed by default. Everyone else arrives through ingestion, and this must not read as
 the normal way VEs get onto the list.
 
+### Cross-team reach is intended, and was re-confirmed on 2026-08-11
+
+The 2026-08-11 audit raised "Serving another team — they gain a membership here" (above) as a
+data-protection finding: a TeamAdmin can type any call sign, gain a membership, and thereby see that
+person's contact details — including the home address this file elsewhere calls *"given to their team
+in confidence."* Three separate review agents reached it independently, from the directory, the merge
+page and the invitation service.
+
+**Reviewed and kept as-is** (issues #235/#236/#237, closed). Recorded here rather than in the audit
+file, because the next person to notice this will read *this* page, and the finding is a correct
+reading of the code — it is the *deployment model* that makes it acceptable, and that is not visible
+from the code at all.
+
+The reasoning, and the evidence it rests on:
+
+- **This deployment hosts cooperating teams, not unrelated organisations.** `VolunteerExaminer`'s own
+  comment says so where the contact fields are declared, and shares them across teams *deliberately* —
+  three teams holding three divergent addresses for one person would be worse than one shared record.
+  A cross-team join therefore transfers data between parties who already coordinate, which is a
+  different act from leaking it to a stranger.
+- **Cross-team service is the normal case, not an edge case.** Of 175 VEs, **54 serve more than one
+  team** (51 on two, 3 on all three). Any rule framed as "you should not be able to reach VEs outside
+  your team" would be fighting a third of the roster.
+- **The scary version of the finding is not reachable today.** Across those 175 rows: **0 addresses, 0
+  notes, 1 email, 1 phone.** The contact-detail feature exists and is essentially unused, so there is
+  presently almost nothing to expose.
+- **It is already bounded to the roles that could see the data anyway.** The directory and detail
+  pages are `[Authorize(Roles = "SystemAdmin,TeamAdmin")]`; a Session Manager or Team Lead cannot
+  reach them at all, by the same rule that predates this.
+
+**What would make this the wrong answer** — check these before assuming the decision still holds:
+
+1. **A team joins that the others do not know.** The whole argument is "cooperating parties". A
+   commercial or unaffiliated VE team on the same deployment ends it, and the fix is then
+   `SystemAdmin`-gated cross-team joins, which was the runner-up option.
+2. **Contact details actually get populated.** At 0 addresses the exposure is theoretical; at 175 it is
+   a real disclosure with every hand-add. The counts above are the thing to re-measure, and the
+   cheapest moment to add the gate is *before* that, not after.
+3. **The VE population stops overlapping.** If multi-team VEs fall toward zero, the cost of gating
+   drops to nothing and the argument for leaving it open goes with it.
+
+**Not covered by this decision, and still open as ordinary bugs** — none of them needs the deployment
+model to be settled, and each is wrong under any answer:
+
+- **#238** — `VeSessionInvitationService` does not scope recipients at all, so a tampered POST mails
+  attacker-authored text from the team's SMTP to any VE on the deployment. The offered list *is*
+  scoped; only the acting query is not.
+- **#239** — `SetVolunteerExaminerAsync` lets an admin claim any VE row as their own login's identity,
+  permanently, locking out the team the record belongs to.
+- **#240** — the CSV import *preview* reports which submitted call signs already exist elsewhere, and
+  renders the other team's stored name. 500 probes per request, and no audit entry, because
+  `VeDirectoryImported` is only written on Apply.
+
+The distinction worth keeping: sharing a person's record with a team that will work alongside them is
+the intended behaviour. Sharing it with *whoever guesses a call sign*, silently and unlogged, is not —
+which is why #240 in particular is still a bug even though #236 is not.
+
 ## Sessions worked, on the VE detail page
 
 Added 2026-08-10: total, this year, split per team, and the five most recent with dates.
