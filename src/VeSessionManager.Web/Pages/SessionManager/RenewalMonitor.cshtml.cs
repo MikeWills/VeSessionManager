@@ -33,7 +33,7 @@ public class RenewalMonitorModel(
     AppDbContext dbContext,
     UserManager<User> userManager,
     SessionAccessScope accessScope,
-    IUlsLookupClient lookupClient,
+    LicenseWatchService licenseWatchService,
     TimeProvider timeProvider) : PageModel
 {
     [BindProperty(SupportsGet = true)]
@@ -90,15 +90,9 @@ public class RenewalMonitorModel(
         var user = await userManager.GetUserWithManagerAsync(dbContext, User) ?? throw new InvalidOperationException("No authenticated user for an [Authorize]d page.");
         AvailableTeams = await accessScope.GetAvailableTeamsAsync(dbContext, user);
 
-        var entry = AddCallSign?.Trim();
-        if (string.IsNullOrWhiteSpace(entry))
-        {
-            TempData["ErrorMessage"] = "Enter a call sign or FRN.";
-            return RedirectToPage(new { TeamId });
-        }
-
         // Re-authorized server-side rather than trusting the posted team id: the picker only decides
-        // what is worth rendering.
+        // what is worth rendering. This stays here — the service takes a team id it trusts, the same
+        // split every other service in this app uses.
         var targetTeamId = AddTeamId ?? (AvailableTeams.Count == 1 ? AvailableTeams[0].Id : null);
         if (targetTeamId is null || !AvailableTeams.Any(t => t.Id == targetTeamId))
         {
@@ -106,54 +100,24 @@ public class RenewalMonitorModel(
             return RedirectToPage(new { TeamId });
         }
 
-        var lookup = await lookupClient.LookupByFrnAsync(entry, HttpContext.RequestAborted);
-        if (lookup is null)
-        {
-            // The endpoint itself was unreachable. Distinct from "no such call sign" — say so, rather
-            // than telling someone their correct call sign does not exist.
-            TempData["ErrorMessage"] = $"Couldn't reach the FCC license lookup just now — {entry.ToUpperInvariant()} wasn't added. Try again shortly.";
-            return RedirectToPage(new { TeamId });
-        }
+        // CancellationToken.None, not RequestAborted: this writes, and a disconnect midway would
+        // otherwise be able to leave the row saved with no audit entry. Matches every other POST
+        // handler in SessionManager (issue #299 — this was the one that had it backwards).
+        var result = await licenseWatchService.AddWatchedLicenseAsync(
+            targetTeamId.Value, AddCallSign, AddNote, user.Id, CancellationToken.None);
 
-        if (!lookup.Found || string.IsNullOrWhiteSpace(lookup.CallSign))
+        TempData[result.Outcome == AddWatchedLicenseOutcome.Success ? "StatusMessage" : "ErrorMessage"] = result.Outcome switch
         {
-            TempData["ErrorMessage"] = $"FCC has no license record for \"{entry}\". Check the call sign or FRN and try again.";
-            return RedirectToPage(new { TeamId });
-        }
-
-        // NormalizeFormat, not Normalize: this is the value FCC just returned, so it is already a
-        // real call sign — and the duplicate check below compares it against stored rows, which were
-        // normalized the same way.
-        var callSign = CallSign.NormalizeFormat(lookup.CallSign)!;
-        if (await dbContext.WatchedLicenses.AnyAsync(w => w.TeamId == targetTeamId && w.CallSign == callSign, HttpContext.RequestAborted))
-        {
-            TempData["ErrorMessage"] = $"{callSign} is already on this team's watch list.";
-            return RedirectToPage(new { TeamId });
-        }
-
-        var utcNow = timeProvider.GetUtcNow().UtcDateTime;
-        var license = new WatchedLicense
-        {
-            TeamId = targetTeamId.Value,
-            CallSign = callSign,
-            Note = string.IsNullOrWhiteSpace(AddNote) ? null : AddNote.Trim(),
-            AddedByUserId = user.Id,
-            AddedUtc = utcNow
+            AddWatchedLicenseOutcome.Success => $"{result.CallSign} added to the watch list.",
+            AddWatchedLicenseOutcome.CallSignRequired => "Enter a call sign or FRN.",
+            AddWatchedLicenseOutcome.LookupUnavailable =>
+                $"Couldn't reach the FCC license lookup just now — {result.CallSign} wasn't added. Try again shortly.",
+            AddWatchedLicenseOutcome.NotFoundAtFcc =>
+                $"FCC has no license record for \"{result.CallSign}\". Check the call sign or FRN and try again.",
+            AddWatchedLicenseOutcome.AlreadyWatched => $"{result.CallSign} is already on this team's watch list.",
+            _ => "Could not add that license to the watch list."
         };
 
-        // Populate from the lookup already in hand, so the row is complete on first render instead of
-        // showing "not checked yet" until the Worker's next tick. Reuses the service's own mapping so
-        // the two can't drift.
-        LicenseWatchService.Apply(license, lookup, utcNow, new LicenseWatchResult());
-
-        dbContext.WatchedLicenses.Add(license);
-        await dbContext.SaveChangesAsync(HttpContext.RequestAborted);
-
-        // Audited after the save, because EntityId is an int and the row has no id until then.
-        dbContext.AddAuditLog(user.Id, "Create", nameof(WatchedLicense), license.Id, $"Added {callSign} to the license watch list", utcNow);
-        await dbContext.SaveChangesAsync(HttpContext.RequestAborted);
-
-        TempData["StatusMessage"] = $"{callSign} added to the watch list.";
         return RedirectToPage(new { TeamId });
     }
 
@@ -179,7 +143,10 @@ public class RenewalMonitorModel(
 
         dbContext.WatchedLicenses.Remove(license);
         dbContext.AddAuditLog(user.Id, "Delete", nameof(WatchedLicense), license.Id, $"Removed {license.CallSign} from the license watch list", timeProvider.GetUtcNow().UtcDateTime);
-        await dbContext.SaveChangesAsync(HttpContext.RequestAborted);
+        // CancellationToken.None for the write — the removal and its audit entry are one unit, and a
+        // client disconnect must not be able to commit half of it. The read above keeps
+        // RequestAborted, which is the correct token for a read. See issue #299.
+        await dbContext.SaveChangesAsync(CancellationToken.None);
 
         TempData["StatusMessage"] = $"{license.CallSign} removed from the watch list.";
         return RedirectToPage(new { TeamId });

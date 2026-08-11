@@ -119,12 +119,95 @@ public class LicenseWatchService(
     }
 
     /// <summary>
-    /// Overwrites the cached FCC fields wholesale and then advances the renewal state machine. Split
-    /// out so the Web add flow can populate a brand-new row from the lookup it already performed —
-    /// otherwise the two would map the same response independently and drift — and so the tests can
-    /// drive it directly against a fabricated <see cref="UlsLookupResult"/>.
+    /// Adds a call sign or FRN to a team's watch list, resolving it against ULS first so the row is
+    /// complete the moment it renders instead of reading "not checked yet" until the Worker's next
+    /// tick.
+    ///
+    /// <para><b>This lived in <c>RenewalMonitorModel.OnPostAddAsync</c> until 2026-08-11 (issue
+    /// #310).</b> It was 71 lines of lookup, validation, de-duplication, entity construction, audit
+    /// and two saves — the only page model in the solution doing real domain work, and the only
+    /// reason <see cref="Apply"/> was public. Two consequences of it living there: the
+    /// <c>WatchedLicense</c> creation rules existed only on a Razor page, so nothing else could
+    /// create one correctly; and the two fixes this file received the same day (per-row isolation
+    /// and call-sign normalization) applied to the sweep and not to the add path.</para>
+    ///
+    /// <para><b>Team authorization is the caller's job, deliberately.</b> This takes a
+    /// <paramref name="teamId"/> it trusts. The page resolves that against
+    /// <c>SessionAccessScope.GetAvailableTeamsAsync</c> before calling, because the picker only
+    /// decides what is worth rendering — the same split every other service here uses.</para>
     /// </summary>
-    public static void Apply(WatchedLicense license, UlsLookupResult lookup, DateTime utcNow, LicenseWatchResult result)
+    /// <param name="entry">Call sign or FRN as typed. The ULS endpoint resolves either.</param>
+    public async Task<AddWatchedLicenseResult> AddWatchedLicenseAsync(
+        int teamId,
+        string? entry,
+        string? note,
+        int addedByUserId,
+        CancellationToken cancellationToken)
+    {
+        var trimmed = entry?.Trim();
+        if (string.IsNullOrWhiteSpace(trimmed))
+        {
+            return new AddWatchedLicenseResult(AddWatchedLicenseOutcome.CallSignRequired, "");
+        }
+
+        var lookup = await lookupClient.LookupByFrnAsync(trimmed, cancellationToken);
+        if (lookup is null)
+        {
+            // The endpoint itself was unreachable. Distinct from "no such call sign" — the caller
+            // must be able to say so, rather than telling someone their correct call sign does not
+            // exist. Same null-means-learned-nothing contract the sweep relies on.
+            return new AddWatchedLicenseResult(AddWatchedLicenseOutcome.LookupUnavailable, trimmed.ToUpperInvariant());
+        }
+
+        if (!lookup.Found || string.IsNullOrWhiteSpace(lookup.CallSign))
+        {
+            return new AddWatchedLicenseResult(AddWatchedLicenseOutcome.NotFoundAtFcc, trimmed);
+        }
+
+        // NormalizeFormat, not Normalize: this is the value FCC just returned, so it is already a
+        // real call sign — and the duplicate check below compares it against stored rows, which were
+        // normalized the same way.
+        var callSign = CallSign.NormalizeFormat(lookup.CallSign)!;
+        if (await dbContext.WatchedLicenses.AnyAsync(
+                w => w.TeamId == teamId && w.CallSign == callSign, cancellationToken))
+        {
+            return new AddWatchedLicenseResult(AddWatchedLicenseOutcome.AlreadyWatched, callSign);
+        }
+
+        var utcNow = timeProvider.GetUtcNow().UtcDateTime;
+        var license = new WatchedLicense
+        {
+            TeamId = teamId,
+            CallSign = callSign,
+            Note = string.IsNullOrWhiteSpace(note) ? null : note.Trim(),
+            AddedByUserId = addedByUserId,
+            AddedUtc = utcNow
+        };
+
+        // Reuses the sweep's own mapping so the two cannot drift — the reason Apply was split out in
+        // the first place, now expressed as one service calling itself rather than a page reaching in.
+        Apply(license, lookup, utcNow, new LicenseWatchResult());
+
+        dbContext.WatchedLicenses.Add(license);
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        // Audited after the save, because EntityId is an int and the row has no id until then.
+        dbContext.AddAuditLog(addedByUserId, "Create", nameof(WatchedLicense), license.Id,
+            $"Added {callSign} to the license watch list", utcNow);
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        return new AddWatchedLicenseResult(AddWatchedLicenseOutcome.Success, callSign, license);
+    }
+
+    /// <summary>
+    /// Overwrites the cached FCC fields wholesale and then advances the renewal state machine.
+    ///
+    /// <para><b>Private since 2026-08-11 (issue #310).</b> Its previous doc gave two reasons for
+    /// being public — the Web add flow, which now calls <see cref="AddWatchedLicenseAsync"/> above
+    /// instead, and "so the tests can drive it directly", which was never true: no test has ever
+    /// called it. Both callers are now in this file.</para>
+    /// </summary>
+    private static void Apply(WatchedLicense license, UlsLookupResult lookup, DateTime utcNow, LicenseWatchResult result)
     {
         license.LastCheckedUtc = utcNow;
 
@@ -309,6 +392,33 @@ public class LicenseWatchService(
         return application.ReceiptDateUtc is { } receipt && receipt <= confirmed;
     }
 }
+
+public enum AddWatchedLicenseOutcome
+{
+    Success,
+
+    /// <summary>Nothing was typed. Distinct from NotFoundAtFcc so the message can ask for input rather than report a failed search.</summary>
+    CallSignRequired,
+
+    /// <summary>The ULS mirror could not be reached — say so, rather than telling someone their correct call sign does not exist.</summary>
+    LookupUnavailable,
+
+    /// <summary>The lookup worked and FCC has no such record.</summary>
+    NotFoundAtFcc,
+
+    /// <summary>Already on this team's watch list. Per team, so another team watching it is not a conflict.</summary>
+    AlreadyWatched
+}
+
+/// <param name="CallSign">
+/// The normalized call sign on success or when already watched; otherwise the caller's own trimmed
+/// input, so a "no record for X" message can echo what they actually typed.
+/// </param>
+/// <param name="License">The created row, on success only — non-null exactly when <see cref="AddWatchedLicenseOutcome.Success"/>.</param>
+public sealed record AddWatchedLicenseResult(
+    AddWatchedLicenseOutcome Outcome,
+    string CallSign,
+    WatchedLicense? License = null);
 
 public class LicenseWatchResult
 {
