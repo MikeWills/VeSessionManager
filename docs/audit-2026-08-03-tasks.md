@@ -71,7 +71,21 @@ scan jobs (12 sites). In-memory `HasEnded` filters (a coarse query bound is alre
 Materialize-before-`OrderBy` (an EF InMemory constraint). `_TestModeBanner`'s uncached read. The
 per-item email send window — there is no outbox, by design.
 
-> ⚠️ **One finding has since been invalidated by later work.** T36 listed `Vec.MatchCode` as dead
-> code with "zero production reads". As of 2026-08-10 `VecDefaultsSeeder` and `KnownVecs` depend on
-> it. Re-verify every dead-code claim against current `main` before deleting anything — that is the
-> general lesson, not a one-off.
+## ⚠️ Treat these findings as leads, not facts
+
+Working through them on 2026-08-10 turned up **five that were wrong**:
+
+| Finding | Reality |
+|---|---|
+| T36: `CanCreateTeam` is "test-only; pages gate via `[Authorize(Roles)]`" | **It gates a POST handler** (`Teams.cshtml.cs`). Deleting it would have removed an authorization check. |
+| T36: `Vec.MatchCode` has "zero production reads" | `VecDefaultsSeeder` and `KnownVecs` depend on it as of 2026-08-10. |
+| T36: `FormatSentUtc`, `LatestDueSlotUtc` unused | Both have production callers. |
+| T32: money "formatted 18 ways in 3 spellings" | All 14 sites already use one spelling; the inconsistency was fixed in the interim. |
+| T15: "Square webhook endpoint unaffected" | A fallback policy **does** reach minimal-API endpoints. Without an explicit exemption every Square delivery would have been refused, invisibly. |
+
+T36 also missed `_Layout.cshtml.css`, an orphaned scoped-CSS companion that fails the build the
+moment the view it belongs to is deleted.
+
+None of this makes the audit worthless — it found real problems, and the P0/P1 tier was all genuine.
+But **re-verify each claim against current `main` before acting on it**, particularly anything that
+proposes deleting code. The file is nine months of assumptions frozen at one commit.

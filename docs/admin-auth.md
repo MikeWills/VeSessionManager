@@ -322,3 +322,44 @@ that link there is nothing to widen, so the rule is gone. It was also actively h
 lasted: because a lead's own team was never consulted for scope, the check blocked legitimate
 reporting lines (a lead on WX0MIK could not be pointed at a manager on HRCC) while protecting
 nothing that the lead's own team assignment does not now protect directly.
+
+## Authenticated by default (2026-08-10)
+
+`FallbackPolicy` requires an authenticated user, so **a page added without `[Authorize]` challenges
+instead of being served to anyone**. Before this, forgetting the attribute produced no warning, no
+failing test, and a page that quietly needed no sign-in — and every page here except the public
+fifteen holds candidate PII or admin controls, so the default pointed the wrong way. Issue #158.
+
+The fifteen genuinely public pages carry `[AllowAnonymous]` with a one-line reason each: the sign-in
+pages (requiring auth to reach the sign-in page is the classic redirect loop), the password-reset
+flow (reached precisely by someone who *cannot* sign in), `AccessDenied` (shown *because*
+authorization failed), `Error`, the front door, the privacy policy, `YouthConfirm`, and the four VE
+self-service entry points. The authenticated self-service page already names its own scheme
+(`[Authorize(AuthenticationSchemes = VeSelfServiceAuth.Scheme)]`) and so was never at risk.
+
+### ⚠️ A fallback policy reaches minimal-API endpoints too, not just Razor Pages
+
+The Square webhook has no authorization metadata of its own, so it inherited the policy and **every
+Square delivery would have been refused**. The issue's own description said the webhook was
+"unaffected"; that was wrong.
+
+The failure would have been invisible from inside the app: Square retries, gives up, and payments
+stop being recorded, with nothing logged on this side. The first symptom would be a candidate
+insisting they paid while the app disagreed. It now says `.AllowAnonymous()` explicitly; its real
+gate is HMAC signature verification against the team's own webhook signature key, which is stronger
+than any cookie.
+
+### Why that test asserts endpoint metadata rather than a status code
+
+The obvious probe — POST the webhook, assert it is not 401 — **fails with the exemption correctly in
+place**, because the handler answers a missing signature with 401 itself. Removing `AllowAnonymous`
+leaves the response byte-identical, measured rather than assumed. A status-code test would therefore
+have passed whether or not the exemption existed, which is worse than no test because it reads as
+coverage. `PageSmokeTests` asserts the endpoint carries `IAllowAnonymous` metadata instead, and that
+assertion does fail when the exemption is removed.
+
+### The risk direction flipped
+
+Before, the danger was a new page being accidentally public. Now it is an existing public page being
+accidentally locked — and locking the login page is not a subtle failure. `PageSmokeTests` covers
+both directions: every page renders, and the public ones stay reachable while signed out.

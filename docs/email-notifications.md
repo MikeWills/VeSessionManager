@@ -51,9 +51,84 @@ mailing out a mysteriously missing word. A placeholder that *is* provided but wi
 intentionally empty value (e.g. no outstanding payment) substitutes cleanly to nothing, no
 warning.
 
-`SessionDate` is rendered as e.g. `Friday, July 24, 2026 at 5:00 PM UTC` — always UTC, since
-there's no per-session timezone anywhere in the data model and this app's audience may not share
-one time zone (remote/Zoom sessions).
+### `SessionDate` gives Eastern and Pacific (2026-08-10, supersedes UTC)
+
+Rendered as e.g. `Saturday, August 15, 2026 at 10:00 AM ET / 7:00 AM PT`, by
+`SessionTimeFormatter.ForCandidate` in Core.
+
+**It used to be UTC, and that was a decision rather than an oversight** — this document previously
+recorded the reasoning: there is no per-session timezone in the data model, and a remote session's
+audience may not share one zone, so UTC was chosen as the neutral option. The flaw is that neutral
+is not the same as *useful*. Every screen in the app shows Eastern with an "ET" suffix, so the one
+surface speaking to a member of the public was the only one speaking a zone almost none of them
+use — and a candidate who reads "2:00 PM" as local time misses their exam by hours, in a way that
+looks like their own mistake.
+
+**Two zones rather than one**, per Mike: Eastern and Pacific are the outer edges of the contiguous
+US, and the gap between them is always exactly three hours (both observe DST and switch on the same
+dates), so a reader in Central or Mountain can place themselves without being told. That answers the
+original "may not share one zone" concern better than UTC did, rather than ignoring it.
+
+Two details worth keeping:
+
+- **When the zones fall on different calendar days** — any start before 3:00 AM Eastern — the
+  Pacific side carries its own date instead of inheriting Eastern's. No real session runs then, but
+  one date printed beside two times would be quietly wrong for every Pacific reader if one ever did.
+- **`EasternTimeFormatter` lives in the Web project and must not be used for email.**
+  `SessionTimeFormatter` is the Core one. That project boundary is why the UTC spelling was easy to
+  leave in place for so long: the shared formatter simply was not reachable from where emails are
+  built.
+
+**How this survived so long is worth remembering:** the notification tests use `{{SessionDate}}` in
+template subjects and never asserted what it rendered to. The whole suite passed while every
+candidate email carried the wrong timezone — the tests agreed with the bug by not looking at it.
+`SessionTimeFormatterTests` now asserts the rendered string, in summer and winter (a fixed offset
+passes one and fails the other).
+
+## Watching what actually goes out: the per-team BCC (2026-08-10)
+
+`EmailSettings.BccAddress`, set on Admin → Team Settings. When present, every **candidate-facing**
+email that team sends is blind-copied there, so someone can see what the app really sends instead of
+waiting for a candidate to report that something looked wrong. Issue #207.
+
+It exists because #205 — candidate email giving the session time in UTC — survived for months
+precisely because nobody sees outgoing mail.
+
+**⚠️ It deliberately does not apply to every send.** Three of the seven `IEmailSender.SendAsync`
+call sites carry access tokens:
+
+| Sender | Carries |
+|---|---|
+| `PasswordResetService` | a password reset token |
+| `VeSelfServiceLinkService` | a self-service link — the app's only unauthenticated route to personal data |
+| `VeEmailChangeService` | an email-change confirmation token |
+
+A copy of any of those in a shared monitoring inbox is an account-takeover path, not a convenience.
+
+**The rule is enforced by which call sites populate `EmailMessage.BccAddress`, not by a runtime
+flag**, so it cannot be switched on for the wrong sender by mistake. `CandidateEmailBccTests` reads
+those three source files and fails if `BccAddress` appears in any of them — source inspection rather
+than behaviour, because the case actually worth guarding is someone "finishing the job" later by
+wiring BCC into the remaining senders, and a behavioural test would not catch a *fourth*
+token-bearing sender added tomorrow.
+
+Other decisions:
+
+- **Test Mode wins.** It already redirects everything to one inbox, so keeping the BCC would deliver
+  the same message there twice — and the copy would be the *unredirected* one, with no `[TEST MODE]`
+  marking, reading like real mail that had genuinely reached a candidate.
+- **Bcc, not Cc** — a candidate must not see that anyone else got a copy, or reply-all into a team's
+  internal inbox.
+- **The payment-expiration notice does not carry it** — that already goes to the team's own
+  `AdminNotificationEmail`.
+- **Blank stores null**, so "is monitoring on?" is one check everywhere. The audit entry records
+  whether it is on or off, never the address, matching how `TestModeOverrideEmail` is handled.
+
+**Privacy caveat, stated in the UI as well as here:** a blind-copied confirmation contains a
+candidate's name and email address, and once delivered it lives in that mailbox indefinitely.
+`PiiPurgeService` clears database columns, not mail archives — so a purged candidate still exists in
+the monitoring inbox. It is meant as a temporary diagnostic, and should be cleared when it has served
+its purpose. Whether `Privacy.cshtml` should name it is an open question, deliberately left to Mike.
 
 ## Two trigger points
 

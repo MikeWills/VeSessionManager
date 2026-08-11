@@ -18,8 +18,11 @@ This is a Visual Studio project that is designed to automate many of the mundane
   "Verified clean" section** — what the six-agent review checked and found sound (zero raw SQL, IDOR
   re-checks on every id-taking POST handler, CSRF correct, and a list of deliberate patterns not to
   "fix"). That record exists nowhere else, and its value is negative work: knowing what *not* to
-  re-audit. The 25 open findings from it are issues now; **their line numbers are from commit
-  `2898817` and several files have moved since — a starting point, not an address.** These two
+  re-audit. Its open findings are issues now (15 remain; six were closed on 2026-08-10); **their line
+  numbers are from commit `2898817` and several files have moved since — a starting point, not an
+  address.** Treat the findings themselves the same way: **five were wrong when re-checked that day**,
+  including one that would have deleted a live authorization check (`CanCreateTeam`). Verify before
+  acting on any of them. These two
   pointers stay here rather than in the Change Log below, which rotates entries out to `CHANGELOG.md`
   and would eventually take the only reference with it.
 - Build/test/run: `dotnet build`, `dotnet test`, `dotnet run --project src/VeSessionManager.Worker`, `dotnet run --project src/VeSessionManager.Web` (see README, and Known Constraints below, for the `DOTNET_ENVIRONMENT` gotcha). Tests are xUnit in `tests/VeSessionManager.Core.Tests`, using the EF InMemory provider and fake client implementations — follow `SessionIngestionServiceTests`/`SessionEventSchedulingServiceTests`/`PaymentGenerationServiceTests`/`CandidateNotificationServiceTests`/`UlsWatcherServiceTests`/`PaymentReminderServiceTests` as the pattern.
@@ -117,6 +120,21 @@ cap and a newer entry needs to be added; oldest goes first.
   `DevDataSeeder`'s guard moved from `Vecs.AnyAsync()` to a `FeeConfiguration` check — the Vec table
   is never empty now, which is the same table-wide-guard trap `DevAuthSeeder` hit.
 
+- **v0.3.0: key ring separated, authenticated by default, candidate email corrected (2026-08-10).**
+  See `docs/credential-encryption.md`, `docs/admin-auth.md`, `docs/email-notifications.md`,
+  `docs/deployment.md`. The Data Protection key ring moved off the database directory to
+  `/var/lib/vesessionmanager-keys` — it had satisfied "outside the app path so `rsync --delete`
+  can't touch it" while still meaning **one `tar` of `/var/lib/vesessionmanager/` carried the
+  ciphertext and the key together**. New `DataProtectionKeyRingGuard` refuses to start rather than
+  running with credentials it cannot read, because the converter's legacy-plaintext fallback makes
+  that state *completely silent*. A `FallbackPolicy` makes pages authenticated by default; the
+  fifteen public ones say so explicitly. **Candidate email gave the session time in UTC** while every
+  screen showed ET — now `10:00 AM ET / 7:00 AM PT`, two zones so Central and Mountain can
+  interpolate. Optional per-team BCC on candidate mail (never on token-bearing sends). All fourteen
+  VECs seeded. 8.4 MB of vendored Bootstrap deleted. **Three of these were found by looking rather
+  than by being reported**, and two were mis-described by the audit that raised them — see the
+  audit-file pointer above.
+
 - **Page smoke tests: every Razor page, actually rendered (2026-08-10).** See `docs/page-smoke-tests.md`. Nothing in this repo rendered Razor — not the build, not the 928 Core tests, not the static-HTML layout harness — and two bugs reached a deployment the same day because of it: a `<form>` carrying both `action=` and `asp-page-handler` (which `FormTagHelper` throws on **at render time**, so the build was clean and the page 500'd for anyone who opened it), and an anchor where `asp-all-route-data` silently discarded `asp-route-id` so every link to a VE pointed at nobody. `WebApplicationFactory` now boots the app in-process against throwaway SQLite and requests **every page discovered from the app's own `EndpointDataSource`**, so a new page is covered the day it exists. **The fake auth scheme is half the value**: every interesting page is `[Authorize]`d, so before this the only way to see one was for a human to log in and click. Seeding happens *before* the host starts because `Program.cs` refuses to start when no account can sign in — the harness satisfies that guard rather than weakening it. And **an empty `href` is the signature of the whole bug class**: the first version of the link test only followed links that had one, and passed with the original bug reintroduced.
 
 - **ExamTools reconciliation: a nightly check that the feed and the database agree (2026-08-10).** See `docs/reconciliation.md`. Every other job trusts ingestion to have worked; nothing checked, which is how the historical import could drop the last day of every calendar month since it was written and only be caught because HRCC's own Discord bot reads the same API directly and disagreed about whether a VE was still active. Per team, daily: diff ExamTools' closed-session feed against ours over a trailing 120 days. Findings are a **standing table plus a nav badge**, not just a run summary — Job History rotates, renders green because the *job* succeeded, and a count inside a sentence cannot be acted on, which is the same shape as the `sent 0, failed 1` incident. Each row carries the import range that would fix it; the job itself is **read-only**. The tests cover the bookkeeping and cannot cover the premise: the bug that prompted it had a full green suite because the fakes shared our own wrong assumption.
@@ -195,17 +213,6 @@ cap and a newer entry needs to be added; oldest goes first.
   the file's magic numbers, never the browser-declared content type; SVG is excluded outright.
   A template carrying the placeholder stays valid for a team with no logo (renders to nothing), and
   a template without it attaches nothing.
-- **WYSIWYG editor for email templates (2026-08-05).** See `docs/email-template-editor.md`. Quill
-  2.0.3 vendored under `wwwroot/lib/quill`, loaded only by Admin → Email Templates via a new `Head`
-  section on `_AppLayout`. **The `<textarea name="body">` is still the field that posts** — the editor
-  is a second view onto it and the HTML tab stays authoritative, so the server contract is unchanged
-  and the page degrades to its old plain-textarea self without JS. Three traps, all measured rather
-  than assumed: `root.innerHTML` renders bullets as `<ol data-list="bullet">` (**an email client shows
-  them numbered**), `getSemanticHTML()` turns every space into `&nbsp;` (**which stops lines
-  wrapping on a phone**), and Quill's default alignment emits a *class*, which does nothing in an
-  inbox — so alignment is registered as an inline-style attributor. Placeholder chips are now
-  click-to-insert. Toolbar deliberately stops at headings/alignment: colour and font-size are where
-  users produce mail that renders differently in every client.
 Everything through Phase 0-10's initial build (ExamTools ingestion, Zoom/Discord, Square, email
 notifications, FCC ULS watcher, payment reminders, VE tracking, VEC submission tracker, admin
 auth/config/candidate-actions, PII purge), the public privacy page, and everything dated 2026-08-01
@@ -419,6 +426,38 @@ To pick up updates: `/plugin marketplace update claude-tools`
   reference is blocked. See `docs/icons.md`. **Two traps when editing:** an icon inside a C# string
   literal (`@(x ? "<i …>" : "·")`) breaks the Razor expression, and a bulk replace will also rewrite
   arrows sitting in Razor comment prose.
+- **An ASP.NET Core `FallbackPolicy` applies to minimal-API endpoints, not just Razor Pages.** Added
+  2026-08-10 (#158); the Square webhook has no authorization metadata of its own, so it inherited the
+  policy and **every delivery would have been refused** until `.AllowAnonymous()` was added
+  explicitly. The issue that requested the policy asserted the webhook was "unaffected" — it was not.
+  The failure mode is the dangerous part: Square retries, gives up, and payments stop being recorded
+  with **nothing logged on this side**, so the first symptom is a candidate insisting they paid.
+  Anything mapped outside Razor Pages needs the same consideration. Related trap when testing it:
+  the handler answers a missing signature with **401**, the same status authorization produces, so a
+  status-code probe cannot tell "exempt" from "not exempt" — assert on endpoint metadata instead
+  (`PageSmokeTests`).
+- **A wrong or missing Data Protection key ring is indistinguishable from un-migrated data, and
+  always will be** — `EncryptedStringConverter`'s read path returns the raw stored value when
+  `Unprotect` throws, which is exactly what makes the legacy-plaintext migration safe. Nothing
+  throws, nothing logs, and every integration quietly authenticates with a base64 blob.
+  `DataProtectionKeyRingGuard` (2026-08-10) is the backstop: it refuses to start when a credential
+  still looks like ciphertext *after* being read through the converter. **It runs before the Worker's
+  one-off `--` switches on purpose** — a `--migrate-team-secrets` run against the wrong key ring
+  would rewrite every credential with the undecryptable value it just read, destroying the originals.
+  Never "fix" a key-ring problem by re-entering credentials in Team Settings; that overwrites the
+  originals under the new key permanently.
+- **Never format a candidate-facing time with `EasternTimeFormatter` — it lives in the Web project
+  and is unreachable from Core, which is how candidate email spent months rendering UTC while every
+  screen rendered ET (#205).** Use `SessionTimeFormatter.ForCandidate` (Core), which gives
+  `10:00 AM ET / 7:00 AM PT`. The two-zone form is deliberate: sessions are remote, the gap between
+  those zones is always exactly three hours, and it lets Central/Mountain readers interpolate.
+  **The wider lesson is the test shape, not the timezone**: the notification tests used
+  `{{SessionDate}}` in template subjects and never asserted what it rendered to, so a full green
+  suite coexisted with every candidate email being wrong. A placeholder that is never asserted on is
+  not covered.
+- **GitHub only honours the first issue in a comma-separated `Closes` list.** `Closes #1, #2, #3`
+  closes #1 and silently leaves the rest open (confirmed 2026-08-10 across two PRs). Repeat the
+  keyword per issue.
 - (Environment-specific quirks and gotchas go here as they're discovered — e.g. API quirks, IIS behavior, network/DMZ restrictions, auth issues)
 
 ## Definition of Done
