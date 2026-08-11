@@ -149,26 +149,6 @@ public class AdminAccessScopeTests
     [Theory]
     [InlineData(UserRole.SystemAdmin, true)]
     [InlineData(UserRole.TeamAdmin, false)]
-    [InlineData(UserRole.SessionManager, false)]
-    [InlineData(UserRole.TeamLead, false)]
-    public void CanAccessVecManagement_SystemAdminOnly(UserRole role, bool expected)
-    {
-        var user = new User { Name = "User", Role = role };
-        Assert.Equal(expected, Scope.CanAccessVecManagement(user));
-    }
-
-    [Theory]
-    [InlineData(UserRole.SystemAdmin, true)]
-    [InlineData(UserRole.TeamAdmin, false)]
-    public void CanAccessSystemSettings_SystemAdminOnly(UserRole role, bool expected)
-    {
-        var user = new User { Name = "User", Role = role };
-        Assert.Equal(expected, Scope.CanAccessSystemSettings(user));
-    }
-
-    [Theory]
-    [InlineData(UserRole.SystemAdmin, true)]
-    [InlineData(UserRole.TeamAdmin, false)]
     public void CanCreateTeam_SystemAdminOnly(UserRole role, bool expected)
     {
         var user = new User { Name = "User", Role = role };

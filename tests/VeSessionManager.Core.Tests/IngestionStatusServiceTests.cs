@@ -180,4 +180,74 @@ public class IngestionStatusServiceTests
         Assert.Equal(TimeSpan.FromMinutes(10), report.StaleAfter);
         Assert.Equal(IngestionHealthState.Stale, report.Health);
     }
+
+    /// <summary>
+    /// The report is built from a projection now, not from Team entities, so IsExamToolsConfigured
+    /// is recomputed from projected columns rather than read off the entity. These pin the two
+    /// together — the whole point of projecting was to avoid decrypting ExamToolsPassword, and the
+    /// easy way to get that wrong is to change what "configured" means in the process.
+    /// </summary>
+    [Theory]
+    [InlineData("code", "user", "pw", true)]
+    [InlineData(null, "user", "pw", false)]
+    [InlineData("code", null, "pw", false)]
+    [InlineData("code", "user", null, false)]
+    [InlineData("", "user", "pw", false)]
+    [InlineData("   ", "user", "pw", false)]   // whitespace-only, a plaintext column
+    [InlineData("code", "   ", "pw", false)]   // whitespace-only, a plaintext column
+    public async Task ProjectedExamToolsConfigured_MatchesTheEntityRule(
+        string? teamCode, string? username, string? password, bool expected)
+    {
+        await using var dbContext = CreateContext();
+        await SeedSettingsAsync(dbContext);
+        var team = new Team
+        {
+            Name = "T",
+            ExamToolsTeamCode = teamCode,
+            ExamToolsUsername = username,
+            ExamToolsPassword = password,
+            CreatedUtc = Now,
+            LastIngestionRunUtc = Now
+        };
+        dbContext.Teams.Add(team);
+        await dbContext.SaveChangesAsync();
+
+        var report = await CreateService(dbContext).GetAsync(null, CancellationToken.None);
+
+        var row = Assert.Single(report.Teams);
+        Assert.Equal(expected, row.IsExamToolsConfigured);
+        // And it agrees with the entity property it mirrors, not merely with the expectation above.
+        Assert.Equal(team.IsExamToolsConfigured, row.IsExamToolsConfigured);
+    }
+
+    /// <summary>
+    /// A whitespace-only password is the one case the projection cannot see, and it is worth being
+    /// explicit about rather than discovering later. The presence test runs in SQL against the
+    /// stored value; under real encryption that value is ciphertext, which is never whitespace. The
+    /// case is nonsense input either way — a password of spaces is not a configured integration —
+    /// and treating it as "present" errs toward showing the team as configured rather than silently
+    /// hiding it from the ops dashboard.
+    /// </summary>
+    [Fact]
+    public async Task WhitespaceOnlyPassword_IsTreatedAsPresentByTheProjection()
+    {
+        await using var dbContext = CreateContext();
+        await SeedSettingsAsync(dbContext);
+        var team = new Team
+        {
+            Name = "T",
+            ExamToolsTeamCode = "code",
+            ExamToolsUsername = "user",
+            ExamToolsPassword = "   ",
+            CreatedUtc = Now,
+            LastIngestionRunUtc = Now
+        };
+        dbContext.Teams.Add(team);
+        await dbContext.SaveChangesAsync();
+
+        var report = await CreateService(dbContext).GetAsync(null, CancellationToken.None);
+
+        Assert.True(Assert.Single(report.Teams).IsExamToolsConfigured);
+        Assert.False(team.IsExamToolsConfigured);   // documents the one divergence, deliberately
+    }
 }
