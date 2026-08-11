@@ -78,16 +78,43 @@ public class AppDbContext(DbContextOptions<AppDbContext> options, IDataProtectio
             b.HasOne(s => s.FeeConfiguration).WithMany(f => f.Sessions).HasForeignKey(s => s.FeeConfigurationId).OnDelete(DeleteBehavior.Restrict);
             b.HasOne(s => s.TestingCompletedByUser).WithMany().HasForeignKey(s => s.TestingCompletedByUserId).OnDelete(DeleteBehavior.Restrict);
             b.HasOne(s => s.VecSubmittedByUser).WithMany().HasForeignKey(s => s.VecSubmittedByUserId).OnDelete(DeleteBehavior.Restrict);
+            // NOTE: RetainedAmountOverrideByUser is the one User FK here still left to EF's
+            // convention (ClientSetNull), which contradicts this block's opening statement that every
+            // FK is Restrict. Audit T21 asked for it to be pinned, and it was — then reverted, on
+            // purpose:
+            //
+            //   * SQLite implements an FK change as a full table rebuild, which EF reports as "cannot
+            //     be executed in a transaction". An interrupted deploy would leave the database
+            //     partially migrated and needing manual repair.
+            //   * It guards against a user being deleted — and there is no delete path in this app at
+            //     all. UserManagementService only deactivates; see #188, which is still open.
+            //
+            // So the risk is real today and the benefit is not. #188 has to decide FK behaviour across
+            // thirteen Restrict relationships anyway; this one belongs in that migration, alone, where
+            // the rebuild can be planned rather than ridden along with an index change.
+            // Money, so two decimal places rather than the provider's default. Matches
+            // FeeConfiguration's amounts above.
+            b.Property(s => s.RetainedAmountOverride).HasPrecision(10, 2);
+            // The session list's default ordering and its date-range filter, per team — the busiest
+            // query in the app.
+            b.HasIndex(s => new { s.TeamId, s.ScheduledStartUtc });
         });
 
         modelBuilder.Entity<JobRunHistory>(b =>
         {
             b.HasOne(j => j.Team).WithMany().HasForeignKey(j => j.TeamId).OnDelete(DeleteBehavior.Restrict);
+            // How the ops dashboard reads this table: one job's recent runs, for one team, newest
+            // first. The table only grows, so an unindexed scan gets slower every day it works.
+            b.HasIndex(j => new { j.TeamId, j.JobName, j.StartedUtc });
         });
 
         modelBuilder.Entity<Candidate>(b =>
         {
             b.HasIndex(c => new { c.SessionId, c.ExamToolsApplicantId }).IsUnique();
+            // Applicant Status and the ULS watcher both select by status across every session, and
+            // the terminal statuses are the majority — so this is a filter that removes most rows,
+            // which is exactly when an index earns its place.
+            b.HasIndex(c => c.ApplicationStatus);
             b.HasOne(c => c.Session).WithMany(s => s.Candidates).HasForeignKey(c => c.SessionId).OnDelete(DeleteBehavior.Restrict);
             b.HasOne(c => c.ResultMarkedByUser).WithMany().HasForeignKey(c => c.ResultMarkedByUserId).OnDelete(DeleteBehavior.Restrict);
         });
@@ -96,6 +123,10 @@ public class AppDbContext(DbContextOptions<AppDbContext> options, IDataProtectio
         {
             b.HasOne(p => p.Candidate).WithMany(c => c.Payments).HasForeignKey(p => p.CandidateId).OnDelete(DeleteBehavior.Restrict);
             b.HasOne(p => p.RefundRequestedByUser).WithMany().HasForeignKey(p => p.RefundRequestedByUserId).OnDelete(DeleteBehavior.Restrict);
+            // The Square webhook's only lookup, and it runs against Square's response deadline: an
+            // unindexed scan of every payment ever taken is not something to leave on that path.
+            // Not unique — see the note below on nulls, and a refunded/re-created link can repeat.
+            b.HasIndex(p => p.SquarePaymentReferenceId);
             b.Property(p => p.Amount).HasPrecision(10, 2);
             b.Property(p => p.SquareAmountPaidUsd).HasPrecision(10, 2);
             // SQLite treats NULLs as distinct in a unique index, so multiple Payments with a null
@@ -267,6 +298,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options, IDataProtectio
         modelBuilder.Entity<AuditLog>(b =>
         {
             b.HasOne(a => a.User).WithMany().HasForeignKey(a => a.UserId).OnDelete(DeleteBehavior.Restrict);
+            // The audit page orders by this and nothing else, over a table that is append-only and
+            // never pruned (see #86, which is about that lack of retention).
+            b.HasIndex(a => a.TimestampUtc);
         });
 
         modelBuilder.Entity<SystemSettings>(b =>

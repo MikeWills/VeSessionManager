@@ -2,25 +2,40 @@ using System.Linq;
 
 namespace VeSessionManager.Core.Entities;
 
+// ---------------------------------------------------------------------------------------------
+// EVERY PERSISTED ENUM BELOW HAS PINNED VALUES, AND MUST KEEP THEM.
+//
+// They are stored as integers. A member inserted mid-list silently renumbers every existing row --
+// a Granted candidate quietly becomes Failed -- with no compile error and nothing to notice at
+// runtime, because the database has no idea the meaning moved.
+//
+// Pinning was a no-op when it was done (2026-08-11): the numbers are the ordinals the rows had
+// already been written with. It exists so that adding a member can only ever be safe. Append with
+// the next free number. Never renumber, never reuse, never reorder.
+//
+// The same applies to HistoricalImportStatus, which lives in HistoricalImportRequest.cs.
+// ---------------------------------------------------------------------------------------------
+
+
 public enum SessionStatus
 {
-    Active,
-    Cancelled
+    Active = 0,
+    Cancelled = 1
 }
 
 public enum VecSubmissionStatus
 {
-    NotSubmitted,
-    Submitted
+    NotSubmitted = 0,
+    Submitted = 1
 }
 
 public enum CandidateApplicationStatus
 {
-    Unmatched,
-    Received,
-    Granted,
-    Failed,
-    NotTested
+    Unmatched = 0,
+    Received = 1,
+    Granted = 2,
+    Failed = 3,
+    NotTested = 4
 }
 
 /// <summary>
@@ -53,16 +68,16 @@ public static class CandidateApplicationStatusExtensions
 /// </summary>
 public enum LicenseClass
 {
-    None,
-    Technician,
-    General,
-    Extra
+    None = 0,
+    Technician = 1,
+    General = 2,
+    Extra = 3
 }
 
 public enum PaymentReason
 {
-    InitialExam,
-    Retest
+    InitialExam = 0,
+    Retest = 1
 }
 
 /// <summary>
@@ -77,10 +92,10 @@ public enum PaymentReason
 /// </summary>
 public enum FccApplicationHoldReason
 {
-    None,
-    RedLight,
-    BasicQualification,
-    RedLightAndBasicQualification
+    None = 0,
+    RedLight = 1,
+    BasicQualification = 2,
+    RedLightAndBasicQualification = 3
 }
 
 /// <summary>
@@ -93,16 +108,16 @@ public enum FccApplicationHoldReason
 /// </summary>
 public enum FccApplicationPaymentStatus
 {
-    Unknown,
-    PendingVerification,
-    Paid
+    Unknown = 0,
+    PendingVerification = 1,
+    Paid = 2
 }
 
 public enum PaymentStatus
 {
-    Unpaid,
-    Paid,
-    NotApplicable
+    Unpaid = 0,
+    Paid = 1,
+    NotApplicable = 2
 }
 
 /// <summary>
@@ -120,8 +135,8 @@ public enum PaymentStatus
 /// </summary>
 public enum UserRole
 {
-    SystemAdmin,
-    TeamAdmin,
-    SessionManager,
-    TeamLead
+    SystemAdmin = 0,
+    TeamAdmin = 1,
+    SessionManager = 2,
+    TeamLead = 3
 }

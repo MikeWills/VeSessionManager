@@ -51,13 +51,13 @@ public class HistoricalImportRequest
 public enum HistoricalImportStatus
 {
     /// <summary>Queued; the Worker has not picked it up yet.</summary>
-    Pending,
+    Pending = 0,
 
     /// <summary>The Worker is working through the chunks right now.</summary>
-    Running,
+    Running = 1,
 
-    Completed,
+    Completed = 2,
 
     /// <summary>A chunk threw and the run stopped. Whatever earlier chunks imported is kept — ingestion is idempotent, so re-queueing the same range resumes rather than duplicating.</summary>
-    Failed
+    Failed = 3
 }
