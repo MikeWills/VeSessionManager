@@ -90,8 +90,13 @@ public class VolunteerExaminerManagementService(AppDbContext dbContext, TimeProv
     /// <para>Audited with a null acting user, because there is no admin involved and naming one would
     /// make the trail say something untrue.</para>
     /// </summary>
+    /// <param name="actingUserId">
+    /// The signed-in user making the change, when there is one — the in-app "My VE details" page
+    /// (#226). Null for the self-service flow reached by an emailed link, where no admin account is
+    /// involved and naming one would make the trail say something untrue.
+    /// </param>
     public async Task<VeManagementResult> UpdateOwnContactDetailsAsync(
-        int volunteerExaminerId, VeSelfContactDetails details, CancellationToken cancellationToken)
+        int volunteerExaminerId, VeSelfContactDetails details, CancellationToken cancellationToken, int? actingUserId = null)
     {
         var person = await dbContext.VolunteerExaminers.FirstOrDefaultAsync(v => v.Id == volunteerExaminerId, cancellationToken);
         if (person is null)
@@ -112,8 +117,72 @@ public class VolunteerExaminerManagementService(AppDbContext dbContext, TimeProv
         person.ContactPreference = details.ContactPreference;
         person.UpdatedUtc = now;
 
-        dbContext.AddAuditLog(null, "VeContactDetailsUpdatedBySelf", nameof(VolunteerExaminer), person.Id,
-            $"{person.CallSign ?? person.Name} updated their own contact details.", now);
+        dbContext.AddAuditLog(actingUserId, "VeContactDetailsUpdatedBySelf", nameof(VolunteerExaminer), person.Id,
+            $"{person.CallSign ?? person.Name} updated their own contact details"
+            + (actingUserId is null ? " (self-service link)." : " while signed in."), now);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return VeManagementResult.Success;
+    }
+
+    /// <summary>
+    /// Sets an email address on a VE record that has none, for a signed-in user editing their own
+    /// linked record (#226).
+    ///
+    /// <para><b>Why this is not VeEmailChangeService.</b> That flow mails a confirmation to the
+    /// <i>existing</i> address, so approval comes from the mailbox already on file — exactly right for
+    /// a change, and structurally impossible for a first address. It returns <c>NoCurrentEmail</c> and
+    /// stops. Without a path like this one a VE with no email can never acquire one by their own hand,
+    /// because the self-service link that would let them is itself sent by email. One VE of 176 has an
+    /// address on file, so that is not a corner case, it is the normal state.</para>
+    ///
+    /// <para><b>Why setting it directly is acceptable here, and only here.</b> The caller is
+    /// authenticated in the admin app and was linked to this VE record by an administrator — a
+    /// stronger claim than possession of an emailed link. And there is no address to divert: the risk
+    /// the confirmation dance defends against is redirecting someone's existing mail, which cannot
+    /// apply when the field is empty.</para>
+    ///
+    /// <para><b>Refuses when an address already exists</b>, so there is exactly one way to change a
+    /// known-good email and it is the confirmed one. Two paths to the same field with different
+    /// safety, the weaker one reached by whoever is already signed in, is how the careful path stops
+    /// being the one that gets used.</para>
+    /// </summary>
+    public async Task<VeManagementResult> SetOwnEmailWhenUnsetAsync(
+        int volunteerExaminerId, string email, int actingUserId, CancellationToken cancellationToken)
+    {
+        var person = await dbContext.VolunteerExaminers.FirstOrDefaultAsync(v => v.Id == volunteerExaminerId, cancellationToken);
+        if (person is null)
+        {
+            return VeManagementResult.NotFound;
+        }
+
+        if (!string.IsNullOrWhiteSpace(person.Email))
+        {
+            return VeManagementResult.EmailAlreadySet;
+        }
+
+        email = (email ?? "").Trim();
+        if (email.Length == 0 || !email.Contains('@'))
+        {
+            return VeManagementResult.InvalidEmail;
+        }
+
+        // Same uniqueness rule as every other write to this field: sign-in resolves an address to one
+        // person, so two VEs sharing one means somebody silently receives another's links.
+        var lowered = email.ToLowerInvariant();
+        if (await dbContext.VolunteerExaminers
+                .AnyAsync(v => v.Id != person.Id && v.Email != null && v.Email.ToLower() == lowered, cancellationToken))
+        {
+            return VeManagementResult.EmailAlreadyInUse;
+        }
+
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+        person.Email = email;
+        person.UpdatedUtc = now;
+
+        // The address itself is recorded. It is the first one on file, and what it was set to is the
+        // whole audit value if links later turn out to be going somewhere unexpected.
+        dbContext.AddAuditLog(actingUserId, "VeEmailSetBySelf", nameof(VolunteerExaminer), person.Id,
+            $"{person.CallSign ?? person.Name} set their own email to {email} (no previous address on file).", now);
         await dbContext.SaveChangesAsync(cancellationToken);
         return VeManagementResult.Success;
     }
@@ -425,5 +494,14 @@ public enum VeManagementResult
     AlreadyAccredited,
 
     /// <summary>Another VE already uses that address — sign-in could not tell them apart.</summary>
-    EmailAlreadyInUse
+    EmailAlreadyInUse,
+
+    /// <summary>
+    /// The record already has an address, so the change must go through VeEmailChangeService's
+    /// confirmation rather than being written directly. See SetOwnEmailWhenUnsetAsync.
+    /// </summary>
+    EmailAlreadySet,
+
+    /// <summary>Not an address at all. Rejected rather than stored, since nothing downstream would report it.</summary>
+    InvalidEmail
 }

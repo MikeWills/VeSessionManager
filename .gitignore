@@ -508,3 +508,6 @@ $RECYCLE.BIN/
 # scheduled_tasks.lock (a runtime PID/session lock file) are local-only.
 .claude/settings.local.json
 .claude/scheduled_tasks.lock
+
+# Local-only starting point for the backup script, kept out of the repo on purpose.
+BACKUP.md

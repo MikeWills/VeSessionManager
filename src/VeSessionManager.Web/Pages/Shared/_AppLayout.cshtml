@@ -203,6 +203,10 @@
                     <div class="menu-head">@roleLabel &middot; @teamName</div>
                     <hr>
                     <a class="item" asp-page="/Account/ChangePassword">Change password</a>
+                    @* Shown to everyone, not only linked accounts: the page's own unlinked state is
+                       how someone finds out the link exists and can be asked for. Hiding it would
+                       make it discoverable only to people who already have it. *@
+                    <a class="item" asp-page="/Account/MyVeDetails">My VE details</a>
                     <form method="post" asp-page="/Account/Logout">
                         <button type="submit" class="item">Log out</button>
                     </form>
