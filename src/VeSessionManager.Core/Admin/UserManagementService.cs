@@ -139,6 +139,102 @@ public class UserManagementService(UserManager<User> userManager, AppDbContext d
         return UserActionResult.Success;
     }
 
+    /// <summary>
+    /// The VE record this login most likely belongs to, or null when there is no unambiguous answer.
+    ///
+    /// <para>A <b>suggestion</b>, never applied on its own — see SetVolunteerExaminerAsync. Returns
+    /// null in every case where a human should look:</para>
+    /// <list type="bullet">
+    ///   <item>the user has no call sign recorded, so there is nothing to match on;</item>
+    ///   <item>the call sign is not call-sign-shaped — ExamTools' literal "&lt;UNKNOWN&gt;" is shared
+    ///         by every VE it cannot identify, and treating it as an identity once fused two
+    ///         different people;</item>
+    ///   <item><b>more than one VE record holds that call sign.</b> The directory already surfaces
+    ///         those as possible duplicates precisely because they may be one person or two, and
+    ///         guessing here would pick one at random;</item>
+    ///   <item>the matched record is already linked to somebody else.</item>
+    /// </list>
+    /// </summary>
+    public async Task<VolunteerExaminer?> SuggestVolunteerExaminerAsync(int targetUserId, CancellationToken cancellationToken)
+    {
+        var user = await dbContext.Users.FirstOrDefaultAsync(u => u.Id == targetUserId, cancellationToken);
+
+        // Normalize, not NormalizeFormat: this value is about to identify a person, which is exactly
+        // the distinction those two helpers exist to draw. User.CallSign is stored format-only
+        // because it was display data (#166) — reading it as identity is a stricter question and
+        // needs the stricter check.
+        if (CallSign.Normalize(user?.CallSign) is not { } callSign)
+        {
+            return null;
+        }
+
+        var matches = await dbContext.VolunteerExaminers
+            .Where(v => v.CallSign != null && v.CallSign.ToLower() == callSign.ToLower() && v.MergedIntoVolunteerExaminerId == null)
+            .Take(2)
+            .ToListAsync(cancellationToken);
+
+        if (matches.Count != 1)
+        {
+            return null;
+        }
+
+        var alreadyLinked = await dbContext.Users
+            .AnyAsync(u => u.VolunteerExaminerId == matches[0].Id && u.Id != targetUserId, cancellationToken);
+
+        return alreadyLinked ? null : matches[0];
+    }
+
+    /// <summary>
+    /// Links this login to the VolunteerExaminer record describing the same person, or clears the
+    /// link when <paramref name="volunteerExaminerId"/> is null (#224).
+    ///
+    /// <para><b>Deliberately not automatic.</b> A call-sign match is a strong suggestion and a poor
+    /// decision: the FCC reissues call signs, so a match can be a different person who now holds the
+    /// same one. The UI offers the match; a human confirms it. Binding the wrong person here would
+    /// be quiet and would misdirect any future notification.</para>
+    ///
+    /// <para>Grants no access. See <see cref="User.VolunteerExaminerId"/>.</para>
+    /// </summary>
+    public async Task<UserActionResult> SetVolunteerExaminerAsync(
+        int targetUserId, int? volunteerExaminerId, int actingUserId, CancellationToken cancellationToken)
+    {
+        var user = await dbContext.Users.FirstOrDefaultAsync(u => u.Id == targetUserId, cancellationToken);
+        if (user is null)
+        {
+            return UserActionResult.NotFound;
+        }
+
+        var description = "(none)";
+        if (volunteerExaminerId is { } veId)
+        {
+            var person = await dbContext.VolunteerExaminers.FirstOrDefaultAsync(v => v.Id == veId, cancellationToken);
+            if (person is null)
+            {
+                return UserActionResult.NotFound;
+            }
+
+            // Checked here as well as by the unique index, so the caller gets a usable answer rather
+            // than a DbUpdateException — and so the message can name who already holds it.
+            var takenBy = await dbContext.Users
+                .FirstOrDefaultAsync(u => u.VolunteerExaminerId == veId && u.Id != targetUserId, cancellationToken);
+            if (takenBy is not null)
+            {
+                return UserActionResult.VolunteerExaminerAlreadyLinked;
+            }
+
+            description = $"{person.CallSign ?? "(no call sign)"} — {person.Name}";
+        }
+
+        user.VolunteerExaminerId = volunteerExaminerId;
+
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+        AddAudit(actingUserId, "UserVolunteerExaminerLinked", user.Id,
+            $"User {user.Id} linked to VE record {description}.", now);
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        return UserActionResult.Success;
+    }
+
     /// <summary>Replaces a TeamAdmin/SessionManager's team memberships wholesale — the actual
     /// mechanism behind issue #19 (a Session Manager can belong to multiple teams). Diffs the
     /// requested set against what's currently stored so unaffected rows are left untouched.</summary>
@@ -269,5 +365,8 @@ public enum UserActionResult
     InvalidManager,
 
     /// <summary>The account signs in through an external provider, so there is no local password to change.</summary>
-    NoLocalPassword
+    NoLocalPassword,
+
+    /// <summary>Another login already claims that VolunteerExaminer record — two people cannot be the same examiner.</summary>
+    VolunteerExaminerAlreadyLinked
 }

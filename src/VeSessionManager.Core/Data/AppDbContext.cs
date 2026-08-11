@@ -295,6 +295,18 @@ public class AppDbContext(DbContextOptions<AppDbContext> options, IDataProtectio
             b.HasOne(e => e.UpdatedByUser).WithMany().HasForeignKey(e => e.UpdatedByUserId).OnDelete(DeleteBehavior.Restrict);
         });
 
+        modelBuilder.Entity<User>(b =>
+        {
+            // Restrict like every other FK here: a VE record is never hard-deleted out from under a
+            // login (see the note at the top of this method).
+            b.HasOne(u => u.VolunteerExaminer).WithMany().HasForeignKey(u => u.VolunteerExaminerId).OnDelete(DeleteBehavior.Restrict);
+
+            // One login per VE record. Filtered so the many users with no link do not collide with
+            // each other — SQLite treats NULLs as distinct in a unique index, but the filter says so
+            // explicitly rather than relying on that, matching how Frn is handled on VolunteerExaminer.
+            b.HasIndex(u => u.VolunteerExaminerId).IsUnique().HasFilter("\"VolunteerExaminerId\" IS NOT NULL");
+        });
+
         modelBuilder.Entity<AuditLog>(b =>
         {
             b.HasOne(a => a.User).WithMany().HasForeignKey(a => a.UserId).OnDelete(DeleteBehavior.Restrict);

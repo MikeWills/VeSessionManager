@@ -86,6 +86,25 @@ else
                         <button type="button" class="kebab" aria-label="Actions"><i class="bi bi-three-dots-vertical" aria-hidden="true"></i></button>
                         <div class="menu">
                             <button type="button" class="item" data-open-modal="callSignModal-@u.Id">Set call sign</button>
+                            @* Identity, not access — linking says this login and that VE record are
+                               one person. It grants nothing; see User.VolunteerExaminerId. *@
+                            @if (u.LinkedVeName is null && u.SuggestedVeId is { } suggestedId)
+                            {
+                                <form method="post" asp-page-handler="SetVolunteerExaminer">
+                                    <input type="hidden" name="teamId" value="@Model.TeamId" />
+                                    <input type="hidden" name="targetUserId" value="@u.Id" />
+                                    <input type="hidden" name="volunteerExaminerId" value="@suggestedId" />
+                                    <button type="submit" class="item">Link to VE @u.SuggestedVeName</button>
+                                </form>
+                            }
+                            @if (u.LinkedVeName is not null)
+                            {
+                                <form method="post" asp-page-handler="SetVolunteerExaminer">
+                                    <input type="hidden" name="teamId" value="@Model.TeamId" />
+                                    <input type="hidden" name="targetUserId" value="@u.Id" />
+                                    <button type="submit" class="item">Unlink from @u.LinkedVeName</button>
+                                </form>
+                            }
                             <button type="button" class="item" data-open-modal="roleModal-@u.Id">Change role</button>
                             @* TeamLead included since 2026-08-07: a lead is scoped by their own team
                                now, not by their manager's, so they need a way to be given one. *@
