@@ -316,6 +316,19 @@ public class SessionIngestionService(
                 // license-class backfill — no one-off migration script needed, every existing
                 // session picks it up the next time it's still in the feed.
                 local.ExtId ??= remote.SessionDef?.ExtId;
+
+                // Assigned, not ??=. ExtId above backfills once and then stops, because a changed
+                // identifier upstream is not worth chasing. The lead is different: it names a person
+                // who may be emailed about this session, so a stale value means notifying the wrong
+                // VE. Reassigning also backfills existing rows on the next poll, so no migration
+                // script is needed for sessions ingested before this field existed.
+                //
+                // Only overwritten when ExamTools actually reports one — a feed that omits it must
+                // not silently erase a lead we already knew.
+                if (CallSign.NormalizeFormat(remote.SessionDef?.TeamLeadCallsign) is { } leadCallSign)
+                {
+                    local.TeamLeadCallSign = leadCallSign;
+                }
             }
             else if (ShouldIngestNewSession(remote, now))
             {
@@ -570,6 +583,7 @@ public class SessionIngestionService(
             ExamToolsSessionId = remote.Id,
             Title = string.IsNullOrWhiteSpace(remote.SessionDef?.Summary) ? remote.Id : remote.SessionDef!.Summary,
             ExtId = remote.SessionDef?.ExtId,
+            TeamLeadCallSign = CallSign.NormalizeFormat(remote.SessionDef?.TeamLeadCallsign),
             ScheduledStartUtc = remote.Date,
             DurationMinutes = remote.SessionDef?.Duration > 0 ? remote.SessionDef.Duration / 60 : DefaultDurationMinutes,
             VecId = vec.Id,

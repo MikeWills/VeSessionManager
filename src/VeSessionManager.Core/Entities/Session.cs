@@ -16,6 +16,21 @@ public class Session
     /// precedent as Title itself — null on sessions ingested before this field existed.</summary>
     public string? ExtId { get; set; }
 
+    /// <summary>
+    /// Call sign of the VE leading this session, from ExamTools' own Team Lead field. Null on
+    /// sessions ingested before 2026-08-11, and on any session whose lead ExamTools does not report.
+    ///
+    /// <para><b>Re-synced on every poll, unlike <see cref="Title"/> and <see cref="ExtId"/>.</b>
+    /// Those are set once because a later edit upstream is not worth chasing; a lead is different —
+    /// it is a person who may be notified about this session, and a stale one means telling the
+    /// wrong VE, or nobody. Cheap to keep current since it rides on the poll that already runs.</para>
+    ///
+    /// <para>Resolve it to a person through VolunteerExaminer by call sign, and only after
+    /// <see cref="CallSign.IsUsable"/> — ExamTools' literal "&lt;UNKNOWN&gt;" once fused two
+    /// different people.</para>
+    /// </summary>
+    public string? TeamLeadCallSign { get; set; }
+
     public DateTime ScheduledStartUtc { get; set; }
 
     /// <summary>From ExamTools' sessionDef.duration (seconds), converted at ingestion time. Not in the original shared data model — added in Phase 2 because both the Zoom meeting and the Discord event require an explicit length/end time.</summary>

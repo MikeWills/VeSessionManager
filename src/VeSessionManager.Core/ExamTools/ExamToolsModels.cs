@@ -39,6 +39,22 @@ public class ExamToolsSessionDef
     /// endpoint (`GET /api/veUser/sessions?team=...`), not just the per-session detail one — no
     /// extra API call needed to get it.</summary>
     public string? ExtId { get; set; }
+
+    /// <summary>
+    /// Call sign of the VE leading the session — ExamTools' own "Team Lead" field on the session
+    /// form. Verified live 2026-08-11 to be present on the <b>cheap team-list endpoint</b>
+    /// (<c>GET /api/veUser/sessions?team=...</c>), not just the per-session detail, so this costs no
+    /// extra request.
+    ///
+    /// <para>Call sign only — ExamTools returns no name or email for the lead anywhere in either
+    /// payload. The name is resolved locally against VolunteerExaminer, which the VE roster sync
+    /// already populates from <c>export/full.json</c>.</para>
+    ///
+    /// <para>Not to be confused with <see cref="ExtId"/>, which is often the same value but is the
+    /// free-text "Session Identifier (optional)" box — usually the lead's call sign, and therefore
+    /// exactly the sort of thing that works until someone types something else in it.</para>
+    /// </summary>
+    public string? TeamLeadCallsign { get; set; }
 }
 
 /// <summary>Response of GET /api/veUser/sessions/{id}/export/basic.json.</summary>
