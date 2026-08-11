@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.EntityFrameworkCore;
+using VeSessionManager.Core;
 using VeSessionManager.Core.Admin;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Entities;
@@ -41,7 +42,7 @@ public class VecsModel(AppDbContext dbContext, UserManager<User> userManager, Ve
                 var feeSummary = fee is null
                     ? null
                     : fee.FeeCollectionEnabled
-                        ? $"${fee.ExamFeeAmount ?? 0m:F2}"
+                        ? Usd.Format(fee.ExamFeeAmount ?? 0m)
                         : "Collection off";
                 return new VecRow(v.Id, v.Name, v.ExamToolsCode, v.SupportsYouthProgram, v.Notes, feeSummary);
             })

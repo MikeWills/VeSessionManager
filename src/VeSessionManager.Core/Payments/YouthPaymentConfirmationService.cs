@@ -144,7 +144,7 @@ public class YouthPaymentConfirmationService(
 
         var now = timeProvider.GetUtcNow().UtcDateTime;
         dbContext.AddAuditLog(null, "YouthRateConfirmed", nameof(Payment), payment.Id,
-            $"Candidate self-confirmed youth rate via public link; Payment switched from standard rate to ${feeConfiguration.YouthExamFeeAmount.Value:F2}.", now);
+            $"Candidate self-confirmed youth rate via public link; Payment switched from standard rate to {Usd.Format(feeConfiguration.YouthExamFeeAmount.Value)}.", now);
 
         await dbContext.SaveChangesAsync(cancellationToken);
         logger.LogInformation("Confirmed youth rate for Payment {PaymentId}, candidate {CandidateId}", payment.Id, payment.CandidateId);

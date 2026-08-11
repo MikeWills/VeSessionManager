@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.EntityFrameworkCore;
+using VeSessionManager.Core;
 using VeSessionManager.Core.Authorization;
 using VeSessionManager.Core.CandidateActions;
 using VeSessionManager.Core.Data;
@@ -285,13 +286,13 @@ public class CandidateDetailModel(
         };
 
         var amountMismatchLine = payment.AmountMismatchFlaggedUtc is not null
-            ? $"Paid ${payment.SquareAmountPaidUsd:F2} against ${payment.Amount:F2} owed"
+            ? $"Paid {Usd.Format(payment.SquareAmountPaidUsd!.Value)} against {Usd.Format(payment.Amount)} owed"
             : null;
 
         return new PaymentRow(
             payment.Id,
             payment.Reason == PaymentReason.Retest ? "Retest" : "Initial exam",
-            $"${payment.Amount:F2}",
+            Usd.Format(payment.Amount),
             chipClass,
             chipLabel,
             payment.PaymentLinkUrl,

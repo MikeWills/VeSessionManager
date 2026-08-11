@@ -65,9 +65,9 @@ else
                             <span class="chip chip-neutral">Disabled</span>
                         }
                     </td>
-                    <td>@(fc.ExamFeeAmount is null ? "—" : $"${fc.ExamFeeAmount:F2}")</td>
-                    <td>@(fc.YouthExamFeeAmount is null ? "—" : $"${fc.YouthExamFeeAmount:F2}")</td>
-                    <td>@(fc.RetainedAmount is null ? "—" : $"${fc.RetainedAmount:F2}")</td>
+                    <td>@Usd.Format(fc.ExamFeeAmount)</td>
+                    <td>@Usd.Format(fc.YouthExamFeeAmount)</td>
+                    <td>@Usd.Format(fc.RetainedAmount)</td>
                     <td>@fc.Notes</td>
                     <td class="row-actions">
                         @if (fc.InUse)

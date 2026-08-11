@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.EntityFrameworkCore;
+using VeSessionManager.Core;
 using VeSessionManager.Core.Authorization;
 using VeSessionManager.Core.CandidateActions;
 using VeSessionManager.Core.Data;
@@ -115,7 +116,7 @@ public class DetailModel(
         decimal? parsedAmount = null;
         if (!string.IsNullOrWhiteSpace(overrideAmount))
         {
-            if (!decimal.TryParse(overrideAmount, out var value) || value < 0)
+            if (!Usd.TryParse(overrideAmount, out var value) || value < 0)
             {
                 SetStatus(false, "", "Retained amount must be a non-negative dollar amount.");
                 return RedirectToPage(new { id = Id });
@@ -126,7 +127,7 @@ public class DetailModel(
 
         var result = await sessionActionService.SetRetainedAmountOverrideAsync(Id, parsedAmount, auth.Value.User.Id, CancellationToken.None);
         SetStatus(result == SessionActionResult.Success,
-            parsedAmount is null ? "Retained amount override cleared." : $"Retained amount overridden to ${parsedAmount:F2} for this session.",
+            parsedAmount is null ? "Retained amount override cleared." : $"Retained amount overridden to {Usd.Format(parsedAmount!.Value)} for this session.",
             "Could not update retained amount override.");
         return RedirectToPage(new { id = Id });
     }
@@ -391,7 +392,7 @@ public class DetailModel(
             : null;
 
         var feeLine = session.FeeConfiguration.FeeCollectionEnabled
-            ? $"${session.FeeConfiguration.ExamFeeAmount:F2} exam · ${session.FeeConfiguration.RetainedAmount:F2} retained"
+            ? $"{Usd.Format(session.FeeConfiguration.ExamFeeAmount)} exam · {Usd.Format(session.FeeConfiguration.RetainedAmount)} retained"
             : "No fee collected";
 
         var feeSummary = session.GetFeeSummary();
@@ -404,11 +405,11 @@ public class DetailModel(
             session.ZoomJoinUrl,
             discordEventUrl,
             feeLine,
-            $"${feeSummary.TotalCollected:F2}",
-            $"${feeSummary.TotalRetained:F2}",
-            $"${feeSummary.TotalRemitToVec:F2}",
+            Usd.Format(feeSummary.TotalCollected),
+            Usd.Format(feeSummary.TotalRetained),
+            Usd.Format(feeSummary.TotalRemitToVec),
             session.RetainedAmountOverride is not null,
-            session.RetainedAmountOverride?.ToString("F2"),
+            session.RetainedAmountOverride is { } ov ? Usd.Raw(ov) : null,
             // Same rule as the session list's Status chip: completed by either route — a Session
             // Manager marking it, or ExamTools closing it (ExamToolsClosedUtc). Preferring the
             // manual timestamp keeps the more specific fact when both exist.
@@ -480,7 +481,7 @@ public class DetailModel(
                     : "No FRN on file";
 
         var amountMismatchLine = primaryPayment?.AmountMismatchFlaggedUtc is not null
-            ? $"Paid ${primaryPayment.SquareAmountPaidUsd:F2} against ${primaryPayment.Amount:F2} owed"
+            ? $"Paid {Usd.Format(primaryPayment.SquareAmountPaidUsd!.Value)} against {Usd.Format(primaryPayment.Amount)} owed"
             : null;
 
         var emailHistory = CandidateEmailHistoryFormatter.Build(candidate);

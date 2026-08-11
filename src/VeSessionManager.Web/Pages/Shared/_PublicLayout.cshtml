@@ -23,6 +23,20 @@
     <partial name="_TestModeBanner" />
 
     <main class="vesm-main" style="max-width:760px;">
+        @* Must mirror _AppLayout's block. Every page on this layout sets TempData["StatusMessage"]
+           and ["ErrorMessage"] and none of them rendered until 2026-08-11 (issue #241) — so all
+           thirteen outcomes of VE self-service, including "that address is already in use" and
+           "we couldn't send the mail", redirected to a byte-identical page. A VE editing their own
+           record was told nothing either way, on the app's only unauthenticated PII-editing
+           surface. The switch statements setting them were dead code. *@
+        @if (TempData["StatusMessage"] is string statusMessage)
+        {
+            <div class="vesm-alert success">@statusMessage</div>
+        }
+        @if (TempData["ErrorMessage"] is string errorMessage)
+        {
+            <div class="vesm-alert error">@errorMessage</div>
+        }
         @RenderBody()
     </main>
 
