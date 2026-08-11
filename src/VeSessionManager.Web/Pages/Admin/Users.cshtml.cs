@@ -60,6 +60,7 @@ public class UsersModel(AppDbContext dbContext, UserManager<User> userManager, A
         var query = dbContext.Users
             .Include(u => u.UserTeams).ThenInclude(ut => ut.Team)
             .Include(u => u.ManagedByUser)
+            .Include(u => u.VolunteerExaminer)
             .AsQueryable();
         if (!IsSystemAdmin)
         {
@@ -75,11 +76,30 @@ public class UsersModel(AppDbContext dbContext, UserManager<User> userManager, A
         }
 
         var users = await query.OrderBy(u => u.Name).ToListAsync();
-        Users = users.Select(u => new UserRow(
-            u.Id, u.Email ?? "", u.Name, u.CallSign, u.Role,
-            string.Join(", ", u.UserTeams.Select(ut => ut.Team.Name).OrderBy(n => n)),
-            u.UserTeams.Select(ut => ut.TeamId).ToList(),
-            IsActive(u), u.ManagedByUser?.Name)).ToList();
+
+        // Suggestions come from the service one user at a time, rather than a bulk query here that
+        // re-implements the same rules. Those rules are the careful part — a call-sign match is a
+        // suggestion, not a fact, and every ambiguous case must return nothing — so they get one
+        // definition. This page lists administrators, not candidates: a handful of rows, and only
+        // the unlinked ones ask.
+        var rows = new List<UserRow>(users.Count);
+        foreach (var u in users)
+        {
+            var suggestion = u.VolunteerExaminerId is null
+                ? await userManagementService.SuggestVolunteerExaminerAsync(u.Id, HttpContext.RequestAborted)
+                : null;
+
+            rows.Add(new UserRow(
+                u.Id, u.Email ?? "", u.Name, u.CallSign, u.Role,
+                string.Join(", ", u.UserTeams.Select(ut => ut.Team.Name).OrderBy(n => n)),
+                u.UserTeams.Select(ut => ut.TeamId).ToList(),
+                IsActive(u), u.ManagedByUser?.Name,
+                LinkedVeName: u.VolunteerExaminer is { } linked ? $"{linked.CallSign ?? "?"} — {linked.Name}" : null,
+                SuggestedVeId: suggestion?.Id,
+                SuggestedVeName: suggestion is null ? null : $"{suggestion.CallSign ?? "?"} — {suggestion.Name}"));
+        }
+
+        Users = rows;
 
         // A TeamLead has no team of their own — theirs is inherited from whoever manages them
         // (SessionAccessScope.GetEffectiveTeamIds resolves it through ManagedByUser), so this list is
@@ -140,6 +160,28 @@ public class UsersModel(AppDbContext dbContext, UserManager<User> userManager, A
             UserActionResult.Success => $"User '{email}' created — assign a team below to give them access.",
             UserActionResult.DuplicateEmail => $"A user with email '{email}' already exists.",
             _ => "Could not create user — check the password meets the minimum requirements."
+        };
+        return RedirectToPage(new { teamId = TeamId });
+    }
+
+    /// <summary>
+    /// Links a login to the VE record for the same person, or clears it when volunteerExaminerId is
+    /// omitted. Identity only — see User.VolunteerExaminerId; this grants nothing.
+    /// </summary>
+    public async Task<IActionResult> OnPostSetVolunteerExaminerAsync(int targetUserId, int? volunteerExaminerId)
+    {
+        var auth = await AuthorizeManageAsync(targetUserId);
+        if (auth is null) return Forbid();
+
+        var result = await userManagementService.SetVolunteerExaminerAsync(
+            targetUserId, volunteerExaminerId, auth.Value.ActingUser.Id, CancellationToken.None);
+
+        TempData[result == UserActionResult.Success ? "StatusMessage" : "ErrorMessage"] = result switch
+        {
+            UserActionResult.Success when volunteerExaminerId is null => "VE link cleared.",
+            UserActionResult.Success => "Linked to VE record.",
+            UserActionResult.VolunteerExaminerAlreadyLinked => "That VE record is already linked to another user.",
+            _ => "Could not update the VE link."
         };
         return RedirectToPage(new { teamId = TeamId });
     }
@@ -268,5 +310,12 @@ public class UsersModel(AppDbContext dbContext, UserManager<User> userManager, A
         return (actingUser, targetUser);
     }
 
-    public record UserRow(int Id, string Email, string Name, string? CallSign, UserRole Role, string TeamNames, IReadOnlyList<int> TeamIds, bool IsActive, string? ManagerName);
+    /// <param name="LinkedVeName">The VE record this login belongs to, when linked (#224). Null means unlinked.</param>
+    /// <param name="SuggestedVeId">
+    /// A VE record whose call sign matches this user's, offered as a one-click confirmation. Null
+    /// whenever the answer is not unambiguous — no call sign, a placeholder, several matches, or the
+    /// match already claimed. See UserManagementService.SuggestVolunteerExaminerAsync.
+    /// </param>
+    public record UserRow(int Id, string Email, string Name, string? CallSign, UserRole Role, string TeamNames, IReadOnlyList<int> TeamIds, bool IsActive, string? ManagerName,
+        string? LinkedVeName, int? SuggestedVeId, string? SuggestedVeName);
 }

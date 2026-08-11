@@ -62,4 +62,26 @@ public class User : IdentityUser<int>
     /// <summary>TeamLead's assigned manager (a SessionManager or TeamAdmin) — role-agnostic, see SessionAccessScope.</summary>
     public int? ManagedByUserId { get; set; }
     public User? ManagedByUser { get; set; }
+
+    /// <summary>
+    /// The <see cref="VolunteerExaminer"/> record describing this same human, when there is one
+    /// (#224). A login and a VE record are two views of one person, and until this existed nothing
+    /// connected them — the same someone appeared twice, with two email addresses free to diverge.
+    ///
+    /// <para><b>Identity, never authorisation.</b> Linking records who someone is. It grants nothing
+    /// and revokes nothing: roles still come from <see cref="Role"/> and teams from
+    /// <see cref="UserTeams"/>. VE self-service remains a separate authentication scheme with its own
+    /// cookie and its own barriers (docs/ve-self-service.md) — being linked does not let a VE sign
+    /// into the admin app, and being an admin does not sign anyone into self-service.</para>
+    ///
+    /// <para><b>Nullable both ways round, on purpose.</b> Most VEs have no login at all — 176 of them
+    /// against a handful of users — and some users are not VEs, such as a treasurer who administers
+    /// without being accredited. The link records the overlap without pretending the two populations
+    /// are the same.</para>
+    ///
+    /// <para>At most one login per VE record, enforced by a filtered unique index — two people
+    /// claiming to be the same examiner is a data error, not a state to support.</para>
+    /// </summary>
+    public int? VolunteerExaminerId { get; set; }
+    public VolunteerExaminer? VolunteerExaminer { get; set; }
 }
