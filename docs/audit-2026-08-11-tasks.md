@@ -118,11 +118,29 @@ merge as applied while the DB does not.
 
 ## THEME-VE-SCOPE
 
-> **Decide the model before writing code.** Two coherent answers: (a) scope cross-team reach away
-> entirely, or (b) allow it but require SystemAdmin. `VolunteerExaminer` is deliberately a global
-> person (`docs/ve-management.md`), so (a) is not automatically right. What is wrong today is the
-> **asymmetry** — e.g. VeMerge scopes the survivor and not the duplicate. Answer this once, then apply
-> to T-05..T-09 together.
+> ## RESOLVED 2026-08-11 — cross-team reach is intended; T-05 and T-06 are closed
+>
+> The deployment hosts **cooperating teams, not unrelated organisations** — `VolunteerExaminer`'s own
+> comment says so where the contact fields are declared, and shares them across teams deliberately.
+> Reasoning, supporting counts and the conditions that would reverse it are in
+> **`docs/ve-management.md` → "Cross-team reach is intended, and was re-confirmed on 2026-08-11"**.
+>
+> Evidence that decided it: **54 of 175 VEs already serve more than one team**, so cross-team service
+> is the normal case; and contact details are **essentially unpopulated (0 addresses, 0 notes, 1
+> email, 1 phone of 175)**, so the disclosure the finding describes is not reachable today. Both
+> pages involved are already `SystemAdmin`/`TeamAdmin`-only.
+>
+> - **T-05 (#236) — closed, working as intended.**
+> - **T-06 (#237) — closed, working as intended.**
+> - **#235 — closed.**
+>
+> **T-07, T-08 and T-09 remain open and are ordinary bugs.** None of them depended on this decision;
+> each is wrong under any answer. Sharing a person's record with a team that will work alongside them
+> is intended. Sharing it with whoever guesses a call sign, silently and unlogged, is not.
+>
+> **Re-measure before assuming this still holds:** a team joining that the others do not know, contact
+> details actually getting populated, or the multi-team VE overlap falling toward zero — any of the
+> three flips the answer to SystemAdmin-gated joins, which was the runner-up.
 
 ### T-05 — A TeamAdmin can pull any VE in the deployment onto their own team and read their PII
 **Area** Security (High) · **Files**
