@@ -2,6 +2,18 @@ namespace VeSessionManager.Core.Entities;
 
 public class Candidate
 {
+    /// <summary>
+    /// Withdrew or did not show. Their row is kept for statistics but their personal details are
+    /// purged immediately rather than on the retention schedule, so anything reading a name, email
+    /// or FRN off a withdrawn candidate is reading a hole — see docs/pii-purge.md.
+    ///
+    /// <para>Not EF-mapped; <c>ApplicationStatus == NotTested</c> is the stored form and is what a
+    /// query must spell out. This exists so the *meaning* has one definition: eight call sites made
+    /// that comparison by hand, and a future status that also means "didn't test" would have to find
+    /// every one of them.</para>
+    /// </summary>
+    public bool IsWithdrawn => ApplicationStatus == CandidateApplicationStatus.NotTested;
+
     public int Id { get; set; }
 
     public int SessionId { get; set; }

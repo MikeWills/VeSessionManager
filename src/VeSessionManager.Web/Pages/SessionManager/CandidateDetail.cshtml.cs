@@ -188,7 +188,7 @@ public class CandidateDetailModel(
 
         CanEdit = accessScope.CanEdit(user, candidate.Session);
 
-        var isWithdrawn = candidate.ApplicationStatus == CandidateApplicationStatus.NotTested;
+        var isWithdrawn = candidate.IsWithdrawn;
 
         // Materialized first, then mapped in memory (not a server-side .Select() projection) — EF
         // Core can't translate EasternTimeFormatter.Format's TimeZoneInfo conversion to SQL.
@@ -205,7 +205,7 @@ public class CandidateDetailModel(
                     c.Name ?? "—",
                     EasternTimeFormatter.Format(c.Session.ScheduledStartUtc, "MMM d, yyyy"),
                     c.Session.ScheduledStartUtc.ToString("o", CultureInfo.InvariantCulture),
-                    c.ApplicationStatus == CandidateApplicationStatus.NotTested ? "Withdrew/no-show" : c.ApplicationStatus.ToString()))
+                    CandidatePresentation.StatusLabel(c.ApplicationStatus)))
                 .ToList();
 
         Candidate = new CandidateDetailView(
@@ -214,7 +214,7 @@ public class CandidateDetailModel(
             SessionBreadcrumbLabel: SessionBreadcrumbFormatter.Format(candidate.Session.ExtId, candidate.Session.Title),
             SessionDateLine: EasternTimeFormatter.Format(candidate.Session.ScheduledStartUtc, "ddd, MMM d, yyyy · h:mm tt"),
             IsWithdrawn: isWithdrawn,
-            DisplayName: isWithdrawn ? "Withdrew — PII cleared" : candidate.Name ?? "—",
+            DisplayName: CandidatePresentation.DisplayName(candidate),
             FirstName: isWithdrawn ? null : candidate.FirstName,
             Email: isWithdrawn ? null : candidate.Email,
             FrnLine: isWithdrawn
@@ -226,7 +226,7 @@ public class CandidateDetailModel(
                         : "No FRN on file",
             CallSign: isWithdrawn ? null : candidate.CallSign,
             FccLicenseUrl: isWithdrawn ? null : FccUlsLinks.License(candidate.FccUlsLicenseKey),
-            StatusLabel: candidate.ApplicationStatus == CandidateApplicationStatus.NotTested ? "Not tested" : candidate.ApplicationStatus.ToString(),
+            StatusLabel: CandidatePresentation.StatusLabel(candidate.ApplicationStatus),
             RegisteredLine: EasternTimeFormatter.Format(candidate.DateRegisteredUtc, "M/d/yyyy h:mm tt"),
             // ApplicationDateEnteredUtc/LicenseGrantDateUtc are FCC's own date-only fields (parsed
             // from an MM/dd/yyyy source with no time component, stored as UTC midnight) — NOT run

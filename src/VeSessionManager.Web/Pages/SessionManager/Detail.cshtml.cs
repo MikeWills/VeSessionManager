@@ -424,7 +424,7 @@ public class DetailModel(
 
     private static CandidateRow ToRow(Candidate candidate)
     {
-        var isWithdrawn = candidate.ApplicationStatus == CandidateApplicationStatus.NotTested;
+        var isWithdrawn = candidate.IsWithdrawn;
         var primaryPayment = candidate.Payments.OrderByDescending(p => p.CreatedUtc).FirstOrDefault(p => p.Status == PaymentStatus.Unpaid)
             ?? candidate.Payments.OrderByDescending(p => p.CreatedUtc).FirstOrDefault();
 
@@ -446,11 +446,7 @@ public class DetailModel(
             _ => new[] { "", "", "" }
         };
 
-        var statusLabel = candidate.ApplicationStatus switch
-        {
-            CandidateApplicationStatus.NotTested => "Not tested",
-            var s => s.ToString()
-        };
+        var statusLabel = CandidatePresentation.StatusLabel(candidate.ApplicationStatus);
 
         var frnLine = isWithdrawn
             ? "record retained for stats"
@@ -469,7 +465,7 @@ public class DetailModel(
         return new CandidateRow(
             candidate.Id,
             isWithdrawn,
-            isWithdrawn ? "Withdrew — PII cleared" : candidate.Name ?? "—",
+            CandidatePresentation.DisplayName(candidate),
             isWithdrawn ? "—" : candidate.CallSign ?? "—",
             frnLine,
             meterSegments,
