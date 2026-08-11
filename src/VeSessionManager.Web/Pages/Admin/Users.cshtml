@@ -101,6 +101,10 @@ else
                             @if (u.IsActive)
                             {
                                 <form method="post" asp-page-handler="Deactivate">
+                                    @* asp-page-handler builds the action from the route alone and drops the query string, so without
+     this the handler's TeamId binds null and its RedirectToPage(new { teamId = TeamId }) lands back
+     on "All teams". See CLAUDE.md's Known Constraint on row-level POST actions. *@
+                                    <input type="hidden" name="teamId" value="@Model.TeamId" />
                                     <input type="hidden" name="targetUserId" value="@u.Id" />
                                     <button type="submit" class="item danger" disabled="@(u.Id == Model.CurrentUserId)">Deactivate</button>
                                 </form>
@@ -108,6 +112,7 @@ else
                             else
                             {
                                 <form method="post" asp-page-handler="Reactivate">
+                                    <input type="hidden" name="teamId" value="@Model.TeamId" />
                                     <input type="hidden" name="targetUserId" value="@u.Id" />
                                     <button type="submit" class="item">Reactivate</button>
                                 </form>
@@ -124,6 +129,7 @@ else
         <div class="modal">
             <h3>New User</h3>
             <form method="post" asp-page-handler="Create">
+                <input type="hidden" name="teamId" value="@Model.TeamId" />
                 <div class="field"><label for="createUserEmail">Email</label><input id="createUserEmail" name="email" type="email" required /></div>
                 <div class="field"><label for="createUserName">Name</label><input id="createUserName" name="name" required /></div>
                 <div class="field"><label for="createUserCallSign">Call sign</label><input id="createUserCallSign" name="callSign" placeholder="Optional" /></div>
@@ -152,6 +158,7 @@ else
             <div class="modal">
                 <h3>Set call sign — @u.Name</h3>
                 <form method="post" asp-page-handler="SetCallSign">
+                    <input type="hidden" name="teamId" value="@Model.TeamId" />
                     <input type="hidden" name="targetUserId" value="@u.Id" />
                     <div class="field">
                         <label for="callSign-@u.Id">Call sign</label>
@@ -170,6 +177,7 @@ else
             <div class="modal">
                 <h3>Change role — @u.Name</h3>
                 <form method="post" asp-page-handler="SetRole">
+                    <input type="hidden" name="teamId" value="@Model.TeamId" />
                     <input type="hidden" name="targetUserId" value="@u.Id" />
                     <div class="field">
                         <label for="newRole-@u.Id">Role</label>
@@ -194,6 +202,7 @@ else
                 <div class="modal">
                     <h3>Manage teams — @u.Name</h3>
                     <form method="post" asp-page-handler="SetTeams">
+                        <input type="hidden" name="teamId" value="@Model.TeamId" />
                         <input type="hidden" name="targetUserId" value="@u.Id" />
                         @foreach (var team in Model.AvailableTeams)
                         {
@@ -219,6 +228,7 @@ else
                 <div class="modal">
                     <h3>Assign manager — @u.Name</h3>
                     <form method="post" asp-page-handler="SetManager">
+                        <input type="hidden" name="teamId" value="@Model.TeamId" />
                         <input type="hidden" name="targetUserId" value="@u.Id" />
                         <div class="field">
                             <label for="managerUserId-@u.Id">Manager</label>

@@ -1,2 +1,19 @@
-﻿<script src="~/lib/jquery-validation/dist/jquery.validate.min.js"></script>
+@*
+    jQuery is loaded HERE rather than in a layout, deliberately.
+
+    The two scripts below are jQuery plugins and do nothing without it — but no layout loaded jQuery
+    at all, so every page including this partial threw "jQuery is not defined" and client-side
+    validation never ran (audit T09 / issue #156). Nothing caught it because server-side validation
+    still rejected bad input, so the pages behaved correctly, just less pleasantly: no inline errors
+    until a round trip.
+
+    Putting the dependency in the partial means it cannot go missing again by someone choosing the
+    other layout. Neither _PublicLayout nor _AppLayout loads jQuery, so there is no double-load to
+    worry about; if one ever does, move this line there and delete it here rather than having both.
+
+    Self-hosted under wwwroot/lib — the CSP allows script-src 'self' only, so a CDN reference would
+    be blocked outright.
+*@
+<script src="~/lib/jquery/dist/jquery.min.js"></script>
+<script src="~/lib/jquery-validation/dist/jquery.validate.min.js"></script>
 <script src="~/lib/jquery-validation-unobtrusive/dist/jquery.validate.unobtrusive.min.js"></script>

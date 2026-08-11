@@ -283,6 +283,76 @@ public class PageSmokeTests : IAsyncLifetime
     }
 
     /// <summary>
+    /// ⚠️ Regression guard for a bug shipped in v0.3.0 and live for about an hour.
+    ///
+    /// <para><c>MapStaticAssets</c> registers real endpoints, so the FallbackPolicy added in #158
+    /// applied to them: every CSS, JS, font and image request from a signed-out visitor was
+    /// redirected to the login page. The pages still returned 200 and still rendered — they just
+    /// arrived with no styling and no scripts, which is why nothing caught it. The login page was
+    /// the worst affected, being the one page a signed-out person is guaranteed to see.</para>
+    ///
+    /// <para>Signed-in users saw nothing wrong at all, which is exactly the shape of failure that
+    /// survives a developer testing their own change.</para>
+    /// </summary>
+    [Theory]
+    [InlineData("/css/app.css")]
+    [InlineData("/js/app.js")]
+    [InlineData("/lib/bootstrap-icons/bootstrap-icons.css")]
+    public async Task StaticAssetsAreServedToAnonymousVisitors(string path)
+    {
+        using var client = _factory.CreateClient(
+            new Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+
+        var response = await client.GetAsync(path);
+
+        Assert.True(response.StatusCode == HttpStatusCode.OK,
+            $"GET {path} while signed out returned {(int)response.StatusCode}. Static assets are endpoints, "
+            + "so the fallback authorization policy applies to them unless MapStaticAssets says "
+            + "AllowAnonymous — and a signed-out visitor then gets an unstyled, script-less page.");
+    }
+
+    /// <summary>
+    /// Client-side validation needs three scripts in dependency order, and **every one of them must
+    /// actually be served**. Before #156 the page referenced jquery.validate and unobtrusive but
+    /// nothing loaded jQuery, so the console threw "jQuery is not defined" and validation never ran
+    /// — invisible from the server, because server-side validation still rejected bad input.
+    ///
+    /// <para>Rendering the page is not enough to catch that: a missing or misspelled script tag is
+    /// still valid HTML and the page returns 200 either way. So this follows each referenced script
+    /// and requires a 200, which is the part a smoke test would otherwise skip straight past.</para>
+    /// </summary>
+    [Theory]
+    [InlineData("/Account/Login")]
+    [InlineData("/Account/ForgotPassword")]
+    public async Task ValidationScriptsAreReferencedInOrderAndActuallyServed(string url)
+    {
+        using var client = _factory.CreateClient(
+            new Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+
+        var html = await (await client.GetAsync(url)).Content.ReadAsStringAsync();
+
+        var jquery = html.IndexOf("/lib/jquery/dist/jquery", StringComparison.Ordinal);
+        var validate = html.IndexOf("/lib/jquery-validation/dist/jquery.validate", StringComparison.Ordinal);
+        var unobtrusive = html.IndexOf("/lib/jquery-validation-unobtrusive/", StringComparison.Ordinal);
+
+        Assert.True(jquery >= 0, $"{url} references no jQuery — the validation plugins below it cannot run.");
+        Assert.True(jquery < validate, "jQuery must be loaded before jquery.validate.");
+        Assert.True(validate < unobtrusive, "jquery.validate must be loaded before the unobtrusive adapter.");
+
+        foreach (var src in ScriptSources(html).Where(s => s.Contains("/lib/jquery", StringComparison.Ordinal)))
+        {
+            var response = await client.GetAsync(src);
+            Assert.True(response.StatusCode == HttpStatusCode.OK,
+                $"{url} references {src}, which returned {(int)response.StatusCode}. A script tag pointing at "
+                + "nothing looks identical to a working one in the rendered HTML.");
+        }
+    }
+
+    private static IEnumerable<string> ScriptSources(string html) =>
+        Regex.Matches(html, "<script[^>]+src=\"([^\"]+)\"", RegexOptions.IgnoreCase)
+            .Select(m => m.Groups[1].Value)
+            .Select(src => src.Split('?')[0]);
+
     /// A cookie can outlive the account it names — the row is deleted, or the database is restored
     /// beneath a browser that still holds a valid, correctly-signed cookie. Authorization is
     /// satisfied, so the page runs, looks the user up, gets null and throws.
