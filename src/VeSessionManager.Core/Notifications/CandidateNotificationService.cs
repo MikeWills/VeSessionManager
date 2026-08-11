@@ -358,9 +358,20 @@ public class CandidateNotificationService(
     }
 
     /// <summary>
-    /// Sent automatically (not a standalone button) by SessionActionService.MarkCompletedAsync for
-    /// each candidate whose Tested flag just flipped to true as part of that action and who has
-    /// HasFelonyDisclosure = true — tells them special FCC steps are required, nothing more.
+    /// Tells a candidate who declared a felony disclosure that the FCC requires extra steps of them.
+    /// Informational only — the club has no role beyond saying so.
+    ///
+    /// <para><b>Manual since #221 (2026-08-11), and no longer gated on having tested.</b> It used to
+    /// be sent automatically by SessionActionService.MarkCompletedAsync, which meant it always
+    /// arrived <i>after</i> the session — the point at which the candidate can no longer easily ask
+    /// anyone about it. The useful time to send it is before, while there is still someone to ask, so
+    /// the condition is simply that a disclosure was declared.</para>
+    ///
+    /// <para><b>The disclosure check moved in here with the button.</b> While this was called from
+    /// one place it could trust its caller to have filtered; now the id arrives from a form, and
+    /// telling the wrong person that their felony disclosure needs FCC paperwork is not an error to
+    /// leave to the UI. The page hides the action, and this refuses it — see
+    /// CandidateEmailSendResult.NoFelonyDisclosure.</para>
     /// </summary>
     public async Task<CandidateEmailSendResult> SendFelonyDisclosureInstructionsAsync(int candidateId, CancellationToken cancellationToken)
     {
@@ -370,6 +381,12 @@ public class CandidateNotificationService(
         if (candidate is null)
         {
             return CandidateEmailSendResult.CandidateNotFound;
+        }
+
+        // Checked here, not just in the page. See the note above: the id comes from a form now.
+        if (candidate.HasFelonyDisclosure != true)
+        {
+            return CandidateEmailSendResult.NoFelonyDisclosure;
         }
 
         if (string.IsNullOrWhiteSpace(candidate.Email))

@@ -106,6 +106,20 @@ would be pure duplication — and goes straight to `CHANGELOG.md` instead. Non-p
 redesigns, hardening passes) start here and move to `CHANGELOG.md` once the section is at/over the
 cap and a newer entry needs to be added; oldest goes first.
 
+- **Felony disclosure instructions are a button now, sent before the session (2026-08-11).** Issue
+  #221. See `docs/email-reference.md`. `MarkCompletedAsync` sent this automatically to every candidate
+  whose `Tested` flag that call flipped — no button, no confirmation. Two things wrong with that: the
+  email tells someone their **felony disclosure requires extra FCC paperwork**, which is not a thing
+  to send as a side effect of a bulk status flip, and keying it to "session completed" meant it could
+  only ever arrive **after** the exam, when the candidate can no longer easily ask anyone about it.
+  Now a per-candidate action, offered whenever a disclosure is declared — `Tested` is not consulted at
+  all. **Two consequences of deleting an automatic send, both deliberate:** the disclosure check moved
+  *into* the service (`NoFelonyDisclosure`), because the id arrives from a form now and one caller's
+  filtering can no longer be trusted; and the candidate is **marked, not just counted** — the session
+  row and candidate page both show "declared a disclosure, instructions not sent", since a count in a
+  one-off status message is gone on the next click. `SessionCompletionResult` reports how many are
+  still waiting rather than how many emails it sent, which is now always zero.
+
 - **The 5-day reminder chased the wrong fee (2026-08-11).** Issues #219/#218. See
   `docs/payment-reminders.md`. Found by *sending one and reading it* — the first candidate-facing
   email this app produced end to end. It fired on an unpaid Square `Payment`, the team's **exam

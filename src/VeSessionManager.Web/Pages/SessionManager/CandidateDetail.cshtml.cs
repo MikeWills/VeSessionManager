@@ -120,6 +120,19 @@ public class CandidateDetailModel(
         return RedirectToPage(new { id = Id });
     }
 
+    /// <summary>See Detail.OnPostSendFelonyInstructionsAsync — manual since #221.</summary>
+    public async Task<IActionResult> OnPostSendFelonyInstructionsAsync()
+    {
+        var auth = await AuthorizeAsync();
+        if (auth is null) return Forbid();
+
+        var result = await candidateNotificationService.SendFelonyDisclosureInstructionsAsync(Id, CancellationToken.None);
+        SetStatus(result == CandidateEmailSendResult.Sent,
+            "Felony disclosure instructions sent.",
+            $"Could not send felony disclosure instructions: {result}.");
+        return RedirectToPage(new { id = Id });
+    }
+
     public async Task<IActionResult> OnPostSendYouthProgramAsync()
     {
         var auth = await AuthorizeAsync();
@@ -251,7 +264,10 @@ public class CandidateDetailModel(
             CanMarkFailed: !isWithdrawn && candidate.ApplicationStatus is CandidateApplicationStatus.Unmatched or CandidateApplicationStatus.Received,
             CanCreateRetestPayment: !isWithdrawn && candidate.ApplicationStatus == CandidateApplicationStatus.Failed,
             CanFlagRefund: !isWithdrawn && candidate.Payments.Count > 0,
-            CanSendYouthProgram: !isWithdrawn && candidate.Session.Vec.SupportsYouthProgram);
+            CanSendYouthProgram: !isWithdrawn && candidate.Session.Vec.SupportsYouthProgram,
+            // Not gated on Tested: the useful time to send this is before the session (#221).
+            CanSendFelonyInstructions: !isWithdrawn && candidate.HasFelonyDisclosure == true && candidate.Email is not null,
+            AwaitingFelonyInstructions: !isWithdrawn && candidate.HasFelonyDisclosure == true && candidate.FelonyDisclosureInstructionsSentUtc is null);
 
         return true;
     }
@@ -319,7 +335,10 @@ public class CandidateDetailModel(
         bool CanMarkFailed,
         bool CanCreateRetestPayment,
         bool CanFlagRefund,
-        bool CanSendYouthProgram);
+        bool CanSendYouthProgram,
+        bool CanSendFelonyInstructions,
+        /// <summary>Declared a disclosure and has not been sent the instructions — the marker that replaces the automatic send (#221).</summary>
+        bool AwaitingFelonyInstructions);
 
     public record PaymentRow(
         int Id,

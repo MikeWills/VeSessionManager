@@ -752,6 +752,90 @@ public class CandidateNotificationServiceTests
         Assert.Null(dbContext.Candidates.Single().YouthProgramInstructionsSentUtc);
     }
 
+    // ---- Felony disclosure instructions: manual since #221 ----
+
+    private static async Task<(Team Team, Candidate Candidate)> SeedForFelonyAsync(AppDbContext dbContext, bool? hasFelonyDisclosure, bool tested = false)
+    {
+        var team = await SeedTeamAsync(dbContext);
+        var session = await SeedSessionAsync(dbContext, team, Now.AddDays(4));
+        dbContext.EmailSettings.Add(new EmailSettings
+        {
+            TeamId = team.Id, FromAddress = "noreply@example.org", ReplyToAddress = "reply@example.org",
+            PrivacyPolicyUrl = "https://example.org/privacy", AdminNotificationEmail = "admin@example.org"
+        });
+        dbContext.EmailTemplates.Add(new EmailTemplate
+        {
+            TeamId = team.Id, Key = "FelonyDisclosureInstructions", Subject = "Additional FCC steps",
+            Body = "Hi {{CandidateName}}, additional FCC steps are required."
+        });
+        var candidate = NewCandidate(session);
+        candidate.HasFelonyDisclosure = hasFelonyDisclosure;
+        candidate.Tested = tested;
+        dbContext.Candidates.Add(candidate);
+        await dbContext.SaveChangesAsync();
+        return (team, candidate);
+    }
+
+    /// <summary>
+    /// The change that matters (#221): before, this could only ever go out after the session, because
+    /// it rode along with marking one complete. The information is worth having beforehand, while
+    /// there is still a Session Manager to ask about it — so nothing here looks at Tested.
+    /// </summary>
+    [Fact]
+    public async Task FelonyDisclosureInstructions_SendBeforeTheSession_Sends()
+    {
+        await using var dbContext = CreateContext();
+        var (_, candidate) = await SeedForFelonyAsync(dbContext, hasFelonyDisclosure: true, tested: false);
+
+        var sender = new FakeEmailSender();
+        var result = await CreateService(dbContext, sender).SendFelonyDisclosureInstructionsAsync(candidate.Id, CancellationToken.None);
+
+        Assert.Equal(CandidateEmailSendResult.Sent, result);
+        var message = Assert.Single(sender.SentMessages);
+        Assert.Contains("additional FCC steps are required", message.HtmlBody);
+        Assert.Equal(Now, dbContext.Candidates.Single().FelonyDisclosureInstructionsSentUtc);
+    }
+
+    /// <summary>
+    /// The boundary, and the reason the check lives in the service rather than only in the page. The
+    /// candidate id arrives from a form now, and this email tells someone their felony disclosure
+    /// requires extra FCC paperwork — the wrong recipient is not a cosmetic error.
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(null)]
+    public async Task FelonyDisclosureInstructions_NoDisclosureDeclared_Refused(bool? hasFelonyDisclosure)
+    {
+        await using var dbContext = CreateContext();
+        var (_, candidate) = await SeedForFelonyAsync(dbContext, hasFelonyDisclosure);
+
+        var sender = new FakeEmailSender();
+        var result = await CreateService(dbContext, sender).SendFelonyDisclosureInstructionsAsync(candidate.Id, CancellationToken.None);
+
+        Assert.Equal(CandidateEmailSendResult.NoFelonyDisclosure, result);
+        Assert.Empty(sender.SentMessages);
+        Assert.Null(dbContext.Candidates.Single().FelonyDisclosureInstructionsSentUtc);
+    }
+
+    /// <summary>
+    /// No send cap — a second click is a deliberate re-send, and the stamp holds the latest one so
+    /// the page can say when it last went out. Same shape as the youth-program action.
+    /// </summary>
+    [Fact]
+    public async Task FelonyDisclosureInstructions_CanBeSentAgain_StampHoldsTheLatest()
+    {
+        await using var dbContext = CreateContext();
+        var (_, candidate) = await SeedForFelonyAsync(dbContext, hasFelonyDisclosure: true);
+        var service = CreateService(dbContext, new FakeEmailSender());
+        await service.SendFelonyDisclosureInstructionsAsync(candidate.Id, CancellationToken.None);
+
+        var sender = new FakeEmailSender();
+        var result = await CreateService(dbContext, sender).SendFelonyDisclosureInstructionsAsync(candidate.Id, CancellationToken.None);
+
+        Assert.Equal(CandidateEmailSendResult.Sent, result);
+        Assert.Single(sender.SentMessages);
+    }
+
     // ---- onlySessionId filter (session-scoped Detail-page refresh, 2026-08-03) ----
 
     [Fact]

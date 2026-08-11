@@ -64,15 +64,11 @@ public class SessionActionServiceTests
         return new AppDbContext(options);
     }
 
+    // emailSender is kept in the signature although this service no longer sends anything (#221):
+    // every call site passes one, and the two tests below assert that nothing is sent, which needs a
+    // sender to observe.
     private static SessionActionService CreateService(AppDbContext dbContext, IEmailSender emailSender, ISquareClient? squareClient = null) => new(
         dbContext,
-        new CandidateNotificationService(
-            dbContext,
-            new EmailTemplateRenderer(dbContext, NullLogger<EmailTemplateRenderer>.Instance),
-            emailSender,
-            new FixedTimeProvider(Now),
-            Options.Create(new AppOptions()),
-            NullLogger<CandidateNotificationService>.Instance),
         new SquarePaymentMatchingService(dbContext, squareClient ?? new FakeSquareClient(), new FixedTimeProvider(Now), NullLogger<SquarePaymentMatchingService>.Instance),
         new FixedTimeProvider(Now),
         NullLogger<SessionActionService>.Instance);
@@ -154,8 +150,13 @@ public class SessionActionServiceTests
         Assert.Equal(user.Id, updatedSession.TestingCompletedByUserId);
     }
 
+    /// <summary>
+    /// The inversion (#221). This used to assert an email went out; the point now is that none does.
+    /// Marking a session complete is a bulk status flip, and "your felony disclosure requires extra
+    /// FCC paperwork" is not something to say to anyone as a side effect of one.
+    /// </summary>
     [Fact]
-    public async Task MarkCompleted_CandidateWithFelonyDisclosure_SendsInstructionsEmail()
+    public async Task MarkCompleted_CandidateWithFelonyDisclosure_SendsNothing()
     {
         await using var dbContext = CreateContext();
         var (_, user, session) = await SeedSessionAsync(dbContext);
@@ -165,40 +166,44 @@ public class SessionActionServiceTests
         var sender = new FakeEmailSender();
         var result = await CreateService(dbContext, sender).MarkCompletedAsync(session.Id, user.Id, CancellationToken.None);
 
-        Assert.Equal(1, result.FelonyDisclosureEmailsSent);
-        var message = Assert.Single(sender.SentMessages);
-        Assert.Contains("additional FCC steps are required", message.HtmlBody);
-        // FelonyDisclosureInstructionsSentUtc is a display-only timestamp (session detail page's
-        // "Email history" modal) — the send itself is guarded by MarkCompletedAsync's own
-        // one-shot "candidates just tested" set, not by this field.
-        Assert.NotNull((await dbContext.Candidates.FindAsync(withDisclosure.Id))!.FelonyDisclosureInstructionsSentUtc);
+        Assert.Empty(sender.SentMessages);
+        Assert.Null((await dbContext.Candidates.FindAsync(withDisclosure.Id))!.FelonyDisclosureInstructionsSentUtc);
+        // The status flip is untouched by the removal.
+        Assert.True((await dbContext.Candidates.FindAsync(withDisclosure.Id))!.Tested);
     }
 
+    /// <summary>
+    /// Removing the automatic send is exactly what could leave someone with nothing, so the count of
+    /// people still owed the instructions comes back with the result and the page says so.
+    /// </summary>
     [Fact]
-    public async Task MarkCompleted_OneFelonyDisclosureEmailFails_DoesNotThrow_StillSendsToOtherCandidates()
+    public async Task MarkCompleted_ReportsHowManyStillNeedTheFelonyInstructions()
     {
-        // One candidate's SMTP failure must not stop the rest of the batch, nor bubble up and make
-        // the whole "mark completed" action look like it failed when the status flip already
-        // succeeded and was saved.
         await using var dbContext = CreateContext();
         var (_, user, session) = await SeedSessionAsync(dbContext);
-        AddCandidate(dbContext, session, CandidateApplicationStatus.Received, hasFelonyDisclosure: true).Email = "fails@example.com";
-        var succeeds = AddCandidate(dbContext, session, CandidateApplicationStatus.Received, hasFelonyDisclosure: true);
-        succeeds.Email = "succeeds@example.com";
+        AddCandidate(dbContext, session, CandidateApplicationStatus.Received, hasFelonyDisclosure: true);
+        AddCandidate(dbContext, session, CandidateApplicationStatus.Received, hasFelonyDisclosure: true);
+        AddCandidate(dbContext, session, CandidateApplicationStatus.Received, hasFelonyDisclosure: false);
         await dbContext.SaveChangesAsync();
 
-        var sender = new FakeEmailSender();
-        sender.FailingRecipients.Add("fails@example.com");
+        var result = await CreateService(dbContext, new FakeEmailSender()).MarkCompletedAsync(session.Id, user.Id, CancellationToken.None);
 
-        var result = await CreateService(dbContext, sender).MarkCompletedAsync(session.Id, user.Id, CancellationToken.None);
+        Assert.Equal(2, result.CandidatesAwaitingFelonyInstructions);
+    }
 
-        Assert.Equal(SessionActionResult.Success, result.Result);
-        Assert.Equal(2, result.CandidatesTested);
-        Assert.Equal(1, result.FelonyDisclosureEmailsSent);
-        var message = Assert.Single(sender.SentMessages);
-        Assert.Equal("succeeds@example.com", message.ToAddress);
-        // The status flip itself must not have been rolled back by the later email failure.
-        Assert.True(dbContext.Candidates.Single(c => c.Email == "fails@example.com").Tested);
+    /// <summary>Someone already sent them by hand is not still waiting.</summary>
+    [Fact]
+    public async Task MarkCompleted_DoesNotCountACandidateWhoAlreadyGotTheInstructions()
+    {
+        await using var dbContext = CreateContext();
+        var (_, user, session) = await SeedSessionAsync(dbContext);
+        var alreadySent = AddCandidate(dbContext, session, CandidateApplicationStatus.Received, hasFelonyDisclosure: true);
+        alreadySent.FelonyDisclosureInstructionsSentUtc = Now.AddDays(-2);
+        await dbContext.SaveChangesAsync();
+
+        var result = await CreateService(dbContext, new FakeEmailSender()).MarkCompletedAsync(session.Id, user.Id, CancellationToken.None);
+
+        Assert.Equal(0, result.CandidatesAwaitingFelonyInstructions);
     }
 
     [Fact]

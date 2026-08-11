@@ -8,5 +8,12 @@ public enum CandidateEmailSendResult
     NoEmailAddress,
     EmailNotConfigured,
     TemplateMissing,
-    VecDoesNotSupportYouthProgram
+    VecDoesNotSupportYouthProgram,
+
+    /// <summary>
+    /// The candidate has not declared a felony disclosure, so the instructions do not apply to them.
+    /// Refused rather than sent: the email tells someone their disclosure requires extra FCC
+    /// paperwork, which is not a thing to say to the wrong person (#221).
+    /// </summary>
+    NoFelonyDisclosure
 }

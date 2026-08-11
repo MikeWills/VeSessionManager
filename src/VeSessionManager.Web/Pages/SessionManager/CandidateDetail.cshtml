@@ -33,7 +33,16 @@
             @if (!c.IsWithdrawn)
             {
                 <div class="meta-item"><span class="k">Email</span><span class="v">@(c.Email ?? "—")</span></div>
-                <div class="meta-item"><span class="k">Felony disclosure</span><span class="v">@(c.HasFelonyDisclosure is null ? "—" : c.HasFelonyDisclosure.Value ? "Yes" : "No")</span></div>
+                <div class="meta-item">
+                    <span class="k">Felony disclosure</span>
+                    <span class="v">
+                        @(c.HasFelonyDisclosure is null ? "—" : c.HasFelonyDisclosure.Value ? "Yes" : "No")
+                        @if (c.AwaitingFelonyInstructions)
+                        {
+                            <span class="refund-tag" title="Declared a disclosure and has not been sent the FCC instructions. Send them from the actions menu.">FCC instructions not sent</span>
+                        }
+                    </span>
+                </div>
             }
             <div class="meta-item"><span class="k">Registered</span><span class="v mono">@c.RegisteredLine</span></div>
             <div class="meta-item"><span class="k">FCC application entered</span><span class="v mono">@(c.ApplicationDateLine ?? "—")</span></div>
@@ -77,6 +86,14 @@
                     {
                         <form method="post" asp-page-handler="SendYouthProgram">
                             <button type="submit" class="item">Send Youth Program instructions</button>
+                        </form>
+                    }
+                    @* Manual since #221 — it used to ride along with marking the session complete,
+                       which meant it always arrived after the session. *@
+                    @if (c.CanSendFelonyInstructions)
+                    {
+                        <form method="post" asp-page-handler="SendFelonyInstructions">
+                            <button type="submit" class="item">Send felony disclosure instructions</button>
                         </form>
                     }
                     <hr>

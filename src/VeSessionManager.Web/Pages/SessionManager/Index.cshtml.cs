@@ -438,7 +438,12 @@ public class IndexModel(
 
         var result = await sessionActionService.MarkCompletedAsync(sessionId, auth.Value.User.Id, CancellationToken.None);
         SetStatus(result.Result == SessionActionResult.Success,
-            $"Session marked completed — {result.CandidatesTested} candidate(s) tested, {result.FelonyDisclosureEmailsSent} disclosure email(s) sent.",
+            result.CandidatesAwaitingFelonyInstructions > 0
+                // Named rather than counted silently: the send is manual now (#221), so this is the
+                // moment someone would otherwise assume it had been handled for them.
+                ? $"Session marked completed — {result.CandidatesTested} candidate(s) tested. "
+                  + $"{result.CandidatesAwaitingFelonyInstructions} candidate(s) declared a felony disclosure and have not been sent the FCC instructions — send them from the candidate's row."
+                : $"Session marked completed — {result.CandidatesTested} candidate(s) tested.",
             "Could not mark session completed.");
         return RedirectToCurrentView();
     }
