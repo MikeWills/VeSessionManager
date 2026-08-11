@@ -251,7 +251,7 @@ public class PaymentReminderService(
                     // Not "C"/CultureInfo.InvariantCulture — the invariant culture's currency
                     // symbol is the generic "¤", not "$". This app is US-only (FCC/ARRL), so a
                     // literal "$" prefix is simpler and more correct than culture-driven formatting.
-                    ["PaymentAmount"] = $"${payment.Amount.ToString("F2", CultureInfo.InvariantCulture)}"
+                    ["PaymentAmount"] = Usd.Format(payment.Amount)
                 };
 
                 var rendered = await templateRenderer.RenderAsync(team.Id, PaymentExpirationNoticeKey, placeholders, cancellationToken);

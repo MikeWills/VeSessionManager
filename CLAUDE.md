@@ -205,7 +205,8 @@ cap and a newer entry needs to be added; oldest goes first.
   the **one definition of every job's cadence, read by both hosts**: the Worker to schedule, Web to
   report, so the page cannot drift the way `TeamPipeline`'s order once did. `Jobs:*` config moved to
   `appsettings.Shared.json` for the same reason (Web resolves those keys now). Two cadence shapes are
-  reported differently on purpose — **anchored** jobs (ULS 08:00/20:00 ET, LicenseWatch 06:00 ET) state
+  reported differently on purpose — **anchored** jobs (ULS and LicenseWatch both 08:00/20:00 ET —
+  they share one schedule, and the page reads the descriptor, never a constant) state
   a real time and show `Due now` when a slot is unrun, **interval** jobs are last-run-plus-interval and
   labelled *estimated*, because their timer restarts with the Worker. Tests caught two bugs first:
   `Max` over an empty filtered sequence **throws** rather than returning null (one perpetually-failing

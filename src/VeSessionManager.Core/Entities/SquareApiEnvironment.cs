@@ -12,9 +12,16 @@ namespace VeSessionManager.Core.Entities;
 ///
 /// <para>Defaults to <see cref="Sandbox"/> so a newly created team can never take real money before
 /// someone has deliberately said so.</para>
+///
+/// <para><b>Persisted as an integer, so these values are pinned and must keep their numbers</b> —
+/// the rule stated in <c>Enums.cs</c>, which this enum was missed by because it lives in its own
+/// file (issue #285, pinned 2026-08-11). The consequence here is the sharpest in the codebase:
+/// renumbering these two silently flips every stored team between Sandbox and Production. A team
+/// that was taking test payments would start taking real ones, or stop taking real ones, with no
+/// migration and nothing in the audit log. Append new members, never insert.</para>
 /// </summary>
 public enum SquareApiEnvironment
 {
-    Sandbox,
-    Production
+    Sandbox = 0,
+    Production = 1
 }

@@ -76,7 +76,7 @@ else
                     {
                         <td>@payment.TeamName</td>
                     }
-                    <td>$@payment.AmountUsd.ToString("F2")</td>
+                    <td>@Usd.Format(payment.AmountUsd)</td>
                     <td>@(payment.BuyerEmailAddress ?? "—")</td>
                     <td><span class="session-sub">@payment.SquareOrderId</span></td>
                     <td class="row-actions" style="text-align:left;">
@@ -98,7 +98,7 @@ else
                                     <option value="">Select candidate…</option>
                                     @foreach (var candidate in matchable)
                                     {
-                                        <option value="@candidate.Id">@candidate.Name — @candidate.SessionDateLine ($@candidate.AmountOwed.ToString("F2"))</option>
+                                        <option value="@candidate.Id">@candidate.Name — @candidate.SessionDateLine (@Usd.Format(candidate.AmountOwed))</option>
                                     }
                                 </select>
                                 <button type="submit" class="btn-secondary btn-sm">Match</button>

@@ -19,7 +19,7 @@
        over the remembered cookie. Without these two the save wrote Sort="" every time, so choosing
        a filter silently discarded the column sort the user had picked. *@
     <input type="hidden" name="sort" value="@Model.Sort" />
-    <input type="hidden" name="sortDirection" value="@Model.SortDirection" />
+    <input type="hidden" name="dir" value="@Model.SortDirection" />
 
     <div class="filter-dropdown">
         <button type="button" class="kebab @(Model.Status.Count > 0 ? "active" : "")">Status: @Model.StatusSummaryLabel <i class="bi bi-caret-down-fill" aria-hidden="true"></i></button>

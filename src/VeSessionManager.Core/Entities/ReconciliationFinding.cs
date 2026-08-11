@@ -46,11 +46,21 @@ public class ReconciliationFinding
     public DateTime? ResolvedUtc { get; set; }
 }
 
+/// <summary>
+/// <b>Persisted as an integer, so these values are pinned and must keep their numbers</b> — the rule
+/// stated in <c>Enums.cs</c>, which this enum was missed by because it lives in its own file (issue
+/// #285, pinned 2026-08-11).
+///
+/// <para>It is also a component of <c>IX_ReconciliationFindings_TeamId_Kind_ExamToolsSessionId</c>,
+/// which is <b>unique</b>. Inserting a member alphabetically would not merely relabel existing rows;
+/// it would re-point that index, so a stored <c>MissingSession</c> could start colliding with a
+/// <c>CandidateCountMismatch</c> for the same session. Append new members, never insert.</para>
+/// </summary>
 public enum ReconciliationFindingKind
 {
     /// <summary>ExamTools has a closed session this app never ingested. The month-end date-bound bug produced these by the dozen.</summary>
-    MissingSession,
+    MissingSession = 0,
 
     /// <summary>The session exists here, but ExamTools reports more applicants than this app holds — a partial ingestion.</summary>
-    CandidateCountMismatch
+    CandidateCountMismatch = 1
 }

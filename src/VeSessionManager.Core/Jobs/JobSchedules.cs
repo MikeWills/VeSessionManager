@@ -106,8 +106,11 @@ public static class JobSchedules
     public const string VeLicenseWatch = "VeLicenseWatch";
     public const string Reconciliation = "Reconciliation";
 
-    /// <summary>Eastern hour the renewal-monitor refresh is pinned to — after FCC's 02:00 ET run, before the morning.</summary>
-    public const int LicenseWatchStartHourEt = 6;
+    // LicenseWatchStartHourEt = 6 lived here until 2026-08-11 (issue #301). It had no callers: the
+    // descriptor below passes StartHourEt: 8 and reads SystemSettings.UlsWatcherStartHourEt, because
+    // the renewal monitor was folded onto the ULS watcher's schedule on 2026-08-06. A dead constant
+    // that states a *different* time from the one the job actually runs is worse than no constant —
+    // it is the first thing anyone reads when asking when the check happens.
 
     public static IReadOnlyList<JobScheduleDescriptor> All { get; } =
     [

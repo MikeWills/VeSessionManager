@@ -10,20 +10,19 @@ namespace VeSessionManager.Worker;
 /// Refreshes watched licenses from ExamTools' ULS mirror — see docs/renewal-monitor.md — and, on
 /// the same anchored slot, the VE roster's own licenses (issue #107, docs/ve-license-tracking.md).
 ///
-/// <para><b>Anchored to 06:00 ET, once a day</b> (2026-08-06). It previously ticked every four hours
-/// from Worker start, which meant its check times drifted with every restart: nobody could say when
-/// the next check was without knowing when the service last came up. A renewal granted at FCC's
-/// 02:00 ET run was still invisible that morning purely because the row had last been checked at
-/// 21:27 the night before.</para>
+/// <para><b>Anchored, and it shares <c>UlsWatcherJob</c>'s schedule outright</b> — the same
+/// <c>SystemSettings.UlsWatcherStartHourEt</c> and <c>UlsWatcherIntervalHours</c>, which default to
+/// <b>08:00 ET, every 12 hours</b>. Anchoring replaced a four-hourly tick from Worker start whose
+/// check times drifted with every restart: nobody could say when the next check was without knowing
+/// when the service last came up.</para>
 ///
-/// <para>The data changes once a night, so polling more often than that buys nothing. One anchored
-/// run is both more predictable and *fewer* calls against a third party's undocumented mirror than
-/// the four-a-day it replaces. 06:00 ET sits after FCC's run and before anyone opens the page.</para>
-///
-/// <para>The hour is a constant rather than a SystemSettings row, unlike UlsWatcherJob's. That job
-/// is tuned per deployment because it drives candidate grant detection during live sessions; this
-/// one has a single job to do and no reason to differ between environments. Promoting it to a
-/// setting is a small change if that ever stops being true.</para>
+/// <para><b>This paragraph used to say "06:00 ET, once a day", and that the hour was a constant
+/// rather than a settings row.</b> Both stopped being true on 2026-08-06, when the renewal monitor
+/// was folded onto the watcher's schedule — same data, same source, one schedule — and neither was
+/// corrected. The dead <c>JobSchedules.LicenseWatchStartHourEt = 6</c> and a line in CLAUDE.md said
+/// the same wrong thing, so all three places anyone would check agreed with each other and disagreed
+/// with the code (issue #301, corrected 2026-08-11). The schedule of record is the descriptor in
+/// <see cref="JobSchedules"/>, which the Job Schedule page also reads — that is the point of it.</para>
 /// </summary>
 public class LicenseWatchJob(
     IServiceScopeFactory scopeFactory,

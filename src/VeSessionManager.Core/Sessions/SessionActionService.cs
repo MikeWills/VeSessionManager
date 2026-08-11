@@ -115,7 +115,7 @@ public class SessionActionService(
         dbContext.AddAuditLog(userId, "SessionRetainedAmountOverrideSet", nameof(Session), session.Id,
             overrideAmount is null
                 ? $"Session {session.ExamToolsSessionId} total-retained override cleared — back to the per-candidate fee schedule default."
-                : $"Session {session.ExamToolsSessionId} total-retained override set to ${overrideAmount:F2} for the whole session.",
+                : $"Session {session.ExamToolsSessionId} total-retained override set to {Usd.Format(overrideAmount!.Value)} for the whole session.",
             now);
         await dbContext.SaveChangesAsync(cancellationToken);
         logger.LogInformation("Session {SessionId} retained-amount override set to {OverrideAmount} by user {UserId}", session.Id, overrideAmount, userId);
