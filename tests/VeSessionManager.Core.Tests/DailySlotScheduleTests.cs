@@ -101,6 +101,61 @@ public class DailySlotScheduleTests
         Assert.Equal(6, TimeZoneInfo.ConvertTimeFromUtc(due, Eastern).Hour);
     }
 
+    // ---- The hour that does not exist (issue #315) ----------------------------------------------
+
+    /// <summary>
+    /// On the spring-forward day the Eastern clock jumps 01:59:59 -> 03:00:00, so <b>02:00 ET does
+    /// not occur at all</b> — and <c>TimeZoneInfo.ConvertTimeToUtc</c> throws
+    /// <c>ArgumentException</c> for a local time it believes is invalid.
+    ///
+    /// <para>02:00 ET is a defensible setting for these jobs, not a contrived one: it is exactly when
+    /// FCC posts its nightly changes, which is the event the whole anchor exists to follow.</para>
+    ///
+    /// <para>In the Worker a throw here is caught by <c>JobTick.GuardedAsync</c> — the tick is
+    /// abandoned and retried an hour later, which is survivable. <c>JobScheduleService</c> has no
+    /// such guard, so the admin Job Schedule page would simply 500 for the day.</para>
+    ///
+    /// <para>The slot is rolled <i>forward</i> out of the gap rather than back: the job should run at
+    /// the first instant that exists at or after its nominal time, not an hour early.</para>
+    /// </summary>
+    [Fact]
+    public void ASlotHourInsideTheSpringForwardGap_RollsForwardInsteadOfThrowing()
+    {
+        // US DST begins 2026-03-08 at 02:00 ET. Asking at 05:00 ET on a 02:00/24h schedule puts the
+        // due slot squarely in the missing hour.
+        var due = DailySlotSchedule.LatestDueSlotUtc(Et(2026, 3, 8, 5), startHourEt: 2, intervalHours: 24);
+
+        // 03:00 EDT is 07:00 UTC — the first moment that actually exists at or after 02:00 that day.
+        Assert.Equal(new DateTime(2026, 3, 8, 7, 0, 0, DateTimeKind.Utc), due);
+        Assert.Equal(DateTimeKind.Utc, due.Kind);
+    }
+
+    [Fact]
+    public void ANextSlotInsideTheSpringForwardGap_RollsForwardInsteadOfThrowing()
+    {
+        // 23:00 ET on the 7th, 02:00/24h: the next slot is 02:00 on the 8th, which does not exist.
+        var next = DailySlotSchedule.NextSlotUtc(Et(2026, 3, 7, 23), startHourEt: 2, intervalHours: 24);
+
+        Assert.Equal(new DateTime(2026, 3, 8, 7, 0, 0, DateTimeKind.Utc), next);
+    }
+
+    /// <summary>
+    /// The autumn counterpart, for completeness: 01:30 ET occurs *twice* on the fall-back day.
+    /// <c>ConvertTimeToUtc</c> does not throw for an ambiguous time — it resolves to standard time —
+    /// so this needs no special handling, only a test saying so, since "the other DST edge" is the
+    /// first thing a reader will wonder about.
+    /// </summary>
+    [Fact]
+    public void AnAmbiguousFallBackHour_ResolvesWithoutThrowing()
+    {
+        // US DST ends 2026-11-01 at 02:00 ET; 01:00 occurs twice.
+        var due = DailySlotSchedule.LatestDueSlotUtc(Et(2026, 11, 1, 4), startHourEt: 1, intervalHours: 24);
+
+        Assert.Equal(DateTimeKind.Utc, due.Kind);
+        // EST (UTC-5) is what ConvertTimeToUtc picks for an ambiguous local time.
+        Assert.Equal(new DateTime(2026, 11, 1, 6, 0, 0, DateTimeKind.Utc), due);
+    }
+
     /// <summary>
     /// The evening case that motivates working in Eastern at all: at 21:00 ET the UTC date has
     /// already rolled to tomorrow, so any "what hour is it" done in UTC lands on the wrong day.

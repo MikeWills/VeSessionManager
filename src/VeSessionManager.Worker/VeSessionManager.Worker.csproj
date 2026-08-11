@@ -17,6 +17,14 @@
     <ProjectReference Include="..\VeSessionManager.Core\VeSessionManager.Core.csproj" />
   </ItemGroup>
 
+  <!-- JobTick is internal on purpose: nothing outside this project should be wrapping ticks. Granting
+       the test project access is the cheaper trade than making it public to be testable. -->
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+      <_Parameter1>VeSessionManager.Worker.Tests</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+
   <!-- Shared config, linked rather than copied: the same physical files are used by both hosts, so
        Square/ExamTools cannot drift between them again (see src/Shared/appsettings.Shared.json). -->
   <ItemGroup>
