@@ -236,6 +236,26 @@ public class PaymentUniqueIndexSqliteTests
         return await dbContext.Sessions.Select(s => s.Id).OrderByDescending(id => id).FirstAsync();
     }
 
+    /// <summary>
+    /// Same reason as the Team/User/Session raw-SQL seeders: inserting through EF names every column
+    /// the CURRENT model has, which is fatal against the historical schema these two tests pin to.
+    /// Adding <c>User.MustChangePassword</c> broke them this way in 2026-08-07, and
+    /// <c>Candidate.FccFeeReminderSentUtc</c> did it again in #219 — the Candidate was the last seed
+    /// still going through EF.
+    /// </summary>
+    private static async Task<int> SeedCandidateViaSqlAsync(AppDbContext dbContext, string applicantId, int sessionId)
+    {
+        await dbContext.Database.ExecuteSqlRawAsync(
+            """
+            INSERT INTO Candidates (SessionId, ExamToolsApplicantId, Name, Email, DateRegisteredUtc,
+                                    ApplicationStatus, Tested, FccHoldReason, FccPaymentStatus,
+                                    FrnMissingAtRegistration)
+            VALUES ({0}, {1}, {2}, {3}, {4}, 0, 0, 0, 0, 0)
+            """,
+            sessionId, applicantId, "Roana Glory", $"{applicantId}@example.com", Now);
+        return await dbContext.Candidates.Select(c => c.Id).OrderByDescending(id => id).FirstAsync();
+    }
+
     private static async Task<int> SeedTeamViaSqlAsync(AppDbContext dbContext, string name)
     {
         await dbContext.Database.ExecuteSqlRawAsync(
@@ -263,12 +283,12 @@ public class PaymentUniqueIndexSqliteTests
         var teamId = await SeedTeamViaSqlAsync(dbContext, "TEAM-applicant-1");
         var userId = await SeedUserViaSqlAsync(dbContext, "system-applicant-1@localhost");
         var sessionId = await SeedSessionViaSqlAsync(dbContext, "applicant-1", teamId, userId);
-        var candidate = await SeedCandidateAsync(dbContext, "applicant-1", existingSessionId: sessionId);
+        var candidateId = await SeedCandidateViaSqlAsync(dbContext, "applicant-1", sessionId);
 
         // Two provably inert duplicates: Unpaid, never linked, never given a Square order id.
         dbContext.Payments.AddRange(
-            NewPayment(candidate.Id, PaymentReason.InitialExam),
-            NewPayment(candidate.Id, PaymentReason.InitialExam));
+            NewPayment(candidateId, PaymentReason.InitialExam),
+            NewPayment(candidateId, PaymentReason.InitialExam));
         await dbContext.SaveChangesAsync();
         var ids = await dbContext.Payments.Select(p => p.Id).OrderBy(id => id).ToListAsync();
         Assert.Equal(2, ids.Count); // no index yet, so the duplicate really did get in
@@ -298,10 +318,10 @@ public class PaymentUniqueIndexSqliteTests
         var teamId = await SeedTeamViaSqlAsync(dbContext, "TEAM-applicant-1");
         var userId = await SeedUserViaSqlAsync(dbContext, "system-applicant-1@localhost");
         var sessionId = await SeedSessionViaSqlAsync(dbContext, "applicant-1", teamId, userId);
-        var candidate = await SeedCandidateAsync(dbContext, "applicant-1", existingSessionId: sessionId);
+        var candidateId = await SeedCandidateViaSqlAsync(dbContext, "applicant-1", sessionId);
 
-        var first = NewPayment(candidate.Id, PaymentReason.InitialExam);
-        var duplicate = NewPayment(candidate.Id, PaymentReason.InitialExam);
+        var first = NewPayment(candidateId, PaymentReason.InitialExam);
+        var duplicate = NewPayment(candidateId, PaymentReason.InitialExam);
         duplicate.PaymentLinkUrl = "https://square.link/u/order-5001"; // someone could have paid this
         dbContext.Payments.AddRange(first, duplicate);
         await dbContext.SaveChangesAsync();

@@ -91,14 +91,30 @@ public static class EmailDefaultsSeeder
             <p>See you then, {{CandidateFirstName}}!</p>
             """);
 
-        await SeedTemplateIfMissingAsync(dbContext, logger, team, "PaymentReminder5Day",
-            "Reminder: Your VE Exam Fee is Still Due",
+        // #219: replaces PaymentReminder5Day, which chased the team's exam fee — money already
+        // collected at the session, and so never actually outstanding when this fires. A new key
+        // rather than new copy under the old one, because a deployment that customised the old
+        // template must not have its text silently repurposed to a different fee. The old row is
+        // simply no longer sent; see EmailTemplateTriggers.Retired.
+        //
+        // No payment link anywhere in this body, on purpose. FCC bills the applicant directly, and
+        // the team's Square link pays a different bill.
+        await SeedTemplateIfMissingAsync(dbContext, logger, team, "FccFeeReminder5Day",
+            "Action needed: the FCC is still waiting for your application fee",
             """
             <p>Hi {{CandidateName}},</p>
-            <p>Your FCC application has been received, but we haven't seen your exam fee payment yet.</p>
-            <p><a href="{{PaymentLinkUrl}}">Pay your exam fee</a></p>
-            <p><a href="{{ZoomJoinUrl}}">Session Zoom link</a> (for reference)</p>
-            <p>Thanks!</p>
+            <p>Congratulations again on your exam on {{SessionDate}}. Your application has reached the
+            FCC, and they are waiting on <strong>their</strong> application fee before your license can
+            be issued.</p>
+            <p><strong>This is the FCC's fee, not ours.</strong> You pay it directly to the FCC — we
+            never handle it, and nothing is owed to us.</p>
+            <p>Pay it at the FCC's CORES system:
+            <a href="https://apps.fcc.gov/cores/userLogin.do">https://apps.fcc.gov/cores/userLogin.do</a></p>
+            <p>You will need your FRN: <strong>{{Frn}}</strong></p>
+            <p>The FCC emails a payment link to the address on your application when it is received, so
+            it is worth checking your spam folder before starting over.</p>
+            <p>If you have already paid, you can ignore this — it can take a few days for the FCC to
+            record it.</p>
             """);
 
         await SeedTemplateIfMissingAsync(dbContext, logger, team, "PaymentExpirationNotice",

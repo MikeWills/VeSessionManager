@@ -15,7 +15,7 @@ public static class EmailTemplatePlaceholders
     {
         ["RegistrationConfirmation"] = ["CandidateName", "CandidateFirstName", "SessionDate", "ZoomJoinUrl", "PaymentLinkUrl", "YouthPaymentLinkUrl", "PrivacyPolicyUrl"],
         ["DayBeforeReminder"] = ["CandidateName", "CandidateFirstName", "SessionDate", "ZoomJoinUrl", "OutstandingPaymentLinkUrl"],
-        ["PaymentReminder5Day"] = ["CandidateName", "ZoomJoinUrl", "PaymentLinkUrl"],
+        ["FccFeeReminder5Day"] = ["CandidateName", "SessionDate", "Frn", "FccApplicationFileNumber"],
         ["PaymentExpirationNotice"] = ["CandidateName", "SessionDate", "PaymentAmount"],
         ["FelonyDisclosureInstructions"] = ["CandidateName"],
         ["ArrlYouthProgramInstructions"] = ["CandidateName", "CallSign"],

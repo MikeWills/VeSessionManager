@@ -106,6 +106,36 @@ would be pure duplication — and goes straight to `CHANGELOG.md` instead. Non-p
 redesigns, hardening passes) start here and move to `CHANGELOG.md` once the section is at/over the
 cap and a newer entry needs to be added; oldest goes first.
 
+- **The 5-day reminder chased the wrong fee (2026-08-11).** Issues #219/#218. See
+  `docs/payment-reminders.md`. Found by *sending one and reading it* — the first candidate-facing
+  email this app produced end to end. It fired on an unpaid Square `Payment`, the team's **exam
+  fee** — money collected before or at the session, so by the time the trigger could fire (FCC
+  receives the application, plus five days) it had been in hand for over a week, and the email
+  carried a Square link for a bill already settled. **What is actually outstanding then is FCC's own
+  application fee, paid at CORES**, and the signal was already being collected and read by nothing
+  but a display column: `UlsWatcherService` maps ULS `FVPOFF` to `FccPaymentStatus =
+  PendingVerification` twice daily. Three consequences that each look like an omission otherwise:
+  the tracking stamp **moved from `Payment` to `Candidate`** (a team that collects no fees has no
+  Payment row, and its candidates still owe the FCC), the template carries **no payment link and no
+  placeholder that could become one** — which disposes of #218 by construction rather than by patch
+  — and the retest branch went with the payment it hung off. `PaymentReminder5Day` is **retired, not
+  deleted**: seeding never removes rows, so `EmailTemplateTriggers.Retired` exists and the admin page
+  labels it "No longer sent". **Still open: whether the 10-day pass means anything now** — it expires
+  a Square payment, but if day 10 is FCC's dismissal deadline the meaningful event is a different one.
+
+- **A login and a VE record are the same person (2026-08-11).** Issues #224/#226. See
+  `docs/ve-self-service.md`. `User` and `VolunteerExaminer` had **no FK in either direction** — an
+  absence, not a decision: the *authentication* separation is deliberate and documented, and the
+  *identity* separation appears to have been assumed from it. `User.VolunteerExaminerId` links them
+  (identity only — it grants nothing, and a call-sign match is offered as a suggestion for a human to
+  confirm, never applied automatically, because the FCC reissues call signs). That unlocks
+  `/Account/MyVeDetails`: self-service is entered by clicking a link **mailed to the address on
+  file**, so it can only ever reach a VE who already has one, and **one VE of 176 does**. The loop
+  only opens from inside the app. The email field is the one divergence and only by necessity —
+  `VeEmailChangeService` confirms via the *old* address and so structurally cannot set a first one,
+  while `SetOwnEmailWhenUnsetAsync` refuses the moment an address exists, so there stays exactly one
+  way to change a credential field.
+
 - **All fourteen VECs seeded with verified ExamTools codes (2026-08-10).** Issue #83. See
   `docs/vec-examtools-code.md`. The full code↔VEC mapping came from the `From VEC` filter on
   `hamstudy.org/sessions`, whose per-entry slug is the same code space ExamTools reports — fourteen
@@ -181,38 +211,6 @@ cap and a newer entry needs to be added; oldest goes first.
   Settings.** Until then their links fail to generate and show as failures in Job History; that
   direction is deliberate, since defaulting to Production would make a misconfiguration invisible
   *and* billable.
-- **Renewal Monitor: expiration + renewal tracking for an arbitrary watch list (2026-08-05).** See
-  `docs/renewal-monitor.md`. Team-scoped list of any call sign at all — club members, family, people
-  who never tested here — showing expiration and the renewal lifecycle. Screen only, no email, open
-  to every role (it is all public FCC record data). **`expired_date` was returned by ExamTools' ULS
-  mirror all along and simply never mapped**; call-sign lookup works on the same endpoint as FRN,
-  which is what makes call-sign-first entry possible. **Renewal issuance has no positive signal
-  except the expiration date moving** — a renewal leaves call sign, class and grant date untouched —
-  so the service stores the expiry as it stood when the renewal was first seen and only claims it
-  landed once the current value passes that anchor. FCC's own `data.fcc.gov` License View API is
-  Akamai-403 from this deployment, same as `wireless2`. Tracking **VEs'** licenses is a deliberately
-  separate, not-yet-built feature.
-- **Job Run History records what each run actually did (2026-08-05).** See `docs/job-run-history.md`.
-  `Success`/`ErrorMessage` alone made three outcomes identical on the ops dashboard: sent five, sent
-  none because nothing qualified, and **sent none because every attempt failed** — the last of which
-  rendered green, because a job is Success when the *job* completes and per-item failures are caught
-  inside it on purpose. Cost an evening chasing "no emails are being sent" when the Worker log had
-  been printing `sent 0, failed 1` all day (the real cause: `smtp.mailgun.com` instead of `.org`,
-  failing the TLS handshake on a certificate name mismatch). `JobRunHistory.ResultSummary` now stores
-  the result object's own `ToString()` — text that already existed — via a generic
-  `JobRunHistoryLogger.RunAsync<TResult>` overload, so result-returning jobs get it with no call-site
-  change. **The overload resolution is load-bearing and tested**: call sites pass method groups, which
-  convert to *both* overloads, and binding to the void one would leave every summary silently null.
-- **Team logo in emails via `{{Logo}}` (2026-08-05).** See `docs/email-logo.md`. Per-team PNG/JPEG
-  uploaded on Team Settings, stored as a **DB column** (an uploads folder under `wwwroot` would be
-  wiped by `deploy.yml`'s `rsync --delete`) and embedded as a **CID linked resource**, not a hosted
-  URL — Gmail and Outlook block remote images by default, so a hosted logo is invisible until the
-  recipient clicks "show images". **`{{Logo}}` is the one body placeholder that is NOT HTML-encoded**,
-  and that exemption is safe only because the value is built in the renderer from a constant out of
-  app-owned data — nothing registrant-controlled may ever join that branch. Format is decided from
-  the file's magic numbers, never the browser-declared content type; SVG is excluded outright.
-  A template carrying the placeholder stays valid for a team with no logo (renders to nothing), and
-  a template without it attaches nothing.
 Everything through Phase 0-10's initial build (ExamTools ingestion, Zoom/Discord, Square, email
 notifications, FCC ULS watcher, payment reminders, VE tracking, VEC submission tracker, admin
 auth/config/candidate-actions, PII purge), the public privacy page, and everything dated 2026-08-01

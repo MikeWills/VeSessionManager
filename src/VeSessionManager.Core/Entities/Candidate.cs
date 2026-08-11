@@ -85,6 +85,21 @@ public class Candidate
     /// <summary>Not in the original shared data model — added in Phase 6. Set once when ApplicationStatus has stayed Unmatched for longer than PaymentReminderOptions.UnmatchedReviewWindowDays past DateRegisteredUtc, per the spec's "flag separately for manual review" note (no FCC application date exists yet to gate a payment reminder on). Surfaced today only via a WARNING log line — Phase 9's admin UI doesn't exist yet to show it anywhere else.</summary>
     public DateTime? UnmatchedReviewFlaggedUtc { get; set; }
 
+    /// <summary>
+    /// Set when the candidate has been reminded that <b>FCC's</b> application fee is still
+    /// outstanding — the one they pay directly at CORES, not the team's exam fee (#219).
+    ///
+    /// <para>Lives on Candidate rather than Payment because that is what it is about. The fee is
+    /// FCC's, owed by the applicant to the FCC, and this app never sees the money; there may be no
+    /// Payment row at all when a team does not collect fees. The old reminder hung off
+    /// <c>Payment.PaymentReminderSentUtc</c> and chased the exam fee, which is collected before or at
+    /// the session and so was always already paid by the time the trigger could fire.</para>
+    ///
+    /// <para>Both the "needs reminding" query filter and the idempotency guard, like every other
+    /// <c>...SentUtc</c> here.</para>
+    /// </summary>
+    public DateTime? FccFeeReminderSentUtc { get; set; }
+
     /// <summary>Not in the original shared data model — added post-launch so the session detail page's "Email history" modal can show this send. Unlike RegistrationConfirmationSentUtc/DayBeforeReminderSentUtc this isn't an idempotency guard (the send itself is already one-shot, gated by SessionActionService.MarkCompletedAsync's own "candidates just tested" set) — purely a display timestamp.</summary>
     public DateTime? FelonyDisclosureInstructionsSentUtc { get; set; }
 

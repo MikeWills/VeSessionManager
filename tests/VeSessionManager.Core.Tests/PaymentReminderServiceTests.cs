@@ -74,9 +74,11 @@ public class PaymentReminderServiceTests
         dbContext.EmailTemplates.Add(new EmailTemplate
         {
             TeamId = team.Id,
-            Key = "PaymentReminder5Day",
-            Subject = "Reminder",
-            Body = "Hi {{CandidateName}}, Zoom: {{ZoomJoinUrl}}, Pay: {{PaymentLinkUrl}}"
+            Key = "FccFeeReminder5Day",
+            Subject = "The FCC is waiting for its fee",
+            // No payment placeholder anywhere, matching the seeded default. A test template that
+            // offered one would let a link creep back into the send path unnoticed (#218/#219).
+            Body = "Hi {{CandidateName}}, session {{SessionDate}}, FRN {{Frn}}"
         });
         dbContext.EmailTemplates.Add(new EmailTemplate
         {
@@ -99,7 +101,12 @@ public class PaymentReminderServiceTests
         PaymentStatus paymentStatus = PaymentStatus.Unpaid,
         bool expiredUnpaid = false,
         DateTime? paymentReminderSentUtc = null,
-        DateTime? scheduledStartUtc = null)
+        DateTime? scheduledStartUtc = null,
+        // What the FCC fee reminder actually keys on (#219). Defaults to PendingVerification —
+        // "the FCC fee is due" — because that is the state under test in the reminder half, and the
+        // expiration half ignores it entirely.
+        FccApplicationPaymentStatus fccPaymentStatus = FccApplicationPaymentStatus.PendingVerification,
+        DateTime? fccFeeReminderSentUtc = null)
     {
         var vec = new Vec { Name = "ARRL" };
         var user = new User { Name = "System", Email = "system@localhost", Role = UserRole.SystemAdmin };
@@ -121,7 +128,8 @@ public class PaymentReminderServiceTests
         {
             ExamToolsApplicantId = "applicant-1", SessionId = session.Id, Name = "Roana Glory",
             Email = "roana@example.com", DateRegisteredUtc = dateRegisteredUtc ?? Now,
-            ApplicationStatus = status, ApplicationDateEnteredUtc = applicationDateEnteredUtc
+            ApplicationStatus = status, ApplicationDateEnteredUtc = applicationDateEnteredUtc,
+            Frn = "0012345678", FccPaymentStatus = fccPaymentStatus, FccFeeReminderSentUtc = fccFeeReminderSentUtc
         };
         dbContext.Candidates.Add(candidate);
         await dbContext.SaveChangesAsync();
@@ -207,7 +215,7 @@ public class PaymentReminderServiceTests
 
         Assert.Equal(0, result.RemindersSent);
         Assert.Empty(sender.SentMessages);
-        Assert.Null((await dbContext.Payments.SingleAsync()).PaymentReminderSentUtc);
+        Assert.Null((await dbContext.Candidates.SingleAsync()).FccFeeReminderSentUtc);
     }
 
     /// <summary>Same session age must not be silently expired out from under a real candidate either.</summary>
@@ -241,7 +249,7 @@ public class PaymentReminderServiceTests
         Assert.Equal(1, result.RemindersSent);
         var message = Assert.Single(sender.SentMessages);
         Assert.Equal("roana@example.com", message.ToAddress);
-        Assert.NotNull((await dbContext.Payments.SingleAsync()).PaymentReminderSentUtc);
+        Assert.NotNull((await dbContext.Candidates.SingleAsync()).FccFeeReminderSentUtc);
     }
 
     [Fact]
@@ -279,7 +287,7 @@ public class PaymentReminderServiceTests
         await using var dbContext = CreateContext();
         var team = await SeedTeamAsync(dbContext);
         await SeedEmailSettingsAndTemplatesAsync(dbContext, team);
-        await SeedCandidateWithPaymentAsync(dbContext, team, applicationDateEnteredUtc: Now.AddDays(-8), paymentReminderSentUtc: Now.AddDays(-3));
+        await SeedCandidateWithPaymentAsync(dbContext, team, applicationDateEnteredUtc: Now.AddDays(-8), fccFeeReminderSentUtc: Now.AddDays(-3));
         var sender = new FakeEmailSender();
 
         var result = await CreateService(dbContext, sender).RunAsync(team, CancellationToken.None);
@@ -316,11 +324,13 @@ public class PaymentReminderServiceTests
         Assert.Equal(0, result.RemindersSent);
     }
 
+    /// <summary>
+    /// Terminal statuses are excluded whatever ULS still says. A Failed candidate has no live
+    /// application, so a lingering PendingVerification is stale data rather than a bill.
+    /// </summary>
     [Fact]
-    public async Task Reminder_FailedCandidateInitialExamPayment_StillSkipped()
+    public async Task Reminder_FailedCandidate_StillSkipped()
     {
-        // A Failed candidate's *original* InitialExam payment must NOT gain the retest exception —
-        // only a Reason=Retest payment does. Regression guard for the retest gating fix.
         await using var dbContext = CreateContext();
         var team = await SeedTeamAsync(dbContext);
         await SeedEmailSettingsAndTemplatesAsync(dbContext, team);
@@ -332,12 +342,15 @@ public class PaymentReminderServiceTests
         Assert.Equal(0, result.RemindersSent);
     }
 
+    /// <summary>
+    /// The retest branch went with the payment it hung off (#219). A retest has no FCC application
+    /// of its own, so there is no FCC fee to chase — and the elaborate ResultMarkedUtc anchoring
+    /// that existed to make retests work in the old exam-fee reminder now has nothing to anchor.
+    /// Its candidate is Failed, which the terminal exclusion already covers.
+    /// </summary>
     [Fact]
-    public async Task Reminder_RetestPayment_FiresFiveDaysAfterResultMarked_NotApplicationDateEntered()
+    public async Task Reminder_RetestPayment_NoLongerFires_ThereIsNoFccFeeForARetest()
     {
-        // The gap this fixes: a retest Payment's Candidate is Failed (terminal) with no FCC
-        // application of its own — ResultMarkedUtc (when the Session Manager marked Failed) is the
-        // anchor date instead of ApplicationDateEnteredUtc.
         await using var dbContext = CreateContext();
         var team = await SeedTeamAsync(dbContext);
         await SeedEmailSettingsAndTemplatesAsync(dbContext, team);
@@ -346,37 +359,96 @@ public class PaymentReminderServiceTests
 
         var result = await CreateService(dbContext, sender).RunAsync(team, CancellationToken.None);
 
+        Assert.Equal(0, result.RemindersSent);
+        Assert.Empty(sender.SentMessages);
+    }
+
+    /// <summary>
+    /// The correction itself, stated as a test. The team's exam fee being unpaid is no longer the
+    /// trigger, so a candidate the FCC is happy with is not chased — however the Square row looks.
+    /// Before #219 this sent, days after the session, about money already collected at it.
+    /// </summary>
+    [Theory]
+    [InlineData(FccApplicationPaymentStatus.Paid)]
+    [InlineData(FccApplicationPaymentStatus.Unknown)]
+    public async Task Reminder_UnpaidExamFee_DoesNotFire_WhenTheFccFeeIsNotOutstanding(FccApplicationPaymentStatus fccStatus)
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        await SeedEmailSettingsAndTemplatesAsync(dbContext, team);
+        await SeedCandidateWithPaymentAsync(dbContext, team,
+            applicationDateEnteredUtc: Now.AddDays(-8),
+            paymentStatus: PaymentStatus.Unpaid,
+            fccPaymentStatus: fccStatus);
+        var sender = new FakeEmailSender();
+
+        var result = await CreateService(dbContext, sender).RunAsync(team, CancellationToken.None);
+
+        Assert.Equal(0, result.RemindersSent);
+        Assert.Empty(sender.SentMessages);
+    }
+
+    /// <summary>
+    /// And the converse: the Square payment's state is now irrelevant to this reminder. A candidate
+    /// who settled the exam fee at the session — the normal case — still hears about FCC's fee.
+    /// </summary>
+    [Fact]
+    public async Task Reminder_PaidExamFee_StillFires_BecauseTheFccFeeIsADifferentBill()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        await SeedEmailSettingsAndTemplatesAsync(dbContext, team);
+        await SeedCandidateWithPaymentAsync(dbContext, team,
+            applicationDateEnteredUtc: Now.AddDays(-8), paymentStatus: PaymentStatus.Paid);
+        var sender = new FakeEmailSender();
+
+        var result = await CreateService(dbContext, sender).RunAsync(team, CancellationToken.None);
+
         Assert.Equal(1, result.RemindersSent);
+    }
+
+    /// <summary>
+    /// A team that collects no fees has no Payment row at all, and its candidates still owe the FCC.
+    /// The old reminder could never reach them; scanning Candidates is what makes this possible, and
+    /// it is the reason the tracking stamp had to move off Payment.
+    /// </summary>
+    [Fact]
+    public async Task Reminder_FiresForACandidateWithNoPaymentRowAtAll()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        await SeedEmailSettingsAndTemplatesAsync(dbContext, team);
+        var (candidate, payment) = await SeedCandidateWithPaymentAsync(dbContext, team, applicationDateEnteredUtc: Now.AddDays(-8));
+        dbContext.Payments.Remove(payment);
+        await dbContext.SaveChangesAsync();
+        var sender = new FakeEmailSender();
+
+        var result = await CreateService(dbContext, sender).RunAsync(team, CancellationToken.None);
+
+        Assert.Equal(1, result.RemindersSent);
+        Assert.NotNull((await dbContext.Candidates.SingleAsync(c => c.Id == candidate.Id)).FccFeeReminderSentUtc);
+    }
+
+    /// <summary>
+    /// #218 by construction rather than by patch: the body cannot contain an empty payment href
+    /// because no payment placeholder is offered to it. The rendered text is asserted, not just the
+    /// fact of a send — the original bug shipped under a green "sent 1, failed 0".
+    /// </summary>
+    [Fact]
+    public async Task Reminder_BodyCarriesNoPaymentLink_AndNamesTheFrnCoresWillAskFor()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        await SeedEmailSettingsAndTemplatesAsync(dbContext, team);
+        await SeedCandidateWithPaymentAsync(dbContext, team, applicationDateEnteredUtc: Now.AddDays(-8));
+        var sender = new FakeEmailSender();
+
+        await CreateService(dbContext, sender).RunAsync(team, CancellationToken.None);
+
         var message = Assert.Single(sender.SentMessages);
-        Assert.Equal("roana@example.com", message.ToAddress);
-    }
-
-    [Fact]
-    public async Task Reminder_RetestPayment_BeforeFiveDaysSinceResultMarked_DoesNotFire()
-    {
-        await using var dbContext = CreateContext();
-        var team = await SeedTeamAsync(dbContext);
-        await SeedEmailSettingsAndTemplatesAsync(dbContext, team);
-        await SeedFailedCandidateWithRetestPaymentAsync(dbContext, team, resultMarkedUtc: Now.AddDays(-4));
-        var sender = new FakeEmailSender();
-
-        var result = await CreateService(dbContext, sender).RunAsync(team, CancellationToken.None);
-
-        Assert.Equal(0, result.RemindersSent);
-    }
-
-    [Fact]
-    public async Task Reminder_NotApplicablePayment_Skipped()
-    {
-        await using var dbContext = CreateContext();
-        var team = await SeedTeamAsync(dbContext);
-        await SeedEmailSettingsAndTemplatesAsync(dbContext, team);
-        await SeedCandidateWithPaymentAsync(dbContext, team, applicationDateEnteredUtc: Now.AddDays(-8), paymentStatus: PaymentStatus.NotApplicable);
-        var sender = new FakeEmailSender();
-
-        var result = await CreateService(dbContext, sender).RunAsync(team, CancellationToken.None);
-
-        Assert.Equal(0, result.RemindersSent);
+        Assert.Contains("0012345678", message.HtmlBody);
+        Assert.DoesNotContain("square.link", message.HtmlBody);
+        Assert.DoesNotContain("href=\"\"", message.HtmlBody);
     }
 
     [Fact]
@@ -412,7 +484,7 @@ public class PaymentReminderServiceTests
 
         Assert.Equal(0, result.RemindersSent);
         Assert.Equal(1, result.Failed);
-        Assert.Null((await dbContext.Payments.SingleAsync()).PaymentReminderSentUtc);
+        Assert.Null((await dbContext.Candidates.SingleAsync()).FccFeeReminderSentUtc);
     }
 
     // ---- 10-day expiration ----

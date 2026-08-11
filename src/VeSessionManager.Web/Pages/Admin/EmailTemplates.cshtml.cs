@@ -118,5 +118,12 @@ public class EmailTemplatesModel(AppDbContext dbContext, UserManager<User> userM
     /// <summary>What causes this template to be sent — see EmailTemplateTriggers. Null for a Key with no registry entry, in which case the page shows nothing rather than inventing a description.</summary>
     public static EmailTemplateTrigger? TriggerFor(string key) => EmailTemplateTriggers.For(key);
 
+    /// <summary>
+    /// Whether this row is left over from a version that sent it and no longer does. Seeding never
+    /// deletes, so the row survives the feature — and an editable template nothing sends is worse
+    /// than no template at all, because somebody maintains it and nobody receives it.
+    /// </summary>
+    public static bool IsRetired(string key) => EmailTemplateTriggers.IsRetired(key);
+
     public record TemplateRow(int Id, string Key, string Subject, string Body, DateTime? UpdatedUtc);
 }
