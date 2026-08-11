@@ -111,7 +111,9 @@ public class VolunteerExaminerDirectoryService(AppDbContext dbContext)
             return [];
         }
 
-        // "Last worked" is a MAX over the session links, fetched in one pass rather than per row.
+        // "Last worked" is a MAX over the session links, and "sessions worked" a COUNT over the
+        // same ones — both from a single grouped query rather than per row, so adding the count costs
+        // no extra round trip.
         //
         // Still computed PER TEAM even though the row is per person, because the row collapses over
         // the teams in scope: filtered to one team it must answer "when did they last work for you",
@@ -126,10 +128,17 @@ public class VolunteerExaminerDirectoryService(AppDbContext dbContext)
             .Where(sve => veIds.Contains(sve.VolunteerExaminerId)
                           && (sve.Session.TestingCompletedUtc != null || sve.Session.ExamToolsClosedUtc != null))
             .GroupBy(sve => new { sve.VolunteerExaminerId, sve.Session.TeamId })
-            .Select(g => new { g.Key.VolunteerExaminerId, g.Key.TeamId, Last = g.Max(x => x.Session.ScheduledStartUtc) })
+            .Select(g => new
+            {
+                g.Key.VolunteerExaminerId,
+                g.Key.TeamId,
+                Last = g.Max(x => x.Session.ScheduledStartUtc),
+                Count = g.Count()
+            })
             .ToListAsync(cancellationToken);
 
         var lastByVeAndTeam = lastWorked.ToDictionary(x => (x.VolunteerExaminerId, x.TeamId), x => x.Last);
+        var countByVeAndTeam = lastWorked.ToDictionary(x => (x.VolunteerExaminerId, x.TeamId), x => x.Count);
 
         // Possible duplicates from the phase 1 merge: rows sharing a call sign that were left
         // separate because their names disagreed. Surfaced rather than resolved automatically —
@@ -165,6 +174,13 @@ public class VolunteerExaminerDirectoryService(AppDbContext dbContext)
                     .OrderBy(t => t.SortOrder).ThenBy(t => t.Name)
                     .ToList();
 
+                // Summed across the teams in scope, for the same reason LastWorkedUtc is a per-team
+                // MAX: filtered to one team the row must answer "how many did they work FOR YOU",
+                // and a global count would quietly answer something else. Someone who works for two
+                // teams shows their combined total only when both are in view.
+                var sessionsWorked = group
+                    .Sum(m => countByVeAndTeam.TryGetValue((m.VolunteerExaminerId, m.TeamId), out var n) ? n : 0);
+
                 var mostRecent = group
                     .Select(m => lastByVeAndTeam.TryGetValue((m.VolunteerExaminerId, m.TeamId), out var last) ? last : (DateTime?)null)
                     .Where(d => d is not null)
@@ -176,6 +192,7 @@ public class VolunteerExaminerDirectoryService(AppDbContext dbContext)
                     [.. group.Select(m => new VeDirectoryTeam(m.TeamId, m.Team.Name, m.IsActive, m.Id)).OrderBy(t => t.Name)],
                     tags,
                     mostRecent,
+                    sessionsWorked,
                     person.CallSign is { } call && duplicateCallSigns.Contains(call));
             })
             .OrderBy(r => r.VolunteerExaminer.Name)
@@ -216,6 +233,13 @@ public record VeDirectoryRow(
     IReadOnlyList<VeDirectoryTeam> Teams,
     IReadOnlyList<VeTag> Tags,
     DateTime? LastWorkedUtc,
+    /// <summary>
+    /// Completed sessions this person has worked, across the teams currently in scope. Counts the
+    /// same sessions LastWorkedUtc takes its maximum over — so a VE rostered onto a session next
+    /// month is not counted, which is the trap CLAUDE.md records and that this very figure fell into
+    /// once before (2026-08-06).
+    /// </summary>
+    int SessionsWorked,
     bool HasDuplicateCallSign)
 {
     public bool IsGuest => Tags.Count == 0;

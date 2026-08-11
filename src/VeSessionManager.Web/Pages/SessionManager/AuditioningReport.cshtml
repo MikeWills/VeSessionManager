@@ -1,0 +1,111 @@
+@page
+@using VeSessionManager.Core.Entities
+@model VeSessionManager.Web.Pages.SessionManager.AuditioningReportModel
+@{
+    ViewData["Title"] = "Auditioning Report";
+    ViewData["ActiveNav"] = "AuditioningReport";
+    Layout = "_AppLayout";
+}
+
+<div class="page-head">
+    <div>
+        <p class="eyebrow">Volunteer examiners</p>
+        <h1>Auditioning Report</h1>
+    </div>
+    <a class="btn-secondary btn-sm" asp-page-handler="Export" asp-route-teamId="@Model.TeamId">Export CSV</a>
+</div>
+
+<p class="hint" style="margin-bottom:16px;">
+    Everyone tagged <strong>@AuditioningReportModel.AuditioningTag</strong>, with the sessions they
+    have actually worked. Ordered by session count, most first &mdash; click any heading to sort
+    another way.
+</p>
+
+@if (Model.AvailableTeams.Count > 1)
+{
+    <form method="get" class="filters" style="margin-bottom:20px; align-items:flex-start;">
+        <div class="filter-dropdown">
+            <button type="button" class="kebab @(Model.TeamId is not null ? "active" : "")">Team: @Model.TeamSummaryLabel <i class="bi bi-caret-down-fill" aria-hidden="true"></i></button>
+            <div class="menu">
+                <label class="item"><input type="radio" name="teamId" value="" @(Model.TeamId is null ? "checked" : "") /> All teams</label>
+                @foreach (var team in Model.AvailableTeams)
+                {
+                    <label class="item"><input type="radio" name="teamId" value="@team.Id" @(team.Id == Model.TeamId ? "checked" : "") /> @team.Name</label>
+                }
+                <hr />
+                <button type="submit" class="item">Apply</button>
+            </div>
+        </div>
+    </form>
+}
+
+<div class="table-scroll">
+    <table class="cards" data-sortable="auditioning-report">
+        <thead>
+            <tr>
+                <th>Call sign</th>
+                <th>Name</th>
+                <th>Teams</th>
+                <th>License</th>
+                <th>Sessions worked</th>
+                <th>Last worked</th>
+            </tr>
+        </thead>
+        <tbody>
+            @if (Model.Rows.Count == 0)
+            {
+                <tr><td colspan="6">
+                    @if (Model.TagNotDefinedAnywhere)
+                    {
+                        @* Deliberately distinct from "nobody is auditioning": this says the tag does
+                           not exist, which is a different problem with a different fix, and without
+                           saying so the report just looks broken. *@
+                        <text>
+                            No <strong>@AuditioningReportModel.AuditioningTag</strong> tag exists on
+                            @(Model.TeamId is null ? "any team you can see" : "this team") yet.
+                            Create it under <a asp-page="/SessionManager/VeTags">VE Tags</a>, then apply
+                            it to the VEs you are auditioning.
+                        </text>
+                    }
+                    else
+                    {
+                        <text>Nobody is currently tagged @AuditioningReportModel.AuditioningTag.</text>
+                    }
+                </td></tr>
+            }
+            @foreach (var row in Model.Rows)
+            {
+                <tr class="@(row.IsActive ? "" : "muted-row")">
+                    <td class="mono">@(row.VolunteerExaminer.CallSign ?? "—")</td>
+                    <td><a asp-page="/SessionManager/VeDetail" asp-all-route-data="@Model.DetailRoute(row.VolunteerExaminer.Id)">@row.VolunteerExaminer.Name</a></td>
+                    <td>@row.TeamSummary</td>
+                    @{
+                        var licenseStatus = row.VolunteerExaminer.DeriveSnapshotStatus(Model.UtcNow);
+                        var expiryDays = WatchedLicenseStatusExtensions.DaysUntil(row.VolunteerExaminer.LicenseExpiresUtc, Model.UtcNow);
+                    }
+                    @* Same chip helpers the VE Directory uses, so one license reads identically on
+                       both screens — including the "expires soon" day count. *@
+                    <td data-sort-value="@(row.VolunteerExaminer.LicenseExpiresUtc?.ToString("o") ?? "")">
+                        <span class="chip @licenseStatus.ChipClass()">@licenseStatus.Label()</span>
+                        @if (row.VolunteerExaminer.LicenseExpiresUtc is { } expires)
+                        {
+                            <span class="session-sub">@expires.ToString("MMM yyyy")@(expiryDays is { } d && d <= 90 ? $" ({d} d)" : "")</span>
+                        }
+                    </td>
+                    @* Zero-padded so the click-to-sort comparator, which reads this attribute as
+                       text, puts 2 before 10 rather than after it. *@
+                    <td class="count" data-sort-value="@row.SessionsWorked.ToString("D6")">@row.SessionsWorked</td>
+                    <td data-sort-value="@(row.LastWorkedUtc?.ToString("o") ?? "")">
+                        @(row.LastWorkedUtc?.ToString("MMM d, yyyy") ?? "Never")
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+<p class="hint" style="margin-top:16px;">
+    Only completed sessions count &mdash; one scheduled for next month is not experience yet. A VE
+    with no sessions is someone added to the directory who has not worked one, which on this report
+    is a row worth seeing rather than hiding.
+</p>

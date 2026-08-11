@@ -445,4 +445,85 @@ public class VolunteerExaminerDirectoryServiceTests
 
         Assert.Single(dbContext.VeVecAccreditations);
     }
+
+    /// <summary>
+    /// The audition report's whole point: how many sessions has this person actually worked.
+    ///
+    /// <para><b>A future session must not count.</b> That is not hypothetical — this exact figure
+    /// counted scheduled-but-unrun sessions until 2026-08-06, because the filter used
+    /// <c>Status == Active</c>, which only ever means "not cancelled". Someone rostered onto next
+    /// month's session already had it in their total.</para>
+    /// </summary>
+    [Fact]
+    public async Task SessionsWorkedCountsFinishedSessionsOnly()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext, "HRCC");
+        var (person, _) = await SeedVeAsync(dbContext, team, "K1CEH", "Charles E. Hale");
+
+        var first = await SeedSessionAsync(dbContext, team, Now.AddDays(-60), finished: true);
+        var second = await SeedSessionAsync(dbContext, team, Now.AddDays(-30), finished: true);
+        var upcoming = await SeedSessionAsync(dbContext, team, Now.AddDays(30), finished: false);
+        foreach (var session in new[] { first, second, upcoming })
+        {
+            dbContext.SessionVolunteerExaminers.Add(new SessionVolunteerExaminer { Session = session, VolunteerExaminer = person });
+        }
+
+        await dbContext.SaveChangesAsync();
+
+        var row = Assert.Single(await new VolunteerExaminerDirectoryService(dbContext)
+            .GetDirectoryAsync([team.Id], new VeDirectoryFilter(), Now, CancellationToken.None));
+
+        Assert.Equal(2, row.SessionsWorked);
+    }
+
+    /// <summary>
+    /// A hand-added prospect — someone the team is watching who has never worked a session — reports
+    /// zero rather than being absent or null. On an audition list that row is the whole point.
+    /// </summary>
+    [Fact]
+    public async Task SomeoneWhoHasNeverWorkedReportsZero()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext, "HRCC");
+        await SeedVeAsync(dbContext, team, "AI5ZZ", "AI5ZZ");
+
+        var row = Assert.Single(await new VolunteerExaminerDirectoryService(dbContext)
+            .GetDirectoryAsync([team.Id], new VeDirectoryFilter(), Now, CancellationToken.None));
+
+        Assert.Equal(0, row.SessionsWorked);
+        Assert.Null(row.LastWorkedUtc);
+    }
+
+    /// <summary>
+    /// Scoped like LastWorkedUtc: filtered to one team the count answers "how many did they work for
+    /// YOU", and only widens when both teams are in view. A global count would quietly answer a
+    /// different question than the filter above it claims to ask.
+    /// </summary>
+    [Fact]
+    public async Task SessionsWorkedFollowsTheTeamsInScope()
+    {
+        await using var dbContext = CreateContext();
+        var teamA = await SeedTeamAsync(dbContext, "HRCC");
+        var teamB = await SeedTeamAsync(dbContext, "MARC");
+        var person = new VolunteerExaminer { Name = "Shared Person", CallSign = "W1AW", CreatedUtc = Now };
+        dbContext.VolunteerExaminers.Add(person);
+        dbContext.VeTeamMemberships.Add(new VeTeamMembership { VolunteerExaminer = person, Team = teamA, IsActive = true, CreatedUtc = Now });
+        dbContext.VeTeamMemberships.Add(new VeTeamMembership { VolunteerExaminer = person, Team = teamB, IsActive = true, CreatedUtc = Now });
+
+        var forA = await SeedSessionAsync(dbContext, teamA, Now.AddDays(-60), finished: true);
+        var forB1 = await SeedSessionAsync(dbContext, teamB, Now.AddDays(-30), finished: true);
+        var forB2 = await SeedSessionAsync(dbContext, teamB, Now.AddDays(-10), finished: true);
+        foreach (var session in new[] { forA, forB1, forB2 })
+        {
+            dbContext.SessionVolunteerExaminers.Add(new SessionVolunteerExaminer { Session = session, VolunteerExaminer = person });
+        }
+
+        await dbContext.SaveChangesAsync();
+        var service = new VolunteerExaminerDirectoryService(dbContext);
+
+        Assert.Equal(1, Assert.Single(await service.GetDirectoryAsync([teamA.Id], new VeDirectoryFilter(), Now, CancellationToken.None)).SessionsWorked);
+        Assert.Equal(2, Assert.Single(await service.GetDirectoryAsync([teamB.Id], new VeDirectoryFilter(), Now, CancellationToken.None)).SessionsWorked);
+        Assert.Equal(3, Assert.Single(await service.GetDirectoryAsync(null, new VeDirectoryFilter(), Now, CancellationToken.None)).SessionsWorked);
+    }
 }
