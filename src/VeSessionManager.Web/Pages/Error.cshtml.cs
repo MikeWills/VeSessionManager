@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using System.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
@@ -6,6 +7,8 @@ namespace VeSessionManager.Web.Pages;
 
 [ResponseCache(Duration = 0, Location = ResponseCacheLocation.None, NoStore = true)]
 [IgnoreAntiforgeryToken]
+// Public by design: Reachable by anyone, including before authentication runs at all.
+[AllowAnonymous]
 public class ErrorModel : PageModel
 {
     public string? RequestId { get; set; }

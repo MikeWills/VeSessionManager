@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using System.ComponentModel.DataAnnotations;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
@@ -10,6 +11,8 @@ namespace VeSessionManager.Web.Pages.Public;
 /// confirmation email. Honor-system self-attestation only — see
 /// docs/youth-payment-confirmation.md and YouthPaymentConfirmationService.
 /// </summary>
+// Public by design: A candidate confirming a youth rate has no account here.
+[AllowAnonymous]
 public class YouthConfirmModel(YouthPaymentConfirmationService service) : PageModel
 {
     [BindProperty]

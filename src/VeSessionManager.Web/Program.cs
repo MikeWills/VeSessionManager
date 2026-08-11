@@ -2,6 +2,7 @@ using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
@@ -308,6 +309,42 @@ builder.Services.AddRateLimiter(options =>
             QueueLimit = 0
         });
     });
+});
+
+// Authenticated by default; public is the exception and has to be asked for (audit T15, #158).
+//
+// Without this, a page added without [Authorize] is served to anyone, and nothing says so — no
+// warning, no failing test, just a page that quietly needs no sign-in. Every page in this app
+// except the fifteen marked [AllowAnonymous] holds candidate PII or admin controls, so the default
+// was pointing the wrong way.
+//
+// Note this reaches minimal-API endpoints too, not only Razor Pages, which is why the Square
+// webhook now says AllowAnonymous explicitly — without it, Square's deliveries would start
+// returning 401 and the payment flow would fail silently on the *outside* of the app, where nothing
+// here would log it.
+builder.Services.AddAuthorization(options =>
+{
+    options.FallbackPolicy = new AuthorizationPolicyBuilder()
+        .RequireAuthenticatedUser()
+        .Build();
+});
+
+// Authenticated by default; public is the exception and has to be asked for (audit T15, #158).
+//
+// Without this, a page added without [Authorize] is served to anyone, and nothing says so — no
+// warning, no failing test, just a page that quietly needs no sign-in. Every page in this app
+// except the fifteen marked [AllowAnonymous] holds candidate PII or admin controls, so the default
+// was pointing the wrong way.
+//
+// Note this reaches minimal-API endpoints too, not only Razor Pages, which is why the Square
+// webhook now says AllowAnonymous explicitly — without it, Square's deliveries would start
+// returning 401 and the payment flow would fail silently on the *outside* of the app, where nothing
+// here would log it.
+builder.Services.AddAuthorization(options =>
+{
+    options.FallbackPolicy = new AuthorizationPolicyBuilder()
+        .RequireAuthenticatedUser()
+        .Build();
 });
 
 // Add services to the container.
