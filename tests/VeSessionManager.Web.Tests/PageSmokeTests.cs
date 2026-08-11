@@ -1,5 +1,7 @@
 using System.Net;
 using System.Text.RegularExpressions;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using VeSessionManager.Core.Entities;
@@ -220,6 +222,64 @@ public class PageSmokeTests : IAsyncLifetime
         // The seeded session has ExamToolsClosedUtc set and no TestingCompletedUtc — the exact case
         // that used to render "Active" forever, and the reason Session.IsCompleted exists.
         Assert.Contains("Completed", row);
+    }
+
+    /// <summary>
+    /// The fallback policy (#158) makes authentication the default, so the risk flips: instead of a
+    /// new page being accidentally public, an existing public page can be accidentally locked. These
+    /// are the pages a signed-out person must still reach — several of them are reached *because*
+    /// they cannot sign in, and requiring authentication would be a redirect loop.
+    /// </summary>
+    [Theory]
+    [InlineData("/Account/Login")]
+    [InlineData("/Account/ForgotPassword")]
+    [InlineData("/Account/AccessDenied")]
+    [InlineData("/Privacy")]
+    [InlineData("/Error")]
+    [InlineData("/")]
+    [InlineData("/VeSelfService/Enter")]
+    public async Task PublicPagesStayReachableWhileSignedOut(string url)
+    {
+        using var client = _factory.CreateClient(
+            new Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+
+        var response = await client.GetAsync(url);
+
+        Assert.True(response.StatusCode == HttpStatusCode.OK,
+            $"GET {url} while signed out returned {(int)response.StatusCode} — it must stay public. "
+            + "If the fallback policy caught it, the page needs [AllowAnonymous].");
+    }
+
+    /// <summary>
+    /// ⚠️ The trap in #158, whose own description got this wrong: it said the Square webhook was
+    /// "unaffected". A fallback policy applies to minimal-API endpoints too, not only Razor Pages, so
+    /// without an explicit AllowAnonymous every Square delivery would start being refused.
+    ///
+    /// <para>That failure would be invisible from inside the app — Square retries, gives up, and
+    /// payments simply stop being recorded, with nothing logged here. The endpoint's real gate is
+    /// HMAC verification against the team's signature key, which is stronger than any cookie.</para>
+    ///
+    /// <para><b>Asserted on endpoint metadata rather than a status code, deliberately.</b> Probing
+    /// the endpoint cannot tell the two failures apart: the handler itself answers a missing or bad
+    /// signature with <b>401</b>, which is the same status authorization produces — measured, not
+    /// assumed, by removing AllowAnonymous and watching the response stay identical. A status-code
+    /// test would therefore have passed whether or not the exemption was there, which is worse than
+    /// no test.</para>
+    /// </summary>
+    [Fact]
+    public void TheSquareWebhookIsExemptFromTheFallbackPolicy()
+    {
+        var endpoints = _factory.Services.GetRequiredService<EndpointDataSource>().Endpoints;
+
+        var webhook = Assert.Single(
+            endpoints.OfType<RouteEndpoint>(),
+            e => e.RoutePattern.RawText?.StartsWith("/webhooks/square", StringComparison.OrdinalIgnoreCase) == true);
+
+        Assert.True(
+            webhook.Metadata.GetMetadata<IAllowAnonymous>() is not null,
+            "The Square webhook has no AllowAnonymous metadata, so the fallback authorization policy "
+            + "applies to it. Square is not a signed-in user; its deliveries would be refused, and "
+            + "nothing inside this app would log it. Its real gate is HMAC signature verification.");
     }
 
     /// <summary>A role without access must be refused rather than shown a VE's home address.</summary>

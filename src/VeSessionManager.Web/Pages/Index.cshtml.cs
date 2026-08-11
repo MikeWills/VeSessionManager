@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
@@ -13,6 +14,8 @@ namespace VeSessionManager.Web.Pages;
 /// page (_PublicLayout, matches Login/Privacy/AccessDenied) and redirects an already-signed-in
 /// visitor straight to their role's landing page instead of showing them a dead end.
 /// </summary>
+// Public by design: The public front door.
+[AllowAnonymous]
 public class IndexModel(UserManager<User> userManager) : PageModel
 {
     public async Task<IActionResult> OnGetAsync()

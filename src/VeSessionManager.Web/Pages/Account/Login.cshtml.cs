@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using System.ComponentModel.DataAnnotations;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Identity;
@@ -9,6 +10,8 @@ using VeSessionManager.Core.Entities;
 
 namespace VeSessionManager.Web.Pages.Account;
 
+// Public by design: Requiring sign-in to reach the sign-in page is the classic redirect loop.
+[AllowAnonymous]
 public class LoginModel(SignInManager<User> signInManager, UserManager<User> userManager, AppDbContext dbContext) : PageModel
 {
     [BindProperty]

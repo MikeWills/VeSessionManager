@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -12,6 +13,8 @@ namespace VeSessionManager.Web.Pages.Account;
 /// account (admin-provisioned — via DevDataSeeder today, Phase 9c's admin UI once it exists) that
 /// it can link to. A brand-new email with no matching local account is rejected, not auto-created.
 /// </summary>
+// Public by design: Where Google/Microsoft return to before a local session exists.
+[AllowAnonymous]
 public class ExternalLoginCallbackModel(SignInManager<User> signInManager, UserManager<User> userManager) : PageModel
 {
     public string? ErrorMessage { get; set; }

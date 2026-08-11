@@ -58,7 +58,13 @@ public static class SquareWebhookEndpoint
             // "we understood this and chose not to act on it" must look the same as "handled" to
             // avoid Square retrying an event we'll never match (e.g. an unrecognized order id).
             return Results.Ok();
-        });
+        })
+        // Square is not a signed-in user and never will be. Required since the fallback policy
+        // landed (#158) — a minimal-API endpoint with no authorization metadata inherits it, and a
+        // 401 here would be invisible from inside the app: Square would retry, give up, and payments
+        // would simply stop being recorded. The endpoint's real gate is HMAC signature verification
+        // against the team's own webhook signature key, which is stronger than any cookie.
+        .AllowAnonymous();
 
         return endpoints;
     }
