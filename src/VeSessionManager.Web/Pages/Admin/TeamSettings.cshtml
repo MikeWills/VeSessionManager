@@ -172,6 +172,19 @@ else
                 <div class="field" style="max-width:220px;"><label for="replyToAddress">Reply-to address</label><input id="replyToAddress" name="replyToAddress" type="email" value="@Model.EmailSettings?.ReplyToAddress" required /></div>
                 <div class="field" style="max-width:280px;"><label for="privacyPolicyUrl">Privacy policy URL</label><input id="privacyPolicyUrl" name="privacyPolicyUrl" value="@Model.EmailSettings?.PrivacyPolicyUrl" required /></div>
                 <div class="field" style="max-width:220px;"><label for="adminNotificationEmail">Admin notification email</label><input id="adminNotificationEmail" name="adminNotificationEmail" type="email" value="@Model.EmailSettings?.AdminNotificationEmail" required /></div>
+                <div class="field" style="max-width:220px;">
+                    <label for="bccAddress">Blind-copy candidate email to</label>
+                    <input id="bccAddress" name="bccAddress" type="email" value="@Model.EmailSettings?.BccAddress" placeholder="(off)" />
+                    <p class="hint">
+                        Sends a silent copy of every <strong>candidate</strong> email to this address, so you
+                        can see what actually goes out. Never applied to password resets or VE self-service
+                        links &mdash; those carry access tokens.
+                        <br />
+                        Those copies contain candidate names and email addresses, and stay in that mailbox
+                        even after the candidate&rsquo;s details are purged from this system. Best used as a
+                        temporary check and cleared afterwards. Leave blank to turn off.
+                    </p>
+                </div>
             </div>
             <button type="submit" class="btn-primary btn-sm" style="margin-top:12px;">Save Email Settings</button>
         </form>

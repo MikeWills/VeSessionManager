@@ -16,11 +16,16 @@ public static class TestModeEmailRedirector
             return (message, false);
         }
 
+        // Test Mode already sends everything to one monitoring inbox, so a BCC would deliver the
+        // same message there twice — and worse, the copy would be the *un*redirected one, which
+        // carries no "[TEST MODE]" marking and reads like real mail that genuinely went out.
+
         // The original recipient is registrant-controlled data flowing into an HTML body, same as
         // any EmailTemplateRenderer placeholder — HTML-encoded before insertion for the same reason.
         var redirected = message with
         {
             ToAddress = overrideEmail,
+            BccAddress = null,
             Subject = $"[TEST MODE] {message.Subject}",
             HtmlBody = $"<p style=\"background:#fee2e2;color:#991b1b;padding:8px 12px;border:1px solid #fca5a5;font-family:sans-serif;\">" +
                        $"TEST MODE — this would have been sent to <strong>{WebUtility.HtmlEncode(message.ToAddress)}</strong>.</p>" +

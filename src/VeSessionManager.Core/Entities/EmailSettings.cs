@@ -26,6 +26,22 @@ public class EmailSettings
     /// <summary>Not in the original shared data model — added in Phase 6. Where the PaymentExpirationNotice template goes ("to Mike," per the spec, not to the candidate) — the Session Manager's own inbox, not a candidate-facing address. Same hand-edit-in-the-DB pattern as the other fields on this row.</summary>
     public required string AdminNotificationEmail { get; set; }
 
+    /// <summary>
+    /// Optional. When set, every <b>candidate-facing</b> email this team sends is blind-copied here,
+    /// so someone can see what actually goes out rather than waiting for a candidate to report that
+    /// something looked wrong (issue #207).
+    ///
+    /// <para><b>Never applied to password resets, VE self-service links, or email-change
+    /// confirmations</b> — those carry access tokens, and a copy in a shared inbox would be an
+    /// account-takeover path.</para>
+    ///
+    /// <para><b>Contains candidate PII, in a place the purge cannot reach.</b> A blind-copied
+    /// confirmation carries a candidate's name and email, and once delivered it lives in that
+    /// mailbox indefinitely — PiiPurgeService clears database columns, not mail archives. Intended
+    /// as a temporary diagnostic; clear it when it has served its purpose.</para>
+    /// </summary>
+    public string? BccAddress { get; set; }
+
     public int? UpdatedByUserId { get; set; }
     public User? UpdatedByUser { get; set; }
     public DateTime? UpdatedUtc { get; set; }
