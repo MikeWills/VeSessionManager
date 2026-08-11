@@ -226,6 +226,22 @@ builder.Services.ConfigureApplicationCookie(options =>
     options.Cookie.SecurePolicy = builder.Environment.IsDevelopment()
         ? CookieSecurePolicy.SameAsRequest
         : CookieSecurePolicy.Always;
+
+    // Eight hours sliding, not the framework's fourteen-day default (#159). This is an admin backend
+    // holding candidate PII; a cookie that survives a fortnight of inactivity on a shared or lost
+    // machine is a long time to stay signed in. Sliding, so an actually-active session is never
+    // interrupted mid-task — the window is about abandonment, not about forcing a daily re-login.
+    options.ExpireTimeSpan = TimeSpan.FromHours(8);
+    options.SlidingExpiration = true;
+
+    // SameSite deliberately left at Identity's default (Lax) rather than raised to Strict.
+    //
+    // Lax already refuses to send this cookie on a cross-site POST, which is the CSRF case that
+    // matters, and antiforgery tokens sit behind it regardless. Strict additionally drops the cookie
+    // on a top-level *navigation* from another site — which is exactly how a user arrives back from
+    // Google/Microsoft sign-in and from Square's hosted payment page. The visible result would be
+    // "I was signed in a second ago and now I'm not", for no additional protection against the
+    // attack Lax already covers.
 });
 
 // AddIdentityCookies() returns an IdentityCookiesBuilder, not the AuthenticationBuilder itself —
@@ -362,6 +378,12 @@ using (var scope = app.Services.CreateScope())
     // Fails the host rather than running with credentials it cannot read — see
     // DataProtectionKeyRingGuard for why that state is otherwise completely silent.
     await DataProtectionKeyRingGuard.VerifyAsync(dbContext, startupLogger);
+
+    // Surfaces a credential that carries the Data Protection marker but will not decrypt (#160).
+    // DataProtectionKeyRingGuard above catches that at startup; this covers anything that only
+    // becomes readable-but-wrong later, and makes the fallback's silence visible either way.
+    EncryptedStringConverter.OnUndecryptableValueRead ??= message => startupLogger.LogError("{Message}", message);
+
 
     if (app.Environment.IsDevelopment())
     {

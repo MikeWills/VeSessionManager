@@ -29,6 +29,26 @@ public sealed class EncryptedStringConverter : ValueConverter<string?, string?>
     /// </summary>
     public const string TeamCredentialsPurpose = "Team.Credentials.v1";
 
+    /// <summary>
+    /// Every ASP.NET Core Data Protection payload starts with this — base64url of the four-byte
+    /// magic header <c>09 F0 C9 F0</c>. Shared with <see cref="DataProtectionKeyRingGuard"/> so
+    /// "does this look like ciphertext?" has one definition.
+    /// </summary>
+    public const string ProtectedPayloadPrefix = "CfDJ8";
+
+    /// <summary>
+    /// Called the first time this process reads a value that <b>looks like ciphertext but cannot be
+    /// decrypted</b> — wired to a logger by each host at startup (issue #160).
+    ///
+    /// <para>Static because the converter is baked into EF's cached model, which outlives any scope;
+    /// a captured scoped logger would be wrong. Fired once per process, not per read: a key-ring
+    /// problem affects every read of every credential, and a warning per read would bury the first
+    /// one under thousands of copies.</para>
+    /// </summary>
+    public static Action<string>? OnUndecryptableValueRead { get; set; }
+
+    private static int _undecryptableReported;
+
     public EncryptedStringConverter(IDataProtector protector)
         : base(
             v => v == null ? null : protector.Protect(v),
@@ -44,9 +64,32 @@ public sealed class EncryptedStringConverter : ValueConverter<string?, string?>
         }
         catch (CryptographicException)
         {
-            // Not valid protected payload — a pre-migration legacy plaintext row (or, in principle,
-            // corrupted/tampered ciphertext). Pass through unchanged rather than crash the read;
-            // TeamSecretsMigrationService is what upgrades these to real ciphertext.
+            // Not valid protected payload. Two very different situations land here, and only one is
+            // a problem:
+            //
+            //   * legacy plaintext from before encryption existed — expected, harmless, and the
+            //     whole reason this fallback exists;
+            //   * a value that *does* carry the Data Protection prefix and still would not
+            //     decrypt — this process cannot read a credential that was definitely encrypted,
+            //     which means the wrong key ring, a lost key ring, or tampering.
+            //
+            // Distinguishing them by the prefix is what makes the warning worth having: without it
+            // the signal would fire on every legitimately un-migrated row and be ignored.
+            //
+            // Still returns the raw value either way. Failing the read here would take down whatever
+            // was running for a problem DataProtectionKeyRingGuard already refuses to start the host
+            // over, and would do it in the middle of a job rather than at startup.
+            if (value.StartsWith(ProtectedPayloadPrefix, StringComparison.Ordinal)
+                && Interlocked.Exchange(ref _undecryptableReported, 1) == 0)
+            {
+                OnUndecryptableValueRead?.Invoke(
+                    "A stored credential carries the Data Protection payload marker but could not be decrypted. "
+                    + "This process is using a key ring that did not encrypt it — check DataProtection:KeyRingPath "
+                    + "and that Web and Worker agree on it. Do NOT re-enter credentials to work around this: that "
+                    + "overwrites the originals under the new key and makes them unrecoverable. "
+                    + "Further occurrences in this process are not logged.");
+            }
+
             return value;
         }
     }

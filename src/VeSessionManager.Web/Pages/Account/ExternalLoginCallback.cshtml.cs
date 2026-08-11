@@ -17,6 +17,22 @@ namespace VeSessionManager.Web.Pages.Account;
 [AllowAnonymous]
 public class ExternalLoginCallbackModel(SignInManager<User> signInManager, UserManager<User> userManager) : PageModel
 {
+    /// <summary>
+    /// Providers whose email address is trusted even though they send no <c>email_verified</c>
+    /// claim. **Adding a name here is a security decision**, not configuration: it says this
+    /// provider verifies addresses itself and will not hand us one its user typed.
+    ///
+    /// <para>Hoisted out of the handler (audit T37) so it is allocated once and, more importantly,
+    /// so it sits somewhere a reader can find when adding a provider — the corresponding
+    /// <c>.AddGoogle()</c>/<c>.AddMicrosoftAccount()</c> calls are in Program.cs, and the risk is
+    /// someone registering a third provider without ever meeting this list.</para>
+    ///
+    /// <para>Google is absent on purpose: it sends an affirmative <c>email_verified</c> claim, so it
+    /// never needs this fallback.</para>
+    /// </summary>
+    private static readonly HashSet<string> ProvidersTrustedWithoutAnExplicitEmailVerifiedClaim =
+        new(StringComparer.OrdinalIgnoreCase) { "Microsoft" };
+
     public string? ErrorMessage { get; set; }
 
     public async Task<IActionResult> OnGetAsync()
@@ -56,7 +72,7 @@ public class ExternalLoginCallbackModel(SignInManager<User> signInManager, UserM
         // to "trusted" by omission instead of by a deliberate decision. Flipped to an explicit
         // allowlist: a provider not on it (and not carrying an affirmative email_verified=true claim)
         // is now blocked by default, not trusted by accident.
-        var trustedWithoutExplicitClaim = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Microsoft" };
+        var trustedWithoutExplicitClaim = ProvidersTrustedWithoutAnExplicitEmailVerifiedClaim;
         var emailVerifiedClaim = info.Principal.FindFirstValue("email_verified");
         var emailVerified = bool.TryParse(emailVerifiedClaim, out var claimedVerified)
             ? claimedVerified
