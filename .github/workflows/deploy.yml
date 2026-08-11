@@ -84,26 +84,6 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts
 
-      - name: Backup database
-        # rsync --ignore-missing-args, not cp: on a brand-new server the database does not exist yet
-        # (the operator creates /var/lib/vesessionmanager, but the .db file itself is created by
-        # Database.Migrate() the first time a service starts), so an unconditional cp made the very
-        # FIRST deploy to any box fail here — before stopping services or syncing anything. Found on
-        # the first real deploy, 2026-08-04; it would have hit the production server too.
-        #
-        # Guarding with `test -f` is NOT an option, in either form: `sudo test` is not in the deploy
-        # user's sudoers allowlist, and an unprivileged `test -f` cannot read
-        # /var/lib/vesessionmanager at all — so it would report "missing" even once the database
-        # exists, silently skipping every backup from then on. That is far worse than the failure it
-        # would be replacing.
-        #
-        # rsync is already permitted by that same allowlist (`/usr/bin/rsync *`), copies normally
-        # when the file is there, and is a clean no-op when it is not. A genuine failure (bad
-        # permissions, disk full) still fails the deploy, which is the property worth keeping.
-        run: |
-          ssh -i ~/.ssh/deploy_key "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
-            "sudo rsync --ignore-missing-args '$DB_PATH' '$DB_PATH.bak-\$(date +%Y%m%d%H%M%S)'"
-
       - name: Backup Data Protection key ring
         # Losing the key ring while the database survives makes every stored team credential
         # permanently unrecoverable, so it earns the same pre-deploy snapshot the database gets.
@@ -120,9 +100,14 @@ jobs:
         # NOTE: this is a rollback snapshot, not a backup. It lives on the same disk as the thing it
         # protects. Real off-box backup of $KEYRING_PATH is still a manual, separate job -- see
         # docs/deployment.md.
+        #
+        # --exclude '.bak-*' is load-bearing (#268). The destination is a SUBDIRECTORY of the source,
+        # and rsync builds its file list from the source first — so without it, every run copied the
+        # key ring PLUS every previous snapshot. Size doubled per deploy: 2^n full copies of the most
+        # sensitive material on the box after n deploys, in a 0700 directory nobody looks at.
         run: |
           ssh -i ~/.ssh/deploy_key "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
-            "sudo rsync -a --ignore-missing-args '$KEYRING_PATH/' '$KEYRING_PATH/.bak-\$(date +%Y%m%d%H%M%S)/'"
+            "sudo rsync -a --ignore-missing-args --exclude '.bak-*' '$KEYRING_PATH/' '$KEYRING_PATH/.bak-\$(date +%Y%m%d%H%M%S)/'"
 
       - name: Stop services
         # One service per command, deliberately. The deploy user's sudoers allowlist grants each
@@ -140,6 +125,48 @@ jobs:
           ssh -i ~/.ssh/deploy_key "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
             "sudo systemctl stop $WEB_SERVICE && sudo systemctl stop $WORKER_SERVICE"
 
+      - name: Backup database
+        # **Runs AFTER the services stop, and copies -wal/-shm too. Both halves are the fix for #255.**
+        #
+        # The database is in WAL mode — EF Core enables it on databases it creates, and journal mode
+        # is persisted in the file header. BACKUP.md asserted the opposite ("rollback-journal mode,
+        # not WAL, nothing sets PRAGMA journal_mode"): the second half is true and the conclusion is
+        # not. In WAL mode committed transactions live in the -wal file until checkpoint, so the
+        # .db-only copy this used to take was MISSING every transaction since the last checkpoint —
+        # and it opens cleanly, so the loss was silent.
+        #
+        # Taking it after the stop is what makes a plain file copy correct: nothing is writing, so
+        # the three files are mutually consistent. Before the stop they were not, and adding -wal
+        # alone would have traded silent loss for a torn copy.
+        #
+        # `sqlite3 '.backup'` / VACUUM INTO would be better still — one consistent file, no ordering
+        # constraint — but sqlite3 is NOT in the deploy user's sudoers allowlist and rsync is, so
+        # that needs a server-side grant this workflow cannot add. Worth doing when #256 (real
+        # off-box backup) is built, since that job needs the same grant.
+        #
+        # rsync --ignore-missing-args, not cp: on a brand-new server the database does not exist yet
+        # (the operator creates /var/lib/vesessionmanager, but the .db file itself is created by
+        # Database.Migrate() the first time a service starts), so an unconditional cp made the very
+        # FIRST deploy to any box fail here. Found on the first real deploy, 2026-08-04.
+        #
+        # Guarding with `test -f` is NOT an option, in either form: `sudo test` is not in the deploy
+        # user's sudoers allowlist, and an unprivileged `test -f` cannot read
+        # /var/lib/vesessionmanager at all — so it would report "missing" even once the database
+        # exists, silently skipping every backup from then on.
+        #
+        # NOTE: this is a rollback snapshot, not a backup. It lives on the same disk as the thing it
+        # protects — see #256.
+        #
+        # One stamp for all three files, computed on the runner so the set shares a suffix and can be
+        # restored together. (The original computed it remotely with \$(date …); with three commands
+        # that would produce three different stamps if the second ticked over.)
+        run: |
+          STAMP=$(date +%Y%m%d%H%M%S)
+          ssh -i ~/.ssh/deploy_key "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
+            "sudo rsync --ignore-missing-args '$DB_PATH' '$DB_PATH.bak-$STAMP' && \
+             sudo rsync --ignore-missing-args '$DB_PATH-wal' '$DB_PATH-wal.bak-$STAMP' && \
+             sudo rsync --ignore-missing-args '$DB_PATH-shm' '$DB_PATH-shm.bak-$STAMP'"
+
       - name: Sync Worker files
         run: |
           # deploy isn't the owner of the existing vesessionmanager-owned files, so it can't
@@ -147,6 +174,12 @@ jobs:
           # rsync as root (via a narrowly-scoped NOPASSWD sudo rule) so it can freely write, delete,
           # and set final ownership via --chown. *.db* is excluded defensively even though the DB
           # actually lives outside this tree entirely, at $DB_PATH.
+          #
+          # 'logs' is NOT defensive — Serilog writes to a relative "logs/" path, so it resolves under
+          # WorkingDirectory, i.e. inside this tree. Without the exclude, --delete removed the entire
+          # log history on every deploy: the change window is exactly when it is most wanted, and a
+          # bad release or a compromise noticed afterwards had no application-side evidence left
+          # (#267). journalctl retains the console sink, which softened it but does not replace it.
           rsync -avz --delete \
             --rsync-path="sudo rsync" \
             --chown=vesessionmanager:vesessionmanager \
@@ -154,6 +187,7 @@ jobs:
             --exclude '*.db-shm' \
             --exclude '*.db-wal' \
             --exclude '*.bak-*' \
+            --exclude 'logs' \
             -e "ssh -i ~/.ssh/deploy_key" \
             publish/worker/ "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:$DEPLOY_PATH/worker/"
 
@@ -166,6 +200,7 @@ jobs:
             --exclude '*.db-shm' \
             --exclude '*.db-wal' \
             --exclude '*.bak-*' \
+            --exclude 'logs' \
             -e "ssh -i ~/.ssh/deploy_key" \
             publish/web/ "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:$DEPLOY_PATH/web/"
 
