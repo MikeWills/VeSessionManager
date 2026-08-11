@@ -39,7 +39,7 @@ public class UlsWatcherServiceTests
     }
 
     private static UlsWatcherService CreateService(AppDbContext dbContext, IUlsLookupClient client) =>
-        new(dbContext, client, NullLogger<UlsWatcherService>.Instance);
+        new(dbContext, client, TimeProvider.System, NullLogger<UlsWatcherService>.Instance);
 
     private static async Task<Candidate> SeedCandidateAsync(
         AppDbContext dbContext,

@@ -77,22 +77,41 @@ public class LicenseWatchService(
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            // Call sign is preferred over FRN: it is what the row is keyed on and what a human
-            // entered, and the endpoint resolves either.
-            var lookup = await lookupClient.LookupByFrnAsync(license.CallSign, cancellationToken);
-            if (lookup is null)
+            // Per row, and isolated per row (issue #249). Apply's own comment says a vanity rename
+            // colliding with IX_WatchedLicenses_TeamId_CallSign will throw on save and calls that
+            // "loud rather than silently dropping one of the two" — but with no catch here, loud
+            // meant abandoning every remaining license in the run. Same shape as
+            // VolunteerExaminerLicenseWatchService's per-row guard.
+            try
             {
-                // The lookup itself failed, so nothing was learned. Deliberately does NOT stamp
-                // LastCheckedUtc — leaving it stale is what makes the next run retry this row.
-                result.LookupFailures++;
-                continue;
+                // Call sign is preferred over FRN: it is what the row is keyed on and what a human
+                // entered, and the endpoint resolves either.
+                var lookup = await lookupClient.LookupByFrnAsync(license.CallSign, cancellationToken);
+                if (lookup is null)
+                {
+                    // The lookup itself failed, so nothing was learned. Deliberately does NOT stamp
+                    // LastCheckedUtc — leaving it stale is what makes the next run retry this row.
+                    result.LookupFailures++;
+                    continue;
+                }
+
+                Apply(license, lookup, utcNow, result);
+
+                // Per row, not batched — same reasoning as UlsWatcherService.
+                await dbContext.SaveChangesAsync(cancellationToken);
+                result.Checked++;
             }
-
-            Apply(license, lookup, utcNow, result);
-
-            // Per row, not batched — same reasoning as UlsWatcherService.
-            await dbContext.SaveChangesAsync(cancellationToken);
-            result.Checked++;
+            catch (Exception ex)
+            {
+                // Scoped detach, NOT ChangeTracker.Clear(). Clearing would detach every other row in
+                // `due` as well, so the rest of the run would mutate detached objects and save
+                // nothing while still counting itself successful — the bug this sweep's sibling had
+                // (issue #231). Only the row that failed is discarded.
+                dbContext.Entry(license).State = EntityState.Detached;
+                result.Failures++;
+                logger.LogError(ex, "Failed to refresh watched license {WatchedLicenseId} ({CallSign})",
+                    license.Id, license.CallSign);
+            }
         }
 
         logger.LogInformation("License watch finished: {Result}", result);
@@ -132,8 +151,15 @@ public class LicenseWatchService(
         // A call sign can change (vanity), and the row is keyed on it, so follow FCC rather than
         // pinning to what was typed. Uniqueness is per team, so a rename colliding with another
         // watched row would throw on save — accepted as vanishingly rare and loud rather than
-        // silently dropping one of the two.
-        if (!string.IsNullOrWhiteSpace(lookup.CallSign)) license.CallSign = lookup.CallSign;
+        // silently dropping one of the two. **The caller catches that per row** (see RunAsync); it
+        // used to escape and abandon every remaining license in the run (issue #249).
+        //
+        // Normalized, not stored raw (issue #286). IX_WatchedLicenses_TeamId_CallSign is a SQLite
+        // index and `=` there is case-sensitive, so an unnormalized value lets the same license be
+        // watched twice and makes every later match miss. VolunteerExaminerLicenseWatchService
+        // already normalized; this one did not.
+        var reportedCallSign = CallSign.Normalize(lookup.CallSign);
+        if (reportedCallSign is not null) license.CallSign = reportedCallSign;
 
         var previousExpiry = license.ExpiredDateUtc;
         license.ExpiredDateUtc = lookup.ExpiredDateUtc;
@@ -295,12 +321,20 @@ public class LicenseWatchResult
     /// <summary>Lookups that could not be performed at all — these keep their stale timestamp and retry next run.</summary>
     public int LookupFailures { get; set; }
 
+    /// <summary>
+    /// Rows that threw while being saved — a vanity rename colliding with
+    /// <c>IX_WatchedLicenses_TeamId_CallSign</c> being the expected cause. Isolated per row so one
+    /// cannot end the sweep (issue #249); surfaced in <see cref="ToString"/> so a run that quietly
+    /// skipped a license does not read as a clean run.
+    /// </summary>
+    public int Failures { get; set; }
+
     public int NotFound { get; set; }
     public int RenewalsDetected { get; set; }
     public int RenewalsConfirmed { get; set; }
     public int RenewalsAbandoned { get; set; }
 
     public override string ToString() =>
-        $"{Checked}/{Due} checked, {LookupFailures} lookup failure(s), {NotFound} not found, " +
+        $"{Checked}/{Due} checked, {LookupFailures} lookup failure(s), {Failures} save failure(s), {NotFound} not found, " +
         $"renewals: {RenewalsDetected} detected / {RenewalsConfirmed} confirmed / {RenewalsAbandoned} abandoned";
 }

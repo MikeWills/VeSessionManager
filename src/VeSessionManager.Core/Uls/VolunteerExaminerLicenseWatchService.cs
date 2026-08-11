@@ -96,7 +96,15 @@ public class VolunteerExaminerLicenseWatchService(
             {
                 // Discard the poisoned tracked state, or every later SaveChangesAsync in this run
                 // retries the same failing entity — the trap JobRunHistoryLogger already documents.
-                dbContext.ChangeTracker.Clear();
+                //
+                // **Scoped to this row. It was ChangeTracker.Clear() until 2026-08-11 (issue #231),
+                // and Clear() detaches EVERYTHING** — including the rest of `due`, which was loaded
+                // tracked before the loop. One FRN collision on VE #7 of 250 therefore left VEs
+                // #8-250 being mutated while detached: LicenseLastCheckedUtc, Frn, LicenseStatus and
+                // the added history rows all went nowhere, SaveChangesAsync wrote nothing, and
+                // result.Checked++ still ran. The job reported "checked 243", Job History rendered
+                // green, and because the stamp never persisted the next run did it all again.
+                DetachFailedRow(volunteerExaminer);
                 result.Failures++;
                 logger.LogError(ex, "Failed to refresh license for VE {VolunteerExaminerId} ({CallSign})",
                     volunteerExaminer.Id, volunteerExaminer.CallSign);
@@ -113,6 +121,31 @@ public class VolunteerExaminerLicenseWatchService(
 
         logger.LogInformation("VE license watch finished: {Result}", result);
         return result;
+    }
+
+    /// <summary>
+    /// Detaches one failed row's pending state and nothing else, so the rest of the sweep keeps its
+    /// own changes (issue #231 — see the catch block that calls this).
+    ///
+    /// <para><see cref="Apply"/> touches exactly two things: the <see cref="VolunteerExaminer"/>
+    /// itself, and any <see cref="VeCallSignHistory"/> row it adds for a rename. Those history rows
+    /// are constructed with a real <c>VolunteerExaminerId</c> (the VE is already persisted), so they
+    /// can be matched directly rather than through navigation fixup the throw may have
+    /// interrupted.</para>
+    /// </summary>
+    private void DetachFailedRow(VolunteerExaminer volunteerExaminer)
+    {
+        var pendingHistory = dbContext.ChangeTracker.Entries<VeCallSignHistory>()
+            .Where(e => e.State != EntityState.Unchanged
+                        && e.Entity.VolunteerExaminerId == volunteerExaminer.Id)
+            .ToList();
+
+        foreach (var entry in pendingHistory)
+        {
+            entry.State = EntityState.Detached;
+        }
+
+        dbContext.Entry(volunteerExaminer).State = EntityState.Detached;
     }
 
     /// <summary>

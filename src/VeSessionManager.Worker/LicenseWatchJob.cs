@@ -66,10 +66,26 @@ public class LicenseWatchJob(
                     JobSchedules.IntervalOrDefault(settings.UlsWatcherIntervalHours, Descriptor.DefaultIntervalHours!.Value));
 
                 // This is what makes the anchor survive restarts and outages: a Worker that boots at
-                // 08:47 finds no successful run since today's 06:00 slot and runs it immediately;
-                // every later tick that day finds one and skips.
-                var alreadyRanThisSlot = await dbContext.JobRunHistories.AnyAsync(
-                    h => h.JobName == "LicenseWatch" && h.Success && h.StartedUtc >= dueSlotUtc, stoppingToken);
+                // 08:47 finds no successful run since today's slot and runs it immediately; every
+                // later tick that day finds one and skips.
+                //
+                // **Both job names, not just "LicenseWatch" (issue #288).** This tick writes two
+                // independent JobRunHistory rows, and the guard checked only the first — so if
+                // LicenseWatch succeeded and VeLicenseWatch threw (an FRN collision, say), the next
+                // hourly tick saw a successful LicenseWatch since the slot and returned early. VE
+                // license refresh then never retried for the rest of the day, showing one green row
+                // beside one red one with no retry, while the comment below claimed separate rows
+                // were what prevented exactly that. Requiring a success for *each* name gives the
+                // guard the property it was described as having.
+                var successesThisSlot = await dbContext.JobRunHistories
+                    .Where(h => (h.JobName == JobSchedules.LicenseWatch || h.JobName == JobSchedules.VeLicenseWatch)
+                                && h.Success
+                                && h.StartedUtc >= dueSlotUtc)
+                    .Select(h => h.JobName)
+                    .Distinct()
+                    .CountAsync(stoppingToken);
+
+                var alreadyRanThisSlot = successesThisSlot == 2;
                 if (alreadyRanThisSlot)
                 {
                     // `return` (not `continue`) — this is the guarded tick body; returning ends this
