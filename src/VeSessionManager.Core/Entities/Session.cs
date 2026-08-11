@@ -55,13 +55,40 @@ public class Session
     public decimal? RetainedAmountOverride { get; set; }
     public int? RetainedAmountOverrideByUserId { get; set; }
     public User? RetainedAmountOverrideByUser { get; set; }
+    /// <summary>
+    /// Written, never read back by any query or screen — **deliberately retained** (audit T36,
+    /// decided 2026-08-11). It answers a question that only ever gets asked after something has gone
+    /// wrong, and by then it is too late to start recording it. Storage is nothing; the alternative
+    /// is a migration that destroys history permanently.
+    ///
+    /// <para>Recorded here so the next reader can tell "kept on purpose" from "forgotten", which was
+    /// the actual finding — the ambiguity, not the column.</para>
+    /// </summary>
     public DateTime? RetainedAmountOverrideUtc { get; set; }
 
     public SessionStatus Status { get; set; } = SessionStatus.Active;
+    /// <summary>
+    /// Written, never read back by any query or screen — **deliberately retained** (audit T36,
+    /// decided 2026-08-11). It answers a question that only ever gets asked after something has gone
+    /// wrong, and by then it is too late to start recording it. Storage is nothing; the alternative
+    /// is a migration that destroys history permanently.
+    ///
+    /// <para>Recorded here so the next reader can tell "kept on purpose" from "forgotten", which was
+    /// the actual finding — the ambiguity, not the column.</para>
+    /// </summary>
     public DateTime? CancelledUtc { get; set; }
 
     /// <summary>Set when a reschedule is detected while the session already has candidates — a "something needs a human" flag, not an automatic action.</summary>
     public bool RescheduleFlaggedForReview { get; set; }
+    /// <summary>
+    /// Written, never read back by any query or screen — **deliberately retained** (audit T36,
+    /// decided 2026-08-11). It answers a question that only ever gets asked after something has gone
+    /// wrong, and by then it is too late to start recording it. Storage is nothing; the alternative
+    /// is a migration that destroys history permanently.
+    ///
+    /// <para>Recorded here so the next reader can tell "kept on purpose" from "forgotten", which was
+    /// the actual finding — the ambiguity, not the column.</para>
+    /// </summary>
     public DateTime? RescheduleFlaggedUtc { get; set; }
 
     /// <summary>Set by the Session Manager's "mark session as completed" action; bulk-flips Candidate.Tested = true for every non-terminal candidate in the session.</summary>

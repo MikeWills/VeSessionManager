@@ -93,6 +93,15 @@ public class Payment
     public bool RefundRequested { get; set; }
     public int? RefundRequestedByUserId { get; set; }
     public User? RefundRequestedByUser { get; set; }
+    /// <summary>
+    /// Written, never read back by any query or screen — **deliberately retained** (audit T36,
+    /// decided 2026-08-11). It answers a question that only ever gets asked after something has gone
+    /// wrong, and by then it is too late to start recording it. Storage is nothing; the alternative
+    /// is a migration that destroys history permanently.
+    ///
+    /// <para>Recorded here so the next reader can tell "kept on purpose" from "forgotten", which was
+    /// the actual finding — the ambiguity, not the column.</para>
+    /// </summary>
     public DateTime? RefundRequestedUtc { get; set; }
     public string? RefundNotes { get; set; }
 

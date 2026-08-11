@@ -24,9 +24,6 @@ public sealed record UlsLookupResult
     /// <summary>Current operator class. Unrecognised/legacy values (Novice, Advanced) map to None, which conservatively means "won't confirm an upgrade" rather than guessing.</summary>
     public LicenseClass OperatorClass { get; init; }
 
-    /// <summary>The class held *before* the current one, when ExamTools reports it. Informational — the upgrade test keys off OperatorClass + EffectiveDateUtc, not this.</summary>
-    public LicenseClass PreviousOperatorClass { get; init; }
-
     /// <summary>Original license grant. Does NOT advance on a class upgrade — FCC pins it to the first issuance (a 2026 upgrade can still report a 2021 grant date).</summary>
     public DateTime? GrantDateUtc { get; init; }
 
@@ -103,6 +100,10 @@ internal sealed class UlsLookupResponse
     [JsonPropertyName("callsign")] public string? CallSign { get; set; }
     [JsonPropertyName("license_status")] public string? LicenseStatus { get; set; }
     [JsonPropertyName("license_class")] public string? LicenseClass { get; set; }
+    /// <summary>Parsed but not surfaced. Kept because this type's job is to describe ExamTools'
+    /// response, and knowing the field exists is worth more than the line costs — the mapped
+    /// UlsLookupResult property was removed 2026-08-11 as genuinely unread (audit T36). Restoring it
+    /// is a one-line change if #195's timeline ever wants "General (was Technician)".</summary>
     [JsonPropertyName("prev_license_class")] public string? PrevLicenseClass { get; set; }
     [JsonPropertyName("grant_date")] public DateTime? GrantDate { get; set; }
     [JsonPropertyName("effective_date")] public DateTime? EffectiveDate { get; set; }
