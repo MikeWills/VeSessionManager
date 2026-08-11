@@ -122,7 +122,8 @@ public class SessionIngestionServiceTests
         new(dbContext, client, new FixedTimeProvider(Now), Options.Create(new ExamToolsOptions()), NullLogger<SessionIngestionService>.Instance);
 
     private static ExamToolsSession PendingSession(
-        string id = "session-1", DateTime? date = null, int? applicantCount = 0, string summary = "July Session", string? extId = "AD2GX") =>
+        string id = "session-1", DateTime? date = null, int? applicantCount = 0, string summary = "July Session",
+        string? extId = "AD2GX", string? teamLeadCallsign = "KM6Z") =>
         new()
         {
             Id = id,
@@ -130,7 +131,7 @@ public class SessionIngestionServiceTests
             Vec = "arrl",
             State = "pend",
             ApplicantCount = applicantCount,
-            SessionDef = new ExamToolsSessionDef { Summary = summary, ExtId = extId }
+            SessionDef = new ExamToolsSessionDef { Summary = summary, ExtId = extId, TeamLeadCallsign = teamLeadCallsign }
         };
 
     private static ExamToolsApplicant Applicant(
@@ -1401,5 +1402,92 @@ public class SessionIngestionServiceTests
         Assert.Equal(0, result.CandidatesAdded);
         Assert.Empty(client.CredentialsUsed);
         Assert.Empty(client.ApplicantFetches);
+    }
+
+    // ---- Team lead (#223) ----
+
+    /// <summary>
+    /// ExamTools carries the lead's call sign on the team-list endpoint ingestion already polls, so
+    /// this costs no extra request. It was arriving and being discarded before 2026-08-11.
+    /// </summary>
+    [Fact]
+    public async Task NewSession_StoresTheTeamLeadCallSign()
+    {
+        await using var dbContext = CreateContext();
+        await SeedVecAndFeeConfigAsync(dbContext);
+        var team = await SeedTeamAsync(dbContext);
+        var client = new FakeExamToolsClient();
+        client.SessionsFor(team.Id).Add(PendingSession(teamLeadCallsign: "km6z"));
+
+        await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+
+        // Normalized on the way in, like every other call sign in this app.
+        Assert.Equal("KM6Z", dbContext.Sessions.Single().TeamLeadCallSign);
+    }
+
+    /// <summary>
+    /// Unlike Title and ExtId, which are set once, the lead is re-synced: it names a person who may
+    /// be emailed about this session, so a stale value means notifying the wrong VE. Re-assigning
+    /// also backfills sessions ingested before the field existed, with no migration script.
+    /// </summary>
+    [Fact]
+    public async Task ExistingSession_TeamLeadIsKeptCurrentWhenItChangesUpstream()
+    {
+        await using var dbContext = CreateContext();
+        await SeedVecAndFeeConfigAsync(dbContext);
+        var team = await SeedTeamAsync(dbContext);
+
+        var first = new FakeExamToolsClient();
+        first.SessionsFor(team.Id).Add(PendingSession(teamLeadCallsign: "KM6Z"));
+        await CreateService(dbContext, first).RunAsync(team, CancellationToken.None);
+
+        var second = new FakeExamToolsClient();
+        second.SessionsFor(team.Id).Add(PendingSession(teamLeadCallsign: "W9NB"));
+        await CreateService(dbContext, second).RunAsync(team, CancellationToken.None);
+
+        Assert.Equal("W9NB", dbContext.Sessions.Single().TeamLeadCallSign);
+    }
+
+    /// <summary>
+    /// A feed that omits the lead must not erase one we already knew. "No value reported" and "the
+    /// lead was removed" look identical here, and quietly forgetting is the worse of the two — it
+    /// would silently drop whoever a notification was meant to reach.
+    /// </summary>
+    [Fact]
+    public async Task ExistingSession_AbsentTeamLeadDoesNotEraseTheStoredOne()
+    {
+        await using var dbContext = CreateContext();
+        await SeedVecAndFeeConfigAsync(dbContext);
+        var team = await SeedTeamAsync(dbContext);
+
+        var first = new FakeExamToolsClient();
+        first.SessionsFor(team.Id).Add(PendingSession(teamLeadCallsign: "KM6Z"));
+        await CreateService(dbContext, first).RunAsync(team, CancellationToken.None);
+
+        var second = new FakeExamToolsClient();
+        second.SessionsFor(team.Id).Add(PendingSession(teamLeadCallsign: null));
+        await CreateService(dbContext, second).RunAsync(team, CancellationToken.None);
+
+        Assert.Equal("KM6Z", dbContext.Sessions.Single().TeamLeadCallSign);
+    }
+
+    /// <summary>
+    /// ExamTools reports the literal "&lt;UNKNOWN&gt;" when it has no call sign, and treating that as
+    /// an identity once fused two different people (see Core/CallSign). A lead that is not
+    /// call-sign-shaped is stored as-is rather than resolved to anybody — the guard belongs at the
+    /// point of matching, but garbage must not look like a real lead either.
+    /// </summary>
+    [Fact]
+    public async Task NewSession_PlaceholderLeadIsNotTreatedAsACallSign()
+    {
+        await using var dbContext = CreateContext();
+        await SeedVecAndFeeConfigAsync(dbContext);
+        var team = await SeedTeamAsync(dbContext);
+        var client = new FakeExamToolsClient();
+        client.SessionsFor(team.Id).Add(PendingSession(teamLeadCallsign: "<UNKNOWN>"));
+
+        await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+
+        Assert.False(CallSign.IsUsable(dbContext.Sessions.Single().TeamLeadCallSign));
     }
 }
