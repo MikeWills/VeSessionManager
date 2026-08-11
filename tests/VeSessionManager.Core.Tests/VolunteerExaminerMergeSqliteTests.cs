@@ -344,4 +344,81 @@ public class VolunteerExaminerMergeSqliteTests
         Assert.Equal(1, preview.SessionsAlreadyShared);
         Assert.Equal(1, preview.TeamMembershipsMoving);
     }
+
+    /// <summary>
+    /// Issue #250. Three references identify a person to an <i>account</i> rather than to their
+    /// roster history, and the merge left all three pointing at the retired row — which a global
+    /// query filter then hides, so they do not merely go stale, their targets go invisible.
+    ///
+    /// <para>Real SQLite matters twice over here: the repoint uses <c>ExecuteUpdateAsync</c>, which
+    /// EF InMemory does not support at all, and the token assertions depend on the query filter
+    /// actually being applied to an INNER JOIN.</para>
+    /// </summary>
+    [Fact]
+    public async Task Merge_RepointsTheAccountLink_SelfServiceTokens_AndEmailChangeRequests()
+    {
+        var (connection, dbContext) = await CreateAsync();
+        await using var _ = connection;
+        await using var __ = dbContext;
+
+        var team = await SeedTeamAsync(dbContext, "HRCC");
+        var survivor = await SeedVeAsync(dbContext, "Sam Granger", "N2SPG", team);
+        var duplicate = await SeedVeAsync(dbContext, "Samuel Granger", "N2SPG", team);
+
+        // The one VE of 176 who has an account, and an outstanding sign-in link.
+        var account = new User
+        {
+            Name = "Sam Granger",
+            Email = "sam@example.org",
+            Role = UserRole.TeamLead,
+            VolunteerExaminerId = duplicate.Id
+        };
+        dbContext.Users.Add(account);
+        dbContext.VeSelfServiceTokens.Add(new VeSelfServiceToken
+        {
+            VolunteerExaminerId = duplicate.Id,
+            TokenHash = "hash-1",
+            CreatedUtc = Now,
+            ExpiresUtc = Now.AddMinutes(30),
+            SentToEmail = "sam@example.org"
+        });
+        dbContext.VeEmailChangeRequests.Add(new VeEmailChangeRequest
+        {
+            VolunteerExaminerId = duplicate.Id,
+            TokenHash = "hash-2",
+            NewEmail = "new@example.org",
+            CreatedUtc = Now,
+            ExpiresUtc = Now.AddHours(24),
+            ConfirmationSentToEmail = "sam@example.org"
+        });
+        await dbContext.SaveChangesAsync();
+
+        var result = await CreateService(dbContext).MergeAsync(survivor.Id, duplicate.Id, 1, CancellationToken.None);
+        Assert.Equal(VeMergeResult.Success, result);
+
+        dbContext.ChangeTracker.Clear();
+
+        // Without the repoint this still reads duplicate.Id, and /Account/MyVeDetails resolves it
+        // through the filtered DbSet — so the person loses access to their own record permanently,
+        // and the unique filtered index blocks re-linking by hand.
+        var reloadedAccount = await dbContext.Users.AsNoTracking().SingleAsync(u => u.Id == account.Id);
+        Assert.Equal(survivor.Id, reloadedAccount.VolunteerExaminerId);
+
+        // These two Include a *required* navigation, which EF renders as an INNER JOIN — so with the
+        // reference left on the retired row the token row itself vanishes from the query and a live
+        // link reports "invalid or expired". Loading them the way the services do is the assertion.
+        var token = await dbContext.VeSelfServiceTokens
+            .Include(t => t.VolunteerExaminer)
+            .AsNoTracking()
+            .SingleOrDefaultAsync(t => t.TokenHash == "hash-1");
+        Assert.NotNull(token);
+        Assert.Equal(survivor.Id, token!.VolunteerExaminerId);
+
+        var changeRequest = await dbContext.VeEmailChangeRequests
+            .Include(r => r.VolunteerExaminer)
+            .AsNoTracking()
+            .SingleOrDefaultAsync(r => r.TokenHash == "hash-2");
+        Assert.NotNull(changeRequest);
+        Assert.Equal(survivor.Id, changeRequest!.VolunteerExaminerId);
+    }
 }

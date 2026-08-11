@@ -62,27 +62,48 @@ public class VolunteerExaminerSyncService(
         // roster names may already exist because they serve another team — scoping the lookup would
         // recreate exactly the per-team duplication this change removed. The team-specific part is
         // the VeTeamMembership added below.
-        var allWithCallSign = await dbContext.VolunteerExaminers
+        //
+        // Loads every VE, including ones with no call sign at all — the importer can create a
+        // name-only row, and the former-call-sign fallback has to be able to resolve to one (issue
+        // #282). The call-sign-keyed maps below still filter those out; only the by-id map needs them.
+        var allVes = await dbContext.VolunteerExaminers
             .Include(v => v.TeamMemberships)
             .Include(v => v.CallSignHistory)
-            .Where(v => v.CallSign != null)
             .ToListAsync(cancellationToken);
+
+        var withCallSign = allVes.Where(v => v.CallSign != null).ToList();
 
         // Keyed on the call sign, so only rows whose call sign is actually an identity may go in.
         // Placeholders are excluded for two reasons: matching on one fuses different people (see
         // ReconcileSession), and — because several people can legitimately hold the literal
         // "<UNKNOWN>" — a straight ToDictionary over every row throws a duplicate-key exception the
         // moment more than one exists, taking the whole roster sync down with it.
-        var knownVes = allWithCallSign
+        //
+        // **GroupBy first (issue #278).** CallSign is explicitly NOT unique — the migration was
+        // designed to leave genuine duplicates for a human to merge, and
+        // VolunteerExaminerDirectoryService queries for exactly that to render its "possible
+        // duplicate" marker. So a usable call sign can legitimately appear twice, and the bare
+        // ToDictionary that used to be here would throw on it — outside the per-session try/catch,
+        // so it took the whole team's roster sync down every tick until someone merged them. The
+        // placeholder map two lines below already did this correctly; only this one did not.
+        var knownVes = withCallSign
             .Where(v => CallSign.IsUsable(v.CallSign))
-            .ToDictionary(v => v.CallSign!);
+            .GroupBy(v => v.CallSign!)
+            .ToDictionary(g => g.Key, g => g.First());
 
         // Unidentifiable rows are matched within one team only, which is what the old per-team
         // schema did implicitly and what stops a new person being minted on every poll.
-        var placeholderVesOnThisTeam = allWithCallSign
+        var placeholderVesOnThisTeam = withCallSign
             .Where(v => !CallSign.IsUsable(v.CallSign) && v.TeamMemberships.Any(m => m.TeamId == team.Id))
             .GroupBy(v => v.CallSign!)
             .ToDictionary(g => g.Key, g => g.First());
+
+        // Resolves a former-call-sign hit to the person, whatever their current call sign is —
+        // including null or a placeholder (issue #282). This used to search knownVes, a strict
+        // subset, so a VE whose current call sign was unusable fell through to "create", minting a
+        // second person and splitting their session history: precisely the outcome the
+        // former-call-sign lookup exists to prevent.
+        var allById = allVes.ToDictionary(v => v.Id);
 
         // Former call signs, so a roster still reporting someone's old call resolves to them rather
         // than minting a second person. Only consulted when the live call sign misses — see
@@ -92,9 +113,21 @@ public class VolunteerExaminerSyncService(
             .Select(g => new { CallSign = g.Key, VeId = g.OrderByDescending(h => h.ReplacedUtc).First().VolunteerExaminerId })
             .ToDictionaryAsync(x => x.CallSign, x => x.VeId, cancellationToken);
 
+        // **VeRosterFinalSyncedUtc == null is what bounds this query (issue #245).** Status ==
+        // Active means "not cancelled" and nothing else, so on its own this loaded every session the
+        // team has ever run — with its roster links and each linked VE — on every tick, only to
+        // discard nearly all of them in the RemoveAll a few lines below. The HTTP calls were bounded
+        // by that in-memory filter, which is why the symptom looked fixed; the query never was.
+        //
+        // Safe because the stamp is only ever written for a session that was already finished, and
+        // finished is monotonic — so "has a stamp" implies "is settled", which is exactly the first
+        // arm of the settle rule below. The second arm (the retry window) still has to be applied in
+        // memory, because HasEnded is C# arithmetic and cannot translate. The historical import's
+        // ignoreRetryWindow path is unaffected: those rows have no stamp.
         var sessions = await dbContext.Sessions
             .Include(s => s.SessionVolunteerExaminers).ThenInclude(sve => sve.VolunteerExaminer)
             .Where(s => s.TeamId == team.Id && s.Status == SessionStatus.Active
+                        && s.VeRosterFinalSyncedUtc == null
                         && (onlySessionId == null || s.Id == onlySessionId))
             .ToListAsync(cancellationToken);
 
@@ -144,9 +177,10 @@ public class VolunteerExaminerSyncService(
         // that can't be fetched by then is a fact about ExamTools, not a sync still worth retrying.
         var now = timeProvider.GetUtcNow().UtcDateTime;
         var retryCutoff = now - RosterRetryWindow;
+        // The stamped arm is now handled by the query above; what is left is the retry window, which
+        // depends on HasEnded and so cannot translate to SQL.
         var settled = sessions.RemoveAll(s =>
-            IsFinished(s, now)
-            && (s.VeRosterFinalSyncedUtc is not null || (!ignoreRetryWindow && s.ScheduledStartUtc < retryCutoff)));
+            IsFinished(s, now) && !ignoreRetryWindow && s.ScheduledStartUtc < retryCutoff);
         if (settled > 0)
         {
             logger.LogInformation("VE roster sync for team {TeamId} ({TeamName}): skipped {SettledCount} finished session(s) already synced after close, or started over {RetryWindowDays} days ago", team.Id, team.Name, settled, RosterRetryWindow.TotalDays);
@@ -161,7 +195,7 @@ public class VolunteerExaminerSyncService(
             try
             {
                 var roster = await examToolsClient.GetSessionVeRosterAsync(credentials, session.ExamToolsSessionId, cancellationToken);
-                ReconcileSession(team, session, roster, knownVes, placeholderVesOnThisTeam, byFormerCallSign, now, result);
+                ReconcileSession(team, session, roster, knownVes, placeholderVesOnThisTeam, byFormerCallSign, allById, now, result);
 
                 // Stamped here, after the call returned, and only for a session that was already
                 // finished when we asked — that combination is the whole meaning of the field. A
@@ -177,12 +211,41 @@ public class VolunteerExaminerSyncService(
             }
             catch (Exception ex)
             {
+                // **Discard this session's pending link changes (issue #233).** Without this the
+                // failed session's Add/Remove entries stayed tracked, so every later session's
+                // SaveChangesAsync re-attempted them and threw the same error — one bad session
+                // failing all of them, with the log showing N identical failures and no hint that
+                // only the first was real.
+                //
+                // Scoped to the link rows on purpose, and NOT ChangeTracker.Clear(): that would also
+                // detach any VolunteerExaminer created earlier in this run, which the knownVes cache
+                // still holds references to — later sessions would then reuse a detached person and
+                // silently mint duplicates. New people and memberships are genuinely on the roster
+                // and are left pending for the next session's save to commit.
+                DetachSessionLinks(session);
                 logger.LogError(ex, "Failed to sync VE roster for session {SessionId} ({ExamToolsSessionId})", session.Id, session.ExamToolsSessionId);
             }
         }
 
         logger.LogInformation("VE roster sync finished for team {TeamId} ({TeamName}): {Result}", team.Id, team.Name, result);
         return result;
+    }
+
+    /// <summary>
+    /// Detaches the roster-link rows one failed session left pending, and nothing else — see the
+    /// catch block that calls it (issue #233).
+    /// </summary>
+    private void DetachSessionLinks(Session session)
+    {
+        var pending = dbContext.ChangeTracker.Entries<SessionVolunteerExaminer>()
+            .Where(e => e.State != EntityState.Unchanged
+                        && (e.Entity.SessionId == session.Id || ReferenceEquals(e.Entity.Session, session)))
+            .ToList();
+
+        foreach (var entry in pending)
+        {
+            entry.State = EntityState.Detached;
+        }
     }
 
     /// <summary>
@@ -198,15 +261,29 @@ public class VolunteerExaminerSyncService(
         Dictionary<string, VolunteerExaminer> knownVes,
         Dictionary<string, VolunteerExaminer> placeholderVesOnThisTeam,
         Dictionary<string, int> byFormerCallSign,
+        Dictionary<int, VolunteerExaminer> allById,
         DateTime now, VeRosterSyncResult result)
     {
-        var rosterCallSigns = roster
-            .Where(v => !string.IsNullOrWhiteSpace(v.Call))
-            .Select(v => CallSign.NormalizeFormat(v.Call)!)
-            .ToHashSet();
+        // **Resolve first, then diff — and diff on the person, not the call sign (issue #283).**
+        //
+        // The link table's key is (SessionId, VolunteerExaminerId), so a call-sign-keyed diff was
+        // answering a different question from the one the database asks, and got two things wrong:
+        //
+        //   Duplicate primary key. A roster naming the same person twice — once by their current
+        //   call sign, once by a former one, which byFormerCallSign resolves to the same row — passed
+        //   the call-sign guard twice and added two links with an identical composite key. That
+        //   throws on save, and until #233 below the throw also poisoned every later session in the
+        //   team's run.
+        //
+        //   Perpetual churn. After the licence sweep follows FCC onto a new call sign, a roster
+        //   still reporting the old one no longer matches the stored VE's CallSign, so the link was
+        //   dropped and re-added on every single tick — LinksRemoved and LinksAdded both ticking up
+        //   forever for a roster that had not changed.
+        var rosterVes = ResolveRoster(team, roster, knownVes, placeholderVesOnThisTeam, byFormerCallSign, allById, now, result);
+        var rosterVeIds = rosterVes.Select(v => v.Id).Where(id => id != 0).ToHashSet();
 
         foreach (var link in session.SessionVolunteerExaminers
-                     .Where(l => !rosterCallSigns.Contains(l.VolunteerExaminer.CallSign ?? ""))
+                     .Where(l => !rosterVeIds.Contains(l.VolunteerExaminerId))
                      .ToList())
         {
             session.SessionVolunteerExaminers.Remove(link);
@@ -214,9 +291,46 @@ public class VolunteerExaminerSyncService(
             result.LinksRemoved++;
         }
 
-        var existingCallSigns = session.SessionVolunteerExaminers
-            .Select(l => l.VolunteerExaminer.CallSign ?? "")
+        // Tracked by identity, not by call sign — a person newly created in this same pass has Id 0
+        // until save, so reference equality is what distinguishes them.
+        var linked = session.SessionVolunteerExaminers
+            .Select(l => l.VolunteerExaminer)
             .ToHashSet();
+
+        foreach (var volunteerExaminer in rosterVes)
+        {
+            EnsureTeamMembership(volunteerExaminer, team, now, result);
+
+            if (linked.Add(volunteerExaminer))
+            {
+                session.SessionVolunteerExaminers.Add(new SessionVolunteerExaminer
+                {
+                    Session = session,
+                    VolunteerExaminer = volunteerExaminer
+                });
+                result.LinksAdded++;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Turns one ExamTools roster into the set of people it names, creating anyone genuinely new.
+    /// Split out of <see cref="ReconcileSession"/> (issue #283) so the link diff can work in terms of
+    /// people rather than call signs — the same terms the link table's own key uses.
+    ///
+    /// <para>Returns distinct people: a roster naming someone twice, under a current and a former
+    /// call sign, resolves to one person and must produce one link.</para>
+    /// </summary>
+    private List<VolunteerExaminer> ResolveRoster(
+        Team team, IReadOnlyList<ExamToolsVe> roster,
+        Dictionary<string, VolunteerExaminer> knownVes,
+        Dictionary<string, VolunteerExaminer> placeholderVesOnThisTeam,
+        Dictionary<string, int> byFormerCallSign,
+        Dictionary<int, VolunteerExaminer> allById,
+        DateTime now, VeRosterSyncResult result)
+    {
+        var resolved = new List<VolunteerExaminer>();
+        var seen = new HashSet<VolunteerExaminer>();
 
         foreach (var ve in roster)
         {
@@ -256,7 +370,10 @@ public class VolunteerExaminerSyncService(
             // only — a placeholder has no history worth following.
             if (volunteerExaminer is null && identifiable && byFormerCallSign.TryGetValue(callSign, out var formerId))
             {
-                volunteerExaminer = knownVes.Values.FirstOrDefault(v => v.Id == formerId);
+                // allById, not knownVes (issue #282) — knownVes holds only people whose *current*
+                // call sign is usable, so someone who has since become a placeholder, or lost their
+                // call sign entirely, was invisible here and got a second record minted.
+                allById.TryGetValue(formerId, out volunteerExaminer);
             }
 
             if (volunteerExaminer is null)
@@ -268,6 +385,7 @@ public class VolunteerExaminerSyncService(
                     CreatedUtc = now
                 };
                 dbContext.VolunteerExaminers.Add(volunteerExaminer);
+                allById[volunteerExaminer.Id] = volunteerExaminer;
                 result.VolunteerExaminersAdded++;
             }
 
@@ -288,21 +406,18 @@ public class VolunteerExaminerSyncService(
             // the VEs themselves an edit screen. Re-applying the feed's value every poll would
             // silently undo those edits within the hour, which is the same trap the manual VE roster
             // buttons fell into. ExamTools seeds the name once, at creation above, and owns nothing
-            // about this person afterwards; team membership below is the only thing it still drives.
+            // about this person afterwards; team membership, applied by the caller, is the only
+            // thing it still drives.
 
-            EnsureTeamMembership(volunteerExaminer, team, now, result);
-
-            if (!existingCallSigns.Contains(callSign))
+            // Distinct by person: two roster entries naming the same human — current call sign and a
+            // former one — must yield one link, not a duplicate primary key.
+            if (seen.Add(volunteerExaminer))
             {
-                session.SessionVolunteerExaminers.Add(new SessionVolunteerExaminer
-                {
-                    Session = session,
-                    VolunteerExaminer = volunteerExaminer
-                });
-                existingCallSigns.Add(callSign);
-                result.LinksAdded++;
+                resolved.Add(volunteerExaminer);
             }
         }
+
+        return resolved;
     }
 
     /// <summary>
