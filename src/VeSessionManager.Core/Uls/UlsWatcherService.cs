@@ -38,23 +38,44 @@ namespace VeSessionManager.Core.Uls;
 public class UlsWatcherService(
     AppDbContext dbContext,
     IUlsLookupClient lookupClient,
+    TimeProvider timeProvider,
     ILogger<UlsWatcherService> logger)
 {
     private const string ActiveLicenseStatus = "Active";
 
+    /// <summary>
+    /// Ceiling per run (issue #247, 2026-08-11). Both sibling sweeps —
+    /// <see cref="LicenseWatchService"/> and <see cref="VolunteerExaminerLicenseWatchService"/> —
+    /// have carried one since they were written; this one did not, so a growing backlog of
+    /// never-resolving candidates meant an unbounded burst of sequential calls against a third
+    /// party's undocumented mirror, twice a day, forever.
+    ///
+    /// <para>250 matches the siblings. It is far above the live scan (about a dozen non-terminal
+    /// candidates carry an FRN today) — this is a ceiling, not a throttle, and if it ever starts
+    /// binding that is itself the signal worth noticing.</para>
+    /// </summary>
+    public const int MaxLookupsPerRun = 250;
+
     public async Task<UlsWatchResult> RunAsync(CancellationToken cancellationToken)
     {
         var result = new UlsWatchResult();
+        var utcNow = timeProvider.GetUtcNow().UtcDateTime;
 
         // Terminal statuses and null-FRN candidates are excluded by the query rather than an
         // explicit check — they are simply never selected again. Expressed as "not terminal" using
         // the shared definition, rather than by listing the two non-terminal values: a new
         // non-terminal status would otherwise have to be remembered here, and forgetting it means
         // those candidates are silently never watched. Translates to SQL NOT IN.
+        //
+        // Ordered least-recently-attempted first (nulls, i.e. never attempted, sort first) and
+        // capped — see MaxLookupsPerRun. The ordering is what makes the cap fair rather than a
+        // permanent cliff: whoever misses this run leads the next one.
         var candidates = await dbContext.Candidates
             .Include(c => c.Session)
             .Where(c => !CandidateApplicationStatusExtensions.TerminalStatuses.Contains(c.ApplicationStatus)
                         && c.Frn != null)
+            .OrderBy(c => c.UlsLastCheckedUtc)
+            .Take(MaxLookupsPerRun)
             .ToListAsync(cancellationToken);
 
         result.CandidatesChecked = candidates.Count;
@@ -64,22 +85,27 @@ public class UlsWatcherService(
             cancellationToken.ThrowIfCancellationRequested();
 
             var lookup = await lookupClient.LookupByFrnAsync(candidate.Frn!, cancellationToken);
+
+            // Stamped before the outcome is examined, and on every path including failure. A row
+            // that is never stamped keeps null, null sorts first, and it would lead the queue
+            // forever — starving everyone behind it. Costing a failed lookup one cycle of delay is
+            // the cheaper mistake.
+            candidate.UlsLastCheckedUtc = utcNow;
+            var changed = true;
+
             if (lookup is null)
             {
-                // Lookup itself failed — learned nothing. Leave the candidate untouched so the next
-                // run retries; do not confuse this with "FCC has no record".
+                // Lookup itself failed — learned nothing about the candidate. Everything except the
+                // attempt stamp is left untouched so the next run retries; do not confuse this with
+                // "FCC has no record".
                 result.LookupFailures++;
-                continue;
             }
-
-            if (!lookup.Found)
+            else if (lookup.Found)
             {
-                continue;
+                changed |= ApplyLicenseKey(candidate, lookup);
+                changed |= ApplyPendingApplication(candidate, lookup);
+                changed |= ApplyGrant(candidate, lookup, result);
             }
-
-            var changed = ApplyLicenseKey(candidate, lookup);
-            changed |= ApplyPendingApplication(candidate, lookup);
-            changed |= ApplyGrant(candidate, lookup, result);
 
             if (changed)
             {
@@ -130,8 +156,10 @@ public class UlsWatcherService(
             .OrderByDescending(a => a.ReceiptDateUtc)
             .FirstOrDefault();
 
+        // ToEasternDate, not .Date — the session's timestamp is an instant, FCC's receipt date is a
+        // wall-clock date stamped at UTC midnight. See #248 and UlsSchedule.ToEasternDate.
         if (application?.ReceiptDateUtc is not { } receiptDate
-            || receiptDate.Date < candidate.Session.ScheduledStartUtc.Date)
+            || receiptDate.Date < UlsSchedule.ToEasternDate(candidate.Session.ScheduledStartUtc))
         {
             return false;
         }
@@ -174,7 +202,10 @@ public class UlsWatcherService(
             return false;
         }
 
-        var sessionDate = candidate.Session.ScheduledStartUtc.Date;
+        // ToEasternDate, not .Date. Both dates below are FCC wall-clock dates stamped at UTC
+        // midnight, so the session instant has to be reduced to *its* Eastern calendar date or an
+        // evening-ET session compares against tomorrow. See #248.
+        var sessionDate = UlsSchedule.ToEasternDate(candidate.Session.ScheduledStartUtc);
 
         var isNewLicense = lookup.GrantDateUtc is { } grantDate && grantDate.Date >= sessionDate;
 

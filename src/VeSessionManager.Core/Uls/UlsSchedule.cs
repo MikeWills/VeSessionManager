@@ -12,4 +12,22 @@ public static class UlsSchedule
     /// already tomorrow in raw UTC.</para>
     /// </summary>
     public static readonly TimeZoneInfo EasternTimeZone = TimeZoneInfo.FindSystemTimeZoneById("America/New_York");
+
+    /// <summary>
+    /// The calendar date a UTC instant falls on <b>in Eastern time</b> — the only correct left-hand
+    /// side when comparing one of this app's timestamps against an FCC date.
+    ///
+    /// <para><b>Why this exists rather than <c>.Date</c>.</b> Every FCC date arrives date-only and is
+    /// stamped at UTC midnight by <c>ExamToolsUlsLookupClient.AsUtcDate</c>, so it already *is* a
+    /// wall-clock date. This app's own timestamps are real instants. Taking <c>.Date</c> on one of
+    /// those answers "what day is it in London", and for any session at or after ~20:00 ET that is
+    /// tomorrow — the trap the remarks above warn about, which <c>UlsWatcherService</c> then fell
+    /// into anyway (issue #248): an evening session's candidates could never match an application
+    /// FCC received the same evening, so they stayed <c>Unmatched</c> permanently.</para>
+    ///
+    /// <para><c>SpecifyKind</c> first because EF Core/SQLite returns <c>DateTimeKind.Unspecified</c>,
+    /// and <c>ConvertTimeFromUtc</c> throws for a value it does not believe is UTC.</para>
+    /// </summary>
+    public static DateTime ToEasternDate(DateTime utc) =>
+        TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(utc, DateTimeKind.Utc), EasternTimeZone).Date;
 }

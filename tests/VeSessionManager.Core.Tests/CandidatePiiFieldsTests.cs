@@ -46,6 +46,12 @@ public class CandidatePiiFieldsTests
         nameof(Candidate.FccHoldReason),
         nameof(Candidate.FccPaymentStatus),
 
+        // Records when this app last called the ULS mirror about this row — a fact about our own
+        // polling, not about the person, so there is nothing in it to purge. Clearing it would also
+        // be actively harmful: null sorts first in the watcher's least-recently-checked ordering, so
+        // a purge would send every purged candidate back to the head of the queue (issue #247).
+        nameof(Candidate.UlsLastCheckedUtc),
+
         // Outcome/statistics fields — what the session actually produced, with no person attached
         // once Name/FirstName/Email are gone.
         nameof(Candidate.ApplicationStatus),

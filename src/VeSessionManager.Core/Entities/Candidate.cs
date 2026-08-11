@@ -58,6 +58,27 @@ public class Candidate
     /// <summary>ULS application file number for the candidate's pending application (e.g. `0012131564`), from the ULS lookup's pendingApplications block. Surfaced on Applicant Status so a Session Manager can look the application up in FCC's own Application Search — the pre-grant counterpart to FccUlsLicenseKey. Not PII, same reasoning as that field.</summary>
     public string? UlsApplicationFileNumber { get; set; }
 
+    /// <summary>
+    /// When <c>UlsWatcherService</c> last attempted a lookup for this candidate — <b>set on every
+    /// attempt, including one that failed</b>, which is the point of it (issue #247, 2026-08-11).
+    ///
+    /// <para>It exists to make the scan bounded. The watcher had no per-run cap while both sibling
+    /// sweeps did, so it made one sequential HTTP call per non-terminal candidate against a third
+    /// party's undocumented mirror, twice a day, with no ceiling. Ordering by this column and taking
+    /// a fixed number turns that into a fair round-robin: least-recently-attempted first, remainder
+    /// next run.</para>
+    ///
+    /// <para><b>Stamped on failure too, deliberately.</b> Null sorts first, so a row that is never
+    /// stamped stays permanently at the head of the queue — which is exactly how
+    /// <c>VolunteerExaminerLicenseWatchService</c>'s skipped placeholders could starve its whole
+    /// sweep. A failed lookup going to the back of the queue costs one cycle of delay; not stamping
+    /// it costs everyone else their turn.</para>
+    ///
+    /// <para>Not PII, and not cleared by <c>CandidatePiiFields.Clear</c>: it records when this app
+    /// talked to an API, not anything about the person.</para>
+    /// </summary>
+    public DateTime? UlsLastCheckedUtc { get; set; }
+
     /// <summary>Whether FCC is currently holding this candidate's application for Red Light (unpaid fee, if lingering past normal) or Basic Qualification (character) review — refreshed every UlsWatcherService run from the ULS lookup's pending-application history codes (previously FCC's own HS.dat), cleared back to None once no longer reported (see ApplicationStatus). Only meaningful while ApplicationStatus is Unmatched/Received.</summary>
     public FccApplicationHoldReason FccHoldReason { get; set; } = FccApplicationHoldReason.None;
 
