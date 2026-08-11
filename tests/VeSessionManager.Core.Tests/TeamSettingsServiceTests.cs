@@ -287,7 +287,7 @@ public class TeamSettingsServiceTests
         var team = await SeedTeamAsync(dbContext);
 
         var result = await CreateService(dbContext).UpdateEmailSettingsAsync(
-            team.Id, "noreply@example.org", "VE Team", "reply@example.org", "https://example.org/privacy", "admin@example.org", user.Id, CancellationToken.None);
+            team.Id, "noreply@example.org", "VE Team", "reply@example.org", "https://example.org/privacy", "admin@example.org", null, user.Id, CancellationToken.None);
 
         Assert.Equal(TeamActionResult.Success, result);
         var settings = await dbContext.EmailSettings.SingleAsync();
@@ -314,7 +314,7 @@ public class TeamSettingsServiceTests
         await dbContext.SaveChangesAsync();
 
         await CreateService(dbContext).UpdateEmailSettingsAsync(
-            team.Id, "new@example.org", null, "new-reply@example.org", "https://example.org/privacy", "new-admin@example.org", user.Id, CancellationToken.None);
+            team.Id, "new@example.org", null, "new-reply@example.org", "https://example.org/privacy", "new-admin@example.org", null, user.Id, CancellationToken.None);
 
         var settings = await dbContext.EmailSettings.SingleAsync();
         Assert.Equal("new@example.org", settings.FromAddress);
@@ -328,9 +328,53 @@ public class TeamSettingsServiceTests
         var user = await SeedUserAsync(dbContext);
 
         var result = await CreateService(dbContext).UpdateEmailSettingsAsync(
-            999, "a@example.org", null, "b@example.org", "https://example.org/privacy", "c@example.org", user.Id, CancellationToken.None);
+            999, "a@example.org", null, "b@example.org", "https://example.org/privacy", "c@example.org", null, user.Id, CancellationToken.None);
 
         Assert.Equal(TeamActionResult.NotFound, result);
+    }
+
+
+    [Theory]
+    [InlineData("watch@example.org", "watch@example.org")]
+    [InlineData("  watch@example.org  ", "watch@example.org")]   // trimmed
+    [InlineData("", null)]                                       // blank means off, stored as null
+    [InlineData("   ", null)]
+    [InlineData(null, null)]
+    public async Task UpdateEmailSettingsAsync_NormalizesTheBccAddress(string? entered, string? expected)
+    {
+        await using var dbContext = CreateContext();
+        var user = await SeedUserAsync(dbContext);
+        var team = await SeedTeamAsync(dbContext);
+
+        await CreateService(dbContext).UpdateEmailSettingsAsync(
+            team.Id, "noreply@example.org", null, "reply@example.org", "https://example.org/privacy",
+            "admin@example.org", entered, user.Id, CancellationToken.None);
+
+        Assert.Equal(expected, (await dbContext.EmailSettings.SingleAsync()).BccAddress);
+    }
+
+    /// <summary>
+    /// Turning candidate-mail monitoring on or off starts copying personal data somewhere new, so
+    /// the audit entry says which it is. The address itself is deliberately not recorded — it is an
+    /// admin's own inbox, and no other field on this row logs a raw address either.
+    /// </summary>
+    [Fact]
+    public async Task UpdateEmailSettingsAsync_AuditRecordsWhetherTheBccIsOn()
+    {
+        await using var dbContext = CreateContext();
+        var user = await SeedUserAsync(dbContext);
+        var team = await SeedTeamAsync(dbContext);
+        var service = CreateService(dbContext);
+
+        await service.UpdateEmailSettingsAsync(team.Id, "a@example.org", null, "b@example.org",
+            "https://example.org/privacy", "c@example.org", "watch@example.org", user.Id, CancellationToken.None);
+        await service.UpdateEmailSettingsAsync(team.Id, "a@example.org", null, "b@example.org",
+            "https://example.org/privacy", "c@example.org", null, user.Id, CancellationToken.None);
+
+        var entries = await dbContext.AuditLogs.Where(a => a.Action == "TeamEmailSettingsUpdated").ToListAsync();
+        Assert.Contains(entries, e => e.Details?.Contains("BCC on") == true);
+        Assert.Contains(entries, e => e.Details?.Contains("BCC off") == true);
+        Assert.DoesNotContain(entries, e => e.Details?.Contains("watch@example.org") == true);
     }
 
     // ---- Square environment (2026-08-06) ---------------------------------------------------------

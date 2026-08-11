@@ -35,6 +35,13 @@ public class SmtpEmailSender(SystemSettingsService systemSettingsService, ILogge
         mimeMessage.From.Add(new MailboxAddress(effectiveMessage.FromDisplayName ?? "", effectiveMessage.FromAddress));
         mimeMessage.ReplyTo.Add(MailboxAddress.Parse(effectiveMessage.ReplyToAddress));
         mimeMessage.To.Add(MailboxAddress.Parse(effectiveMessage.ToAddress));
+
+        // Bcc, not Cc: the candidate must not see that anyone else received a copy, and must not be
+        // able to reply-all to a team's internal monitoring inbox.
+        if (!string.IsNullOrWhiteSpace(effectiveMessage.BccAddress))
+        {
+            mimeMessage.Bcc.Add(MailboxAddress.Parse(effectiveMessage.BccAddress));
+        }
         mimeMessage.Subject = effectiveMessage.Subject;
         var bodyBuilder = new BodyBuilder { HtmlBody = effectiveMessage.HtmlBody };
 

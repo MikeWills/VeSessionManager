@@ -398,7 +398,11 @@ public class CandidateNotificationService(
 
         await emailSender.SendAsync(
             credentials,
-            new EmailMessage(candidate.Email!, emailSettings.FromAddress, emailSettings.FromDisplayName, emailSettings.ReplyToAddress, rendered.Subject, rendered.Body, rendered.InlineLogo),
+            // Every candidate-facing email this service sends funnels through here, so this is the
+            // single place the team's monitoring copy is attached (issue #207).
+            new EmailMessage(candidate.Email!, emailSettings.FromAddress, emailSettings.FromDisplayName,
+                emailSettings.ReplyToAddress, rendered.Subject, rendered.Body, rendered.InlineLogo,
+                BccAddress: emailSettings.BccAddress),
             cancellationToken);
         return true;
     }

@@ -149,7 +149,10 @@ public class PaymentReminderService(
 
                 await emailSender.SendAsync(
                     credentials,
-                    new EmailMessage(payment.Candidate.Email!, emailSettings.FromAddress, emailSettings.FromDisplayName, emailSettings.ReplyToAddress, rendered.Subject, rendered.Body, rendered.InlineLogo),
+                    // Candidate-facing, so it carries the team's monitoring copy (issue #207).
+                    new EmailMessage(payment.Candidate.Email!, emailSettings.FromAddress, emailSettings.FromDisplayName,
+                        emailSettings.ReplyToAddress, rendered.Subject, rendered.Body, rendered.InlineLogo,
+                        BccAddress: emailSettings.BccAddress),
                     cancellationToken);
 
                 payment.PaymentReminderSentUtc = now;
@@ -224,6 +227,10 @@ public class PaymentReminderService(
 
                 await emailSender.SendAsync(
                     credentials,
+                    // Deliberately no BccAddress: this notice already goes to the team's own
+                    // AdminNotificationEmail. Copying a team's internal mail to the same team's
+                    // monitoring inbox is noise, and the BCC exists to watch what *candidates*
+                    // receive.
                     new EmailMessage(emailSettings.AdminNotificationEmail, emailSettings.FromAddress, emailSettings.FromDisplayName, emailSettings.ReplyToAddress, rendered.Subject, rendered.Body, rendered.InlineLogo),
                     cancellationToken);
 
