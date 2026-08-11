@@ -39,6 +39,9 @@ public class WebAppFactory : WebApplicationFactory<Program>
 
     public const string TestScheme = "IntegrationTest";
 
+    /// <summary>Forges a principal for a user id that was never seeded — see CreateClientWithStaleCookie.</summary>
+    private const string StaleUserHeader = "X-Test-Stale-User";
+
     /// <summary>Held open for the lifetime of the factory: a SQLite in-memory database exists only while a connection to it does.</summary>
     private SqliteConnection? _connection;
 
@@ -111,6 +114,23 @@ public class WebAppFactory : WebApplicationFactory<Program>
     {
         var client = CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
         client.DefaultRequestHeaders.Add(RoleHeader, role.ToString());
+        return client;
+    }
+
+    /// <summary>
+    /// A client whose principal is authenticated and well-formed but names a user id that does not
+    /// exist — the state a browser is left in when an account is deleted, or the database is
+    /// restored, beneath a still-valid cookie.
+    ///
+    /// <para>It cannot be produced by deleting the seeded row: this harness's auth handler looks the
+    /// user up itself, so a missing row just yields an anonymous request, which exercises the
+    /// authorization challenge rather than the stale-cookie path.</para>
+    /// </summary>
+    public HttpClient CreateClientWithStaleCookie()
+    {
+        var client = CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+        client.DefaultRequestHeaders.Add(RoleHeader, UserRole.SystemAdmin.ToString());
+        client.DefaultRequestHeaders.Add(StaleUserHeader, "true");
         return client;
     }
 
@@ -240,6 +260,22 @@ public class WebAppFactory : WebApplicationFactory<Program>
                 // No header means anonymous, so the harness can also assert that a page correctly
                 // refuses an unauthenticated visitor.
                 return AuthenticateResult.NoResult();
+            }
+
+            if (Request.Headers.ContainsKey(StaleUserHeader))
+            {
+                // Deliberately an id no seeded row has. Everything else about the principal is
+                // correct — signed, authenticated, carrying a role — which is exactly what makes
+                // this state hard to spot in production.
+                var staleIdentity = new ClaimsIdentity(
+                [
+                    new Claim(ClaimTypes.NameIdentifier, "999999"),
+                    new Claim(ClaimTypes.Name, "deleted@example.org"),
+                    new Claim(ClaimTypes.Role, UserRole.SystemAdmin.ToString())
+                ], TestScheme);
+
+                return AuthenticateResult.Success(
+                    new AuthenticationTicket(new ClaimsPrincipal(staleIdentity), TestScheme));
             }
 
             using var scope = scopeFactory.CreateScope();
