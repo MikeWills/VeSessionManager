@@ -85,8 +85,8 @@ Both `VeSessionManager.Web` and `VeSessionManager.Worker` register Data Protecti
 - The same application name (`"VeSessionManager"`, hardcoded identically in both `Program.cs`
   files)
 - The same persisted key-ring path (`DataProtection:KeyRingPath` config key — `../../.dataprotection-keys`
-  in local dev, `/var/lib/vesessionmanager/dataprotection-keys` in Production, mirroring the
-  existing `ConnectionStrings:DefaultConnection` per-environment convention)
+  in local dev, **`/var/lib/vesessionmanager-keys` in Production**, mirroring the existing
+  `ConnectionStrings:DefaultConnection` per-environment convention)
 
 **If these two ever drift — different app name or different key-ring path — one process's writes
 become silently unreadable by the other**, surfacing only as a confusing decrypt-fallback (the
@@ -112,6 +112,46 @@ certificate to encrypt the key ring — which just relocates the same secret-man
 protecting that certificate instead, not something added here). This means the encryption only
 actually protects you in scenarios where **the key ring and the DB end up in different hands** —
 e.g. someone gets a copy of the DB backup but not the server itself.
+
+### The key ring moved out of the database directory (2026-08-10)
+
+Until v0.3.0 the key ring lived at `/var/lib/vesessionmanager/dataprotection-keys` — *inside* the
+same directory as `vesessionmanager.db`. That satisfied "outside the app path, so `rsync --delete`
+cannot touch it", but not the paragraph below: one `tar` of `/var/lib/vesessionmanager/`, one disk
+image, one careless backup, and the ciphertext travelled with the key that opens it.
+
+It is now `/var/lib/vesessionmanager-keys`, mode `0700`, a **sibling** of the data directory rather
+than a child. The deploy takes a pre-deploy snapshot of it, into its own directory rather than beside
+the database — putting the copy next to the ciphertext would rebuild the exact problem.
+
+Migration runbook (copy keys → verify → deploy → verify → remove the old directory) is in
+`docs/deployment.md`. Done on the beta server 2026-08-11; the startup log confirmed
+`Data Protection key ring verified — 3 team(s), all stored credentials readable`.
+
+### `DataProtectionKeyRingGuard`: why config alone was not enough
+
+The read path's legacy-plaintext fallback (above) is what makes the migration safe, and it is also
+what makes a **wrong or missing key ring indistinguishable from a not-yet-migrated row**. Nothing
+throws, nothing is logged, the app starts normally, and every integration quietly authenticates with
+a base64 blob. The failures then surface as Zoom/Square/SMTP errors that point anywhere but here.
+
+`DataProtectionKeyRingGuard` runs at startup in both hosts, after `Database.Migrate()`, and refuses
+to start if any stored credential still looks like ciphertext *after* being read through the
+converter — which is precisely a credential this process cannot decrypt. Detection needs no raw SQL
+and no new column: a Data Protection payload is base64url of a blob whose first four bytes are the
+magic header `09 F0 C9 F0`, always encoding to the prefix `CfDJ8`.
+
+Two details that are load-bearing:
+
+- **It runs before the Worker's one-off `--` switches.** A `--migrate-team-secrets` run against the
+  wrong key ring would rewrite every credential with the undecryptable value it just read back,
+  destroying the originals.
+- **Its error message tells you not to "fix" it by re-entering credentials**, because doing so
+  overwrites the originals under the new key and makes them unrecoverable for good. That instruction
+  is asserted in a test — it is the part most likely to be lost in a future reword.
+
+It also puts teeth behind the Web/Worker agreement described above, which until now was a documented
+constraint with nothing enforcing it.
 
 **Do not let the key-ring backup get bundled together with the DB backup into one artifact.** If
 your backup process ever ships the whole `/var/lib/vesessionmanager/` directory (DB *and*

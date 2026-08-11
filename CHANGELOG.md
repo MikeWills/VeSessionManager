@@ -8,6 +8,18 @@ that window, or immediately if it's phase-numbered work already summarized in "C
 design rationale for any entry still lives in its linked `/docs/*.md` file, not here or in
 CLAUDE.md — this file, like CLAUDE.md's Change Log, is pointers only.
 
+- **WYSIWYG editor for email templates (2026-08-05).** See `docs/email-template-editor.md`. Quill
+  2.0.3 vendored under `wwwroot/lib/quill`, loaded only by Admin → Email Templates via a new `Head`
+  section on `_AppLayout`. **The `<textarea name="body">` is still the field that posts** — the editor
+  is a second view onto it and the HTML tab stays authoritative, so the server contract is unchanged
+  and the page degrades to its old plain-textarea self without JS. Three traps, all measured rather
+  than assumed: `root.innerHTML` renders bullets as `<ol data-list="bullet">` (**an email client shows
+  them numbered**), `getSemanticHTML()` turns every space into `&nbsp;` (**which stops lines
+  wrapping on a phone**), and Quill's default alignment emits a *class*, which does nothing in an
+  inbox — so alignment is registered as an inline-style attributor. Placeholder chips are now
+  click-to-insert. Toolbar deliberately stops at headings/alignment: colour and font-size are where
+  users produce mail that renders differently in every client.
+
 - **Mobile-first responsive pass over the whole site (2026-08-05).** See `docs/responsive-ui.md`.
   `app.css` had **zero media queries** — the site was desktop-only by construction, not merely
   unpolished. It is now mobile-first (base layer = phone; a `min-width: 768px` "Desktop layer"
