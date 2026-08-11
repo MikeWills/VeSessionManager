@@ -188,7 +188,6 @@ else
                 <th>Teams</th>
                 <th>Tags</th>
                 <th>License</th>
-                <th>Sessions</th>
                 <th>Last worked</th>
                 <th></th>
             </tr>
@@ -196,7 +195,7 @@ else
         <tbody>
             @if (Model.Rows.Count == 0)
             {
-                <tr><td colspan="8">
+                <tr><td colspan="7">
                     @(string.IsNullOrWhiteSpace(Model.Search)
                         ? "No VEs on this team's directory yet. They appear automatically once they work a session."
                         : $"No VEs match \"{Model.Search}\".")
@@ -258,9 +257,6 @@ else
                             <span class="session-sub">@expires.ToString("MMM yyyy")@(expiryDays is { } d && d <= 90 ? $" ({d} d)" : "")</span>
                         }
                     </td>
-                    @* Padded so the click-to-sort comparator, which compares this attribute as
-                       text, orders 2 before 10 rather than after it. *@
-                    <td class="count" data-sort-value="@row.SessionsWorked.ToString("D6")">@row.SessionsWorked</td>
                     <td data-sort-value="@(row.LastWorkedUtc?.ToString("o") ?? "")">
                         @(row.LastWorkedUtc?.ToString("MMM d, yyyy") ?? "Never")
                     </td>

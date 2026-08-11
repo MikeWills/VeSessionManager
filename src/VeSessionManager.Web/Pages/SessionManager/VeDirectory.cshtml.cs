@@ -132,7 +132,7 @@ public class VeDirectoryModel(
         await OnGetAsync();
 
         var csv = new StringBuilder();
-        csv.AppendLine("CallSign,Name,Teams,Tags,Status,Email,Phone,AddressLine1,AddressLine2,City,State,PostalCode,Discord,ContactPreference,LicenseClass,LicenseExpires,Frn,SessionsWorked,LastWorked");
+        csv.AppendLine("CallSign,Name,Teams,Tags,Status,Email,Phone,AddressLine1,AddressLine2,City,State,PostalCode,Discord,ContactPreference,LicenseClass,LicenseExpires,Frn,LastWorked");
 
         foreach (var row in Rows)
         {
@@ -155,7 +155,6 @@ public class VeDirectoryModel(
                 ve.OperatorClass == LicenseClass.None ? "" : ve.OperatorClass.ToString(),
                 ve.LicenseExpiresUtc?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
                 ve.Frn,
-                row.SessionsWorked.ToString(CultureInfo.InvariantCulture),
                 row.LastWorkedUtc?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)));
         }
 
