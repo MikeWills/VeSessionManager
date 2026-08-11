@@ -48,7 +48,7 @@ public static class DailySlotSchedule
         var hoursSinceStart = ((nowEt.Hour - startHourEt) % intervalHours + intervalHours) % intervalHours;
         var slotEt = new DateTime(nowEt.Year, nowEt.Month, nowEt.Day, nowEt.Hour, 0, 0, DateTimeKind.Unspecified)
             .AddHours(-hoursSinceStart);
-        return TimeZoneInfo.ConvertTimeToUtc(slotEt, UlsSchedule.EasternTimeZone);
+        return ToUtc(slotEt);
     }
 
     /// <summary>
@@ -69,7 +69,40 @@ public static class DailySlotSchedule
         var nextSlotEt = new DateTime(nowEt.Year, nowEt.Month, nowEt.Day, nowEt.Hour, 0, 0, DateTimeKind.Unspecified)
             .AddHours(-hoursSinceStart)
             .AddHours(intervalHours);
-        return TimeZoneInfo.ConvertTimeToUtc(nextSlotEt, UlsSchedule.EasternTimeZone);
+        return ToUtc(nextSlotEt);
+    }
+
+    /// <summary>
+    /// Eastern wall-clock to UTC, rolling forward out of the spring-forward gap (issue #315).
+    ///
+    /// <para>On the day DST begins the Eastern clock jumps 01:59:59 → 03:00:00, so <b>02:00 ET does
+    /// not occur</b> and <see cref="TimeZoneInfo.ConvertTimeToUtc(DateTime, TimeZoneInfo)"/> throws
+    /// <see cref="ArgumentException"/> for it. 02:00 is a defensible setting for these jobs rather
+    /// than a contrived one — it is exactly when FCC posts its nightly changes, the event this whole
+    /// anchor exists to follow — so the throw was reachable by configuration alone, once a year.</para>
+    ///
+    /// <para>In the Worker <c>JobTick.GuardedAsync</c> would have caught it and retried an hour
+    /// later, which is survivable. <c>JobScheduleService</c> has no such guard, so the admin Job
+    /// Schedule page would have simply 500'd for the day.</para>
+    ///
+    /// <para><b>Forward, not back:</b> the job should run at the first instant that exists at or
+    /// after its nominal time, never an hour early. A loop rather than a single <c>AddHours(1)</c>
+    /// because the one-hour US gap is a fact about this zone today, not about time zones — and this
+    /// arithmetic already exists to stop exactly that kind of assumption being baked in.</para>
+    ///
+    /// <para>The autumn counterpart needs nothing: an <i>ambiguous</i> local time (01:30 occurring
+    /// twice) does not throw — <c>ConvertTimeToUtc</c> resolves it to standard time — which
+    /// <c>AnAmbiguousFallBackHour_ResolvesWithoutThrowing</c> pins so the asymmetry is not mistaken
+    /// for an oversight.</para>
+    /// </summary>
+    private static DateTime ToUtc(DateTime slotEt)
+    {
+        while (UlsSchedule.EasternTimeZone.IsInvalidTime(slotEt))
+        {
+            slotEt = slotEt.AddHours(1);
+        }
+
+        return TimeZoneInfo.ConvertTimeToUtc(slotEt, UlsSchedule.EasternTimeZone);
     }
 
     /// <summary>Current Eastern wall-clock time, for feeding <see cref="LatestDueSlotUtc"/>.</summary>
