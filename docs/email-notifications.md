@@ -1,7 +1,7 @@
 # Candidate Notification Emails (Phase 4)
 
 > **See `docs/email-reference.md` for the current, complete picture** — every template (including
-> the ones added after this doc was written: `PaymentReminder5Day`, `PaymentExpirationNotice`,
+> the ones added after this doc was written: `FccFeeReminder5Day`, `PaymentExpirationNotice`,
 > `FelonyDisclosureInstructions`, `ArrlYouthProgramInstructions`), every placeholder tag, and the
 > full send pipeline including the "Refresh candidates" manual trigger. This doc's SMTP-config
 > section below also predates the multi-team change — `Email:*` is no longer read from

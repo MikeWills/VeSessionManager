@@ -18,7 +18,7 @@ public class EmailTemplateTriggersTests
     [
         "RegistrationConfirmation",
         "DayBeforeReminder",
-        "PaymentReminder5Day",
+        "FccFeeReminder5Day",
         "PaymentExpirationNotice",
         "FelonyDisclosureInstructions",
         "ArrlYouthProgramInstructions"
@@ -58,12 +58,34 @@ public class EmailTemplateTriggersTests
 
     /// <summary>Anything gated on the FCC entering an application is necessarily post-session, whatever the template name suggests.</summary>
     [Theory]
-    [InlineData("PaymentReminder5Day")]
+    [InlineData("FccFeeReminder5Day")]
     [InlineData("PaymentExpirationNotice")]
     [InlineData("FelonyDisclosureInstructions")]
     public void FccGatedAndSessionCompletionEmails_ArePostSession(string key)
     {
         Assert.Equal(EmailTemplatePhase.PostSession, EmailTemplateTriggers.For(key)!.Phase);
+    }
+
+    /// <summary>
+    /// A retired key must not also be live. The two lists are hand-maintained, and a key in both
+    /// would make the admin page say a template is dead while something still sends it — the exact
+    /// wrong direction to be wrong in.
+    /// </summary>
+    [Fact]
+    public void NoKeyIsBothRetiredAndLive()
+    {
+        Assert.DoesNotContain(EmailTemplateTriggers.Retired, EmailTemplateTriggers.ByKey.ContainsKey);
+    }
+
+    /// <summary>
+    /// And a retired key must no longer be seeded, or every new deployment would create a row the
+    /// page immediately labels as never sent.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(SeededKeyData))]
+    public void NoSeededKeyIsRetired(string key)
+    {
+        Assert.False(EmailTemplateTriggers.IsRetired(key), $"'{key}' is still seeded but marked retired.");
     }
 
     [Fact]

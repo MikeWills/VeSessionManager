@@ -12,7 +12,7 @@ public class EmailTemplatePlaceholdersTests
     [
         "RegistrationConfirmation",
         "DayBeforeReminder",
-        "PaymentReminder5Day",
+        "FccFeeReminder5Day",
         "PaymentExpirationNotice",
         "FelonyDisclosureInstructions",
         "ArrlYouthProgramInstructions"

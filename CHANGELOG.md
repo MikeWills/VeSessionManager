@@ -8,6 +8,43 @@ that window, or immediately if it's phase-numbered work already summarized in "C
 design rationale for any entry still lives in its linked `/docs/*.md` file, not here or in
 CLAUDE.md — this file, like CLAUDE.md's Change Log, is pointers only.
 
+- **Job Run History records what each run actually did (2026-08-05).** See `docs/job-run-history.md`.
+  `Success`/`ErrorMessage` alone made three outcomes identical on the ops dashboard: sent five, sent
+  none because nothing qualified, and **sent none because every attempt failed** — the last of which
+  rendered green, because a job is Success when the *job* completes and per-item failures are caught
+  inside it on purpose. Cost an evening chasing "no emails are being sent" when the Worker log had
+  been printing `sent 0, failed 1` all day (the real cause: `smtp.mailgun.com` instead of `.org`,
+  failing the TLS handshake on a certificate name mismatch). `JobRunHistory.ResultSummary` now stores
+  the result object's own `ToString()` — text that already existed — via a generic
+  `JobRunHistoryLogger.RunAsync<TResult>` overload, so result-returning jobs get it with no call-site
+  change. **The overload resolution is load-bearing and tested**: call sites pass method groups, which
+  convert to *both* overloads, and binding to the void one would leave every summary silently null.
+
+
+- **Renewal Monitor: expiration + renewal tracking for an arbitrary watch list (2026-08-05).** See
+  `docs/renewal-monitor.md`. Team-scoped list of any call sign at all — club members, family, people
+  who never tested here — showing expiration and the renewal lifecycle. Screen only, no email, open
+  to every role (it is all public FCC record data). **`expired_date` was returned by ExamTools' ULS
+  mirror all along and simply never mapped**; call-sign lookup works on the same endpoint as FRN,
+  which is what makes call-sign-first entry possible. **Renewal issuance has no positive signal
+  except the expiration date moving** — a renewal leaves call sign, class and grant date untouched —
+  so the service stores the expiry as it stood when the renewal was first seen and only claims it
+  landed once the current value passes that anchor. FCC's own `data.fcc.gov` License View API is
+  Akamai-403 from this deployment, same as `wireless2`. Tracking **VEs'** licenses is a deliberately
+  separate, not-yet-built feature.
+
+
+- **Team logo in emails via `{{Logo}}` (2026-08-05).** See `docs/email-logo.md`. Per-team PNG/JPEG
+  uploaded on Team Settings, stored as a **DB column** (an uploads folder under `wwwroot` would be
+  wiped by `deploy.yml`'s `rsync --delete`) and embedded as a **CID linked resource**, not a hosted
+  URL — Gmail and Outlook block remote images by default, so a hosted logo is invisible until the
+  recipient clicks "show images". **`{{Logo}}` is the one body placeholder that is NOT HTML-encoded**,
+  and that exemption is safe only because the value is built in the renderer from a constant out of
+  app-owned data — nothing registrant-controlled may ever join that branch. Format is decided from
+  the file's magic numbers, never the browser-declared content type; SVG is excluded outright.
+  A template carrying the placeholder stays valid for a team with no logo (renders to nothing), and
+  a template without it attaches nothing.
+
 - **WYSIWYG editor for email templates (2026-08-05).** See `docs/email-template-editor.md`. Quill
   2.0.3 vendored under `wwwroot/lib/quill`, loaded only by Admin → Email Templates via a new `Head`
   section on `_AppLayout`. **The `<textarea name="body">` is still the field that posts** — the editor

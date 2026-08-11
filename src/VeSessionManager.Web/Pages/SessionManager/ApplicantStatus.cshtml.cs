@@ -42,7 +42,8 @@ public class ApplicantStatusModel(
     /// page counts from, so the boundaries line up exactly:
     ///
     ///   - <see cref="PaymentReminderService.ReminderThresholdDays"/> (5): the nightly job sends the
-    ///     candidate a PaymentReminder5Day email.
+    ///     candidate an FccFeeReminder5Day email — about FCC's own application fee, not the team's
+    ///     (#219), so the amber row means "FCC is still waiting to be paid".
     ///   - <see cref="PaymentReminderService.ExpirationThresholdDays"/> (10): the nightly job sets
     ///     Payment.ExpiredUnpaid and notifies the Session Manager.
     ///

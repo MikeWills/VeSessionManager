@@ -8,5 +8,5 @@ public class PaymentReminderResult
     public int Failed { get; set; }
 
     public override string ToString() =>
-        $"reminders sent {RemindersSent}, expirations processed {ExpirationsProcessed}, candidates flagged for review {CandidatesFlaggedForReview}, failed {Failed}";
+        $"FCC fee reminders sent {RemindersSent}, expirations processed {ExpirationsProcessed}, candidates flagged for review {CandidatesFlaggedForReview}, failed {Failed}";
 }

@@ -63,6 +63,7 @@ public class CandidatePiiFieldsTests
         nameof(Candidate.RegistrationConfirmationSentUtc),
         nameof(Candidate.DayBeforeReminderSentUtc),
         nameof(Candidate.UnmatchedReviewFlaggedUtc),
+        nameof(Candidate.FccFeeReminderSentUtc),
         nameof(Candidate.FelonyDisclosureInstructionsSentUtc),
         nameof(Candidate.YouthProgramInstructionsSentUtc)
     ];

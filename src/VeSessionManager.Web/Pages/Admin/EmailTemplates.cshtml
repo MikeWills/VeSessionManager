@@ -67,7 +67,16 @@ else
                PaymentExpirationNotice goes to the team rather than the candidate, and
                FelonyDisclosureInstructions has no button — so this is the difference between editing
                a template knowingly and guessing. See EmailTemplateTriggers. *@
-            @if (VeSessionManager.Web.Pages.Admin.EmailTemplatesModel.TriggerFor(template.Key) is { } trigger)
+            @if (VeSessionManager.Web.Pages.Admin.EmailTemplatesModel.IsRetired(template.Key))
+            {
+                @* Says so rather than leaving a blank where the trigger goes. A row with no
+                   description reads as "we forgot to document this", not "nothing sends this". *@
+                <div class="vesm-alert error">
+                    <b>No longer sent.</b> Nothing in the app sends this template any more. It stays here because
+                    seeding never deletes, so any wording you added is preserved — but editing it has no effect.
+                </div>
+            }
+            else if (VeSessionManager.Web.Pages.Admin.EmailTemplatesModel.TriggerFor(template.Key) is { } trigger)
             {
                 <div class="template-trigger">
                     <span class="chip @(trigger.Cadence == "Automatic" ? "chip-green" : "chip-neutral")">@trigger.Cadence</span>

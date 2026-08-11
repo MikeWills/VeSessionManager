@@ -20,15 +20,20 @@ That registry is also what the Admin UI's template editor (`Pages/Admin/EmailTem
 |---|---|---|---|
 | `RegistrationConfirmation` | Candidate | Candidate ingested from ExamTools — either the ~5-minute poll tick, or a Session Manager clicking "Refresh candidates" | `Candidate.RegistrationConfirmationSentUtc` |
 | `DayBeforeReminder` | Candidate | Their session's `ScheduledStartUtc` falls on tomorrow's UTC calendar date — checked by a separate 24-hour job | `Candidate.DayBeforeReminderSentUtc` |
-| `PaymentReminder5Day` | Candidate | Their `Unpaid` payment: `ApplicationStatus = Received` and FCC entered the application 5+ days ago | `Payment.PaymentReminderSentUtc` |
-| `PaymentExpirationNotice` | **Session Manager** (`EmailSettings.AdminNotificationEmail`), not the candidate | Same payment, at 10+ days | `Payment.ExpiredUnpaid` |
+| `FccFeeReminder5Day` | Candidate | **The FCC's** application fee is still outstanding — `FccPaymentStatus = PendingVerification` and FCC entered the application 5+ days ago. Not the team's exam fee; see #219 | `Candidate.FccFeeReminderSentUtc` |
+| `PaymentExpirationNotice` | **Session Manager** (`EmailSettings.AdminNotificationEmail`), not the candidate | The team's `Unpaid` exam-fee payment, 10+ days after FCC entered the application | `Payment.ExpiredUnpaid` |
 | `FelonyDisclosureInstructions` | Candidate | Session marked completed, and this candidate was just flipped `Tested = true` with `HasFelonyDisclosure = true` | None — fires once, inside the one-shot "mark session completed" action, not a repeatable scan |
 | `ArrlYouthProgramInstructions` | Candidate | Session Manager clicks "Send Youth Program instructions" on the candidate row (only shown when the session's Vec has `SupportsYouthProgram`) | None — manual action, can be clicked more than once |
 
-Two of these (`RegistrationConfirmation`, `PaymentReminder5Day`) can also be re-triggered by hand:
-a Session Manager's "Resend confirmation email" button on the session detail page re-sends
-`RegistrationConfirmation` regardless of whether it was already sent, and refreshes the guard
-timestamp. There's no equivalent manual resend for the others.
+One of these can be re-triggered by hand: a Session Manager's "Resend confirmation email" button on
+the session detail page re-sends `RegistrationConfirmation` regardless of whether it was already
+sent, and refreshes the guard timestamp. There's no equivalent manual resend for the others.
+
+> **The two reminders are about two different bills, and that is the whole point of #219.**
+> `FccFeeReminder5Day` chases the **FCC's** application fee, which the candidate pays directly at
+> CORES and which this app never handles. `PaymentExpirationNotice` is about the **team's** exam fee,
+> collected through Square. The 5-day reminder used to be about the team's fee too — money already in
+> hand by the time it could fire — and it carried a Square link for a bill usually already settled.
 
 ## Every placeholder tag, by template
 
@@ -55,12 +60,16 @@ literal, un-substituted text `{{Tag}}` in the sent email (see "Unknown/typo'd ta
 | `{{ZoomJoinUrl}}` | Session's Zoom join link | |
 | `{{OutstandingPaymentLinkUrl}}` | Most recent `Unpaid` payment's link | Blank if nothing's outstanding |
 
-**`PaymentReminder5Day`**
+**`FccFeeReminder5Day`** (about the FCC's fee — deliberately carries no payment link)
 | Tag | Value |
 |---|---|
 | `{{CandidateName}}` | Full name |
-| `{{ZoomJoinUrl}}` | Session's Zoom join link |
-| `{{PaymentLinkUrl}}` | The unpaid payment's link |
+| `{{SessionDate}}` | Same formatting as above |
+| `{{Frn}}` | The candidate's FRN — what CORES asks for, so omitting it sends the reader hunting |
+| `{{FccApplicationFileNumber}}` | ULS application file number, when known |
+
+There is no payment-link tag here and there must not be one. The FCC bills the applicant directly;
+the team's Square link pays a different bill, and offering it was the original defect (#218/#219).
 
 **`PaymentExpirationNotice`** (goes to the Session Manager, not the candidate)
 | Tag | Value |

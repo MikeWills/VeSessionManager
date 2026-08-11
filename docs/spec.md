@@ -27,7 +27,7 @@ Vec
 
 EmailTemplate
   Id
-  Key (identifies which automated/triggerable email this is — e.g. RegistrationConfirmation, DayBeforeReminder, PaymentReminder5Day, PaymentExpirationNotice, ArrlYouthProgramInstructions; see each phase for the specific keys it introduces and which placeholder keywords are available for that key)
+  Key (identifies which automated/triggerable email this is — e.g. RegistrationConfirmation, DayBeforeReminder, FccFeeReminder5Day, PaymentExpirationNotice, ArrlYouthProgramInstructions; see each phase for the specific keys it introduces and which placeholder keywords are available for that key)
   Subject
   Body (plain text/HTML with `{{PlaceholderKeyword}}` tokens, substituted at send time — e.g. `{{CandidateName}}`, `{{ZoomJoinUrl}}`, `{{PaymentLinkUrl}}`, `{{SessionDate}}`, `{{PrivacyPolicyUrl}}`; exact available keywords per template documented alongside each phase that sends that template)
   UpdatedByUserId
@@ -306,7 +306,7 @@ JobRunHistory
 **Goal:** Nudge unpaid candidates, flag stale unpaid applications, notify you at expiration.
 
 - Daily job, operates per unpaid `Payment` row (not per candidate — a candidate with a retest may have two independent payments in flight); skips any `Payment` where `Status = NotApplicable`, skips any `Payment` whose `Candidate.ApplicationStatus` is terminal (`Granted`, `Failed`, `NotTested`), and skips any `Payment` whose `Session.Status = Cancelled`
-- **5-day reminder:** `Payment.Status = Unpaid`, associated `Candidate.ApplicationStatus = Received`, and `Candidate.ApplicationDateEnteredUtc <= Today - 5 days` → send `PaymentReminder5Day` email template (placeholders: `{{CandidateName}}`, `{{ZoomJoinUrl}}`, `{{PaymentLinkUrl}}`) to candidate, only once (`Payment.PaymentReminderSentUtc`)
+- **5-day reminder:** ⚠️ **Superseded 2026-08-11 by #219 — as written below this chased the wrong fee.** The team's exam fee is collected before or at the session, so it was never actually outstanding by the time this could fire, and the email carried a Square link for a bill already settled. As built: `Candidate.FccPaymentStatus = PendingVerification` (the FCC's own application fee, from ULS) and `Candidate.ApplicationDateEnteredUtc <= Today - 5 days` → send `FccFeeReminder5Day` (placeholders: `{{CandidateName}}`, `{{SessionDate}}`, `{{Frn}}`, `{{FccApplicationFileNumber}}` — deliberately **no** payment link) to the candidate, only once (`Candidate.FccFeeReminderSentUtc`). See `docs/payment-reminders.md`. Original text: `Payment.Status = Unpaid`, associated `Candidate.ApplicationStatus = Received`, and `Candidate.ApplicationDateEnteredUtc <= Today - 5 days` → `PaymentReminder5Day` to candidate, once (`Payment.PaymentReminderSentUtc`)
 - **10-day expiration:** `Payment.Status = Unpaid` and `Candidate.ApplicationDateEnteredUtc <= Today - 10 days` → set `Payment.ExpiredUnpaid = true`, send `PaymentExpirationNotice` email template (placeholders: `{{CandidateName}}`, `{{SessionDate}}`, `{{PaymentAmount}}`) **to Mike** (not the candidate), stop further reminders for that payment
 - Candidates with `ApplicationStatus = Unmatched` are excluded from both triggers (no application date to count from) — instead, flag separately for manual review if `Unmatched` persists beyond some reasonable window (use a config value, default 5 days from `DateRegisteredUtc`, distinct from the payment logic)
 
