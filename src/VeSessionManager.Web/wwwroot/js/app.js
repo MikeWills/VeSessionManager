@@ -469,7 +469,15 @@
     // handler each, whichever ran last would undo the other's hiding, and "Team Member" + "granger"
     // would show everyone named Granger.
     var tagFilter = picker.querySelector("[data-ve-tag-filter]");
-    var UNTAGGED = " untagged";
+    // Sentinel for the "Untagged" option. Must stay byte-identical to
+    // VeInviteModel.UntaggedFilterValue -- two copies of one constant, nothing tying them together.
+    //
+    // The leading character is a SPACE and must stay one. It was a literal U+0000 until 2026-08-11
+    // (issue #300), which broke this filter outright: an HTML parser rewrites U+0000 to U+FFFD, so
+    // tagFilter.value never equalled this literal, and the ternary below fell through to
+    // rowTags.indexOf(tag) -- searching for a tag nothing has, hiding every VE. A space is safe
+    // because tag names are Trim()ed and rejected when blank, so no stored tag can start with one.
+    var UNTAGGED = " untagged";
 
     function apply() {
       var term = filter ? filter.value.trim().toLowerCase() : "";
