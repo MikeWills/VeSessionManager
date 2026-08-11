@@ -118,10 +118,15 @@ public class LicenseWatchJob(
         // same nightly FCC data through the same mirror, so a second schedule would be two
         // names for one cadence.
         //
-        // A SEPARATE JobRunHistory entry, not a step inside the one above. The slot guard
-        // keys on a successful "LicenseWatch" run, so folding these together would mean one
-        // failing sweep suppresses the other for the rest of the day — and the ops dashboard
-        // could no longer say which half broke.
+        // A SEPARATE JobRunHistory entry, not a step inside the one above, so the ops dashboard can
+        // say which half broke.
+        //
+        // This comment used to add that separate rows were what stopped one failing sweep
+        // suppressing the other for the rest of the day. That was the intent and not the behaviour:
+        // the guard asked only about "LicenseWatch", so a red VeLicenseWatch beside a green
+        // LicenseWatch was skipped until tomorrow (#288). The guard above now requires a success for
+        // each name, which is what makes the claim true — and LicenseWatchSlotGuardTests holds it
+        // there, having been checked against the single-name version.
         var veWatchService = scope.ServiceProvider.GetRequiredService<VolunteerExaminerLicenseWatchService>();
 
         await jobRunHistoryLogger.RunAsync(
