@@ -158,8 +158,13 @@ using (var scope = host.Services.CreateScope())
     // DataProtectionKeyRingGuard. Deliberately before the one-off switches below: a
     // --migrate-team-secrets run against the wrong key ring would rewrite every credential with the
     // undecryptable value it just read back, destroying the originals.
-    await DataProtectionKeyRingGuard.VerifyAsync(
-        dbContext, scope.ServiceProvider.GetRequiredService<ILogger<Program>>());
+    var keyRingLogger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+    await DataProtectionKeyRingGuard.VerifyAsync(dbContext, keyRingLogger);
+
+    // Surfaces a credential that carries the Data Protection marker but will not decrypt (#160).
+    // The guard above catches that at startup; this covers anything that only becomes
+    // readable-but-wrong later, and makes the fallback's silence visible either way.
+    EncryptedStringConverter.OnUndecryptableValueRead ??= message => keyRingLogger.LogError("{Message}", message);
 
     // One-off, human-triggered CLI flag (2026-07-30, see TeamSecretsMigrationService) — never runs
     // automatically on a normal startup, since it touches every real team's live external-service

@@ -16,6 +16,12 @@ namespace VeSessionManager.Web.Pages.Admin;
 /// of a tampered ?teamId= query string — mirrors Detail.cshtml.cs's AuthorizeAsync() defense-in-depth
 /// shape.
 /// </summary>
+// Never cached, anywhere (audit T37). This page renders which integration credentials are set, the
+// SMTP username, the Square environment and now the candidate-BCC address. A shared or kiosk browser
+// keeping that in its back/forward cache after sign-out, or an intermediary caching it, would expose
+// a team's configuration to whoever sits down next. no-store is the only directive that also
+// suppresses the back-forward cache.
+[ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
 [Authorize(Roles = "SystemAdmin,TeamAdmin")]
 public class TeamSettingsModel(AppDbContext dbContext, UserManager<User> userManager, AdminAccessScope adminAccessScope, TeamSettingsService teamSettingsService) : PageModel
 {

@@ -29,11 +29,8 @@ namespace VeSessionManager.Core.Data;
 /// </summary>
 public static class DataProtectionKeyRingGuard
 {
-    /// <summary>
-    /// Every ASP.NET Core Data Protection payload starts with this: base64url of the 4-byte magic
-    /// header <c>09 F0 C9 F0</c> that begins the protected blob.
-    /// </summary>
-    private const string ProtectedPayloadPrefix = "CfDJ8";
+    /// <summary>Shared with the converter, so "looks like ciphertext" has one definition.</summary>
+    private const string ProtectedPayloadPrefix = EncryptedStringConverter.ProtectedPayloadPrefix;
 
     /// <summary>
     /// Throws <see cref="InvalidOperationException"/> if any stored team credential is unreadable.
