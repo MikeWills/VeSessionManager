@@ -91,6 +91,8 @@ else
                         else
                         {
                             <form method="post" asp-page-handler="Match" style="display:flex; gap:8px; align-items:center;">
+                                @* Same team-filter-through-POST reason as Admin/Users — see the note there. *@
+                                <input type="hidden" name="teamId" value="@Model.TeamId" />
                                 <input type="hidden" name="unmatchedPaymentId" value="@payment.Id" />
                                 <select name="candidateId" required class="menu-input">
                                     <option value="">Select candidate…</option>

@@ -483,7 +483,12 @@ app.UseAuthorization();
 // password while an admin-chosen password is still in place — see RequirePasswordChangeMiddleware.
 app.UseMiddleware<RequirePasswordChangeMiddleware>();
 
-app.MapStaticAssets();
+// ⚠️ AllowAnonymous is mandatory here, not tidy-up. MapStaticAssets registers real endpoints, so the
+// FallbackPolicy above applies to them — which silently redirected every CSS, JS, font and image
+// request to the login page for anyone not signed in. The HTML still returned 200, so the pages
+// "worked": they just arrived with no styling and no scripts. Shipped in v0.3.0 and caught by a test
+// that followed the script tags rather than trusting the page's status code.
+app.MapStaticAssets().AllowAnonymous();
 app.MapRazorPages()
    .WithStaticAssets();
 app.MapSquareWebhook();

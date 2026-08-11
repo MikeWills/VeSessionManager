@@ -15,6 +15,11 @@
 
 <form method="get" id="sessionFilters" class="filters" style="margin-bottom:16px; align-items:flex-start;">
     <input type="hidden" name="applied" value="true" />
+    @* Applying a filter posts the whole form, and "applied" makes OnGetAsync save what it receives
+       over the remembered cookie. Without these two the save wrote Sort="" every time, so choosing
+       a filter silently discarded the column sort the user had picked. *@
+    <input type="hidden" name="sort" value="@Model.Sort" />
+    <input type="hidden" name="sortDirection" value="@Model.SortDirection" />
 
     <div class="filter-dropdown">
         <button type="button" class="kebab @(Model.Status.Count > 0 ? "active" : "")">Status: @Model.StatusSummaryLabel <i class="bi bi-caret-down-fill" aria-hidden="true"></i></button>
