@@ -1,0 +1,184 @@
+@page
+@using VeSessionManager.Core.Entities
+@model VeSessionManager.Web.Pages.Account.MyVeDetailsModel
+@{
+    ViewData["Title"] = "My VE details";
+    Layout = "_AppLayout";
+}
+
+<div class="page-head">
+    <div>
+        <p class="eyebrow">Your account</p>
+        <h1>My VE details</h1>
+    </div>
+</div>
+
+@if (Model.Person is null)
+{
+    @* Not an error. Most accounts are not accredited examiners, and the ones that are still need an
+       admin to say which record is theirs — a call sign is a suggestion, not proof. *@
+    <div class="session-panel">
+        <p>This login isn't linked to a volunteer examiner record, so there's nothing here to edit yet.</p>
+        <p class="session-sub">
+            If you're an accredited VE, ask a team admin to link your login to your VE record from
+            Admin &rarr; Users. Once that's done, this page is where you keep your own contact details
+            current.
+        </p>
+    </div>
+}
+else
+{
+    var person = Model.Person;
+
+    <div class="session-panel" style="max-width:640px;">
+        <h2>Contact details</h2>
+        <p class="session-sub">
+            @person.Name@(person.CallSign is { } call ? $" — {call}" : "")@(Model.Teams.Count > 0 ? $" · {string.Join(", ", Model.Teams)}" : "")
+        </p>
+        <p class="session-sub">
+            Only your team's admins see this, and it's how they reach you about sessions. Your address
+            is not published anywhere.
+        </p>
+
+        <form method="post">
+            <div asp-validation-summary="ModelOnly" class="vesm-alert error"></div>
+
+            <div class="field">
+                <label asp-for="Input.Name">Name</label>
+                <input asp-for="Input.Name" />
+                <span asp-validation-for="Input.Name" class="session-sub"></span>
+            </div>
+
+            <div class="field">
+                <label asp-for="Input.Phone">Phone</label>
+                <input asp-for="Input.Phone" type="tel" />
+            </div>
+
+            <div class="field">
+                <label asp-for="Input.AddressLine1">Address</label>
+                <input asp-for="Input.AddressLine1" placeholder="Street address" />
+                <input asp-for="Input.AddressLine2" placeholder="Apt, suite (optional)" />
+            </div>
+
+            <div class="field-row">
+                <div class="field"><label asp-for="Input.City">City</label><input asp-for="Input.City" /></div>
+                <div class="field"><label asp-for="Input.State">State</label><input asp-for="Input.State" /></div>
+                <div class="field"><label asp-for="Input.PostalCode">ZIP</label><input asp-for="Input.PostalCode" /></div>
+            </div>
+
+            <div class="field">
+                <label asp-for="Input.DiscordUsername">Discord username</label>
+                <input asp-for="Input.DiscordUsername" />
+            </div>
+
+            <div class="field">
+                <label asp-for="Input.ContactPreference">How should we contact you?</label>
+                <select asp-for="Input.ContactPreference">
+                    <option value="@((int)VeContactPreference.Email)">Email</option>
+                    @* Disabled until SMS exists — offering it would quietly stop them being contacted. *@
+                    <option value="@((int)VeContactPreference.Text)" disabled>Text (not available yet)</option>
+                    <option value="@((int)VeContactPreference.Both)" disabled>Email and text (not available yet)</option>
+                </select>
+            </div>
+
+            <div class="panel-actions" style="margin-top:16px;">
+                <button type="submit" class="btn-primary">Save my details</button>
+            </div>
+        </form>
+    </div>
+
+    <div class="session-panel" style="max-width:640px;">
+        <h2>Email address</h2>
+
+        @if (string.IsNullOrWhiteSpace(person.Email))
+        {
+            @* No address on file, so there is nothing to confirm a change against — the confirmation
+               flow mails the old address and refuses when there isn't one. This is the case that
+               makes the page worth having; see SetOwnEmailWhenUnsetAsync. *@
+            <p class="session-sub">
+                We don't have an email address for you. Adding one is what lets us send you session
+                reminders, and it's what your sign-in links would go to if you ever use the
+                volunteer-examiner self-service site.
+            </p>
+
+            <form method="post" asp-page-handler="SetEmail">
+                <div class="field">
+                    <label for="NewEmail">Email address</label>
+                    <input id="NewEmail" name="NewEmail" type="email" required />
+                </div>
+                <div class="panel-actions" style="margin-top:12px;">
+                    <button type="submit" class="btn-primary">Save email address</button>
+                </div>
+            </form>
+        }
+        else
+        {
+            <p class="session-sub">
+                Currently <strong>@person.Email</strong>. This is where your sign-in links go, so a
+                change has to be confirmed from that address before it takes effect — even here.
+            </p>
+
+            <form method="post" asp-page-handler="SetEmail">
+                <div class="field">
+                    <label for="NewEmail">New email address</label>
+                    <input id="NewEmail" name="NewEmail" type="email" required />
+                </div>
+                <div class="panel-actions" style="margin-top:12px;">
+                    <button type="submit" class="btn-secondary">Send confirmation to my current address</button>
+                </div>
+            </form>
+        }
+    </div>
+
+    <div class="session-panel" style="max-width:640px;">
+        <h2>VEC accreditations</h2>
+        <p class="session-sub">
+            Which VECs you're accredited with. No VEC publishes this to us, so it's yours to keep
+            accurate — your team sees it when they're working out who can serve at a session.
+        </p>
+
+        <table class="cards">
+            <thead><tr><th>VEC</th><th></th></tr></thead>
+            <tbody>
+                @if (person.VecAccreditations.Count == 0)
+                {
+                    <tr><td colspan="2">None recorded yet.</td></tr>
+                }
+                @foreach (var accreditation in person.VecAccreditations.OrderBy(a => a.Vec.Name))
+                {
+                    <tr>
+                        <td>@accreditation.Vec.Name</td>
+                        <td>
+                            <form method="post" asp-page-handler="RemoveAccreditation">
+                                <input type="hidden" name="accreditationId" value="@accreditation.Id" />
+                                <button type="submit" class="btn-secondary btn-sm">Remove</button>
+                            </form>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+
+        @* Only VECs they don't already hold, so the picker can't offer a duplicate. The service
+           rejects one anyway; this keeps the list from suggesting it. *@
+        @{
+            var held = person.VecAccreditations.Select(a => a.VecId).ToHashSet();
+            var addable = Model.AllVecs.Where(v => !held.Contains(v.Id)).ToList();
+        }
+        @if (addable.Count > 0)
+        {
+            <form method="post" asp-page-handler="AddAccreditation" class="field-row">
+                <div class="field">
+                    <label for="vecId">VEC</label>
+                    <select id="vecId" name="vecId" class="filter-select" required>
+                        @foreach (var vec in addable)
+                        {
+                            <option value="@vec.Id">@vec.Name</option>
+                        }
+                    </select>
+                </div>
+                <button type="submit" class="btn-secondary btn-sm">Add</button>
+            </form>
+        }
+    </div>
+}

@@ -89,11 +89,48 @@ acting user would make the trail say something untrue.
 
 ## What a VE may change
 
-Their contact details and their email. **Not** their tags, their accreditations, or the admin-facing
-notes — those belong to the team, and the notes they should not even see.
+Their contact details, their email, and (since 2026-08-10) **their VEC accreditations**. **Not** their
+tags or the admin-facing notes — those are the team's opinion of the VE rather than facts about them,
+and the notes they should not even see.
 
 That is a separate `UpdateOwnContactDetailsAsync` rather than reuse of the admin call, so a wider
 field set cannot leak in later when someone extends the shared method.
+
+## The same edits from inside the app — `/Account/MyVeDetails` (#226)
+
+Self-service is entered by clicking a link sent to the address on file, so **it can only ever reach a
+VE who already has one**. One VE of 176 does. Everyone else is unreachable by the exact mechanism
+meant to reach them, and no amount of polish on these pages fixes that, because the loop only opens
+from the other side: a team lead has a login, and since #224 their login knows which VE record they
+are (`User.VolunteerExaminerId`).
+
+So there is a second entrance. Same service calls, same rules, reached from the user menu instead of a
+mailbox. Who it is about is still never a request value — it is the linked record on the signed-in
+account. A user with no link sees an explanation and no form: establishing the link is an admin act,
+because a matching call sign is a suggestion and not proof, and letting someone assert their own link
+would let anyone claim any VE's record.
+
+**The email field is the one place the two entrances differ, and only by necessity.** Changing a known
+address still goes through the confirmation above — the weaker path must not exist for a field that is
+a credential. But `VeEmailChangeService` returns `NoCurrentEmail` and stops when there is nothing to
+confirm against, which is correct and is also the case that matters here. `SetOwnEmailWhenUnsetAsync`
+covers exactly that gap:
+
+- It **refuses when an address already exists**, so there remains exactly one way to change a
+  known-good email and it is the confirmed one. Two routes to the same field with different safety,
+  the weaker one reached by whoever is already signed in, is how the careful route stops being the one
+  that gets used.
+- Writing directly is defensible only because there is nothing to divert. The risk the confirmation
+  dance defends against is redirecting someone's *existing* mail; it cannot apply to an empty field.
+  And the caller is authenticated in the admin app and was linked by an administrator — a stronger
+  claim than possession of an emailed link.
+- The audit entry **records the address itself**. It is the first one on file, and what it was set to
+  is the whole audit value if links later turn out to be going somewhere unexpected.
+
+`UpdateOwnContactDetailsAsync` gained an optional acting-user argument for the same reason. Self-service
+still passes null, deliberately — an emailed link involves no account, and naming one would make the
+trail say something untrue. From inside the app an account really did act, so the trail names it, and
+the two cases read differently in the audit log rather than being indistinguishable.
 
 ## An admin can also set the email — corrected 2026-08-07
 
