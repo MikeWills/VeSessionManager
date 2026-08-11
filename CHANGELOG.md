@@ -8,6 +8,21 @@ that window, or immediately if it's phase-numbered work already summarized in "C
 design rationale for any entry still lives in its linked `/docs/*.md` file, not here or in
 CLAUDE.md — this file, like CLAUDE.md's Change Log, is pointers only.
 
+- **Square's Sandbox/Production environment moved onto `Team` (2026-08-06).** See
+  `docs/square-payments.md`. It was the last Square value still in `appsettings.json`, left there on
+  the reasoning that sandbox-vs-production is an environment choice rather than a per-team one — which
+  is wrong, because a Square access token is *issued for* one environment and only authenticates
+  against that host, so it belongs with the credentials it travels with. One global switch made
+  "real team on Production, test team (WX0MIK) on Sandbox" impossible on a single deployment, and on
+  beta it forced *every* team to Production. New `Team.SquareEnvironment`; `SquareOptions` deleted
+  outright, so nothing Square-related remains in config. `SquareClient` reads it off the credentials
+  record — new `Team.ToSquareCredentials()` replacing five hand-built copies. **Post-deploy step:
+  the `TeamSquareEnvironment` migration puts every existing team on Sandbox** (the old value was
+  config, so there was nothing to migrate from) — **set live teams back to Production in Team
+  Settings.** Until then their links fail to generate and show as failures in Job History; that
+  direction is deliberate, since defaulting to Production would make a misconfiguration invisible
+  *and* billable.
+
 - **Job Run History records what each run actually did (2026-08-05).** See `docs/job-run-history.md`.
   `Success`/`ErrorMessage` alone made three outcomes identical on the ops dashboard: sent five, sent
   none because nothing qualified, and **sent none because every attempt failed** — the last of which
