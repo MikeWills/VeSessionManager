@@ -33,13 +33,31 @@ public abstract class PerTeamDailyJob(
         {
             await JobTick.GuardedAsync(logger, jobName, async () =>
             {
-                using var scope = scopeFactory.CreateScope();
-                var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-                var jobRunHistoryLogger = scope.ServiceProvider.GetRequiredService<JobRunHistoryLogger>();
-
-                var teams = await dbContext.Teams.ToListAsync(stoppingToken);
-                foreach (var team in teams)
+                // A short-lived scope just to list the teams, closed before any per-team work.
+                List<int> teamIds;
+                using (var tickScope = scopeFactory.CreateScope())
                 {
+                    var tickDbContext = tickScope.ServiceProvider.GetRequiredService<AppDbContext>();
+                    teamIds = await tickDbContext.Teams.Select(t => t.Id).ToListAsync(stoppingToken);
+                }
+
+                foreach (var teamId in teamIds)
+                {
+                    // One scope per team, not one per tick (issue #292). A shared scope kept every
+                    // team's materialized graph tracked for the whole run, and — the part that
+                    // actually bites — JobRunHistoryLogger clears the tracker when a team's step
+                    // fails, discarding the pending state of every *other* team in the same scope.
+                    using var scope = scopeFactory.CreateScope();
+                    var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+                    var jobRunHistoryLogger = scope.ServiceProvider.GetRequiredService<JobRunHistoryLogger>();
+
+                    var team = await dbContext.Teams.FirstOrDefaultAsync(t => t.Id == teamId, stoppingToken);
+                    if (team is null)
+                    {
+                        // Deleted between the two queries. Nothing to do, and not worth a warning.
+                        continue;
+                    }
+
                     await jobRunHistoryLogger.RunAsync(
                         jobName,
                         ct => RunForTeamAsync(scope.ServiceProvider, team, ct),

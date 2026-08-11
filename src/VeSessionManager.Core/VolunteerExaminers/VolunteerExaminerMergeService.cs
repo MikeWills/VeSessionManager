@@ -86,6 +86,7 @@ public class VolunteerExaminerMergeService(
             MergeAccreditations(survivor, duplicate);
             MergeCallSignHistory(survivor, duplicate, now);
             FillBlankContactDetails(survivor, duplicate);
+            await RepointIdentityReferencesAsync(survivor, duplicate, cancellationToken);
 
             duplicate.MergedIntoVolunteerExaminerId = survivor.Id;
             survivor.UpdatedUtc = now;
@@ -111,6 +112,12 @@ public class VolunteerExaminerMergeService(
             if (distinctSessionsAfter != distinctSessionsBefore)
             {
                 await transaction.RollbackAsync(cancellationToken);
+                // The database is back where it started, but the change tracker is not: the save
+                // above marked survivor, duplicate and every moved row Unchanged, so for the rest of
+                // this scoped request the context would report the merge as applied while the
+                // database disagrees (issue #234). Clearing is right rather than surgical here —
+                // the whole unit of work is being abandoned, and there is nothing left to keep.
+                dbContext.ChangeTracker.Clear();
                 logger.LogError(
                     "Refusing merge of VE {DuplicateId} into VE {SurvivorId}: session history would change from {Before} to {After}",
                     duplicate.Id, survivor.Id, distinctSessionsBefore, distinctSessionsAfter);
@@ -128,8 +135,51 @@ public class VolunteerExaminerMergeService(
         catch
         {
             await transaction.RollbackAsync(cancellationToken);
+            dbContext.ChangeTracker.Clear();
             throw;
         }
+    }
+
+    /// <summary>
+    /// Repoints the three references that identify a person to an *account* rather than to their
+    /// roster history — the ones the merge used to leave pointing at the retired row (issue #250).
+    ///
+    /// <para><b>Why they are worse than an ordinary dangling reference.</b> The retired row is hidden
+    /// by a global query filter (<c>MergedIntoVolunteerExaminerId == null</c>), so these do not
+    /// merely point at stale data — the target becomes <i>invisible</i>:</para>
+    ///
+    /// <list type="bullet">
+    ///   <item><see cref="User.VolunteerExaminerId"/> — <c>/Account/MyVeDetails</c> resolves the
+    ///   signed-in user's VE through it, so the one VE who has an account would silently lose access
+    ///   to their own record, permanently. Re-linking by hand is then blocked too, because
+    ///   <c>IX_AspNetUsers_VolunteerExaminerId</c> is unique and filtered.</item>
+    ///   <item><c>VeSelfServiceToken</c> and <c>VeEmailChangeRequest</c> — both <c>Include</c> a
+    ///   <b>required</b> navigation to <see cref="VolunteerExaminer"/>, which EF renders as an INNER
+    ///   JOIN. The filter applies to the joined side, so the <i>token row itself</i> disappears from
+    ///   the query and an outstanding link reports "invalid or expired" rather than working.</item>
+    /// </list>
+    ///
+    /// <para>Runs inside the merge's transaction, so it is covered by the same all-or-nothing
+    /// guarantee as the rest. <c>ExecuteUpdateAsync</c> rather than load-and-assign because these are
+    /// small, unconditional repoints and there is nothing to reconcile in memory — and, for the token
+    /// tables, because the query filter would otherwise hide the very rows being fixed.</para>
+    /// </summary>
+    private async Task RepointIdentityReferencesAsync(
+        VolunteerExaminer survivor, VolunteerExaminer duplicate, CancellationToken cancellationToken)
+    {
+        await dbContext.Users
+            .Where(u => u.VolunteerExaminerId == duplicate.Id)
+            .ExecuteUpdateAsync(s => s.SetProperty(u => u.VolunteerExaminerId, survivor.Id), cancellationToken);
+
+        await dbContext.VeSelfServiceTokens
+            .IgnoreQueryFilters()
+            .Where(t => t.VolunteerExaminerId == duplicate.Id)
+            .ExecuteUpdateAsync(s => s.SetProperty(t => t.VolunteerExaminerId, survivor.Id), cancellationToken);
+
+        await dbContext.VeEmailChangeRequests
+            .IgnoreQueryFilters()
+            .Where(r => r.VolunteerExaminerId == duplicate.Id)
+            .ExecuteUpdateAsync(s => s.SetProperty(r => r.VolunteerExaminerId, survivor.Id), cancellationToken);
     }
 
     /// <summary>
