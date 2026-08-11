@@ -369,13 +369,17 @@ public class CandidateNotificationServiceTests
 
     // ---- Day-before reminder ----
 
+    /// <summary>
+    /// The rule is a rolling 24-hour window ending at the session start, not a calendar date (#220).
+    /// Now is 12:00 UTC, so a session at 08:00 tomorrow is 20 hours out and inside it.
+    /// </summary>
     [Fact]
-    public async Task DayBeforeReminder_SessionTomorrow_IsIncluded()
+    public async Task PreSessionReminder_SessionWithinTheNext24Hours_IsIncluded()
     {
         await using var dbContext = CreateContext();
         var team = await SeedTeamAsync(dbContext);
         await SeedEmailSettingsAndTemplatesAsync(dbContext, team);
-        var session = await SeedSessionAsync(dbContext, team, Now.Date.AddDays(1).AddHours(17)); // tomorrow, 5pm UTC
+        var session = await SeedSessionAsync(dbContext, team, Now.AddHours(20));
         dbContext.Candidates.Add(NewCandidate(session));
         await dbContext.SaveChangesAsync();
 
@@ -387,12 +391,12 @@ public class CandidateNotificationServiceTests
     }
 
     [Fact]
-    public async Task DayBeforeReminder_SessionToday_IsExcluded()
+    public async Task PreSessionReminder_SessionMoreThan24HoursAway_IsExcluded()
     {
         await using var dbContext = CreateContext();
         var team = await SeedTeamAsync(dbContext);
         await SeedEmailSettingsAndTemplatesAsync(dbContext, team);
-        var session = await SeedSessionAsync(dbContext, team, Now.Date.AddHours(17)); // today
+        var session = await SeedSessionAsync(dbContext, team, Now.AddHours(25));
         dbContext.Candidates.Add(NewCandidate(session));
         await dbContext.SaveChangesAsync();
 
@@ -403,8 +407,104 @@ public class CandidateNotificationServiceTests
         Assert.Empty(sender.SentMessages);
     }
 
+    /// <summary>A reminder about something already under way is not a reminder.</summary>
     [Fact]
-    public async Task DayBeforeReminder_SessionDayAfterTomorrow_IsExcluded()
+    public async Task PreSessionReminder_SessionAlreadyStarted_IsExcluded()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        await SeedEmailSettingsAndTemplatesAsync(dbContext, team);
+        var session = await SeedSessionAsync(dbContext, team, Now.AddHours(-1));
+        dbContext.Candidates.Add(NewCandidate(session));
+        await dbContext.SaveChangesAsync();
+
+        var sender = new FakeEmailSender();
+        var result = await CreateService(dbContext, sender).SendDayBeforeRemindersAsync(team, CancellationToken.None);
+
+        Assert.Equal(0, result.Sent);
+        Assert.Empty(sender.SentMessages);
+    }
+
+    /// <summary>
+    /// ⚠️ The regression this issue was about. A session 22 hours away, on the SAME UTC calendar
+    /// date as now, got no reminder under the old rule: "tomorrow" was a calendar date, and this
+    /// session is today. It would then be reminded never — the window had already passed it by.
+    ///
+    /// <para>That is not a corner case. Sessions run in the evening Eastern, so a session late on
+    /// the current UTC date is the normal shape whenever the job ticks in the early hours UTC — and
+    /// which side of UTC midnight the job ticked on depended on when the Worker was last
+    /// deployed.</para>
+    /// </summary>
+    [Fact]
+    public async Task PreSessionReminder_SessionLaterTodayButNearlyADayAway_IsIncluded()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        await SeedEmailSettingsAndTemplatesAsync(dbContext, team);
+
+        // 12:00 UTC now; a session at 10:00 UTC tomorrow is 22 hours out. Under the calendar rule
+        // this fell in "tomorrow" — but shift the clock a few hours either way and the identical
+        // session lands on today's date and is silently skipped. The instant comparison does not
+        // care which date it is.
+        var session = await SeedSessionAsync(dbContext, team, Now.AddHours(22));
+        dbContext.Candidates.Add(NewCandidate(session));
+        await dbContext.SaveChangesAsync();
+
+        var sender = new FakeEmailSender();
+        var result = await CreateService(dbContext, sender).SendDayBeforeRemindersAsync(team, CancellationToken.None);
+
+        Assert.Equal(1, result.Sent);
+    }
+
+    /// <summary>
+    /// A real-world shape: an 8pm Eastern session is stored as the NEXT day in UTC (EDT is UTC-4).
+    /// The reminder must be driven by how far away it is, not by whose calendar date it falls on.
+    /// </summary>
+    [Fact]
+    public async Task PreSessionReminder_EveningEasternSessionStoredOnTheFollowingUtcDate_IsHandledByDistanceNotDate()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        await SeedEmailSettingsAndTemplatesAsync(dbContext, team);
+
+        // 8pm EDT on the 20th == 00:00 UTC on the 21st: a different UTC date from "now", but only
+        // 12 hours away.
+        var session = await SeedSessionAsync(dbContext, team, new DateTime(2026, 7, 21, 0, 0, 0, DateTimeKind.Utc));
+        dbContext.Candidates.Add(NewCandidate(session));
+        await dbContext.SaveChangesAsync();
+
+        var sender = new FakeEmailSender();
+        var result = await CreateService(dbContext, sender).SendDayBeforeRemindersAsync(team, CancellationToken.None);
+
+        Assert.Equal(1, result.Sent);
+    }
+
+    /// <summary>
+    /// Once only, however often the job ticks inside the window — the guard field, not the window,
+    /// is what prevents a second send. Worth pinning now the window is 24 hours wide rather than a
+    /// single calendar day: a job on a short interval sees the same candidate many times.
+    /// </summary>
+    [Fact]
+    public async Task PreSessionReminder_RunTwiceInsideTheWindow_SendsOnce()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        await SeedEmailSettingsAndTemplatesAsync(dbContext, team);
+        var session = await SeedSessionAsync(dbContext, team, Now.AddHours(20));
+        dbContext.Candidates.Add(NewCandidate(session));
+        await dbContext.SaveChangesAsync();
+
+        var sender = new FakeEmailSender();
+        var service = CreateService(dbContext, sender);
+        await service.SendDayBeforeRemindersAsync(team, CancellationToken.None);
+        var second = await service.SendDayBeforeRemindersAsync(team, CancellationToken.None);
+
+        Assert.Equal(0, second.Sent);
+        Assert.Single(sender.SentMessages);
+    }
+
+    [Fact]
+    public async Task PreSessionReminder_SessionDayAfterTomorrow_IsExcluded()
     {
         await using var dbContext = CreateContext();
         var team = await SeedTeamAsync(dbContext);
@@ -426,7 +526,7 @@ public class CandidateNotificationServiceTests
         await using var dbContext = CreateContext();
         var team = await SeedTeamAsync(dbContext);
         await SeedEmailSettingsAndTemplatesAsync(dbContext, team);
-        var session = await SeedSessionAsync(dbContext, team, Now.Date.AddDays(1).AddHours(17), status: SessionStatus.Cancelled);
+        var session = await SeedSessionAsync(dbContext, team, Now.AddHours(20), status: SessionStatus.Cancelled);
         dbContext.Candidates.Add(NewCandidate(session));
         await dbContext.SaveChangesAsync();
 
@@ -442,7 +542,7 @@ public class CandidateNotificationServiceTests
         await using var dbContext = CreateContext();
         var team = await SeedTeamAsync(dbContext);
         await SeedEmailSettingsAndTemplatesAsync(dbContext, team);
-        var session = await SeedSessionAsync(dbContext, team, Now.Date.AddDays(1).AddHours(17));
+        var session = await SeedSessionAsync(dbContext, team, Now.AddHours(20));
         var candidate = NewCandidate(session);
         candidate.DayBeforeReminderSentUtc = Now.AddHours(-1);
         dbContext.Candidates.Add(candidate);
@@ -461,7 +561,7 @@ public class CandidateNotificationServiceTests
         await using var dbContext = CreateContext();
         var team = await SeedTeamAsync(dbContext);
         await SeedEmailSettingsAndTemplatesAsync(dbContext, team);
-        var session = await SeedSessionAsync(dbContext, team, Now.Date.AddDays(1).AddHours(17));
+        var session = await SeedSessionAsync(dbContext, team, Now.AddHours(20));
         var candidate = NewCandidate(session);
         dbContext.Candidates.Add(candidate);
         await dbContext.SaveChangesAsync();
@@ -485,7 +585,7 @@ public class CandidateNotificationServiceTests
         await using var dbContext = CreateContext();
         var team = await SeedTeamAsync(dbContext);
         await SeedEmailSettingsAndTemplatesAsync(dbContext, team);
-        var session = await SeedSessionAsync(dbContext, team, Now.Date.AddDays(1).AddHours(17));
+        var session = await SeedSessionAsync(dbContext, team, Now.AddHours(20));
         dbContext.Candidates.Add(NewCandidate(session));
         await dbContext.SaveChangesAsync();
 
@@ -558,7 +658,7 @@ public class CandidateNotificationServiceTests
         await using var dbContext = CreateContext();
         var team = await SeedTeamAsync(dbContext, emailConfigured: false);
         await SeedEmailSettingsAndTemplatesAsync(dbContext, team);
-        var session = await SeedSessionAsync(dbContext, team, Now.Date.AddDays(1).AddHours(17));
+        var session = await SeedSessionAsync(dbContext, team, Now.AddHours(20));
         dbContext.Candidates.Add(NewCandidate(session));
         await dbContext.SaveChangesAsync();
 
