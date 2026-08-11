@@ -33,32 +33,40 @@ public class HistoricalImportJob(
 
         do
         {
-            await JobTick.GuardedAsync(logger, "HistoricalImport", async () =>
-            {
-                using var scope = scopeFactory.CreateScope();
-                var importService = scope.ServiceProvider.GetRequiredService<HistoricalImportService>();
-                var jobRunHistoryLogger = scope.ServiceProvider.GetRequiredService<JobRunHistoryLogger>();
-
-                // Peek first, and only write a JobRunHistory row when there is genuinely work to do.
-                // Logging every empty queue check would bury the ops dashboard under a row a minute —
-                // the same "silence means nothing happened" property every other job here relies on.
-                var hasPending = await importService.HasPendingAsync(stoppingToken);
-                if (!hasPending)
-                {
-                    // `return` (not `continue`) — this is the guarded tick body, so returning ends
-                    // this tick and the do-while goes on to wait for the next one.
-                    return;
-                }
-
-                await jobRunHistoryLogger.RunAsync(
-                    "HistoricalImport",
-                    ct => importService.RunNextPendingAsync(ct),
-                    // teamId null: the request row carries its own team, and this job step is the queue
-                    // drain rather than work on one team's behalf.
-                    null,
-                    stoppingToken);
-            });
+            await JobTick.GuardedAsync(logger, "HistoricalImport", () => RunTickAsync(stoppingToken));
         }
         while (await timer.WaitForNextTickAsync(stoppingToken));
     }
+
+    /// <summary>
+    /// One iteration of this job's work, separated from the timer loop so it can be driven directly
+    /// by a test (issue #325). The loop above is three lines of framework usage; every bug this job
+    /// has had lived in here.
+    /// </summary>
+    internal async Task RunTickAsync(CancellationToken stoppingToken)
+    {
+        using var scope = scopeFactory.CreateScope();
+        var importService = scope.ServiceProvider.GetRequiredService<HistoricalImportService>();
+        var jobRunHistoryLogger = scope.ServiceProvider.GetRequiredService<JobRunHistoryLogger>();
+
+        // Peek first, and only write a JobRunHistory row when there is genuinely work to do.
+        // Logging every empty queue check would bury the ops dashboard under a row a minute —
+        // the same "silence means nothing happened" property every other job here relies on.
+        var hasPending = await importService.HasPendingAsync(stoppingToken);
+        if (!hasPending)
+        {
+            // `return` (not `continue`) — this is the guarded tick body, so returning ends
+            // this tick and the do-while goes on to wait for the next one.
+            return;
+        }
+
+        await jobRunHistoryLogger.RunAsync(
+            "HistoricalImport",
+            ct => importService.RunNextPendingAsync(ct),
+            // teamId null: the request row carries its own team, and this job step is the queue
+            // drain rather than work on one team's behalf.
+            null,
+            stoppingToken);
+    }
+
 }

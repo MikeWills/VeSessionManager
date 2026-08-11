@@ -41,33 +41,7 @@ public class UlsWatcherJob(
 
         do
         {
-            await JobTick.GuardedAsync(logger, "UlsWatcher", async () =>
-            {
-                var (intervalHours, startHourEt) = await GetSettingsAsync(stoppingToken);
-
-                var nowEt = DailySlotSchedule.NowEastern(timeProvider);
-                var dueSlotUtc = DailySlotSchedule.LatestDueSlotUtc(nowEt, startHourEt, intervalHours);
-
-                using var scope = scopeFactory.CreateScope();
-                var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-                var alreadyRanThisSlot = await dbContext.JobRunHistories.AnyAsync(
-                    h => h.JobName == "UlsWatcher" && h.Success && h.StartedUtc >= dueSlotUtc, stoppingToken);
-                if (alreadyRanThisSlot)
-                {
-                    // `return` (not `continue`) — this is the guarded tick body; returning ends this
-                    // tick and the do-while waits for the next hourly one, same as before.
-                    return;
-                }
-
-                var jobRunHistoryLogger = scope.ServiceProvider.GetRequiredService<JobRunHistoryLogger>();
-                var watcherService = scope.ServiceProvider.GetRequiredService<UlsWatcherService>();
-
-                await jobRunHistoryLogger.RunAsync(
-                    "UlsWatcher",
-                    watcherService.RunAsync,
-                    null,
-                    stoppingToken);
-            });
+            await JobTick.GuardedAsync(logger, "UlsWatcher", () => RunTickAsync(stoppingToken));
         }
         while (await timer.WaitForNextTickAsync(stoppingToken));
     }
@@ -87,4 +61,38 @@ public class UlsWatcherJob(
             configuration.GetValue(UlsDescriptor.IntervalConfigKey!, UlsDescriptor.DefaultIntervalHours!.Value),
             configuration.GetValue("Jobs:UlsWatcherStartHourEt", UlsDescriptor.StartHourEt!.Value));
     }
+
+    /// <summary>
+    /// One iteration of this job's work, separated from the timer loop so it can be driven directly
+    /// by a test (issue #325). The loop above is three lines of framework usage; every bug this job
+    /// has had lived in here.
+    /// </summary>
+    internal async Task RunTickAsync(CancellationToken stoppingToken)
+    {
+        var (intervalHours, startHourEt) = await GetSettingsAsync(stoppingToken);
+
+        var nowEt = DailySlotSchedule.NowEastern(timeProvider);
+        var dueSlotUtc = DailySlotSchedule.LatestDueSlotUtc(nowEt, startHourEt, intervalHours);
+
+        using var scope = scopeFactory.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var alreadyRanThisSlot = await dbContext.JobRunHistories.AnyAsync(
+            h => h.JobName == "UlsWatcher" && h.Success && h.StartedUtc >= dueSlotUtc, stoppingToken);
+        if (alreadyRanThisSlot)
+        {
+            // `return` (not `continue`) — this is the guarded tick body; returning ends this
+            // tick and the do-while waits for the next hourly one, same as before.
+            return;
+        }
+
+        var jobRunHistoryLogger = scope.ServiceProvider.GetRequiredService<JobRunHistoryLogger>();
+        var watcherService = scope.ServiceProvider.GetRequiredService<UlsWatcherService>();
+
+        await jobRunHistoryLogger.RunAsync(
+            "UlsWatcher",
+            watcherService.RunAsync,
+            null,
+            stoppingToken);
+    }
+
 }
