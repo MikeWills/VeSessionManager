@@ -17,7 +17,8 @@ namespace VeSessionManager.Core.Sessions;
 /// </summary>
 public class SessionActionService(
     AppDbContext dbContext,
-    CandidateNotificationService candidateNotificationService,
+    // CandidateNotificationService was dropped with the automatic felony-disclosure send (#221) —
+    // this service sends no email at all now.
     SquarePaymentMatchingService squarePaymentMatchingService,
     TimeProvider timeProvider,
     ILogger<SessionActionService> logger)
@@ -26,8 +27,18 @@ public class SessionActionService(
     /// "Mark session as completed" — sets Session.TestingCompletedUtc/TestingCompletedByUserId, and
     /// bulk-flips Candidate.Tested = true for every candidate still in a non-terminal ApplicationStatus
     /// (Unmatched or Received) — candidates already marked Failed/NotTested before this point are left
-    /// alone, per spec. For each candidate whose Tested just flipped true (not previously Failed) and
-    /// who has HasFelonyDisclosure = true, automatically sends FelonyDisclosureInstructions.
+    /// alone, per spec.
+    ///
+    /// <para><b>No longer sends FelonyDisclosureInstructions (#221, 2026-08-11).</b> It used to, to
+    /// every candidate whose Tested just flipped and who had declared a disclosure — no button, no
+    /// confirmation, riding along with this action. Two things were wrong with that. The email tells
+    /// someone their felony disclosure means extra FCC paperwork, which is not a thing to send as a
+    /// side effect of a bulk status flip. And it arrived <i>after</i> the session, at the point where
+    /// they can no longer easily ask anyone about it — the information is worth having beforehand,
+    /// while there is still a Session Manager in the room.</para>
+    ///
+    /// <para>It is a per-candidate button now, offered whenever a disclosure is declared rather than
+    /// only once tested. See CandidateNotificationService.SendFelonyDisclosureInstructionsAsync.</para>
     /// </summary>
     public async Task<SessionCompletionResult> MarkCompletedAsync(int sessionId, int userId, CancellationToken cancellationToken)
     {
@@ -66,34 +77,16 @@ public class SessionActionService(
         // handled by SquarePaymentMatchingService itself right when the match happens).
         await squarePaymentMatchingService.CompleteEligibleOrdersForSessionAsync(session.Id, cancellationToken);
 
-        // Each send is isolated — one candidate's SMTP failure must not stop the rest of the batch,
-        // nor bubble up and make the whole "mark completed" action look like it failed when the
-        // status flip above already succeeded and was saved.
-        var felonyDisclosuresSent = 0;
-        foreach (var candidate in candidatesJustTested.Where(c => c.HasFelonyDisclosure == true))
-        {
-            try
-            {
-                var result = await candidateNotificationService.SendFelonyDisclosureInstructionsAsync(candidate.Id, cancellationToken);
-                if (result == CandidateEmailSendResult.Sent)
-                {
-                    felonyDisclosuresSent++;
-                }
-                else
-                {
-                    logger.LogWarning("FelonyDisclosureInstructions not sent for candidate {CandidateId} after session {SessionId} completion: {Result}",
-                        candidate.Id, session.Id, result);
-                }
-            }
-            catch (Exception ex)
-            {
-                logger.LogError(ex, "Failed to send FelonyDisclosureInstructions for candidate {CandidateId} after session {SessionId} completion", candidate.Id, session.Id);
-            }
-        }
+        // Reported rather than sent (#221). Removing the automatic send means a candidate who should
+        // get these instructions can now get nothing at all, so the count of people still awaiting
+        // them travels back with the result and the page says so. The session's candidate rows carry
+        // the same marker, because a number in a one-off status message is gone on the next click.
+        var awaitingFelonyInstructions = session.Candidates
+            .Count(c => c.HasFelonyDisclosure == true && c.FelonyDisclosureInstructionsSentUtc is null);
 
-        logger.LogInformation("Session {SessionId} marked completed by user {UserId}: {TestedCount} candidate(s) tested, {FelonyCount} felony disclosure email(s) sent",
-            session.Id, userId, candidatesJustTested.Count, felonyDisclosuresSent);
-        return new SessionCompletionResult(SessionActionResult.Success, candidatesJustTested.Count, felonyDisclosuresSent);
+        logger.LogInformation("Session {SessionId} marked completed by user {UserId}: {TestedCount} candidate(s) tested, {AwaitingCount} awaiting felony disclosure instructions",
+            session.Id, userId, candidatesJustTested.Count, awaitingFelonyInstructions);
+        return new SessionCompletionResult(SessionActionResult.Success, candidatesJustTested.Count, awaitingFelonyInstructions);
     }
 
     /// <summary>
@@ -221,6 +214,11 @@ public enum SessionActionResult
     Blocked
 }
 
-public record SessionCompletionResult(SessionActionResult Result, int CandidatesTested, int FelonyDisclosureEmailsSent);
+/// <param name="CandidatesAwaitingFelonyInstructions">
+/// How many candidates on this session declared a felony disclosure and have not been sent the
+/// instructions. Replaces the old "emails sent" count, which counted an automatic send that no longer
+/// happens (#221) — reporting zero sends forever would read as a failure rather than a design change.
+/// </param>
+public record SessionCompletionResult(SessionActionResult Result, int CandidatesTested, int CandidatesAwaitingFelonyInstructions);
 
 public record SessionDeleteResult(SessionActionResult Result, int CandidatesRemoved, int PaymentsRemoved, int VeAssignmentsRemoved);

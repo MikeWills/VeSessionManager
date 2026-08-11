@@ -56,11 +56,17 @@ public class EmailTemplateTriggersTests
         Assert.True((int)EmailTemplatePhase.PreSession < (int)EmailTemplatePhase.PostSession);
     }
 
-    /// <summary>Anything gated on the FCC entering an application is necessarily post-session, whatever the template name suggests.</summary>
+    /// <summary>
+    /// Anything gated on the FCC entering an application is necessarily post-session, whatever the
+    /// template name suggests. Only two are now: FelonyDisclosureInstructions left this list in #221
+    /// when it stopped riding along with marking a session completed.
+    /// </summary>
     [Theory]
     [InlineData("FccFeeReminder5Day")]
     [InlineData("PaymentExpirationNotice")]
-    [InlineData("FelonyDisclosureInstructions")]
+    // FelonyDisclosureInstructions was here until #221. It is PreSession now, and deliberately so:
+    // it used to ride along with marking a session completed, which meant it could only ever arrive
+    // after the exam — when the candidate can no longer easily ask anyone about it.
     public void FccGatedAndSessionCompletionEmails_ArePostSession(string key)
     {
         Assert.Equal(EmailTemplatePhase.PostSession, EmailTemplateTriggers.For(key)!.Phase);

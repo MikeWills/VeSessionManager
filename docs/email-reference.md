@@ -22,7 +22,7 @@ That registry is also what the Admin UI's template editor (`Pages/Admin/EmailTem
 | `DayBeforeReminder` | Candidate | Their session's `ScheduledStartUtc` falls on tomorrow's UTC calendar date — checked by a separate 24-hour job | `Candidate.DayBeforeReminderSentUtc` |
 | `FccFeeReminder5Day` | Candidate | **The FCC's** application fee is still outstanding — `FccPaymentStatus = PendingVerification` and FCC entered the application 5+ days ago. Not the team's exam fee; see #219 | `Candidate.FccFeeReminderSentUtc` |
 | `PaymentExpirationNotice` | **Session Manager** (`EmailSettings.AdminNotificationEmail`), not the candidate | The team's `Unpaid` exam-fee payment, 10+ days after FCC entered the application | `Payment.ExpiredUnpaid` |
-| `FelonyDisclosureInstructions` | Candidate | Session marked completed, and this candidate was just flipped `Tested = true` with `HasFelonyDisclosure = true` | None — fires once, inside the one-shot "mark session completed" action, not a repeatable scan |
+| `FelonyDisclosureInstructions` | Candidate | **Manual** — "Send felony disclosure instructions" on the candidate's row, for anyone with `HasFelonyDisclosure = true`. Usually sent *before* the session (#221) | None — a repeat click is a deliberate re-send; `Candidate.FelonyDisclosureInstructionsSentUtc` records the latest |
 | `ArrlYouthProgramInstructions` | Candidate | Session Manager clicks "Send Youth Program instructions" on the candidate row (only shown when the session's Vec has `SupportsYouthProgram`) | None — manual action, can be clicked more than once |
 
 One of these can be re-triggered by hand: a Session Manager's "Resend confirmation email" button on
@@ -78,7 +78,7 @@ the team's Square link pays a different bill, and offering it was the original d
 | `{{SessionDate}}` | Same formatting as above |
 | `{{PaymentAmount}}` | Literal `$` prefix + 2 decimals, e.g. `$15.00` — deliberately not `"C"`/`InvariantCulture` formatting, which renders `¤` instead of `$` |
 
-**`FelonyDisclosureInstructions`**
+**`FelonyDisclosureInstructions`** (manual, per candidate — see above)
 | Tag | Value |
 |---|---|
 | `{{CandidateName}}` | Full name |
@@ -133,9 +133,26 @@ separate daily jobs (`DayBeforeReminderJob`, `PaymentReminderJob`, both 24-hour 
 from Worker startup, not pinned to a specific wall-clock time). By the time either runs, the
 session's Zoom link has normally existed for a while, so there's no equivalent ordering concern.
 
-`FelonyDisclosureInstructions` isn't scan-based at all — it fires synchronously, once, from inside
-`SessionActionService.MarkCompletedAsync`, for each candidate whose `Tested` flag that same call
-just flipped to `true`.
+`FelonyDisclosureInstructions` isn't scan-based at all — it is a per-candidate button, so it fires
+exactly when somebody presses it.
+
+**It used to be automatic, and that was the bug (#221, 2026-08-11).** `SessionActionService.
+MarkCompletedAsync` sent it to every candidate whose `Tested` flag that same call flipped, with no
+button and no confirmation. Two things were wrong. The email tells someone their felony disclosure
+means extra FCC paperwork, which is not a thing to send as a side effect of a bulk status flip. And
+because the trigger was "session completed", it could only ever arrive **after** the exam — the point
+at which the candidate can no longer easily ask anyone about it. The useful time is beforehand, so
+the condition is now simply that a disclosure was declared, and `Tested` is not consulted at all.
+
+Two consequences of removing an automatic send, both deliberate:
+
+- **The disclosure check moved into the service.** While there was one caller it could trust that
+  caller to have filtered; the id comes from a form now, and the wrong recipient here is not a
+  cosmetic error. `CandidateEmailSendResult.NoFelonyDisclosure` is the refusal.
+- **The candidate is marked, not just counted.** Nothing sends this now unless a human does, so
+  "declared a disclosure, instructions not sent" is shown on the session's candidate row and on the
+  candidate page, and `MarkCompletedAsync` returns how many are still waiting so its status message
+  can say so. A number in a one-off message is gone on the next click; the row marker is not.
 
 ### The one-shot gotcha
 

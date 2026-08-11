@@ -147,6 +147,15 @@
                         }
                     </div>
                     <div class="id-cell mono">@candidate.CallSignOrDash <span class="frn">@candidate.FrnLine</span></div>
+                    @* Replaces what the automatic send used to guarantee (#221): without a marker,
+                       "this person still needs the FCC disclosure instructions" is something someone
+                       has to remember rather than something they can see. In the candidate cell
+                       rather than a column of its own — it is a fact about the person, and a whole
+                       column would be empty for almost every row. *@
+                    @if (candidate.AwaitingFelonyInstructions)
+                    {
+                        <div><span class="refund-tag" title="Declared a felony disclosure and has not been sent the FCC instructions. Send them from this row's menu.">Needs FCC disclosure info</span></div>
+                    }
                 </td>
                 <td>
                     <div class="status-row">
@@ -209,6 +218,18 @@
                                 <form method="post" asp-page-handler="SendYouthProgram">
                                     <input type="hidden" name="candidateId" value="@candidate.Id" />
                                     <button type="submit" class="item">Send Youth Program instructions</button>
+                                </form>
+                            }
+                            @* Manual since #221. It was sent automatically on marking the session
+                               complete, which meant it always arrived after the session — when the
+                               candidate can no longer easily ask anyone about it. The label names the
+                               person because telling the wrong one that their felony disclosure needs
+                               FCC paperwork is the mistake worth designing against. *@
+                            @if (candidate.CanSendFelonyInstructions)
+                            {
+                                <form method="post" asp-page-handler="SendFelonyInstructions">
+                                    <input type="hidden" name="candidateId" value="@candidate.Id" />
+                                    <button type="submit" class="item">Send felony disclosure instructions to @candidate.DisplayName</button>
                                 </form>
                             }
                             <hr>

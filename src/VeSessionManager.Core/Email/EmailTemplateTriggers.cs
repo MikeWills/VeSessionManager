@@ -4,10 +4,10 @@ namespace VeSessionManager.Core.Email;
 /// Plain-English description of what actually causes each template to be sent, surfaced on the
 /// Email Templates admin page.
 ///
-/// <para>Editing a template without knowing when it fires is guesswork — and two of these are
+/// <para>Editing a template without knowing when it fires is guesswork — and one of these is
 /// genuinely surprising: <c>PaymentExpirationNotice</c> goes to the <b>team's admin address, not the
-/// candidate</b>, and <c>FelonyDisclosureInstructions</c> is sent automatically when a session is
-/// marked completed rather than by a button someone presses.</para>
+/// candidate</b>. (<c>FelonyDisclosureInstructions</c> used to be the second: it was sent
+/// automatically when a session was marked completed. It is a button now — see #221.)</para>
 ///
 /// <para>Each entry below was read off the sending code, not inferred from the template name. Same
 /// hand-maintained arrangement as <see cref="EmailTemplatePlaceholders"/>, and with the same hazard:
@@ -48,12 +48,15 @@ public static class EmailTemplateTriggers
             "When a fee has been unpaid for 10 days after the FCC entered the application. The payment is marked expired at the same time. " +
             "This one is a heads-up for the team, so it is addressed to the admin notification address in Email Settings."),
 
+        // Pre-session, and that is the change rather than an oversight: sending it afterwards told
+        // someone about an extra FCC step at the point they could no longer easily ask about it.
         ["FelonyDisclosureInstructions"] = new(
-            EmailTemplatePhase.PostSession,
-            "Automatic",
+            EmailTemplatePhase.PreSession,
+            "On demand",
             "To the candidate",
-            "When a Session Manager marks a session completed, to each candidate in it who both tested and declared a felony disclosure. " +
-            "There is no button for this — it rides along with marking the session complete."),
+            "Only when someone chooses \"Send felony disclosure instructions\" on a candidate's row. Available for any candidate who declared a " +
+            "felony disclosure, whether or not they have tested yet — it is usually worth sending before the session, while they can still ask questions. " +
+            "Until 2026-08-11 this was sent automatically on marking a session completed."),
 
         ["ArrlYouthProgramInstructions"] = new(
             EmailTemplatePhase.AtRegistration,

@@ -92,7 +92,12 @@ public class DetailModel(
 
         var result = await sessionActionService.MarkCompletedAsync(Id, auth.Value.User.Id, CancellationToken.None);
         SetStatus(result.Result == SessionActionResult.Success,
-            $"Session marked completed — {result.CandidatesTested} candidate(s) tested, {result.FelonyDisclosureEmailsSent} disclosure email(s) sent.",
+            result.CandidatesAwaitingFelonyInstructions > 0
+                // Named rather than counted silently: the send is manual now (#221), so this is the
+                // moment someone would otherwise assume it had been handled for them.
+                ? $"Session marked completed — {result.CandidatesTested} candidate(s) tested. "
+                  + $"{result.CandidatesAwaitingFelonyInstructions} candidate(s) declared a felony disclosure and have not been sent the FCC instructions — send them from the candidate's row."
+                : $"Session marked completed — {result.CandidatesTested} candidate(s) tested.",
             "Could not mark session completed.");
         return RedirectToPage(new { id = Id });
     }
@@ -280,6 +285,24 @@ public class DetailModel(
 
         var result = await candidateActionService.CreateRetestPaymentAsync(candidateId, auth.Value.User.Id, CancellationToken.None);
         SetStatus(result == CandidateActionResult.Success, "Retest payment created.", "Could not create retest payment — candidate must be marked Failed first.");
+        return RedirectToPage(new { id = Id });
+    }
+
+    /// <summary>
+    /// Tells a candidate that their declared felony disclosure means extra FCC steps (#221). Manual
+    /// and per-candidate on purpose: this was an automatic side effect of marking a session complete,
+    /// which both sent it too late to be useful and sent it without anyone deciding to.
+    /// </summary>
+    public async Task<IActionResult> OnPostSendFelonyInstructionsAsync(int candidateId)
+    {
+        var auth = await AuthorizeAsync();
+        if (auth is null) return Forbid();
+        if (!await CandidateBelongsToSessionAsync(candidateId)) return Forbid();
+
+        var result = await candidateNotificationService.SendFelonyDisclosureInstructionsAsync(candidateId, CancellationToken.None);
+        SetStatus(result == CandidateEmailSendResult.Sent,
+            "Felony disclosure instructions sent.",
+            $"Could not send felony disclosure instructions: {result}.");
         return RedirectToPage(new { id = Id });
     }
 
@@ -481,6 +504,10 @@ public class DetailModel(
             !isWithdrawn && candidate.ApplicationStatus == CandidateApplicationStatus.Failed,
             !isWithdrawn && primaryPayment is not null,
             !isWithdrawn,
+            // CanSendFelonyInstructions: offered whenever a disclosure is declared, not only once
+            // tested — the useful time to send it is before the session (#221).
+            !isWithdrawn && candidate.HasFelonyDisclosure == true && candidate.Email is not null,
+            !isWithdrawn && candidate.HasFelonyDisclosure == true && candidate.FelonyDisclosureInstructionsSentUtc is null,
             !isWithdrawn && !candidate.Tested,
             primaryPayment?.Id,
             emailHistory);
@@ -526,6 +553,9 @@ public class DetailModel(
         bool CanCreateRetestPayment,
         bool CanFlagRefund,
         bool CanSendYouthProgram,
+        bool CanSendFelonyInstructions,
+        /// <summary>Declared a disclosure and has not been sent the instructions — the marker that replaces the automatic send (#221).</summary>
+        bool AwaitingFelonyInstructions,
         bool CanDelete,
         int? PrimaryPaymentId,
         IReadOnlyList<EmailHistoryLine> EmailHistory);
