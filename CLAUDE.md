@@ -9,11 +9,15 @@ This is a Visual Studio project that is designed to automate many of the mundane
   before starting anything, and file new work there, not in a markdown file.** `TODO.md`,
   `docs/audit-2026-08-03-tasks.md` and `docs/spec.md`'s Backlog were each a separate list of "what's
   left"; all three are now stubs pointing at issues. Useful labels: `ops` (configuration/server work,
-  not code), `audit-2026-08-03`, `needs-design`, `security`, `tech-debt`. Leading items are
-  **[#157](https://github.com/MikeWills/VeSessionManager/issues/157)** (the Data Protection key ring
-  sits beside the SQLite database, so one leaked backup carries both ciphertext and key) and
+  not code), `audit-2026-08-03`, `audit-2026-08-11`, `needs-design`, `security`, `tech-debt`.
+  Leading items, all three needing a human rather than code:
   **[#185](https://github.com/MikeWills/VeSessionManager/issues/185)** (no production account can
-  sign in until the first SystemAdmin exists).
+  sign in until the first SystemAdmin exists),
+  **[#254](https://github.com/MikeWills/VeSessionManager/issues/254)** (the deploy account's
+  `rsync *` sudoers grant is root-equivalent, which quietly voids the narrow `systemctl` rules the
+  workflow comments cite as containment — and it lives in gitignored `ops/`, so no PR can fix it) and
+  **[#256](https://github.com/MikeWills/VeSessionManager/issues/256)** (no off-box backup of the
+  database *or* the key ring; without the latter every stored credential is unrecoverable).
 - **[`docs/audit-2026-08-03-tasks.md`](docs/audit-2026-08-03-tasks.md) is still worth reading for its
   "Verified clean" section** — what the six-agent review checked and found sound (zero raw SQL, IDOR
   re-checks on every id-taking POST handler, CSRF correct, and a list of deliberate patterns not to
@@ -78,6 +82,14 @@ which is "here's what was built and why, mostly historical.")
     fallback that used to be re-typed at every call site.
   - `AdminAccessScope.TryResolveManageableTeamId` — replaces the
     SystemAdmin-team-picker-vs-TeamAdmin-locked-to-own-team resolution.
+  - `Usd.Format`/`.Raw`/`.TryParse` (`Core/Usd.cs`, 2026-08-11) — the one place money becomes a
+    string and back. **Never `"C"`** (invariant culture renders `¤`, not `$`) and never a bare
+    `:F2`/`decimal.TryParse`, both of which use the *ambient* culture: `$12,50` out, and `"12.50"`
+    parsed as **1250** back in. Named `Usd`, not `Money`, because the Square SDK owns `Money` and a
+    `Core`-root type of that name shadows it across every `Core.*` namespace.
+  - `UlsSchedule.ToEasternDate(utc)` (2026-08-11) — the calendar date a UTC instant falls on *in
+    Eastern time*, and the only correct left-hand side when comparing one of this app's timestamps
+    against an FCC date. See the Known Constraint below; `.Date` is wrong for ~80% of sessions.
 - **The per-team refresh pipeline is defined once, in `TeamPipeline`** (`Core/Ingestion`) — ingest,
   VE roster, exam results, Zoom/Discord, payment links, confirmation emails, in that order. **Add a
   new step there, not at a call site.** The order used to be written out three times (the Worker's
@@ -105,6 +117,23 @@ all — it's already one-line-summarized in "Current State" above, so a separate
 would be pure duplication — and goes straight to `CHANGELOG.md` instead. Non-phase entries (fixes,
 redesigns, hardening passes) start here and move to `CHANGELOG.md` once the section is at/over the
 cap and a newer entry needs to be added; oldest goes first.
+
+- **Nine-agent full-codebase audit, and the first six waves of fixes (2026-08-11).** See
+  `docs/audit-2026-08-11-report.md` (narrative, cross-cutting themes, and — most valuable — what was
+  *verified clean*, so it does not get re-audited) and `docs/audit-2026-08-11-tasks.md` (every
+  finding, with the task-ID↔issue map). Three security, two optimization and four traceability
+  agents, one per layer from Razor markup to the database. **Nothing rated Critical; 19 rated High,
+  and they collapsed into five recurring shapes rather than 19 unrelated bugs** — `ChangeTracker.Clear()`
+  as a per-row error handler, `VolunteerExaminer` being global while its callers assume team scoping,
+  failure that renders as success, unbounded historical scans, and ~110 POST handlers with one test
+  between them. All 85 findings are GitHub issues (`audit-2026-08-11`), which remain the list of
+  record; the two docs hold the analysis that does not fit in an issue. **Two decisions came out of
+  it rather than code**: cross-team VE reach is intended and stays (`docs/ve-management.md` records
+  the reasoning, the counts, and the three conditions that would reverse it), and the beta box runs
+  the *Production* environment, so `appsettings.Test.json` is a local-only file pinned to localhost.
+  Worth knowing for anything similar: **three findings were wrong or mis-scoped on re-check** — the
+  suggested fix for the NUL sentinel would have left the real bug in place, `#266` assumed a Test
+  deployment that does not exist, and 11 cross-references in the filed issues were off by six.
 
 - **Felony disclosure instructions are a button now, sent before the session (2026-08-11).** Issue
   #221. See `docs/email-reference.md`. `MarkCompletedAsync` sent this automatically to every candidate
@@ -212,20 +241,6 @@ cap and a newer entry needs to be added; oldest goes first.
   `Max` over an empty filtered sequence **throws** rather than returning null (one perpetually-failing
   job would have taken down the whole page — the nullable cast must be *inside* `Max`), and advancing
   an anchored slot by adding hours to a UTC value is an hour off across DST.
-- **Square's Sandbox/Production environment moved onto `Team` (2026-08-06).** See
-  `docs/square-payments.md`. It was the last Square value still in `appsettings.json`, left there on
-  the reasoning that sandbox-vs-production is an environment choice rather than a per-team one — which
-  is wrong, because a Square access token is *issued for* one environment and only authenticates
-  against that host, so it belongs with the credentials it travels with. One global switch made
-  "real team on Production, test team (WX0MIK) on Sandbox" impossible on a single deployment, and on
-  beta it forced *every* team to Production. New `Team.SquareEnvironment`; `SquareOptions` deleted
-  outright, so nothing Square-related remains in config. `SquareClient` reads it off the credentials
-  record — new `Team.ToSquareCredentials()` replacing five hand-built copies. **Post-deploy step:
-  the `TeamSquareEnvironment` migration puts every existing team on Sandbox** (the old value was
-  config, so there was nothing to migrate from) — **set live teams back to Production in Team
-  Settings.** Until then their links fail to generate and show as failures in Job History; that
-  direction is deliberate, since defaulting to Production would make a misconfiguration invisible
-  *and* billable.
 Everything through Phase 0-10's initial build (ExamTools ingestion, Zoom/Discord, Square, email
 notifications, FCC ULS watcher, payment reminders, VE tracking, VEC submission tracker, admin
 auth/config/candidate-actions, PII purge), the public privacy page, and everything dated 2026-08-01
@@ -347,6 +362,39 @@ To pick up updates: `/plugin marketplace update claude-tools`
 - **EF Core InMemory can't translate `OrderBy` chained directly onto a `GroupBy(...).Select(...)` join projection.** Hit building `VolunteerExaminerReportService.GetSessionCountsAsync` — fixed by materializing the grouped counts with `ToListAsync()` first, then ordering in memory. Worth remembering for any future report query shaped the same way.
 - **Any page/service calling into `SessionAccessScope`/`AdminAccessScope` must load the user through `CurrentUserLoader.GetUserWithManagerAsync`, not the bare `userManager.GetUserAsync`.** Originally added because `SessionAccessScope`'s TeamLead branch read the manager's team, uneagerly-loaded by the bare `UserManager.GetUserAsync(ClaimsPrincipal)` — a TeamLead would sign in successfully and silently see zero sessions. **That transitive scoping is gone (2026-08-07) — a TeamLead now reads their own `UserTeams` like every other scoped role** (a manager may span several teams while a lead belongs to one, so inheriting leaked the manager's other teams; see `docs/admin-auth.md`). **Now load-bearing for every role, not just TeamLead** (issues #17/#19): `User.TeamId` was replaced by the `UserTeams` join collection, and `GetUserWithManagerAsync` was extended to also `.Include(u => u.UserTeams).Include(u => u.ManagedByUser).ThenInclude(m => m!.UserTeams)` — a plain `GetUserAsync` now silently gives a TeamAdmin/SessionManager an *empty* team set (not just TeamLead a missing one), since `GetEffectiveTeamIds` reads `user.UserTeams` directly. A live audit during this change found several admin pages (`FeeConfigurations`, `EmailTemplates`, `TeamSettings`, `JobRunHistory`, `AuditLog`) still calling the bare `GetUserAsync` despite invoking these scope classes — all fixed the same way. See `docs/admin-auth.md`.
 - **Razor `.cshtml` files are compiled into the assembly at build time in this app (no `AddRazorRuntimeCompilation()` configured)** — editing a `.cshtml` file while `dotnet run` is already running does **not** take effect; the process must be restarted, not just re-requested. Cost real debugging time once (a `_PublicLayout.cshtml` edit silently didn't apply until the dev server was relaunched).
+- **A literal NUL byte (`U+0000`) in a source file makes that file invisible to both ripgrep and
+  git.** Neither errors: `rg` classifies the file as binary and reports *no matches*, and `git diff`
+  renders it as `Bin 5207 -> 6768 bytes`. Found 2026-08-11 (issue #300) in two files, where it was
+  the "untagged" filter sentinel. **Both kinds of invisibility cost something real**: a code review
+  searched for callers of `VeSessionInvitationService`, found none because its only caller lives in
+  one of those files, and recommended deleting its DI registration — which would have crashed the
+  VE-invite page. And an HTML parser rewrites `U+0000` to `U+FFFD` (raw *or* as `&#x0;`), so the
+  sentinel never round-tripped and the "Untagged" filter hid every VE instead of showing them.
+  `NoNulBytesInSourceTests` now fails the build if one reappears anywhere under `src/`. Use a
+  printable sentinel — a **leading space** is the established one here (tag names are `Trim()`ed and
+  rejected when blank, so no stored tag can collide), already used by
+  `VolunteerExaminerDirectoryService.GuestTagFilter`.
+- **`Session.ScheduledStartUtc.Date` is a UTC calendar date, and comparing it against an FCC date is
+  wrong for the *majority* of this deployment's sessions.** Every FCC date arrives date-only and is
+  stamped at UTC midnight by `ExamToolsUlsLookupClient.AsUtcDate`, so it already *is* a wall-clock
+  date; the session side is a real instant, and `.Date` on it answers "what day is it in London".
+  **697 of 867 stored sessions start between 23:00 and 04:00 UTC** — evening ET is simply when
+  volunteer-run sessions happen — so for most of them `.Date` is *tomorrow*. `UlsWatcherService` did
+  this in three places (issue #248, fixed 2026-08-11): an evening session's candidates could never
+  match an application FCC received that same evening, stayed `Unmatched` permanently, and therefore
+  never reached `FccPaymentStatus = PendingVerification`, which is what the FCC-fee reminder keys
+  off. Use `UlsSchedule.ToEasternDate(...)`. Note the warning was already in `UlsSchedule`'s own doc
+  comment, in the file the buggy code imported — a comment is not a guardrail.
+- **`ChangeTracker.Clear()` is almost never the right way to recover from one bad row.** It detaches
+  *everything*, including the rest of the batch the loop is still working through — so later
+  iterations mutate detached objects, `SaveChangesAsync` writes nothing, and the counters still
+  increment. The signature is a run that reports success and changed nothing. Found at four sites on
+  2026-08-11 (issues #231, #232, #233, #234), one of which had been silently disabling a team's
+  ingestion throttle in production. **Detach the failing entity and its pending children instead**
+  (`dbContext.Entry(x).State = EntityState.Detached`), or bypass the tracker entirely with
+  `ExecuteUpdateAsync` where the write is a simple stamp. `JobRunHistoryLogger`'s own clear is the
+  deliberate exception — it is abandoning the whole unit of work — which is exactly why anything
+  sharing its scoped `DbContext` must not assume its entities survive a failed step.
 - **A job tick timed for "the evening" in US Eastern can land at/after UTC midnight** — EDT is UTC-4, EST is UTC-5, so anything from ~8pm ET onward is already tomorrow in raw UTC. `TimeProvider.GetUtcNow().UtcDateTime.DayOfWeek` (or any UTC-based "what day is it" check) is wrong for that window; convert through `TimeZoneInfo.ConvertTimeFromUtc(..., FccUlsSchedule.EasternTimeZone)` first (IANA id `"America/New_York"`, resolves cross-platform since .NET 6 — verified directly on this repo's target framework on both Windows and the Linux deploy target). Found live 2026-07-23 building `FccDailyWatcherJob`'s same-day retry; see `docs/fcc-uls-watcher.md`. Reuse `FccUlsSchedule.EasternTimeZone` for any future US-Eastern-anchored scheduling rather than re-resolving the id.
 - **Not every job here can safely reuse the "24h `PeriodicTimer` from Worker start, extra ticks are free" idiom** — that reasoning (used by `DayBeforeReminderJob`/`PaymentReminderJob`/`PiiPurgeJob`/`FccWeeklyCatchupJob`) assumes a missed tick is harmless because idempotent tracking catches it up next time. It breaks when the *data itself* — not just the job's own state — is only available in a narrow, non-retryable window, as with FCC's day-name files (see the same-day-retry entry above). Before adding a new job on this idiom, check whether the thing it polls has that same "one-shot window" property.
 - **Square webhook subscriptions are separate per Sandbox/Production, each with its own signature key** — an existing subscription registered under one mode receives zero delivery attempts for events in the other (not a 401, no attempt at all), and reusing one mode's `WebhookSignatureKey` against the other mode's subscription makes every delivery fail signature verification (401) even though the URL/event config is otherwise correct. Found live 2026-07-25 testing Team 2 (MARC)'s payment flow — the "Ve Session Manager" subscription had been created under Production while all local testing used Sandbox credentials/payment links. Fix: add (or move) the subscription under the correct mode's tab in the Square dashboard, then set `Team.SquareWebhookSignatureKey` to *that* subscription's own signature key, not the other mode's. See `docs/square-payments.md`. **Which mode a team is in is now `Team.SquareEnvironment`, not a config value (2026-08-06)** — so this is per-team, and two teams on one deployment can legitimately be in different modes, each needing its own subscription. A team whose access token and environment disagree gets an auth failure from Square rather than a wrong-account charge.
