@@ -232,6 +232,7 @@ public class TeamSettingsModel(AppDbContext dbContext, UserManager<User> userMan
             TeamActionResult.LogoUnsupportedFormat =>
                 "That logo wasn't a PNG or JPEG. (The file's own contents are checked, not its name.)",
 
+            TeamActionResult.NameRequired => "Enter a team name.",
             TeamActionResult.DuplicateName => "Another team already has that name.",
             TeamActionResult.NotFound => "That team no longer exists.",
             _ => "Could not save changes."

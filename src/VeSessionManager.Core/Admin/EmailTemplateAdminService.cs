@@ -23,6 +23,11 @@ public partial class EmailTemplateAdminService(AppDbContext dbContext, TimeProvi
             return EmailTemplateActionResult.NotFound;
         }
 
+        if (string.IsNullOrWhiteSpace(subject) || string.IsNullOrWhiteSpace(body))
+        {
+            return EmailTemplateActionResult.ContentRequired;
+        }
+
         template.Subject = subject;
         template.Body = body;
 
@@ -51,5 +56,12 @@ public partial class EmailTemplateAdminService(AppDbContext dbContext, TimeProvi
 public enum EmailTemplateActionResult
 {
     Success,
-    NotFound
+    NotFound,
+
+    /// <summary>
+    /// Subject or body arrived blank (issue #275). Worse than the null case that throws: a blank
+    /// value saves cleanly and the template stays "configured", so the next candidate email goes out
+    /// with an empty subject or an empty body.
+    /// </summary>
+    ContentRequired
 }

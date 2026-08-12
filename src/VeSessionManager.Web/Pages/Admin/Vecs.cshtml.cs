@@ -62,6 +62,7 @@ public class VecsModel(AppDbContext dbContext, UserManager<User> userManager, Ve
         {
             VecActionResult.Success => $"VEC '{name}' created.",
             VecActionResult.DuplicateExamToolsCode => DuplicateCodeMessage(examToolsCode ?? name),
+            VecActionResult.NameRequired => "Enter a VEC name.",
             VecActionResult.DuplicateName => $"A VEC named '{name}' already exists.",
             // NotFound is unreachable on the create path; naming it beats a catch-all that would
             // report "already exists" for something else entirely.
@@ -82,6 +83,7 @@ public class VecsModel(AppDbContext dbContext, UserManager<User> userManager, Ve
         TempData[result == VecActionResult.Success ? "StatusMessage" : "ErrorMessage"] = result switch
         {
             VecActionResult.Success => $"VEC '{name}' updated.",
+            VecActionResult.NameRequired => "Enter a VEC name.",
             VecActionResult.DuplicateName => $"A VEC named '{name}' already exists.",
             VecActionResult.DuplicateExamToolsCode => DuplicateCodeMessage(examToolsCode ?? name),
             _ => "VEC not found."

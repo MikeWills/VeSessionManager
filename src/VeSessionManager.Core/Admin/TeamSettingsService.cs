@@ -18,6 +18,15 @@ public class TeamSettingsService(AppDbContext dbContext, TimeProvider timeProvid
 {
     public async Task<(TeamActionResult Result, Team? Team)> CreateAsync(string name, int userId, CancellationToken cancellationToken)
     {
+        // Guarded here, not on the page: Team.Name is a required column, so null gives an unhandled
+        // 500 and "" succeeds and leaves a nameless team every screen renders as blank. A service
+        // guard also covers every future caller, not just the one page that exists today (#275).
+        name = name?.Trim() ?? "";
+        if (string.IsNullOrEmpty(name))
+        {
+            return (TeamActionResult.NameRequired, null);
+        }
+
         if (await dbContext.Teams.AnyAsync(t => t.Name == name, cancellationToken))
         {
             return (TeamActionResult.DuplicateName, null);
@@ -416,6 +425,9 @@ public enum TeamActionResult
     Success,
     NotFound,
     DuplicateName,
+
+    /// <summary>A required value arrived blank — see RequiredInputGuardTests for why this is checked here rather than on the page (issue #275).</summary>
+    NameRequired,
 
     /// <summary>Uploaded logo exceeded <see cref="TeamSettingsService.MaxLogoBytes"/>.</summary>
     LogoTooLarge,
