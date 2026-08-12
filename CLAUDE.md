@@ -29,7 +29,7 @@ This is a Visual Studio project that is designed to automate many of the mundane
   acting on any of them. These two
   pointers stay here rather than in the Change Log below, which rotates entries out to `CHANGELOG.md`
   and would eventually take the only reference with it.
-- Build/test/run: `dotnet build`, `dotnet test`, `dotnet run --project src/VeSessionManager.Worker`, `dotnet run --project src/VeSessionManager.Web` (see README, and Known Constraints below, for the `DOTNET_ENVIRONMENT` gotcha). Tests are xUnit in `tests/VeSessionManager.Core.Tests`, using the EF InMemory provider and fake client implementations — follow `SessionIngestionServiceTests`/`SessionEventSchedulingServiceTests`/`PaymentGenerationServiceTests`/`CandidateNotificationServiceTests`/`UlsWatcherServiceTests`/`PaymentReminderServiceTests` as the pattern.
+- Build/test/run: `dotnet build`, `dotnet test`, `dotnet run --project src/VeSessionManager.Worker`, `dotnet run --project src/VeSessionManager.Web` (see README, and Known Constraints below, for the `DOTNET_ENVIRONMENT` gotcha). Tests are xUnit in **three** projects, and which one a new test belongs in follows from what it can observe: `tests/VeSessionManager.Core.Tests` (services, mostly EF InMemory + fake clients — follow `SessionIngestionServiceTests`/`SessionEventSchedulingServiceTests`/`PaymentGenerationServiceTests`/`CandidateNotificationServiceTests`/`UlsWatcherServiceTests`/`PaymentReminderServiceTests`), `tests/VeSessionManager.Web.Tests` (page rendering via `WebApplicationFactory`, plus source scans over Razor — `PageSmokeTests`, `FormBindingTests`), and `tests/VeSessionManager.Worker.Tests` (each job's `RunTickAsync` driven directly against real SQLite via `WorkerTickHarness` — see `docs/worker-job-tests.md`). **InMemory is the default, not the rule**: transactions, `ExecuteUpdateAsync`, SQL null semantics and unique-index behaviour are all unobservable on it, and every test that turns on one of those uses `DataSource=:memory:` SQLite instead (`VecExamToolsCodeSqliteTests`, `AtomicCreateSqliteTests`, the whole Worker project).
 
 ## Established Patterns
 
@@ -117,6 +117,22 @@ all — it's already one-line-summarized in "Current State" above, so a separate
 would be pure duplication — and goes straight to `CHANGELOG.md` instead. Non-phase entries (fixes,
 redesigns, hardening passes) start here and move to `CHANGELOG.md` once the section is at/over the
 cap and a newer entry needs to be added; oldest goes first.
+
+- **Every Worker job now has its tick driven by a test (2026-08-11).** Issue #325. See
+  `docs/worker-job-tests.md`. The Worker had **no test project at all** — nine background jobs running
+  unattended on the deploy box, none of which had ever been executed. Each job's tick is now
+  `internal RunTickAsync`, driven directly by `WorkerTickHarness` over real SQLite (InMemory cannot
+  see transactions, `ExecuteUpdateAsync`, or the scope/change-tracker behaviour that most of these
+  tests are *about*). **Every one was checked by breaking the thing it guards** — seven mutations,
+  each failing exactly one test — and one did not discriminate on the first attempt: the deleted-team
+  test deleted the team *before* the tick, where it simply never enters the list, so it passed with
+  the guard removed. `JobCoverageCompletenessTests` is what stops this decaying: a new job fails the
+  build until some test runs it. Three things worth knowing are in the doc — `UlsWatcherJob` needed
+  its own slot-guard tests despite sharing a schedule with `LicenseWatchJob` (they share the anchor
+  and nothing else, which is what #288 was), a wrong schedule key on a `PerTeamDailyJob` subclass
+  misfiles history *and* misreports the page *and* reads the wrong config key, and
+  `JobRunHistoryLogger.RunAsync`'s overload resolution is load-bearing — the void one leaves every
+  `ResultSummary` silently null.
 
 - **One rule, one home: the duplicated candidate/session actions collapsed (2026-08-11).** Issues
   #304/#244/#274. See `docs/action-outcomes.md`. Nine candidate actions were written out on both
@@ -228,19 +244,6 @@ cap and a newer entry needs to be added; oldest goes first.
 
 - **ExamTools reconciliation: a nightly check that the feed and the database agree (2026-08-10).** See `docs/reconciliation.md`. Every other job trusts ingestion to have worked; nothing checked, which is how the historical import could drop the last day of every calendar month since it was written and only be caught because HRCC's own Discord bot reads the same API directly and disagreed about whether a VE was still active. Per team, daily: diff ExamTools' closed-session feed against ours over a trailing 120 days. Findings are a **standing table plus a nav badge**, not just a run summary — Job History rotates, renders green because the *job* succeeded, and a count inside a sentence cannot be acted on, which is the same shape as the `sent 0, failed 1` incident. Each row carries the import range that would fix it; the job itself is **read-only**. The tests cover the bookkeeping and cannot cover the premise: the bug that prompted it had a full green suite because the fakes shared our own wrong assumption.
 
-- **Job Schedule page: when every background job runs next (2026-08-06).** See
-  `docs/job-schedule.md`. "When does the next run happen?" was answerable only by reading the Worker's
-  source — Job History records what happened, never what will. New `JobSchedules` registry in Core is
-  the **one definition of every job's cadence, read by both hosts**: the Worker to schedule, Web to
-  report, so the page cannot drift the way `TeamPipeline`'s order once did. `Jobs:*` config moved to
-  `appsettings.Shared.json` for the same reason (Web resolves those keys now). Two cadence shapes are
-  reported differently on purpose — **anchored** jobs (ULS and LicenseWatch both 08:00/20:00 ET —
-  they share one schedule, and the page reads the descriptor, never a constant) state
-  a real time and show `Due now` when a slot is unrun, **interval** jobs are last-run-plus-interval and
-  labelled *estimated*, because their timer restarts with the Worker. Tests caught two bugs first:
-  `Max` over an empty filtered sequence **throws** rather than returning null (one perpetually-failing
-  job would have taken down the whole page — the nullable cast must be *inside* `Max`), and advancing
-  an anchored slot by adding hours to a UTC value is an hour off across DST.
 Everything through Phase 0-10's initial build (ExamTools ingestion, Zoom/Discord, Square, email
 notifications, FCC ULS watcher, payment reminders, VE tracking, VEC submission tracker, admin
 auth/config/candidate-actions, PII purge), the public privacy page, and everything dated 2026-08-01
