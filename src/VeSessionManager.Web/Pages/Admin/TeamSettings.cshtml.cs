@@ -198,16 +198,41 @@ public class TeamSettingsModel(AppDbContext dbContext, UserManager<User> userMan
         return RedirectToPage(new { teamId = auth.Value.Team.Id });
     }
 
+    /// <summary>
+    /// Maps a result to a message. Every arm that can tell the admin something specific must do so:
+    /// this used to collapse everything except Success into "Could not save changes.", which for a
+    /// rejected endpoint would leave someone re-typing a correct-looking URL with no idea why it
+    /// keeps failing (the same shape as #315's LogoTooLarge, which was also swallowed here).
+    /// </summary>
     private void SetStatus(TeamActionResult result, string successMessage)
     {
         if (result == TeamActionResult.Success)
         {
             TempData["StatusMessage"] = successMessage;
+            return;
         }
-        else
+
+        TempData["ErrorMessage"] = result switch
         {
-            TempData["ErrorMessage"] = "Could not save changes.";
-        }
+            TeamActionResult.InvalidExamToolsBaseUrl =>
+                "That ExamTools address wasn't accepted. It must be an https:// URL on "
+                + string.Join(" or ", TeamSettingsService.AllowedExamToolsDomains)
+                + " — leave it blank to use the deployment default.",
+
+            TeamActionResult.InvalidSmtpHost =>
+                "That SMTP server name wasn't accepted. It must be a public mail server's hostname — "
+                + "not a URL, and not an address inside this network.",
+
+            TeamActionResult.LogoTooLarge =>
+                $"That logo is larger than {TeamSettingsService.MaxLogoBytes / 1024} KB.",
+
+            TeamActionResult.LogoUnsupportedFormat =>
+                "That logo wasn't a PNG or JPEG. (The file's own contents are checked, not its name.)",
+
+            TeamActionResult.DuplicateName => "Another team already has that name.",
+            TeamActionResult.NotFound => "That team no longer exists.",
+            _ => "Could not save changes."
+        };
     }
 
     private async Task<(User User, Team Team)?> AuthorizeAsync()
