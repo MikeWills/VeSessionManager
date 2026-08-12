@@ -132,6 +132,13 @@ public class PaymentGenerationService(
                         && p.PaymentLinkUrl == null
                         && p.SquareLinkPurgedUtc == null
                         && p.Candidate.Session.TeamId == team.Id
+                        // Same filter the creation pass above applies (#281). Without it a session
+                        // cancelled after its Payment rows existed but before Square was configured
+                        // gets live checkout links on the next poll — a real ordering, since Square
+                        // is optional and often set up later. SessionEventSchedulingService already
+                        // tears down Zoom and Discord for a cancelled session; nothing tears these
+                        // down, so the only defence is never minting them.
+                        && p.Candidate.Session.Status == SessionStatus.Active
                         && p.Candidate.Session.ScheduledStartUtc >= paymentCutoff
                         && (onlySessionId == null || p.Candidate.SessionId == onlySessionId))
             .ToListAsync(cancellationToken);

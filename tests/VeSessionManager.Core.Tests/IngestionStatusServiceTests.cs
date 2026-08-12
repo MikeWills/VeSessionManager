@@ -221,15 +221,19 @@ public class IngestionStatusServiceTests
     }
 
     /// <summary>
-    /// A whitespace-only password is the one case the projection cannot see, and it is worth being
-    /// explicit about rather than discovering later. The presence test runs in SQL against the
-    /// stored value; under real encryption that value is ciphertext, which is never whitespace. The
-    /// case is nonsense input either way — a password of spaces is not a configured integration —
-    /// and treating it as "present" errs toward showing the team as configured rather than silently
-    /// hiding it from the ops dashboard.
+    /// A whitespace-only password used to be "the one case the projection cannot see", and this test
+    /// asserted the divergence on purpose: the presence test ran in SQL against a stored value that
+    /// is ciphertext under real encryption, and ciphertext is never whitespace.
+    ///
+    /// <para><b>#279 removed the limitation rather than working around it.</b> The same reasoning that
+    /// hid whitespace also hid a cleared password — <c>Protect("")</c> is non-empty ciphertext too —
+    /// and that one was not harmless: the page reported a team as configured and due while the job
+    /// correctly skipped it, with nothing logged either side. The presence test decrypts and runs in
+    /// memory now, so there is no case the projection cannot see, and this asserts the absence of the
+    /// divergence it used to document.</para>
     /// </summary>
     [Fact]
-    public async Task WhitespaceOnlyPassword_IsTreatedAsPresentByTheProjection()
+    public async Task WhitespaceOnlyPassword_NowAgreesWithTheEntity()
     {
         await using var dbContext = CreateContext();
         await SeedSettingsAsync(dbContext);
@@ -247,7 +251,7 @@ public class IngestionStatusServiceTests
 
         var report = await CreateService(dbContext).GetAsync(null, CancellationToken.None);
 
-        Assert.True(Assert.Single(report.Teams).IsExamToolsConfigured);
-        Assert.False(team.IsExamToolsConfigured);   // documents the one divergence, deliberately
+        Assert.False(Assert.Single(report.Teams).IsExamToolsConfigured);
+        Assert.False(team.IsExamToolsConfigured);
     }
 }

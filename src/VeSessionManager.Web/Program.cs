@@ -123,6 +123,11 @@ builder.Services.AddScoped<ExamResultSyncService>();
 // The Renewal Monitor add flow resolves a call sign against ULS before saving, so a typo
 // is rejected while the user is still on the page rather than becoming a row that
 // silently never resolves. Same client the Worker's refresh job uses.
+// Both hosts bind this, from appsettings.Shared.json (#302). Web registers the same lookup client
+// the Worker's nightly sweep uses — RenewalMonitor's "Add license" calls it on the request path —
+// so a value bound in only one host means the two can query different endpoints with no error, just
+// quietly divergent data. Same reasoning that moved Jobs:* to the shared file.
+builder.Services.Configure<UlsLookupOptions>(builder.Configuration.GetSection(UlsLookupOptions.SectionName));
 builder.Services.AddSingleton<IUlsLookupClient, ExamToolsUlsLookupClient>();
 builder.Services.AddScoped<LicenseWatchService>();
 builder.Services.AddScoped<VolunteerExaminerLicenseWatchService>();

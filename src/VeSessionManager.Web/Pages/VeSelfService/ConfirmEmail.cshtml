@@ -8,7 +8,18 @@
 
 <div class="auth-wrap">
     <div class="auth-card">
-        @if (Model.Result == VeEmailChangeResult.Confirmed)
+        @if (Model.AwaitingConfirmation)
+        {
+            @* The GET only ever gets this far — nothing has changed yet (#290). *@
+            <h1>Confirm your new email address</h1>
+            <p>Your VE team will start using <strong>@Model.NewEmail</strong> for you, and future sign-in links will go there.</p>
+            <form method="post">
+                <input type="hidden" asp-for="Token" />
+                <button type="submit" class="btn-primary">Confirm the change</button>
+            </form>
+            <p class="muted">If you did not ask for this, close this page and nothing will happen.</p>
+        }
+        else if (Model.Result == VeEmailChangeResult.Confirmed)
         {
             <h1>Email address updated</h1>
             <p>Your VE team now holds <strong>@Model.NewEmail</strong> for you, and future sign-in links will go there.</p>

@@ -80,9 +80,13 @@ public class TeamSettingsService(AppDbContext dbContext, TimeProvider timeProvid
         team.ExamToolsTeamCode = teamCode;
         team.ExamToolsUsername = username;
         team.ExamToolsBaseUrl = string.IsNullOrWhiteSpace(baseUrl) ? null : baseUrl;
+        // Null means "leave the stored password alone" — the form posts blank for an unchanged
+        // secret. Blank-but-not-null means "clear it", and clearing stores null rather than ""
+        // (#279): "" round-trips through the encrypting converter as ciphertext, so a cleared
+        // password read as a set one everywhere that asks `!= null` instead of IsNullOrWhiteSpace.
         if (password is not null)
         {
-            team.ExamToolsPassword = password;
+            team.ExamToolsPassword = string.IsNullOrWhiteSpace(password) ? null : password;
         }
 
         return await SaveTeamUpdateAsync(team, "TeamExamToolsCredentialsUpdated", userId, cancellationToken);

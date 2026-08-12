@@ -77,11 +77,15 @@ public class VeDetailModel(
     /// Every POST handler returns through this — dropping them in one handler is exactly how a back
     /// link silently stops working, and only after a save, which is the hardest kind to notice.
     /// </summary>
-    private RouteValueDictionary SelfRoute()
-    {
-        var values = new RouteValueDictionary(FilterRoute) { ["id"] = Id };
-        return values;
-    }
+    private RouteValueDictionary SelfRoute() => new(SelfRouteValues);
+
+    /// <summary>
+    /// The same values the view needs to build each form's <c>action</c> (#276). Exposed rather than
+    /// duplicated: the redirect target and the post target have to agree, and they only stayed
+    /// agreed by accident while the forms were dropping the filters entirely.
+    /// </summary>
+    public Dictionary<string, string?> SelfRouteValues =>
+        new(FilterRoute) { ["id"] = Id.ToString() };
 
 
 

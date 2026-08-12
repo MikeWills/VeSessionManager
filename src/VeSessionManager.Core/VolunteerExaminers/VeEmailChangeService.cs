@@ -144,6 +144,44 @@ public class VeEmailChangeService(
     }
 
     /// <summary>Applies a change whose confirmation link has been followed from the old address.</summary>
+    /// <summary>
+    /// Reports what <see cref="ConfirmAsync"/> would do, changing nothing (#290).
+    ///
+    /// <para>Exists because applying the change on a GET meant that link-prefetching mail security
+    /// gateways, corporate URL scanners and browser prefetch could confirm an address change the VE
+    /// never decided to make — all of those routinely fetch links in email. The page now renders a
+    /// button on GET and confirms on POST, and this is what lets the GET say something truthful about
+    /// a link it has not yet used.</para>
+    ///
+    /// <para><b>Deliberately not applied to the sign-in link at <c>Enter</c>.</b> That one consumes
+    /// its single-use token on GET on purpose: a sign-in link that survives being followed is a
+    /// credential sitting in an inbox. The accepted cost there is that a scanner burns the link and
+    /// the VE sees "no longer valid" — a different trade, made knowingly, and not to be "fixed" to
+    /// match this.</para>
+    /// </summary>
+    public async Task<(VeEmailChangeResult Result, string? NewEmail)> PeekAsync(string rawToken, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(rawToken))
+        {
+            return (VeEmailChangeResult.NotFound, null);
+        }
+
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+        var request = await dbContext.VeEmailChangeRequests
+            .AsNoTracking()
+            .FirstOrDefaultAsync(r => r.TokenHash == Hash(rawToken.Trim()), cancellationToken);
+
+        if (request is null || request.ConfirmedUtc is not null || request.ExpiresUtc <= now)
+        {
+            return (VeEmailChangeResult.NotFound, null);
+        }
+
+        // The taken-by-another check is deliberately NOT repeated here. It is re-evaluated by
+        // ConfirmAsync at the moment of the write, which is the only evaluation that can be relied
+        // on; duplicating it would just add a second answer that can be stale by the time it matters.
+        return (VeEmailChangeResult.Confirmed, request.NewEmail);
+    }
+
     public async Task<(VeEmailChangeResult Result, string? NewEmail)> ConfirmAsync(string rawToken, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(rawToken))
