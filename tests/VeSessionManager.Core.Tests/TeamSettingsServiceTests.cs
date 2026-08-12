@@ -270,13 +270,16 @@ public class TeamSettingsServiceTests
         team.SmtpPassword = "original-smtp-secret";
         await dbContext.SaveChangesAsync();
 
-        await CreateService(dbContext).UpdateSmtpAsync(team.Id, "smtp.mailgun.org", 587, "postmaster@example.org", null, true, user.Id, CancellationToken.None);
+        await CreateService(dbContext).UpdateSmtpAsync(team.Id, "smtp.mailgun.org", 587, "postmaster@example.org", null, user.Id, CancellationToken.None);
 
         var updated = await dbContext.Teams.SingleAsync();
         Assert.Equal("original-smtp-secret", updated.SmtpPassword);
         Assert.Equal("smtp.mailgun.org", updated.SmtpHost);
         Assert.Equal(587, updated.SmtpPort);
-        Assert.True(updated.SmtpUseStartTls);
+        // SmtpUseStartTls is no longer written or read (issue #259) — TLS is mandatory and chosen by
+        // the port, so the column is vestigial. Asserted null rather than deleted, because "the save
+        // path stopped touching it" is the fact worth pinning while the column still exists.
+        Assert.Null(updated.SmtpUseStartTls);
     }
 
     [Fact]

@@ -117,16 +117,19 @@ public class TeamSettingsModel(AppDbContext dbContext, UserManager<User> userMan
         return RedirectToPage(new { teamId = auth.Value.Team.Id });
     }
 
-    /// <param name="useStartTls">Non-nullable on purpose: the form always posts an explicit
-    /// true/false (see the hidden sibling input in the .cshtml), so a null here would mean the form
-    /// was tampered with or changed — and binding it as null used to be indistinguishable from
-    /// "unchecked", which is the bug that made STARTTLS impossible to turn off.</param>
-    public async Task<IActionResult> OnPostUpdateSmtpAsync(string? host, int? port, string? username, string? password, bool useStartTls)
+    /// <summary>
+    /// No <c>useStartTls</c> parameter any more (issue #259). TLS is mandatory and decided by the
+    /// port — see <c>SmtpSecurity</c> — so there is nothing here for an admin to choose, and the
+    /// checkbox that used to post it has gone with it. Leaving the parameter would have been worse
+    /// than removing it: with the form no longer posting the field, it would bind to default and
+    /// silently overwrite the stored column on every save.
+    /// </summary>
+    public async Task<IActionResult> OnPostUpdateSmtpAsync(string? host, int? port, string? username, string? password)
     {
         var auth = await AuthorizeAsync();
         if (auth is null) return Forbid();
 
-        var result = await teamSettingsService.UpdateSmtpAsync(auth.Value.Team.Id, host, port, username, password, useStartTls, auth.Value.User.Id, CancellationToken.None);
+        var result = await teamSettingsService.UpdateSmtpAsync(auth.Value.Team.Id, host, port, username, password, auth.Value.User.Id, CancellationToken.None);
         SetStatus(result, "SMTP credentials updated.");
         return RedirectToPage(new { teamId = auth.Value.Team.Id });
     }

@@ -145,7 +145,7 @@ public class TeamEndpointValidationTests
         var (team, user) = await SeedAsync(dbContext);
 
         var result = await CreateService(dbContext).UpdateSmtpAsync(
-            team.Id, host, 587, "postmaster@example.org", password: null, useStartTls: true, user.Id, CancellationToken.None);
+            team.Id, host, 587, "postmaster@example.org", password: null, user.Id, CancellationToken.None);
 
         Assert.Equal(TeamActionResult.InvalidSmtpHost, result);
 
@@ -164,7 +164,7 @@ public class TeamEndpointValidationTests
         var (team, user) = await SeedAsync(dbContext);
 
         var result = await CreateService(dbContext).UpdateSmtpAsync(
-            team.Id, host, 587, "postmaster@example.org", password: null, useStartTls: true, user.Id, CancellationToken.None);
+            team.Id, host, 587, "postmaster@example.org", password: null, user.Id, CancellationToken.None);
 
         Assert.Equal(TeamActionResult.Success, result);
     }
@@ -179,7 +179,7 @@ public class TeamEndpointValidationTests
         var (team, user) = await SeedAsync(dbContext);
 
         var result = await CreateService(dbContext).UpdateSmtpAsync(
-            team.Id, host, null, null, password: null, useStartTls: null, user.Id, CancellationToken.None);
+            team.Id, host, null, null, password: null, user.Id, CancellationToken.None);
 
         Assert.Equal(TeamActionResult.Success, result);
         Assert.Null((await dbContext.Teams.AsNoTracking().SingleAsync()).SmtpHost);
@@ -197,7 +197,7 @@ public class TeamEndpointValidationTests
         var service = CreateService(dbContext);
 
         await service.UpdateExamToolsAsync(team.Id, "HRCC", "ve@example.org", null, "https://attacker.example", user.Id, CancellationToken.None);
-        await service.UpdateSmtpAsync(team.Id, "127.0.0.1", 587, "u", null, true, user.Id, CancellationToken.None);
+        await service.UpdateSmtpAsync(team.Id, "127.0.0.1", 587, "u", null, user.Id, CancellationToken.None);
 
         Assert.Empty(await dbContext.AuditLogs.ToListAsync());
     }

@@ -125,7 +125,7 @@ public class TeamSettingsService(AppDbContext dbContext, TimeProvider timeProvid
         return await SaveTeamUpdateAsync(team, "TeamSquareCredentialsUpdated", userId, cancellationToken);
     }
 
-    public async Task<TeamActionResult> UpdateSmtpAsync(int teamId, string? host, int? port, string? username, string? password, bool? useStartTls, int userId, CancellationToken cancellationToken)
+    public async Task<TeamActionResult> UpdateSmtpAsync(int teamId, string? host, int? port, string? username, string? password, int userId, CancellationToken cancellationToken)
     {
         var team = await dbContext.Teams.FirstOrDefaultAsync(t => t.Id == teamId, cancellationToken);
         if (team is null)
@@ -146,7 +146,6 @@ public class TeamSettingsService(AppDbContext dbContext, TimeProvider timeProvid
         team.SmtpHost = string.IsNullOrWhiteSpace(host) ? null : host.Trim();
         team.SmtpPort = port;
         team.SmtpUsername = username;
-        team.SmtpUseStartTls = useStartTls;
         if (password is not null)
         {
             team.SmtpPassword = password;

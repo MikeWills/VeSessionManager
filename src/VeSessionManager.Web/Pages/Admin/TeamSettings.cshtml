@@ -150,14 +150,7 @@ else
                 <div class="field" style="max-width:220px;"><label for="smtpUsername">Username</label><input id="smtpUsername" name="username" value="@Model.Team.SmtpUsername" /></div>
                 <div class="field" style="max-width:220px;"><label for="smtpPassword">Password</label><input id="smtpPassword" name="password" type="password" placeholder="@(Model.Team.IsEmailConfigured ? "•••••••• (unchanged)" : "Not set")" /></div>
                 <div class="field" style="max-width:160px;">
-                    @* The hidden "false" sibling is required, not decorative: an unchecked checkbox
-                       posts nothing at all, so without it the handler saw null, stored null, and
-                       Team.ToEmailCredentials' null-means-true fallback turned the box straight back
-                       on — STARTTLS could never actually be switched off (e.g. implicit-TLS port 465
-                       or plain port 25). Must stay *after* the checkbox so a checked box wins.
-                       Same pattern as SystemSettings.cshtml's system-SMTP checkbox. *@
-                    <label><input type="checkbox" name="useStartTls" value="true" checked="@(Model.Team.SmtpUseStartTls ?? true)" style="width:auto; display:inline-block;" /> Use STARTTLS</label>
-                    <input type="hidden" name="useStartTls" value="false" />
+                    <p class="hint" style="margin:0;">Connections always use TLS — implicit on port 465, required STARTTLS otherwise. The old opt-out was removed in issue #259: it fell back to plaintext when a server declined, which sent the password in the clear.</p>
                 </div>
             </div>
             <button type="submit" class="btn-primary btn-sm" style="margin-top:12px;">Save SMTP</button>
