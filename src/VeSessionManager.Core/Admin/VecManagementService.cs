@@ -19,19 +19,31 @@ public class VecManagementService(AppDbContext dbContext, TimeProvider timeProvi
         }
 
         examToolsCode = NormalizeCode(examToolsCode, name);
+        // Vec.Name is a required column; see TeamSettingsService.CreateAsync for the reasoning (#275).
+        name = name?.Trim() ?? "";
+        if (string.IsNullOrEmpty(name))
+        {
+            return (VecActionResult.NameRequired, null);
+        }
+
         if (await MatchCodeIsTakenAsync(examToolsCode ?? name, excludingVecId: 0, cancellationToken))
         {
             return (VecActionResult.DuplicateExamToolsCode, null);
         }
 
-        var vec = new Vec { Name = name, ExamToolsCode = examToolsCode, SupportsYouthProgram = supportsYouthProgram, Notes = notes };
-        dbContext.Vecs.Add(vec);
-        await dbContext.SaveChangesAsync(cancellationToken); // assigns vec.Id, needed for the audit entry below
+        // Atomic where the provider allows it (issue #287) — same shape as the other create paths:
+        // the audit needs the id the first save assigns.
+        return await AtomicWrite.RunAsync(dbContext, async () =>
+        {
+            var vec = new Vec { Name = name, ExamToolsCode = examToolsCode, SupportsYouthProgram = supportsYouthProgram, Notes = notes };
+            dbContext.Vecs.Add(vec);
+            await dbContext.SaveChangesAsync(cancellationToken); // assigns vec.Id, needed for the audit entry below
 
-        AddAudit(userId, "VecCreated", vec.Id, $"VEC '{name}' created.", timeProvider.GetUtcNow().UtcDateTime);
-        await dbContext.SaveChangesAsync(cancellationToken);
+            AddAudit(userId, "VecCreated", vec.Id, $"VEC '{name}' created.", timeProvider.GetUtcNow().UtcDateTime);
+            await dbContext.SaveChangesAsync(cancellationToken);
 
-        return (VecActionResult.Success, vec);
+            return (VecActionResult.Success, (Vec?)vec);
+        }, cancellationToken);
     }
 
     public async Task<VecActionResult> UpdateAsync(int vecId, string name, string? examToolsCode, bool supportsYouthProgram, string? notes, int userId, CancellationToken cancellationToken)
@@ -40,6 +52,12 @@ public class VecManagementService(AppDbContext dbContext, TimeProvider timeProvi
         if (vec is null)
         {
             return VecActionResult.NotFound;
+        }
+
+        name = name?.Trim() ?? "";
+        if (string.IsNullOrEmpty(name))
+        {
+            return VecActionResult.NameRequired;
         }
 
         if (vec.Name != name && await dbContext.Vecs.AnyAsync(v => v.Id != vecId && v.Name == name, cancellationToken))
@@ -107,5 +125,8 @@ public enum VecActionResult
     Success,
     NotFound,
     DuplicateName,
+
+    /// <summary>A required value arrived blank — see RequiredInputGuardTests for why this is checked here rather than on the page (issue #275).</summary>
+    NameRequired,
     DuplicateExamToolsCode
 }

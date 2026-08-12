@@ -182,7 +182,11 @@ public class TeamMaintenanceModel(
 
         await LoadTeamPickerAsync(user);
 
-        var effectiveTeamId = adminAccessScope.TryResolveManageableTeamId(user, TeamId, AvailableTeams.Select(t => t.Id).ToList());
+        // ...ForWrite (issue #263). Both callers of this are POST handlers — queue a historical
+        // import, force a refresh — so substituting a different team the user happens to manage
+        // would start real work against the wrong one. The GET path above keeps the forgiving
+        // resolver.
+        var effectiveTeamId = adminAccessScope.TryResolveManageableTeamIdForWrite(user, TeamId, AvailableTeams.Select(t => t.Id).ToList());
         if (effectiveTeamId is null)
         {
             return null;

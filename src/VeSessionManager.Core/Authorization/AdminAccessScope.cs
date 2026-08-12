@@ -62,6 +62,49 @@ public class AdminAccessScope(SessionAccessScope sessionAccessScope)
         return effectiveTeamIds.Count > 0 ? effectiveTeamIds[0] : null;
     }
 
+    /// <summary>
+    /// The same resolution for a handler that is about to <b>write</b>, where the substitution above
+    /// is wrong (issue #263).
+    ///
+    /// <para>On a GET, falling back to the acting user's first team is a kindness: a stale or
+    /// hand-edited <c>?teamId=</c> lands them on a team they can actually see, which beats an error
+    /// page. On a POST it means the write goes to a <i>different team than the URL named</i>, and the
+    /// redirect afterwards reflects the substitution only once it has already happened. No
+    /// cross-tenant access results — the resolved team is always one they manage — but a multi-team
+    /// TeamAdmin following a wrong link can overwrite Team X's Square access token believing they are
+    /// editing Team Y.</para>
+    ///
+    /// <para>So this one refuses rather than substitutes. Both exist because both behaviours are
+    /// wanted; the bug was having only the forgiving one.</para>
+    ///
+    /// <para>Ambiguity is refused too: no requested id and more than one candidate returns null,
+    /// rather than picking. That is the rule the SystemAdmin branch already applied via
+    /// <c>availableTeamIds is { Count: 1 }</c>, now applied to everyone — a single-team admin, which
+    /// is most of them, still needs to pass nothing.</para>
+    /// </summary>
+    public int? TryResolveManageableTeamIdForWrite(User actingUser, int? requestedTeamId, IReadOnlyList<int>? availableTeamIds = null)
+    {
+        if (actingUser.Role == UserRole.SystemAdmin)
+        {
+            if (requestedTeamId is not null)
+            {
+                return requestedTeamId;
+            }
+
+            return availableTeamIds is { Count: 1 } ? availableTeamIds[0] : null;
+        }
+
+        var effectiveTeamIds = GetEffectiveTeamIds(actingUser) ?? [];
+
+        if (requestedTeamId is not null)
+        {
+            // The whole point: not manageable means no, never "have this one instead".
+            return effectiveTeamIds.Contains(requestedTeamId.Value) ? requestedTeamId : null;
+        }
+
+        return effectiveTeamIds.Count == 1 ? effectiveTeamIds[0] : null;
+    }
+
     /// <summary>TeamAdmin may only manage SessionManager/TeamLead users who share at least one team with them — never another TeamAdmin or a SystemAdmin, and never a user on none of their teams.</summary>
     public bool CanManageUser(User actingUser, User targetUser)
     {

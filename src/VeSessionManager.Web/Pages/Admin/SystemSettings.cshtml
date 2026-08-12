@@ -103,10 +103,8 @@
             <input id="systemSmtpPassword" name="systemSmtpPassword" type="password" autocomplete="new-password"
                    placeholder="@(Model.SystemSmtpPasswordIsSet ? "Stored — leave blank to keep" : "")" />
         </div>
-        <div class="field" style="max-width:400px; flex-direction:row; align-items:center; gap:8px;">
-            <input id="systemSmtpUseStartTls" name="systemSmtpUseStartTls" type="checkbox" value="true" checked="@Model.SystemSmtpUseStartTls" style="width:auto;" />
-            <input name="systemSmtpUseStartTls" type="hidden" value="false" />
-            <label for="systemSmtpUseStartTls" style="margin:0;">Use StartTLS</label>
+        <div class="field" style="max-width:400px;">
+            <p class="hint" style="margin:0;">Connections always use TLS — implicit on port 465, required STARTTLS otherwise (issue #259).</p>
         </div>
         <div class="field" style="max-width:400px;">
             <label for="systemSmtpFromAddress">From address</label>

@@ -64,8 +64,9 @@ public class SmtpEmailSender(SystemSettingsService systemSettingsService, ILogge
         mimeMessage.Body = bodyBuilder.ToMessageBody();
 
         using var client = new SmtpClient();
-        var secureSocketOptions = credentials.UseStartTls ? SecureSocketOptions.StartTls : SecureSocketOptions.Auto;
-        await client.ConnectAsync(credentials.Host, credentials.Port, secureSocketOptions, cancellationToken);
+        // Mandatory TLS, chosen by port and never by configuration — see SmtpSecurity (issue #259).
+        // A server that will not do it gets a thrown connection rather than a cleartext password.
+        await client.ConnectAsync(credentials.Host, credentials.Port, SmtpSecurity.OptionsFor(credentials.Port), cancellationToken);
 
         if (!string.IsNullOrWhiteSpace(credentials.Username))
         {

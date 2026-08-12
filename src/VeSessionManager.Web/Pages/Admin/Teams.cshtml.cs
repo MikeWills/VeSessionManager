@@ -80,8 +80,16 @@ public class TeamsModel(
         }
 
         var (result, _) = await teamSettingsService.CreateAsync(name, user.Id, CancellationToken.None);
-        TempData[result == TeamActionResult.Success ? "StatusMessage" : "ErrorMessage"] =
-            result == TeamActionResult.Success ? $"Team '{name}' created." : $"A team named '{name}' already exists.";
+
+        // Was a two-outcome message that reported every failure as "already exists" — so a blank or
+        // tampered post would have claimed a duplicate of a team with no name (issue #275).
+        TempData[result == TeamActionResult.Success ? "StatusMessage" : "ErrorMessage"] = result switch
+        {
+            TeamActionResult.Success => $"Team '{name}' created.",
+            TeamActionResult.NameRequired => "Enter a team name.",
+            TeamActionResult.DuplicateName => $"A team named '{name}' already exists.",
+            _ => "Could not create that team."
+        };
         return RedirectToPage();
     }
 

@@ -117,16 +117,19 @@ public class TeamSettingsModel(AppDbContext dbContext, UserManager<User> userMan
         return RedirectToPage(new { teamId = auth.Value.Team.Id });
     }
 
-    /// <param name="useStartTls">Non-nullable on purpose: the form always posts an explicit
-    /// true/false (see the hidden sibling input in the .cshtml), so a null here would mean the form
-    /// was tampered with or changed — and binding it as null used to be indistinguishable from
-    /// "unchecked", which is the bug that made STARTTLS impossible to turn off.</param>
-    public async Task<IActionResult> OnPostUpdateSmtpAsync(string? host, int? port, string? username, string? password, bool useStartTls)
+    /// <summary>
+    /// No <c>useStartTls</c> parameter any more (issue #259). TLS is mandatory and decided by the
+    /// port — see <c>SmtpSecurity</c> — so there is nothing here for an admin to choose, and the
+    /// checkbox that used to post it has gone with it. Leaving the parameter would have been worse
+    /// than removing it: with the form no longer posting the field, it would bind to default and
+    /// silently overwrite the stored column on every save.
+    /// </summary>
+    public async Task<IActionResult> OnPostUpdateSmtpAsync(string? host, int? port, string? username, string? password)
     {
         var auth = await AuthorizeAsync();
         if (auth is null) return Forbid();
 
-        var result = await teamSettingsService.UpdateSmtpAsync(auth.Value.Team.Id, host, port, username, password, useStartTls, auth.Value.User.Id, CancellationToken.None);
+        var result = await teamSettingsService.UpdateSmtpAsync(auth.Value.Team.Id, host, port, username, password, auth.Value.User.Id, CancellationToken.None);
         SetStatus(result, "SMTP credentials updated.");
         return RedirectToPage(new { teamId = auth.Value.Team.Id });
     }
@@ -198,16 +201,42 @@ public class TeamSettingsModel(AppDbContext dbContext, UserManager<User> userMan
         return RedirectToPage(new { teamId = auth.Value.Team.Id });
     }
 
+    /// <summary>
+    /// Maps a result to a message. Every arm that can tell the admin something specific must do so:
+    /// this used to collapse everything except Success into "Could not save changes.", which for a
+    /// rejected endpoint would leave someone re-typing a correct-looking URL with no idea why it
+    /// keeps failing (the same shape as #315's LogoTooLarge, which was also swallowed here).
+    /// </summary>
     private void SetStatus(TeamActionResult result, string successMessage)
     {
         if (result == TeamActionResult.Success)
         {
             TempData["StatusMessage"] = successMessage;
+            return;
         }
-        else
+
+        TempData["ErrorMessage"] = result switch
         {
-            TempData["ErrorMessage"] = "Could not save changes.";
-        }
+            TeamActionResult.InvalidExamToolsBaseUrl =>
+                "That ExamTools address wasn't accepted. It must be an https:// URL on "
+                + string.Join(" or ", TeamSettingsService.AllowedExamToolsDomains)
+                + " — leave it blank to use the deployment default.",
+
+            TeamActionResult.InvalidSmtpHost =>
+                "That SMTP server name wasn't accepted. It must be a public mail server's hostname — "
+                + "not a URL, and not an address inside this network.",
+
+            TeamActionResult.LogoTooLarge =>
+                $"That logo is larger than {TeamSettingsService.MaxLogoBytes / 1024} KB.",
+
+            TeamActionResult.LogoUnsupportedFormat =>
+                "That logo wasn't a PNG or JPEG. (The file's own contents are checked, not its name.)",
+
+            TeamActionResult.NameRequired => "Enter a team name.",
+            TeamActionResult.DuplicateName => "Another team already has that name.",
+            TeamActionResult.NotFound => "That team no longer exists.",
+            _ => "Could not save changes."
+        };
     }
 
     private async Task<(User User, Team Team)?> AuthorizeAsync()
@@ -222,7 +251,13 @@ public class TeamSettingsModel(AppDbContext dbContext, UserManager<User> userMan
         AvailableTeams = await adminAccessScope.ScopeTeams(dbContext.Teams, user)
             .OrderBy(t => t.Name).Select(t => new ValueTuple<int, string>(t.Id, t.Name)).ToListAsync();
 
-        var effectiveTeamId = adminAccessScope.TryResolveManageableTeamId(user, TeamId, AvailableTeams.Select(t => t.Id).ToList());
+        // ...ForWrite, not the forgiving resolver (issue #263). Every caller of AuthorizeAsync is a
+        // POST handler that saves credentials, and the forgiving one substitutes the acting user's
+        // first team when they ask for one they do not manage — so a multi-team TeamAdmin following a
+        // stale link would overwrite a different team's Square token, learning about the swap only
+        // from the redirect afterwards. Refusing is the only safe answer for a write; LoadAsync keeps
+        // the forgiving resolver, because landing on a visible team beats an error page on a GET.
+        var effectiveTeamId = adminAccessScope.TryResolveManageableTeamIdForWrite(user, TeamId, AvailableTeams.Select(t => t.Id).ToList());
         if (effectiveTeamId is null)
         {
             return null;

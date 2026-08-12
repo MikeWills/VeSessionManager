@@ -86,7 +86,13 @@ public class EmailTemplatesModel(AppDbContext dbContext, UserManager<User> userM
         }
         else
         {
-            TempData["ErrorMessage"] = "Template not found.";
+            // Was a flat "Template not found." for every non-Success value, which would have reported
+            // a blank subject as a missing template (issue #275).
+            TempData["ErrorMessage"] = result switch
+            {
+                EmailTemplateActionResult.ContentRequired => "A template needs both a subject and a body.",
+                _ => "Template not found."
+            };
         }
 
         return RedirectToPage(new { teamId = existingTemplate.TeamId });
