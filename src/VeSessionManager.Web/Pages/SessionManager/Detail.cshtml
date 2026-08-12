@@ -198,10 +198,19 @@
                                 <input type="hidden" name="candidateId" value="@candidate.Id" />
                                 <button type="submit" class="item" disabled="@(!candidate.CanResendConfirmation)">Resend confirmation email</button>
                             </form>
-                            <form method="post" asp-page-handler="MarkPaid">
-                                <input type="hidden" name="paymentId" value="@candidate.PrimaryPaymentId" />
-                                <button type="submit" class="item" disabled="@(!candidate.CanMarkPaid)">Mark paid manually</button>
-                            </form>
+                            @* Rendered only when there is a payment id to send (#277). An int? of
+                               null posts "", which cannot bind to the handler's non-nullable int, so
+                               it arrives as 0 and the IDOR re-check turns it into a 403. Latent
+                               while the disabled= holds, and a 403 rather than a wrong-record write
+                               because that check is doing its job — but the form should not be able
+                               to post a value it does not have. *@
+                            @if (candidate.PrimaryPaymentId is { } markPaymentId)
+                            {
+                                <form method="post" asp-page-handler="MarkPaid">
+                                    <input type="hidden" name="paymentId" value="@markPaymentId" />
+                                    <button type="submit" class="item" disabled="@(!candidate.CanMarkPaid)">Mark paid manually</button>
+                                </form>
+                            }
                             <button type="button" class="item" data-open-modal="frnModal-@candidate.Id">Add / edit FRN</button>
                             <hr>
                             <form method="post" asp-page-handler="MarkFailed">
@@ -407,11 +416,15 @@
             </div>
         </div>
 
+        @* See the MarkPaid form above (#277). The whole modal, not just its form: CanFlagRefund is
+           false without a payment, so with no id there is nothing here worth rendering. *@
+        @if (candidate.PrimaryPaymentId is { } refundPaymentId)
+        {
         <div class="modal-backdrop" id="refundModal-@candidate.Id">
             <div class="modal">
                 <h3>Flag refund requested</h3>
                 <form method="post" asp-page-handler="FlagRefund">
-                    <input type="hidden" name="paymentId" value="@candidate.PrimaryPaymentId" />
+                    <input type="hidden" name="paymentId" value="@refundPaymentId" />
                     <div class="field"><label for="notes-@candidate.Id">Notes</label><textarea id="notes-@candidate.Id" name="notes" rows="3"></textarea></div>
                     <div class="modal-actions">
                         <button type="button" class="btn-secondary btn-sm" data-close-modal>Cancel</button>
@@ -420,5 +433,6 @@
                 </form>
             </div>
         </div>
+        }
     }
 }

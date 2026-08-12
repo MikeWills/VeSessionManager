@@ -162,3 +162,38 @@ trivially as if the columns had never been encrypted at all. Keep the key ring's
 separately from — or with tighter access than — wherever the DB backup goes, especially whatever
 destination is most exposed (a shared drive, a less-access-controlled bucket, an off-site sync).
 Bundling them together isn't a subtle risk reduction, it's a silent full reversal of this feature.
+
+## Never compare an encrypted column server-side
+
+*Issue [#279](https://github.com/MikeWills/VeSessionManager/issues/279), 2026-08-11.*
+
+`IngestionStatusService` tested `t.ExamToolsPassword != null && t.ExamToolsPassword != ""` inside a
+LINQ projection. EF translates the `""` constant **through the converter too**, emitting a comparison
+against a freshly `Protect("")`'d ciphertext — non-deterministic, so it can never equal any stored
+value. **The predicate was always true.**
+
+The comment that justified it stated the false premise outright: *"presence survives encryption — a
+non-empty ciphertext means a non-empty plaintext."* It does not. `Protect("")` returns a perfectly
+non-empty ciphertext.
+
+The consequence was a screen that disagreed with the job. An admin clearing a team's ExamTools
+password stored `Protect("")`; the Ingestion Status page and the site-wide health banner reported the
+team as configured and due, while `SessionIngestionJob` correctly skipped it via
+`Team.IsExamToolsConfigured`, which uses `IsNullOrWhiteSpace`. Nothing logged on either side.
+
+**Two things follow, and the second is the one that generalizes.**
+
+A stored blank is *ciphertext*, not SQL `NULL` and not `''`. So no predicate of any kind can identify
+it — not `!= ""`, not `LENGTH(...)`, nothing. **Decryption is the only way to tell a blank from a
+secret**, which is why the fix materializes the one column and tests it in memory rather than trying
+to write a cleverer `WHERE`. The other four credentials are still never touched.
+
+`!= null` alone is safe: EF special-cases null and does not send it through the converter.
+
+The write path was tightened at the same time so blank stores `null` rather than `""`, but that only
+prevents new occurrences — any database that has been running may already hold `Protect("")`, which
+is precisely why the read side had to become correct on its own.
+
+`EncryptedColumnPredicateSqliteTests` pins this, **and it has to be a SQLite test**: on the InMemory
+provider the same expression is evaluated as plain LINQ over decrypted values, where it behaves
+exactly as written. A test of this on InMemory passes against the bug.

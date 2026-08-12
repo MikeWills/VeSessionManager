@@ -46,6 +46,20 @@ public class LoginModel(SignInManager<User> signInManager, UserManager<User> use
         NoAccountsExist = !await dbContext.Users.AnyAsync(u => u.PasswordHash != null);
     }
 
+    /// <summary>
+    /// Where the user was heading before the <c>[Authorize]</c> redirect sent them here. Never
+    /// honoured before (#272), so every deep link, bookmark and emailed admin link landed on the
+    /// role dashboard instead — the common path since the 2026-08-10 FallbackPolicy made every page
+    /// authenticated.
+    ///
+    /// <para><b>Redirected with <see cref="ControllerBase.LocalRedirect"/> and gated on
+    /// <c>Url.IsLocalUrl</c>, not <c>Redirect</c>.</b> The absence of this parameter is currently the
+    /// entire reason this app has no open-redirect vector; adding it back carelessly would create
+    /// one, and a login page is the highest-value place to have that.</para>
+    /// </summary>
+    [BindProperty(SupportsGet = true)]
+    public string? ReturnUrl { get; set; }
+
     public async Task<IActionResult> OnPostAsync()
     {
         ExternalLogins = (await signInManager.GetExternalAuthenticationSchemesAsync()).ToList();
@@ -62,6 +76,15 @@ public class LoginModel(SignInManager<User> signInManager, UserManager<User> use
         }
 
         var user = await userManager.FindByNameAsync(Input.UserName);
+
+        // Local URLs only. Url.IsLocalUrl rejects absolute and protocol-relative forms, and
+        // LocalRedirect throws rather than leaving the site if one slips past — belt and braces on
+        // the one page where an open redirect is worth the most to an attacker.
+        if (!string.IsNullOrEmpty(ReturnUrl) && Url.IsLocalUrl(ReturnUrl))
+        {
+            return LocalRedirect(ReturnUrl);
+        }
+
         return RedirectToPage(RoleLandingPages.GetPath(user!.Role));
     }
 

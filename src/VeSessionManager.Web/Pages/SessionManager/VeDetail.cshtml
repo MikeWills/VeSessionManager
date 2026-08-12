@@ -2,7 +2,19 @@
 @using VeSessionManager.Core.Entities
 @model VeSessionManager.Web.Pages.SessionManager.VeDetailModel
 @using VeSessionManager.Core.VolunteerExaminers
+@* Every POST here routes through Url.Page with SelfRouteValues, not asp-page-handler (#276).
+   asp-page-handler builds its action from the route alone and DROPS the query string, and this
+   page's filters — TeamId, Search, TagName, IncludeInactive, LicenseStatus, Worked, WorkedFrom,
+   WorkedTo — all live there. So on POST those bound properties were null and SelfRoute() rebuilt an
+   empty filter set: the user's filters vanished silently, and only after a save.
+
+   asp-antiforgery="true" is the required other half. FormTagHelper only auto-emits the token when it
+   generated the action itself, so an explicit action= without this makes every POST 400 in the
+   antiforgery middleware before reaching the app, logging nothing server-side. Both halves are in
+   CLAUDE.md; VeDirectory.cshtml is the working precedent. *@
+
 @{
+
     ViewData["Title"] = Model.Person.Name;
     ViewData["ActiveNav"] = "VeDirectory";
     Layout = "_AppLayout";
@@ -23,7 +35,8 @@
         themselves. This is their home address — not the address on their public FCC record.
     </p>
 
-    <form method="post" asp-page-handler="Contact">
+    <form method="post" asp-antiforgery="true"
+          action="@Url.Page("/SessionManager/VeDetail", "Contact", Model.SelfRouteValues)">
         <div asp-validation-summary="ModelOnly" class="vesm-alert error"></div>
 
         <div class="field">
@@ -158,7 +171,8 @@
                         <span class="chip chip-brick">Retired</span>
                     }
                 </h3>
-                <form method="post" asp-page-handler="MembershipActive">
+                <form method="post" asp-antiforgery="true"
+                      action="@Url.Page("/SessionManager/VeDetail", "MembershipActive", Model.SelfRouteValues)">
                     <input type="hidden" name="membershipId" value="@view.Membership.Id" />
                     <input type="hidden" name="isActive" value="@((!view.Membership.IsActive).ToString().ToLowerInvariant())" />
                     <button type="submit" class="btn-secondary btn-sm">
@@ -179,7 +193,8 @@
             }
             else
             {
-                <form method="post" asp-page-handler="Tags">
+                <form method="post" asp-antiforgery="true"
+                      action="@Url.Page("/SessionManager/VeDetail", "Tags", Model.SelfRouteValues)">
                     <input type="hidden" name="membershipId" value="@view.Membership.Id" />
                     @foreach (var tag in view.TeamTags)
                     {
@@ -274,7 +289,8 @@
                 <tr>
                     <td>@accreditation.Vec.Name</td>
                     <td>
-                        <form method="post" asp-page-handler="RemoveAccreditation">
+                        <form method="post" asp-antiforgery="true"
+                              action="@Url.Page("/SessionManager/VeDetail", "RemoveAccreditation", Model.SelfRouteValues)">
                             <input type="hidden" name="accreditationId" value="@accreditation.Id" />
                             <button type="submit" class="btn-secondary btn-sm">Remove</button>
                         </form>
@@ -285,7 +301,8 @@
     </table>
     </div>
 
-    <form method="post" asp-page-handler="AddAccreditation" class="field-row" style="margin-top:12px;">
+    <form method="post" asp-antiforgery="true"
+          action="@Url.Page("/SessionManager/VeDetail", "AddAccreditation", Model.SelfRouteValues)" class="field-row" style="margin-top:12px;">
         <div class="field">
             <label for="vecId">VEC</label>
             <select id="vecId" name="vecId" required>

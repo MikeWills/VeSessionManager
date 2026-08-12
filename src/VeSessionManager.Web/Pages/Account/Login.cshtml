@@ -30,6 +30,10 @@
         }
 
         <form method="post">
+            @* ReturnUrl arrives in the query string and asp-page-handler-less POSTs keep it, but the
+               bound property is only repopulated if it is posted back — without this the redirect
+               target is lost the moment validation fails and the page re-renders. *@
+            <input type="hidden" asp-for="ReturnUrl" />
             <div asp-validation-summary="ModelOnly" class="field-error"></div>
             <div class="field">
                 <label asp-for="Input.UserName"></label>

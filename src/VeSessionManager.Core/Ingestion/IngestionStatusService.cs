@@ -65,18 +65,24 @@ public class IngestionStatusService(
 
         // Projected, not materialized. This service backs the site-wide health banner, so it runs on
         // every page render — and a whole Team entity drags all five credential columns through
-        // EncryptedStringConverter on the way out. Nothing here needs a decrypted secret.
+        // EncryptedStringConverter on the way out. Only one of them is needed here.
         //
-        // ExamToolsPassword is the only encrypted one of the three fields IsExamToolsConfigured
-        // reads, and it only ever asks whether it is present. Presence survives encryption — a
-        // non-empty ciphertext means a non-empty plaintext — so it is tested in SQL and never
-        // decrypted. The two plaintext fields keep their exact IsNullOrWhiteSpace semantics in
-        // memory below.
+        // ExamToolsPassword IS decrypted, and the presence test happens in memory (#279). The
+        // previous version tested it in SQL on the stated grounds that "presence survives encryption
+        // — a non-empty ciphertext means a non-empty plaintext". That is false: Protect("") returns
+        // a perfectly non-empty ciphertext, so a *cleared* password read as a set one. It could not
+        // be repaired by comparing against "" either, because EF converts the constant too, emitting
+        // a comparison against fresh non-deterministic ciphertext that matches nothing.
+        //
+        // Decrypting is the only way to tell "" from a real secret, since a stored blank is
+        // ciphertext rather than SQL NULL or ''. One column for the handful of teams already being
+        // listed is a cheap price for the page agreeing with the job; the other four credentials are
+        // still never touched.
         var projected = await query
             .OrderBy(t => t.Name)
             .Select(t => new TeamStatusFields(
                 t.Id, t.Name, t.LastIngestionRunUtc, t.ExamToolsTeamCode, t.ExamToolsUsername,
-                t.ExamToolsPassword != null && t.ExamToolsPassword != ""))
+                t.ExamToolsPassword))
             .ToListAsync(cancellationToken);
         var rows = projected.Select(t => BuildRow(t, intervalMinutes, now)).ToList();
 
@@ -96,12 +102,14 @@ public class IngestionStatusService(
         // there is no meaningful next-due instant to show — the row reads "due now" instead.
         var nextDueUtc = team.LastIngestionRunUtc?.AddMinutes(intervalMinutes);
 
-        // Mirrors Team.IsExamToolsConfigured. The password half was already decided in SQL; these
-        // two keep the entity's IsNullOrWhiteSpace semantics exactly.
+        // Mirrors Team.IsExamToolsConfigured exactly, all three fields on the same
+        // IsNullOrWhiteSpace terms (#279). It has to be exact: this is the page that tells an admin
+        // whether the job will act, and any looser test makes the screen and the job disagree about
+        // a team with nothing in the logs to say which is right.
         var isExamToolsConfigured =
             !string.IsNullOrWhiteSpace(team.ExamToolsTeamCode)
             && !string.IsNullOrWhiteSpace(team.ExamToolsUsername)
-            && team.HasExamToolsPassword;
+            && !string.IsNullOrWhiteSpace(team.ExamToolsPassword);
 
         return new TeamIngestionStatus(
             team.Id, team.Name, team.LastIngestionRunUtc, nextDueUtc, isDue, isExamToolsConfigured);
@@ -114,7 +122,8 @@ public class IngestionStatusService(
         DateTime? LastIngestionRunUtc,
         string? ExamToolsTeamCode,
         string? ExamToolsUsername,
-        bool HasExamToolsPassword);
+        /// <summary>Decrypted — see the projection's comment. Never logged or returned to a caller.</summary>
+        string? ExamToolsPassword);
 }
 
 public record TeamIngestionStatus(
