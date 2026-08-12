@@ -24,14 +24,19 @@ public class VecManagementService(AppDbContext dbContext, TimeProvider timeProvi
             return (VecActionResult.DuplicateExamToolsCode, null);
         }
 
-        var vec = new Vec { Name = name, ExamToolsCode = examToolsCode, SupportsYouthProgram = supportsYouthProgram, Notes = notes };
-        dbContext.Vecs.Add(vec);
-        await dbContext.SaveChangesAsync(cancellationToken); // assigns vec.Id, needed for the audit entry below
+        // Atomic where the provider allows it (issue #287) — same shape as the other create paths:
+        // the audit needs the id the first save assigns.
+        return await AtomicWrite.RunAsync(dbContext, async () =>
+        {
+            var vec = new Vec { Name = name, ExamToolsCode = examToolsCode, SupportsYouthProgram = supportsYouthProgram, Notes = notes };
+            dbContext.Vecs.Add(vec);
+            await dbContext.SaveChangesAsync(cancellationToken); // assigns vec.Id, needed for the audit entry below
 
-        AddAudit(userId, "VecCreated", vec.Id, $"VEC '{name}' created.", timeProvider.GetUtcNow().UtcDateTime);
-        await dbContext.SaveChangesAsync(cancellationToken);
+            AddAudit(userId, "VecCreated", vec.Id, $"VEC '{name}' created.", timeProvider.GetUtcNow().UtcDateTime);
+            await dbContext.SaveChangesAsync(cancellationToken);
 
-        return (VecActionResult.Success, vec);
+            return (VecActionResult.Success, (Vec?)vec);
+        }, cancellationToken);
     }
 
     public async Task<VecActionResult> UpdateAsync(int vecId, string name, string? examToolsCode, bool supportsYouthProgram, string? notes, int userId, CancellationToken cancellationToken)

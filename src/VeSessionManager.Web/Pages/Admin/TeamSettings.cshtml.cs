@@ -250,7 +250,13 @@ public class TeamSettingsModel(AppDbContext dbContext, UserManager<User> userMan
         AvailableTeams = await adminAccessScope.ScopeTeams(dbContext.Teams, user)
             .OrderBy(t => t.Name).Select(t => new ValueTuple<int, string>(t.Id, t.Name)).ToListAsync();
 
-        var effectiveTeamId = adminAccessScope.TryResolveManageableTeamId(user, TeamId, AvailableTeams.Select(t => t.Id).ToList());
+        // ...ForWrite, not the forgiving resolver (issue #263). Every caller of AuthorizeAsync is a
+        // POST handler that saves credentials, and the forgiving one substitutes the acting user's
+        // first team when they ask for one they do not manage — so a multi-team TeamAdmin following a
+        // stale link would overwrite a different team's Square token, learning about the swap only
+        // from the redirect afterwards. Refusing is the only safe answer for a write; LoadAsync keeps
+        // the forgiving resolver, because landing on a visible team beats an error page on a GET.
+        var effectiveTeamId = adminAccessScope.TryResolveManageableTeamIdForWrite(user, TeamId, AvailableTeams.Select(t => t.Id).ToList());
         if (effectiveTeamId is null)
         {
             return null;

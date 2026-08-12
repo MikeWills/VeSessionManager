@@ -24,22 +24,32 @@ public class TeamSettingsService(AppDbContext dbContext, TimeProvider timeProvid
         }
 
         var now = timeProvider.GetUtcNow().UtcDateTime;
-        var team = new Team { Name = name, CreatedUtc = now };
-        dbContext.Teams.Add(team);
-        await dbContext.SaveChangesAsync(cancellationToken);
 
-        // Seed the team's EmailSettings row and default templates immediately (2026-08-04). These
-        // used to appear only when the Worker next started, so a team created here was silently
-        // non-functional for email until someone restarted a different process — the Email Templates
-        // page read "No templates seeded for this team yet", and CandidateNotificationService skipped
-        // the team with a single log line rather than sending anything. Idempotent, so the Worker's
-        // startup sweep remains a harmless backfill.
-        await EmailDefaultsSeeder.SeedForTeamAsync(dbContext, logger, team);
+        // Atomic where the provider allows it (issue #287). The two saves below cannot be collapsed
+        // — the audit needs team.Id, which does not exist until the first one — and a failure
+        // between them is not merely a lost audit row here: the seeding sits in the middle, so it
+        // would leave a committed team with no EmailSettings and no templates. That is exactly the
+        // silently-non-functional-for-email state the seeding was moved into this method to prevent,
+        // and it is not self-healing from the Web process.
+        return await AtomicWrite.RunAsync(dbContext, async () =>
+        {
+            var team = new Team { Name = name, CreatedUtc = now };
+            dbContext.Teams.Add(team);
+            await dbContext.SaveChangesAsync(cancellationToken);
 
-        AddAudit(userId, "TeamCreated", team.Id, $"Team '{name}' created.", now);
-        await dbContext.SaveChangesAsync(cancellationToken);
+            // Seed the team's EmailSettings row and default templates immediately (2026-08-04). These
+            // used to appear only when the Worker next started, so a team created here was silently
+            // non-functional for email until someone restarted a different process — the Email Templates
+            // page read "No templates seeded for this team yet", and CandidateNotificationService skipped
+            // the team with a single log line rather than sending anything. Idempotent, so the Worker's
+            // startup sweep remains a harmless backfill.
+            await EmailDefaultsSeeder.SeedForTeamAsync(dbContext, logger, team);
 
-        return (TeamActionResult.Success, team);
+            AddAudit(userId, "TeamCreated", team.Id, $"Team '{name}' created.", now);
+            await dbContext.SaveChangesAsync(cancellationToken);
+
+            return (TeamActionResult.Success, (Team?)team);
+        }, cancellationToken);
     }
 
     public async Task<TeamActionResult> UpdateExamToolsAsync(int teamId, string? teamCode, string? username, string? password, string? baseUrl, int userId, CancellationToken cancellationToken)

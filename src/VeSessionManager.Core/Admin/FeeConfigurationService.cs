@@ -35,13 +35,19 @@ public class FeeConfigurationService(AppDbContext dbContext, TimeProvider timePr
             CreatedByUserId = userId,
             CreatedUtc = now
         };
-        dbContext.FeeConfigurations.Add(feeConfiguration);
-        await dbContext.SaveChangesAsync(cancellationToken);
+        // Atomic where the provider allows it (issue #287): the audit needs the id the first save
+        // assigns, so the two cannot be collapsed, and a failure between them would commit a fee
+        // configuration with nothing recording who set it.
+        return await AtomicWrite.RunAsync(dbContext, async () =>
+        {
+            dbContext.FeeConfigurations.Add(feeConfiguration);
+            await dbContext.SaveChangesAsync(cancellationToken);
 
-        AddAudit(userId, "FeeConfigurationCreated", feeConfiguration.Id, $"Fee configuration created for VEC {vecId}, effective {effectiveDate:d}.", now);
-        await dbContext.SaveChangesAsync(cancellationToken);
+            AddAudit(userId, "FeeConfigurationCreated", feeConfiguration.Id, $"Fee configuration created for VEC {vecId}, effective {effectiveDate:d}.", now);
+            await dbContext.SaveChangesAsync(cancellationToken);
 
-        return (FeeConfigActionResult.Success, feeConfiguration);
+            return (FeeConfigActionResult.Success, (FeeConfiguration?)feeConfiguration);
+        }, cancellationToken);
     }
 
     public async Task<FeeConfigActionResult> UpdateAsync(
