@@ -92,22 +92,24 @@ jobs:
         # backup that puts the key ring beside the ciphertext undoes the reason the two directories
         # were separated at all (#157) -- one leaked archive would then carry both halves.
         #
-        # Same rsync --ignore-missing-args idiom as the database step above, for the same reason: on
-        # a box that has not had the key ring created yet this is a clean no-op rather than a failed
-        # deploy, and `sudo test -f` is not available to the deploy user (see the note above).
-        # /usr/bin/rsync is already in the sudoers allowlist, so this needs no new grant.
+        # A server-side helper rather than `sudo rsync` (#254). The old form needed a sudoers rule
+        # of `/usr/bin/rsync *`, and an unconstrained wildcard on rsync is root-equivalent — it can
+        # read or overwrite any file on the box, and --rsync-path/-e can execute commands. That made
+        # the narrow systemctl rules beside it decorative. The helper takes no arguments and hardcodes
+        # every path, so its sudoers entry needs no wildcard.
+        #
+        # It handles the cases the flags used to: a box with no key ring yet is a clean no-op rather
+        # than a failed deploy, and it copies *.xml at one level down so a snapshot can never include
+        # a previous snapshot (#268 — the destination is a SUBDIRECTORY of the source, so a recursive
+        # copy grew 2^n after n deploys). That property is structural now instead of a flag to
+        # remember.
         #
         # NOTE: this is a rollback snapshot, not a backup. It lives on the same disk as the thing it
         # protects. Real off-box backup of $KEYRING_PATH is still a manual, separate job -- see
-        # docs/deployment.md.
-        #
-        # --exclude '.bak-*' is load-bearing (#268). The destination is a SUBDIRECTORY of the source,
-        # and rsync builds its file list from the source first — so without it, every run copied the
-        # key ring PLUS every previous snapshot. Size doubled per deploy: 2^n full copies of the most
-        # sensitive material on the box after n deploys, in a 0700 directory nobody looks at.
+        # docs/deployment.md and #256.
         run: |
           ssh -i ~/.ssh/deploy_key "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
-            "sudo rsync -a --ignore-missing-args --exclude '.bak-*' '$KEYRING_PATH/' '$KEYRING_PATH/.bak-\$(date +%Y%m%d%H%M%S)/'"
+            "sudo /usr/local/sbin/vesessionmanager-backup-keyring"
 
       - name: Stop services
         # One service per command, deliberately. The deploy user's sudoers allowlist grants each
@@ -117,7 +119,8 @@ jobs:
         # with "sudo: a password is required", which reads like a broken SSH key rather than an
         # allowlist miss. Found on the first real deploy, 2026-08-04.
         #
-        # Keep these split if the allowlist stays per-unit; widening sudoers to "systemctl stop *"
+        # Keep these split: the allowlist is per-unit and has no wildcards at all (#254). Widening
+        # sudoers to "systemctl stop *"
         # would be the wrong trade, since the narrow rules are what stop a compromised deploy key
         # from touching anything else on the box. Web stops first so it stops serving before the
         # Worker goes down.
@@ -139,41 +142,46 @@ jobs:
         # the three files are mutually consistent. Before the stop they were not, and adding -wal
         # alone would have traded silent loss for a torn copy.
         #
+        # A server-side helper rather than `sudo rsync` — see the key ring step and #254 for why the
+        # `/usr/bin/rsync *` sudoers rule this replaced was root-equivalent.
+        #
+        # The helper keeps every property the flags used to carry. Missing files are skipped rather
+        # than failing: a cleanly checkpointed database has no -wal or -shm, and on a brand-new server
+        # the .db itself does not exist until a service first runs Database.Migrate() — an
+        # unconditional cp made the very FIRST deploy to any box fail here (found 2026-08-04).
+        # Guarding with `test -f` from this side was never an option in either form: `sudo test` is
+        # not allowlisted, and an unprivileged `test -f` cannot read /var/lib/vesessionmanager at all,
+        # so it would report "missing" forever once the database existed. Inside the helper, running
+        # as root, it is just an `if`.
+        #
+        # It also stamps all three files once, so the set shares a suffix and can be restored
+        # together — previously done on the runner for the same reason.
+        #
         # `sqlite3 '.backup'` / VACUUM INTO would be better still — one consistent file, no ordering
-        # constraint — but sqlite3 is NOT in the deploy user's sudoers allowlist and rsync is, so
-        # that needs a server-side grant this workflow cannot add. Worth doing when #256 (real
-        # off-box backup) is built, since that job needs the same grant.
-        #
-        # rsync --ignore-missing-args, not cp: on a brand-new server the database does not exist yet
-        # (the operator creates /var/lib/vesessionmanager, but the .db file itself is created by
-        # Database.Migrate() the first time a service starts), so an unconditional cp made the very
-        # FIRST deploy to any box fail here. Found on the first real deploy, 2026-08-04.
-        #
-        # Guarding with `test -f` is NOT an option, in either form: `sudo test` is not in the deploy
-        # user's sudoers allowlist, and an unprivileged `test -f` cannot read
-        # /var/lib/vesessionmanager at all — so it would report "missing" even once the database
-        # exists, silently skipping every backup from then on.
+        # constraint. That is now a change to the helper rather than a new sudoers grant, which is
+        # worth doing when #256 (real off-box backup) is built.
         #
         # NOTE: this is a rollback snapshot, not a backup. It lives on the same disk as the thing it
         # protects — see #256.
-        #
-        # One stamp for all three files, computed on the runner so the set shares a suffix and can be
-        # restored together. (The original computed it remotely with \$(date …); with three commands
-        # that would produce three different stamps if the second ticked over.)
         run: |
-          STAMP=$(date +%Y%m%d%H%M%S)
           ssh -i ~/.ssh/deploy_key "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
-            "sudo rsync --ignore-missing-args '$DB_PATH' '$DB_PATH.bak-$STAMP' && \
-             sudo rsync --ignore-missing-args '$DB_PATH-wal' '$DB_PATH-wal.bak-$STAMP' && \
-             sudo rsync --ignore-missing-args '$DB_PATH-shm' '$DB_PATH-shm.bak-$STAMP'"
+            "sudo /usr/local/sbin/vesessionmanager-backup-db"
 
       - name: Sync Worker files
         run: |
-          # deploy isn't the owner of the existing vesessionmanager-owned files, so it can't
-          # reliably delete/overwrite/chown/chmod them as itself. --rsync-path runs the remote-side
-          # rsync as root (via a narrowly-scoped NOPASSWD sudo rule) so it can freely write, delete,
-          # and set final ownership via --chown. *.db* is excluded defensively even though the DB
-          # actually lives outside this tree entirely, at $DB_PATH.
+          # No sudo here at all (#254). $DEPLOY_PATH is owned by the deploy user with the
+          # vesessionmanager group and setgid directories, so deploy can write, delete and replace
+          # these files as itself while the service account reads them through the group. That is
+          # what let `--rsync-path="sudo rsync"` go, and with it the `/usr/bin/rsync *` sudoers rule
+          # that made every other rule on the box decorative.
+          #
+          # --chown went with it: setting ownership needs root, and is no longer wanted — the files
+          # SHOULD be owned by deploy. The service only ever reads them. The one thing it writes
+          # under this tree is Serilog's relative "logs/" path, which is owned by the service account
+          # and excluded below.
+          #
+          # *.db* is excluded defensively even though the DB actually lives outside this tree
+          # entirely, at $DB_PATH.
           #
           # 'logs' is NOT defensive — Serilog writes to a relative "logs/" path, so it resolves under
           # WorkingDirectory, i.e. inside this tree. Without the exclude, --delete removed the entire
@@ -181,8 +189,6 @@ jobs:
           # bad release or a compromise noticed afterwards had no application-side evidence left
           # (#267). journalctl retains the console sink, which softened it but does not replace it.
           rsync -avz --delete \
-            --rsync-path="sudo rsync" \
-            --chown=vesessionmanager:vesessionmanager \
             --exclude '*.db' \
             --exclude '*.db-shm' \
             --exclude '*.db-wal' \
@@ -194,8 +200,6 @@ jobs:
       - name: Sync Web files
         run: |
           rsync -avz --delete \
-            --rsync-path="sudo rsync" \
-            --chown=vesessionmanager:vesessionmanager \
             --exclude '*.db' \
             --exclude '*.db-shm' \
             --exclude '*.db-wal' \
