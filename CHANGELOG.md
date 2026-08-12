@@ -8,6 +8,22 @@ that window, or immediately if it's phase-numbered work already summarized in "C
 design rationale for any entry still lives in its linked `/docs/*.md` file, not here or in
 CLAUDE.md — this file, like CLAUDE.md's Change Log, is pointers only.
 
+- **VE management, license tracking, self-service and invitations (2026-08-07).** Issues #142 and
+  #107, built together because neither could answer its own question alone. See
+  `docs/ve-management.md` (the person model), `docs/ve-license-tracking.md`,
+  `docs/ve-import-export.md`, `docs/ve-self-service.md` and `docs/ve-session-invitations.md`.
+  **`VolunteerExaminer` is now a person, not a per-team row** — `TeamId` gone, `VeTeamMembership`
+  added, identity on `Id` then `Frn` and never the call sign, since a call sign changes and the
+  person does not. #107's ULS sweep is what backfills that FRN, which is why the two shipped
+  together; it also answers "can this VE legally serve on Saturday?" on Session Detail's chips, which
+  needed #142's accreditations to be more than half an answer. **Three things real data caught that
+  the tests could not:** ExamTools' literal `<UNKNOWN>` fused two different people (hence
+  `Core/CallSign.IsUsable`, now the one definition of "is this a call sign"), an FRN collision aborted
+  the whole sweep for want of a per-row guard, and an admin could not set a VE's email at all — so
+  nobody could ever start self-service. Self-service is the app's **first unauthenticated endpoint
+  reaching personal data**: separate cookie scheme, three independent barriers from the admin app, and
+  `/VeSelfService` added to the global rate limiter.
+
 - **Square's Sandbox/Production environment moved onto `Team` (2026-08-06).** See
   `docs/square-payments.md`. It was the last Square value still in `appsettings.json`, left there on
   the reasoning that sandbox-vs-production is an environment choice rather than a per-team one — which

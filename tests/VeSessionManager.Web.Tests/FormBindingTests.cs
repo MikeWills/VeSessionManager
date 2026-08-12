@@ -51,6 +51,9 @@ public class FormBindingTests
         return directory!;
     }
 
+    /// <summary>Shared with the other source-scanning tests in this project.</summary>
+    internal static string RepositoryRootPath() => RepositoryRoot().FullName;
+
     private static string PagesRoot() =>
         Path.Combine(RepositoryRoot().FullName, "src", "VeSessionManager.Web", "Pages");
 
