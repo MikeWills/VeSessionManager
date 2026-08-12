@@ -8,6 +8,20 @@ that window, or immediately if it's phase-numbered work already summarized in "C
 design rationale for any entry still lives in its linked `/docs/*.md` file, not here or in
 CLAUDE.md — this file, like CLAUDE.md's Change Log, is pointers only.
 
+- **Job Schedule page: when every background job runs next (2026-08-06).** See
+  `docs/job-schedule.md`. "When does the next run happen?" was answerable only by reading the Worker's
+  source — Job History records what happened, never what will. New `JobSchedules` registry in Core is
+  the **one definition of every job's cadence, read by both hosts**: the Worker to schedule, Web to
+  report, so the page cannot drift the way `TeamPipeline`'s order once did. `Jobs:*` config moved to
+  `appsettings.Shared.json` for the same reason (Web resolves those keys now). Two cadence shapes are
+  reported differently on purpose — **anchored** jobs (ULS and LicenseWatch both 08:00/20:00 ET —
+  they share one schedule, and the page reads the descriptor, never a constant) state
+  a real time and show `Due now` when a slot is unrun, **interval** jobs are last-run-plus-interval and
+  labelled *estimated*, because their timer restarts with the Worker. Tests caught two bugs first:
+  `Max` over an empty filtered sequence **throws** rather than returning null (one perpetually-failing
+  job would have taken down the whole page — the nullable cast must be *inside* `Max`), and advancing
+  an anchored slot by adding hours to a UTC value is an hour off across DST.
+
 - **VE management, license tracking, self-service and invitations (2026-08-07).** Issues #142 and
   #107, built together because neither could answer its own question alone. See
   `docs/ve-management.md` (the person model), `docs/ve-license-tracking.md`,
