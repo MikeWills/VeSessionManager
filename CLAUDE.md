@@ -118,6 +118,22 @@ would be pure duplication — and goes straight to `CHANGELOG.md` instead. Non-p
 redesigns, hardening passes) start here and move to `CHANGELOG.md` once the section is at/over the
 cap and a newer entry needs to be added; oldest goes first.
 
+- **One rule, one home: the duplicated candidate/session actions collapsed (2026-08-11).** Issues
+  #304/#244/#274. See `docs/action-outcomes.md`. Nine candidate actions were written out on both
+  `Detail` and `CandidateDetail`, four session actions on both `Detail` and the session list,
+  identical down to the punctuation — and **two of them had already drifted**: a `SessionNotFound`
+  told the user the session was *already marked submitted*, and the roster offered "Send youth
+  program instructions" for VECs with no youth program, where its only outcome was an error naming an
+  internal enum. Two new types in Web own what actually drifted — `ActionOutcomes` (result → sentence)
+  and `CandidateCapabilities` (is this action applicable). **The handlers themselves stay duplicated
+  on purpose**: each is ~4 lines of authorization, ownership re-check and redirect, and all three
+  genuinely differ per page — collapsing them trades a real duplication for a fake abstraction and
+  hides the IDOR guard. Exhaustiveness came free once each mapping had one home, which is how the
+  email actions stopped rendering `$"…: {result}."` at the user. **The guard is a source scan, and it
+  had to be** — two copies agreeing is the normal state right until someone fixes one, so no
+  behavioural test of either copy can see the gap; what is checkable is "one string, one home", and
+  it reported 19 offenders before the refactor.
+
 - **Nine-agent full-codebase audit, and the first six waves of fixes (2026-08-11).** See
   `docs/audit-2026-08-11-report.md` (narrative, cross-cutting themes, and — most valuable — what was
   *verified clean*, so it does not get re-audited) and `docs/audit-2026-08-11-tasks.md` (every
@@ -211,22 +227,6 @@ cap and a newer entry needs to be added; oldest goes first.
 - **Page smoke tests: every Razor page, actually rendered (2026-08-10).** See `docs/page-smoke-tests.md`. Nothing in this repo rendered Razor — not the build, not the 928 Core tests, not the static-HTML layout harness — and two bugs reached a deployment the same day because of it: a `<form>` carrying both `action=` and `asp-page-handler` (which `FormTagHelper` throws on **at render time**, so the build was clean and the page 500'd for anyone who opened it), and an anchor where `asp-all-route-data` silently discarded `asp-route-id` so every link to a VE pointed at nobody. `WebApplicationFactory` now boots the app in-process against throwaway SQLite and requests **every page discovered from the app's own `EndpointDataSource`**, so a new page is covered the day it exists. **The fake auth scheme is half the value**: every interesting page is `[Authorize]`d, so before this the only way to see one was for a human to log in and click. Seeding happens *before* the host starts because `Program.cs` refuses to start when no account can sign in — the harness satisfies that guard rather than weakening it. And **an empty `href` is the signature of the whole bug class**: the first version of the link test only followed links that had one, and passed with the original bug reintroduced.
 
 - **ExamTools reconciliation: a nightly check that the feed and the database agree (2026-08-10).** See `docs/reconciliation.md`. Every other job trusts ingestion to have worked; nothing checked, which is how the historical import could drop the last day of every calendar month since it was written and only be caught because HRCC's own Discord bot reads the same API directly and disagreed about whether a VE was still active. Per team, daily: diff ExamTools' closed-session feed against ours over a trailing 120 days. Findings are a **standing table plus a nav badge**, not just a run summary — Job History rotates, renders green because the *job* succeeded, and a count inside a sentence cannot be acted on, which is the same shape as the `sent 0, failed 1` incident. Each row carries the import range that would fix it; the job itself is **read-only**. The tests cover the bookkeeping and cannot cover the premise: the bug that prompted it had a full green suite because the fakes shared our own wrong assumption.
-
-- **VE management, license tracking, self-service and invitations (2026-08-07).** Issues #142 and
-  #107, built together because neither could answer its own question alone. See
-  `docs/ve-management.md` (the person model), `docs/ve-license-tracking.md`,
-  `docs/ve-import-export.md`, `docs/ve-self-service.md` and `docs/ve-session-invitations.md`.
-  **`VolunteerExaminer` is now a person, not a per-team row** — `TeamId` gone, `VeTeamMembership`
-  added, identity on `Id` then `Frn` and never the call sign, since a call sign changes and the
-  person does not. #107's ULS sweep is what backfills that FRN, which is why the two shipped
-  together; it also answers "can this VE legally serve on Saturday?" on Session Detail's chips, which
-  needed #142's accreditations to be more than half an answer. **Three things real data caught that
-  the tests could not:** ExamTools' literal `<UNKNOWN>` fused two different people (hence
-  `Core/CallSign.IsUsable`, now the one definition of "is this a call sign"), an FRN collision aborted
-  the whole sweep for want of a per-row guard, and an admin could not set a VE's email at all — so
-  nobody could ever start self-service. Self-service is the app's **first unauthenticated endpoint
-  reaching personal data**: separate cookie scheme, three independent barriers from the admin app, and
-  `/VeSelfService` added to the global rate limiter.
 
 - **Job Schedule page: when every background job runs next (2026-08-06).** See
   `docs/job-schedule.md`. "When does the next run happen?" was answerable only by reading the Worker's

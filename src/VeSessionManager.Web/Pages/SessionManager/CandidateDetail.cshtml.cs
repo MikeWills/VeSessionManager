@@ -48,8 +48,8 @@ public class CandidateDetailModel(
         var auth = await AuthorizeAsync();
         if (auth is null) return Forbid();
 
-        var result = await candidateNotificationService.ResendRegistrationConfirmationAsync(Id, CancellationToken.None);
-        SetStatus(result == CandidateEmailSendResult.Sent, "Confirmation email resent.", $"Could not resend confirmation email: {result}.");
+        Apply(ActionOutcomes.ResendConfirmation(
+            await candidateNotificationService.ResendRegistrationConfirmationAsync(Id, CancellationToken.None)));
         return RedirectToPage(new { id = Id });
     }
 
@@ -58,8 +58,8 @@ public class CandidateDetailModel(
         var auth = await AuthorizeAsync();
         if (auth is null) return Forbid();
 
-        var result = await candidateActionService.MarkFailedAsync(Id, auth.Value.User.Id, CancellationToken.None);
-        SetStatus(result == CandidateActionResult.Success, "Candidate marked failed.", "Could not mark candidate failed.");
+        Apply(ActionOutcomes.MarkFailed(
+            await candidateActionService.MarkFailedAsync(Id, auth.Value.User.Id, CancellationToken.None)));
         return RedirectToPage(new { id = Id });
     }
 
@@ -68,8 +68,8 @@ public class CandidateDetailModel(
         var auth = await AuthorizeAsync();
         if (auth is null) return Forbid();
 
-        var result = await candidateActionService.DeleteAsync(Id, auth.Value.User.Id, CancellationToken.None);
-        SetStatus(result == CandidateActionResult.Success, "Candidate marked as withdrew/no-show; PII cleared.", "Could not delete candidate — testing already completed for this session.");
+        Apply(ActionOutcomes.DeleteCandidate(
+            await candidateActionService.DeleteAsync(Id, auth.Value.User.Id, CancellationToken.None)));
         return RedirectToPage(new { id = Id });
     }
 
@@ -80,12 +80,12 @@ public class CandidateDetailModel(
 
         if (string.IsNullOrWhiteSpace(frn))
         {
-            SetStatus(false, "", "FRN cannot be blank.");
+            Apply(ActionOutcomes.BlankFrn());
             return RedirectToPage(new { id = Id });
         }
 
-        var result = await candidateActionService.SetFrnAsync(Id, frn.Trim(), auth.Value.User.Id, CancellationToken.None);
-        SetStatus(result == CandidateActionResult.Success, "FRN updated.", "Could not update FRN.");
+        Apply(ActionOutcomes.SetFrn(
+            await candidateActionService.SetFrnAsync(Id, frn.Trim(), auth.Value.User.Id, CancellationToken.None)));
         return RedirectToPage(new { id = Id });
     }
 
@@ -95,8 +95,8 @@ public class CandidateDetailModel(
         if (auth is null) return Forbid();
         if (!await PaymentBelongsToCandidateAsync(paymentId)) return Forbid();
 
-        var result = await candidateActionService.MarkPaidManuallyAsync(paymentId, auth.Value.User.Id, CancellationToken.None);
-        SetStatus(result == CandidateActionResult.Success, "Payment marked paid.", "Could not mark payment paid.");
+        Apply(ActionOutcomes.MarkPaid(
+            await candidateActionService.MarkPaidManuallyAsync(paymentId, auth.Value.User.Id, CancellationToken.None)));
         return RedirectToPage(new { id = Id });
     }
 
@@ -106,8 +106,8 @@ public class CandidateDetailModel(
         if (auth is null) return Forbid();
         if (!await PaymentBelongsToCandidateAsync(paymentId)) return Forbid();
 
-        var result = await candidateActionService.FlagRefundRequestedAsync(paymentId, auth.Value.User.Id, notes, CancellationToken.None);
-        SetStatus(result == CandidateActionResult.Success, "Refund requested flagged.", "Could not flag refund requested.");
+        Apply(ActionOutcomes.FlagRefund(
+            await candidateActionService.FlagRefundRequestedAsync(paymentId, auth.Value.User.Id, notes, CancellationToken.None)));
         return RedirectToPage(new { id = Id });
     }
 
@@ -116,8 +116,8 @@ public class CandidateDetailModel(
         var auth = await AuthorizeAsync();
         if (auth is null) return Forbid();
 
-        var result = await candidateActionService.CreateRetestPaymentAsync(Id, auth.Value.User.Id, CancellationToken.None);
-        SetStatus(result == CandidateActionResult.Success, "Retest payment created.", "Could not create retest payment — candidate must be marked Failed first.");
+        Apply(ActionOutcomes.CreateRetestPayment(
+            await candidateActionService.CreateRetestPaymentAsync(Id, auth.Value.User.Id, CancellationToken.None)));
         return RedirectToPage(new { id = Id });
     }
 
@@ -127,10 +127,8 @@ public class CandidateDetailModel(
         var auth = await AuthorizeAsync();
         if (auth is null) return Forbid();
 
-        var result = await candidateNotificationService.SendFelonyDisclosureInstructionsAsync(Id, CancellationToken.None);
-        SetStatus(result == CandidateEmailSendResult.Sent,
-            "Felony disclosure instructions sent.",
-            $"Could not send felony disclosure instructions: {result}.");
+        Apply(ActionOutcomes.SendFelonyInstructions(
+            await candidateNotificationService.SendFelonyDisclosureInstructionsAsync(Id, CancellationToken.None)));
         return RedirectToPage(new { id = Id });
     }
 
@@ -139,8 +137,8 @@ public class CandidateDetailModel(
         var auth = await AuthorizeAsync();
         if (auth is null) return Forbid();
 
-        var result = await candidateNotificationService.SendYouthProgramInstructionsAsync(Id, CancellationToken.None);
-        SetStatus(result == CandidateEmailSendResult.Sent, "Youth program instructions sent.", $"Could not send youth program instructions: {result}.");
+        Apply(ActionOutcomes.SendYouthProgram(
+            await candidateNotificationService.SendYouthProgramInstructionsAsync(Id, CancellationToken.None)));
         return RedirectToPage(new { id = Id });
     }
 
@@ -169,17 +167,9 @@ public class CandidateDetailModel(
     private Task<bool> PaymentBelongsToCandidateAsync(int paymentId) =>
         dbContext.Payments.AnyAsync(p => p.Id == paymentId && p.CandidateId == Id);
 
-    private void SetStatus(bool success, string successMessage, string errorMessage)
-    {
-        if (success)
-        {
-            TempData["StatusMessage"] = successMessage;
-        }
-        else
-        {
-            TempData["ErrorMessage"] = errorMessage;
-        }
-    }
+    /// <summary>See Detail.Apply — the wording comes from <see cref="ActionOutcomes"/>, never from here.</summary>
+    private void Apply(ActionOutcome outcome) =>
+        TempData[outcome.Success ? "StatusMessage" : "ErrorMessage"] = outcome.Message;
 
     private async Task<bool> LoadForDisplayAsync()
     {
@@ -203,6 +193,8 @@ public class CandidateDetailModel(
         CanEdit = accessScope.CanEdit(user, candidate.Session);
 
         var isWithdrawn = candidate.IsWithdrawn;
+        var can = CandidateCapabilities.For(
+            candidate, candidate.Session.Vec.SupportsYouthProgram, candidate.Payments.Count > 0);
 
         // Materialized first, then mapped in memory (not a server-side .Select() projection) — EF
         // Core can't translate EasternTimeFormatter.Format's TimeZoneInfo conversion to SQL.
@@ -260,15 +252,14 @@ public class CandidateDetailModel(
             Payments: candidate.Payments.OrderByDescending(p => p.CreatedUtc).Select(ToPaymentRow).ToList(),
             EmailHistory: CandidateEmailHistoryFormatter.Build(candidate),
             OtherAttempts: otherAttempts,
-            CanResendConfirmation: !isWithdrawn && candidate.Email is not null,
-            CanDelete: !isWithdrawn && !candidate.Tested,
-            CanMarkFailed: !isWithdrawn && candidate.ApplicationStatus is CandidateApplicationStatus.Unmatched or CandidateApplicationStatus.Received,
-            CanCreateRetestPayment: !isWithdrawn && candidate.ApplicationStatus == CandidateApplicationStatus.Failed,
-            CanFlagRefund: !isWithdrawn && candidate.Payments.Count > 0,
-            CanSendYouthProgram: !isWithdrawn && candidate.Session.Vec.SupportsYouthProgram,
-            // Not gated on Tested: the useful time to send this is before the session (#221).
-            CanSendFelonyInstructions: !isWithdrawn && candidate.HasFelonyDisclosure == true && candidate.Email is not null,
-            AwaitingFelonyInstructions: !isWithdrawn && candidate.HasFelonyDisclosure == true && candidate.FelonyDisclosureInstructionsSentUtc is null);
+            CanResendConfirmation: can.CanResendConfirmation,
+            CanDelete: can.CanDelete,
+            CanMarkFailed: can.CanMarkFailed,
+            CanCreateRetestPayment: can.CanCreateRetestPayment,
+            CanFlagRefund: can.CanFlagRefund,
+            CanSendYouthProgram: can.CanSendYouthProgram,
+            CanSendFelonyInstructions: can.CanSendFelonyInstructions,
+            AwaitingFelonyInstructions: can.AwaitingFelonyInstructions);
 
         return true;
     }

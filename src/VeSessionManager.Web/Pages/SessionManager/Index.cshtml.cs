@@ -425,9 +425,8 @@ public class IndexModel(
         var auth = await AuthorizeSessionAsync(sessionId);
         if (auth is null) return Forbid();
 
-        var result = await vecSubmissionService.MarkSubmittedAsync(sessionId, auth.Value.User.Id, CancellationToken.None);
-        SetStatus(result == VecSubmissionMarkResult.Marked,
-            "Session marked submitted to VEC.", "Session is already marked submitted.");
+        Apply(ActionOutcomes.MarkSubmittedToVec(
+            await vecSubmissionService.MarkSubmittedAsync(sessionId, auth.Value.User.Id, CancellationToken.None)));
         return RedirectToCurrentView();
     }
 
@@ -436,15 +435,8 @@ public class IndexModel(
         var auth = await AuthorizeSessionAsync(sessionId);
         if (auth is null) return Forbid();
 
-        var result = await sessionActionService.MarkCompletedAsync(sessionId, auth.Value.User.Id, CancellationToken.None);
-        SetStatus(result.Result == SessionActionResult.Success,
-            result.CandidatesAwaitingFelonyInstructions > 0
-                // Named rather than counted silently: the send is manual now (#221), so this is the
-                // moment someone would otherwise assume it had been handled for them.
-                ? $"Session marked completed — {result.CandidatesTested} candidate(s) tested. "
-                  + $"{result.CandidatesAwaitingFelonyInstructions} candidate(s) declared a felony disclosure and have not been sent the FCC instructions — send them from the candidate's row."
-                : $"Session marked completed — {result.CandidatesTested} candidate(s) tested.",
-            "Could not mark session completed.");
+        Apply(ActionOutcomes.MarkCompleted(
+            await sessionActionService.MarkCompletedAsync(sessionId, auth.Value.User.Id, CancellationToken.None)));
         return RedirectToCurrentView();
     }
 
@@ -453,8 +445,8 @@ public class IndexModel(
         var auth = await AuthorizeSessionAsync(sessionId);
         if (auth is null) return Forbid();
 
-        var result = await sessionActionService.ClearRescheduleFlagAsync(sessionId, auth.Value.User.Id, CancellationToken.None);
-        SetStatus(result == SessionActionResult.Success, "Reschedule flag cleared.", "Could not clear reschedule flag.");
+        Apply(ActionOutcomes.ClearRescheduleFlag(
+            await sessionActionService.ClearRescheduleFlagAsync(sessionId, auth.Value.User.Id, CancellationToken.None)));
         return RedirectToCurrentView();
     }
 
@@ -468,20 +460,8 @@ public class IndexModel(
         if (session is null) return NotFound();
         if (!adminAccessScope.CanManageTeam(user, session.TeamId)) return Forbid();
 
-        var result = await sessionActionService.DeleteAsync(sessionId, user.Id, CancellationToken.None);
-        if (result.Result == SessionActionResult.Success)
-        {
-            TempData["StatusMessage"] = $"Session deleted — {result.CandidatesRemoved} candidate(s), {result.PaymentsRemoved} payment(s), and {result.VeAssignmentsRemoved} VE roster assignment(s) removed with it.";
-        }
-        else
-        {
-            TempData["ErrorMessage"] = result.Result switch
-            {
-                SessionActionResult.Blocked =>
-                    "Could not delete session — one of its payments is still referenced by an unmatched Square payment record. Resolve that first.",
-                _ => "Could not delete session."
-            };
-        }
+        Apply(ActionOutcomes.DeleteSession(
+            await sessionActionService.DeleteAsync(sessionId, user.Id, CancellationToken.None)));
         return RedirectToCurrentView();
     }
 
@@ -498,8 +478,9 @@ public class IndexModel(
         return session is null || !accessScope.CanEdit(user, session) ? null : (user, session);
     }
 
-    private void SetStatus(bool success, string successMessage, string errorMessage) =>
-        TempData[success ? "StatusMessage" : "ErrorMessage"] = success ? successMessage : errorMessage;
+    /// <summary>See Detail.Apply — the wording comes from <see cref="ActionOutcomes"/>, never from here.</summary>
+    private void Apply(ActionOutcome outcome) =>
+        TempData[outcome.Success ? "StatusMessage" : "ErrorMessage"] = outcome.Message;
 
     /// <summary>Returns to the exact filtered/paged view the action was launched from — BuildPageUrl already encodes every filter, including Status's multiple values.</summary>
     private IActionResult RedirectToCurrentView() => Redirect(BuildPageUrl(PageNumber));
