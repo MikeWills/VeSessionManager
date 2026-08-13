@@ -162,10 +162,14 @@ h1 { font-size: 24px; margin: 0 0 4px; letter-spacing: -.01em; }
    selector used to cover only the former, so the same badge rendered unstyled on Applicant
    Status and Unmatched Payments. Two classes deep on purpose -- a bare .pill-count would lose
    to `.vesm a`/`.vesm button` on colour, which app.css has been bitten by twice. */
+/* Also on a section heading (Applicant Status' "Pending FCC grant"), where the count says how many
+   rows the table below holds. Same two-classes-deep rule as above. */
 .filters a.filter-pill .pill-count,
-.menu label.item .pill-count { margin-left: 7px; padding: 1px 6px; border-radius: 99px; background: color-mix(in srgb, currentColor 14%, transparent); font-size: 11px; font-weight: 600; }
+.menu label.item .pill-count,
+.page-head h2 .pill-count { margin-left: 7px; padding: 1px 6px; border-radius: 99px; background: color-mix(in srgb, currentColor 14%, transparent); font-size: 11px; font-weight: 600; }
 .filters a.filter-pill .pill-count.zero,
-.menu label.item .pill-count.zero { opacity: .45; font-weight: 400; }
+.menu label.item .pill-count.zero,
+.page-head h2 .pill-count.zero { opacity: .45; font-weight: 400; }
 
 /* Filter dropdowns (Sessions list — status multi-select + team single-select) — reuse the
    row-actions kebab/menu toggle component, styled as a bordered pill like filter-pill rather than

@@ -50,7 +50,10 @@ else
 {
     <div class="page-head" style="margin-top:8px;">
         <div>
-            <h2 style="font-size:16px;">Pending FCC grant</h2>
+            @* Count of exactly what the table below holds, so it answers "how many am I watching?"
+               without scrolling or counting rows. Rendered at zero too — same reasoning as the team
+               picker's pills: a missing number reads as "not loaded", a muted 0 reads as "none". *@
+            <h2 style="font-size:16px;">Pending FCC grant<span class="pill-count @(Model.Pending.Count == 0 ? "zero" : "")">@Model.Pending.Count</span></h2>
             <p class="eyebrow" style="margin-top:0;">Passed but not yet issued — drops off once granted</p>
         </div>
     </div>
