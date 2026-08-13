@@ -153,6 +153,33 @@ Two details that are load-bearing:
 It also puts teeth behind the Web/Worker agreement described above, which until now was a documented
 constraint with nothing enforcing it.
 
+### Verifying a restored key ring: `--verify-keyring` (2026-08-12)
+
+```bash
+sudo -u vesessionmanager dotnet /opt/vesessionmanager/worker/VeSessionManager.Worker.dll --verify-keyring
+```
+
+Runs the guard, prints its verdict, exits 0 (readable) or 1 (not), and starts nothing else. Added
+because proving a restored backup previously meant booting a normal Worker — which starts nine
+background jobs against restored, *live* credentials, so a test restore could poll ExamTools, create
+Zoom/Discord events and mail real candidates. There was no safe way to ask the question.
+
+Three deliberate differences from the startup guard:
+
+- **It skips `Database.Migrate()`.** A check that is safe to run on any schedule must not write to
+  the database it is checking, and a restored backup older than the running binary should be
+  reported, not silently upgraded by the act of verifying it.
+- **Zero teams is a failure, not a pass.** The guard passes when it finds nothing *unreadable*, so an
+  empty database verifies without checking anything — correct for a startup guard, useless as proof
+  a restore worked. `DataProtectionKeyRingGuardTests.NoTeams_Passes` documents the pairing.
+- **It reports through stderr and an exit code, not an unhandled exception.** The caller is a shell
+  script or a person mid-restore. A failure to *complete* the check is distinguished from a check
+  that completed and failed — those call for different next steps.
+
+Because it never writes a credential, it cannot cause the destroy-the-originals failure the guard's
+own message warns about. Restore procedure — for this app and the rest of the box — is
+`runbooks/restore.md` in the BackupScripts repo.
+
 **Do not let the key-ring backup get bundled together with the DB backup into one artifact.** If
 your backup process ever ships the whole `/var/lib/vesessionmanager/` directory (DB *and*
 `dataprotection-keys/`) as a single archive, and that archive is what leaks (a misconfigured public

@@ -138,7 +138,7 @@ builder.Services.AddHostedService<ReconciliationJob>();
 // A mistyped switch used to be ignored in silence: the Worker started normally, did none of the
 // one-off work that was asked for, and looked identical to a successful run. Checked before the
 // host is even built so it costs nothing and cannot be missed.
-string[] knownSwitches = ["--migrate-team-secrets", "--run-uls"];
+string[] knownSwitches = ["--migrate-team-secrets", "--run-uls", "--verify-keyring"];
 var unknownSwitches = args.Where(a => a.StartsWith("--") && !knownSwitches.Contains(a)).ToList();
 if (unknownSwitches.Count > 0)
 {
@@ -152,6 +152,22 @@ var host = builder.Build();
 using (var scope = host.Services.CreateScope())
 {
     var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+    // Read-only key-ring check, for confirming a restored key ring and database still match
+    // (BackupScripts' runbooks/restore.md). The guard already runs on every normal startup — what
+    // this adds is running it *without* starting the nine background jobs, which on restored data
+    // would poll ExamTools, create Zoom/Discord events and mail real candidates. Before that, a
+    // test restore had no safe way to prove itself.
+    //
+    // Deliberately skips Migrate(): a check meant to be safe on any schedule must not write to the
+    // database it is checking, and a restored backup older than this binary should be *reported*,
+    // not silently upgraded by the act of verifying it.
+    if (args.Contains("--verify-keyring"))
+    {
+        var verifyLogger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+        return await KeyRingVerification.RunAsync(dbContext, verifyLogger, Console.Error);
+    }
+
     dbContext.Database.Migrate();
 
     // Fails the host rather than running with credentials it cannot read — see
