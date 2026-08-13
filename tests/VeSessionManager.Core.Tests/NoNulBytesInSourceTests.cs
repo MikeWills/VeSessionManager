@@ -51,7 +51,37 @@ public class NoNulBytesInSourceTests
     /// it.
     /// </summary>
     private static readonly string[] TextExtensions =
-        [".cs", ".cshtml", ".js", ".css", ".json", ".csproj", ".props", ".config"];
+        [".cs", ".cshtml", ".js", ".css", ".json", ".csproj", ".props", ".config", ".md"];
+
+    /// <summary>
+    /// Everything hand-authored: <c>src/</c>, <c>docs/</c>, and the top-level markdown beside them
+    /// (CLAUDE.md above all).
+    ///
+    /// <para><b>Documentation was added on 2026-08-13 because it had already happened there.</b>
+    /// <c>docs/audit-2026-08-11-tasks.md</c> carried a literal NUL inside the <i>Fix</i> line of
+    /// D-01 — the finding about NUL bytes — so the record of this exact trap was itself invisible to
+    /// the search that would find it. Worse than a source file would have been: CLAUDE.md points
+    /// readers at that document specifically, to learn what not to re-audit and which findings were
+    /// wrong, and `grep` answered every question about it with silence.</para>
+    /// </summary>
+    private static IEnumerable<string> ScannedFiles(DirectoryInfo repositoryRoot)
+    {
+        foreach (var directoryName in new[] { "src", "docs" })
+        {
+            var directory = Path.Combine(repositoryRoot.FullName, directoryName);
+            Assert.True(Directory.Exists(directory), $"Expected {directoryName} at {directory}");
+
+            foreach (var file in Directory.EnumerateFiles(directory, "*", SearchOption.AllDirectories))
+            {
+                yield return file;
+            }
+        }
+
+        foreach (var file in Directory.EnumerateFiles(repositoryRoot.FullName, "*.md", SearchOption.TopDirectoryOnly))
+        {
+            yield return file;
+        }
+    }
 
     /// <summary>
     /// <c>wwwroot/lib</c> is vendored third-party code we do not author and would not fix here;
@@ -63,14 +93,12 @@ public class NoNulBytesInSourceTests
         || path.Contains(Path.Combine("wwwroot", "lib"), StringComparison.Ordinal);
 
     [Fact]
-    public void NoSourceFileContainsANulByte()
+    public void NoSourceOrDocumentationFileContainsANulByte()
     {
-        var sourceDirectory = Path.Combine(RepositoryRoot().FullName, "src");
-        Assert.True(Directory.Exists(sourceDirectory), $"Expected sources at {sourceDirectory}");
-
+        var repositoryRoot = RepositoryRoot();
         var offenders = new List<string>();
 
-        foreach (var file in Directory.EnumerateFiles(sourceDirectory, "*", SearchOption.AllDirectories))
+        foreach (var file in ScannedFiles(repositoryRoot))
         {
             if (IsExcluded(file) || !TextExtensions.Contains(Path.GetExtension(file), StringComparer.OrdinalIgnoreCase))
             {
@@ -83,7 +111,7 @@ public class NoNulBytesInSourceTests
             {
                 // Report the line so the offender is findable -- by hand, since search cannot see it.
                 var line = bytes.Take(index).Count(b => b == (byte)'\n') + 1;
-                offenders.Add($"{Path.GetRelativePath(sourceDirectory, file)}:{line} (byte offset {index})");
+                offenders.Add($"{Path.GetRelativePath(repositoryRoot.FullName, file)}:{line} (byte offset {index})");
             }
         }
 
