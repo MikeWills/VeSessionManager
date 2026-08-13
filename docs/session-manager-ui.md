@@ -49,8 +49,9 @@ template.
 ## Beyond the mockup
 
 Nav also gained two small report/dashboard pages not in the mockup's four designed screens
-(`VeRoster.cshtml` wrapping Phase 7's `VolunteerExaminerReportService`, `VecSubmission.cshtml`
-wrapping Phase 8's `VecSubmissionReportService` + an inline mark-submitted action) — styled with the
+(`VeRoster.cshtml` wrapping Phase 7's `VolunteerExaminerReportService`, and a VEC submission page
+wrapping Phase 8's submission reporting + an inline mark-submitted action — that page was later
+**folded into the Sessions list** (#56), where the same mark-submitted action now lives) — styled with the
 same design-system components since they're plain reports, not something needing a fresh design
 pass.
 

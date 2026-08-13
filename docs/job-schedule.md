@@ -32,8 +32,11 @@ present in only one host is precisely how **T04** happened.
 The jobs genuinely differ, and flattening them into one "next run" column would misreport half of
 them.
 
-**`AnchoredToEasternHour`** — `UlsWatcher` (08:00/20:00 ET by default, tunable in System Settings)
-and `LicenseWatch` (06:00 ET). These tick hourly but only *work* when the current slot has no
+**`AnchoredToEasternHour`** — `UlsWatcher`, `LicenseWatch` and `VeLicenseWatch`, all three on
+08:00/20:00 ET by default and tunable together in System Settings, since they read the same
+`UlsWatcherStartHourEt`/`UlsWatcherIntervalHours` pair (see "the shared ULS schedule" below).
+`LicenseWatch` ran at 06:00 ET on its own schedule until 2026-08-06; the constant that said so
+outlived the change and was removed in #301. These tick hourly but only *work* when the current slot has no
 successful run yet, so restarts and outages self-heal and the schedule never drifts. Reported as
 **Scheduled**: the stated time is what will happen.
 
