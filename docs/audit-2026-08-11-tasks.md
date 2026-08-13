@@ -830,7 +830,7 @@ A literal `U+0000` in `"\0untagged"` makes ripgrep classify the file as binary a
 all matches**. This already produced a false "delete this" verdict during the audit — one sweep
 concluded `VeSessionInvitationService` was a dead DI registration, when `VeInviteModel:26` injects it;
 acting on it would have crashed the VE-invite page.
-**Fix** `" untagged"` in both. Exactly these two files are affected (whole solution audited).
+**Fix** `"\0untagged"` in both. Exactly these two files are affected (whole solution audited).
 
 ### D-02 — `LicenseWatch` runs at 08:00 ET, not 06:00 — three places say otherwise
 `Core/Jobs/JobSchedules.cs:110` (dead constant), `Worker/LicenseWatchJob.cs:13,23-26` (doc comment),
