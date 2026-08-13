@@ -28,6 +28,13 @@ public class DataProtectionKeyRingGuardTests
 
     private static Team NewTeam(string name) => new() { Name = name };
 
+    /// <summary>
+    /// Correct for a startup guard — a fresh deployment has no credentials to be wrong about, and
+    /// refusing to boot over it would be absurd. It does mean "passed" and "checked something" are
+    /// not the same outcome, which matters when the guard is used as proof that a *restored* backup
+    /// is intact: an empty database passes here having verified nothing. The Worker's
+    /// `--verify-keyring` switch rejects zero teams for exactly that reason; keep the two in step.
+    /// </summary>
     [Fact]
     public async Task NoTeams_Passes()
     {
