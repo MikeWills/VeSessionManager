@@ -20,20 +20,50 @@
 <div class="session-panel" style="display:block;max-width:640px;">
     <ol class="setup-steps">
         <li>
-            <strong>Install an authenticator app</strong> if you do not have one — Google Authenticator,
-            Microsoft Authenticator, Authy, 1Password and Bitwarden all work.
+            <strong>Open your authenticator</strong> — a password manager with TOTP support (Bitwarden,
+            1Password) or a dedicated app (Google Authenticator, Microsoft Authenticator, Authy).
         </li>
         <li>
-            <strong>Scan this code</strong>, or type the key in by hand.
-            @* Inline SVG rather than an <img>: no CSP exception needed, and it stays crisp at any
-               size, which matters when someone is holding a phone up to a laptop screen. *@
-            <div class="qr-holder">@Html.Raw(Model.QrCodeSvg)</div>
-            <p class="session-sub">
-                Key: <code class="totp-key">@Model.DisplayKey</code>
-            </p>
+            <strong>Add this account</strong>, whichever way suits the tool you use.
+
+            @*
+                Three ways, and the paste-the-URI one leads deliberately.
+
+                The page originally led with the QR and mentioned the key as a trailing line. That is
+                backwards for a password manager, which wants the otpauth:// URI pasted into its TOTP
+                field — it carries the issuer and account label, so the vault entry names itself, and
+                it needs neither a camera nor sixteen characters typed by hand. The URI was being
+                computed and fed to the QR encoder while never being shown at all.
+            *@
+            <div class="setup-option">
+                <label for="authenticatorUri">Setup URI — paste this into a password manager</label>
+                <div class="copy-row">
+                    @* readonly, not disabled: a disabled input cannot be selected or copied. *@
+                    <input id="authenticatorUri" class="totp-uri" type="text" readonly
+                           value="@Model.AuthenticatorUri" spellcheck="false" />
+                    <button type="button" class="btn-secondary btn-sm" data-copy-target="authenticatorUri">Copy</button>
+                </div>
+            </div>
+
+            <div class="setup-option">
+                <label for="authenticatorKey">Or type this key in</label>
+                <div class="copy-row">
+                    <input id="authenticatorKey" class="totp-key" type="text" readonly
+                           value="@Model.DisplayKey" spellcheck="false" />
+                    <button type="button" class="btn-secondary btn-sm" data-copy-target="authenticatorKey">Copy</button>
+                </div>
+            </div>
+
+            <div class="setup-option">
+                <span class="setup-option-label">Or scan this code</span>
+                @* Inline SVG rather than an <img>: the CSP needs no exception for it, and it stays
+                   crisp at any size. The white plate is not decoration — a QR is black-on-white by
+                   specification, and a dark-mode page behind the quiet zone makes it unscannable. *@
+                <div class="qr-holder">@Html.Raw(Model.QrCodeSvg)</div>
+            </div>
         </li>
         <li>
-            <strong>Enter the 6-digit code</strong> your app now shows, to prove it is working.
+            <strong>Enter the 6-digit code</strong> your authenticator now shows, to prove it is working.
             <form method="post" class="totp-verify">
                 <div class="field" style="max-width:220px;">
                     <label asp-for="Input.Code"></label>
@@ -50,6 +80,12 @@
         Two-factor authentication is not switched on until a code verifies, so a mistyped key or a
         phone with the wrong clock cannot lock you out. You will be given recovery codes immediately
         afterwards — save them.
+    </p>
+
+    <p class="session-sub">
+        <strong>All three of these carry the same secret.</strong> Anyone who can read this screen can
+        add your account to their own authenticator, so treat the URI the way you would a password:
+        paste it where it belongs and do not leave it on a shared display.
     </p>
 </div>
 

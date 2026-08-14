@@ -716,12 +716,28 @@ footer.roster { margin-top: 28px; background: var(--surface); border: 1px solid 
   display: inline-block; background: #ffffff; padding: 12px; border-radius: 8px;
   margin: 12px 0; line-height: 0;
 }
-.vesm .qr-holder svg { width: 190px; height: 190px; display: block; }
+/* Belt-and-braces: the SVG is generated at roughly this size now (see TwoFactorSetup), because
+   relying on this rule alone left a 305px code on the deployed page. max-width rather than a fixed
+   width so it shrinks on a narrow screen instead of forcing the panel wide. */
+.vesm .qr-holder svg { width: 100%; max-width: 190px; height: auto; display: block; }
 
-.vesm .totp-key {
-  font-family: var(--mono, 'IBM Plex Mono', monospace); font-size: 15px; letter-spacing: 0.08em;
-  user-select: all;
+/* One row per way of adding the account. The URI leads because a password manager takes it whole. */
+.vesm .setup-option { margin: 14px 0 0; }
+.vesm .setup-option label,
+.vesm .setup-option .setup-option-label {
+  display: block; font-size: 12px; font-weight: 600; color: var(--ink-soft);
+  text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 5px;
 }
+.vesm .copy-row { display: flex; gap: 8px; align-items: stretch; max-width: 460px; }
+.vesm .copy-row input { flex: 1; min-width: 0; }
+/* min-width:0 above matters: a flex item defaults to min-content width, so a long unbroken URI would
+   otherwise push the Copy button off the panel instead of scrolling inside its own field. */
+
+.vesm .totp-uri,
+.vesm .totp-key {
+  font-family: var(--mono, 'IBM Plex Mono', monospace); font-size: 13px; user-select: all;
+}
+.vesm .totp-key { font-size: 15px; letter-spacing: 0.08em; }
 .vesm .totp-verify { margin-top: 12px; }
 
 .vesm .recovery-codes {

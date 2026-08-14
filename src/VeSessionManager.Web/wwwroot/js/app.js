@@ -65,6 +65,37 @@
       });
     }
 
+    // Copy-to-clipboard for a field the user is meant to paste somewhere else — the authenticator
+    // setup URI, which a password manager (Bitwarden, 1Password) takes whole.
+    //
+    // A data attribute rather than an inline onclick, because the CSP is `script-src 'self'` and that
+    // silently drops inline handlers — a button that looks right and does nothing. Same convention as
+    // data-autosubmit above.
+    //
+    // navigator.clipboard needs a secure context, so it is absent over plain http (a local dev run).
+    // The fallback selects the text instead, which still gets the user to Ctrl+C rather than leaving
+    // the button dead.
+    document.querySelectorAll("[data-copy-target]").forEach(function (button) {
+      button.addEventListener("click", function () {
+        var target = document.getElementById(button.getAttribute("data-copy-target"));
+        if (!target) return;
+
+        var done = function () {
+          var original = button.getAttribute("data-copy-label") || button.textContent;
+          button.setAttribute("data-copy-label", original);
+          button.textContent = "Copied";
+          setTimeout(function () { button.textContent = original; }, 1500);
+        };
+
+        if (navigator.clipboard && window.isSecureContext) {
+          navigator.clipboard.writeText(target.value).then(done, function () { target.select(); });
+        } else {
+          target.select();
+          target.setSelectionRange(0, target.value.length);
+        }
+      });
+    });
+
     // Mobile nav toggle. Below app.css's 768px breakpoint the chassis nav links and the .who
     // cluster are one collapsed panel that `header.chassis.nav-open` reveals; from 768px up the
     // button is display:none and this class is inert, so no width check is needed here.
