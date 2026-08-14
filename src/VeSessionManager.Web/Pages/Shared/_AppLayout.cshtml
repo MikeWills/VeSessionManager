@@ -1,3 +1,4 @@
+@using Microsoft.AspNetCore.Antiforgery
 @using Microsoft.AspNetCore.Identity
 @using Microsoft.EntityFrameworkCore
 @using VeSessionManager.Core.Authorization
@@ -8,6 +9,7 @@
 @inject AppDbContext DbContext
 @inject SessionAccessScope AccessScope
 @inject NavBadgeCountService NavBadgeCounts
+@inject IAntiforgery Antiforgery
 @{
     // One load per request, shared with the page handler that already did this — see
     // CurrentUserLoader.GetCachedUserWithManagerAsync. This block used to issue a bare GetUserAsync
@@ -51,6 +53,25 @@
         : !string.IsNullOrWhiteSpace(currentUser?.Email) ? currentUser!.Email!
         : "Account";
 
+    // The account's saved colour scheme, rendered onto <html> so the page paints in it immediately —
+    // the CSP forbids an inline script, so this attribute is the only way the server can get the
+    // answer in before first paint. Null for ThemePreference.System, which is "no choice made yet"
+    // and hands the decision to theme.js (localStorage, then the OS setting). Never emit a value for
+    // System: an explicit data-theme is what theme.js treats as authoritative, so doing so would
+    // pin every never-chosen account to light and defeat the OS default.
+    // Built as a whole attribute rather than written as data-theme="@savedTheme", because Razor
+    // renders a null value as data-theme="" rather than omitting the attribute — and an empty
+    // data-theme is not the same thing as none. theme.js reads it as "no server preference" today
+    // (the empty string is falsy) but that is one `!== null` away from pinning every never-chosen
+    // account to light. Html.Raw is safe here by construction: the only two values that reach it are
+    // the literals below.
+    var themeAttribute = currentUser?.ThemePreference switch
+    {
+        ThemePreference.Dark => Html.Raw(" data-theme=\"dark\""),
+        ThemePreference.Light => Html.Raw(" data-theme=\"light\""),
+        _ => null
+    };
+
     var activeNav = ViewData["ActiveNav"] as string;
     var mainClass = "vesm-main" + (ViewData["WideMain"] is true ? " wide" : "");
 
@@ -63,11 +84,14 @@
         or "AdminFees" or "AdminVecs" or "AdminAuditLog" or "AdminJobHistory" or "AdminJobSchedule" or "Reconciliation" or "AdminSystemSettings";
 }
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en"@themeAttribute>
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>@ViewData["Title"] - VeSessionManager</title>
+    @* Render-blocking and first in <head> on purpose: it stamps data-theme before anything paints,
+       which is what stops a dark-mode user seeing a white flash on every navigation. See theme.js. *@
+    <script src="~/js/theme.js" asp-append-version="true"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     @* Self-hosted: the CSP allows font-src 'self' only (plus Google Fonts), and a CDN
@@ -222,7 +246,14 @@
                     <button type="button" class="item" disabled title="Coming soon">Documentation</button>
                 </div>
             </div>
-            <button id="themeToggle" class="theme-toggle" type="button"></button>
+            @* The URL and token let app.js save the choice to the account (see Theme.cshtml.cs).
+               Data attributes rather than an inline script or a hardcoded path: the CSP is
+               script-src 'self', and Url.Page keeps this correct under a path base. _PublicLayout
+               deliberately renders neither — with nobody signed in there is no account to save to,
+               and app.js falls back to localStorage alone. *@
+            <button id="themeToggle" class="theme-toggle" type="button"
+                    data-save-url="@Url.Page("/Account/Theme")"
+                    data-antiforgery-token="@Antiforgery.GetAndStoreTokens(Context).RequestToken"></button>
         </div>
     </header>
     <partial name="_TestModeBanner" />

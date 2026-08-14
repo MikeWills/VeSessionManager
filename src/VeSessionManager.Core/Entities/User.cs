@@ -37,6 +37,18 @@ public class User : IdentityUser<int>
     public UserRole Role { get; set; }
 
     /// <summary>
+    /// Light or dark, remembered on the account rather than in one browser's localStorage. Defaults
+    /// to <see cref="ThemePreference.System"/> — see that enum for why there is no way back to it
+    /// once a choice is made.
+    ///
+    /// <para>Written by the chassis theme toggle through <c>/Account/Theme</c>. localStorage is still
+    /// kept in step client-side, because it is the only home a signed-out page has (login, the
+    /// privacy page, VE self-service) and because it lets the first paint of the *next* page happen
+    /// before this value is known.</para>
+    /// </summary>
+    public ThemePreference ThemePreference { get; set; }
+
+    /// <summary>
     /// Set when an admin hands out a password the user did not choose, and cleared the moment they
     /// change it. While true, every authenticated request is redirected to Change password
     /// (RequirePasswordChangeMiddleware).

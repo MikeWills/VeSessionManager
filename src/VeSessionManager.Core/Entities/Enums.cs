@@ -121,6 +121,29 @@ public enum PaymentStatus
 }
 
 /// <summary>
+/// Which colour scheme a <see cref="User"/> sees, stored on the account so it follows them to every
+/// browser they sign in on rather than living only in that browser's localStorage.
+///
+/// <para><see cref="System"/> is the default and the only value nothing has to write: it means "no
+/// explicit choice yet", and the browser's own <c>prefers-color-scheme</c> answers instead. Every
+/// account created before this field existed lands here, which is the intended behaviour rather than
+/// a migration gap.</para>
+///
+/// <para>The toggle in the chassis only ever writes <see cref="Light"/> or <see cref="Dark"/> — once
+/// someone has clicked it they have made a choice, and silently reverting to the OS on their next OS
+/// theme change is the behaviour the choice was expressing a preference against. There is
+/// deliberately no way back to <see cref="System"/> from the toggle; a three-state control whose
+/// current state is invisible ("is this dark because I picked dark, or because it is 9pm?") costs
+/// more than it buys here.</para>
+/// </summary>
+public enum ThemePreference
+{
+    System = 0,
+    Light = 1,
+    Dark = 2
+}
+
+/// <summary>
 /// Renamed/expanded for Phase 9a (2026-07-21) from the spec's original 3-role model
 /// (Admin/SessionManager/TeamLead) — "Admin" didn't fit well once the multi-team foundation
 /// (Phase 6.5) gave each Team its own credentials/settings. See docs/admin-auth.md.

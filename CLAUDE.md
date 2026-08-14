@@ -126,6 +126,21 @@ would be pure duplication — and goes straight to `CHANGELOG.md` instead. Non-p
 redesigns, hardening passes) start here and move to `CHANGELOG.md` once the section is at/over the
 cap and a newer entry needs to be added; oldest goes first.
 
+- **Dark mode follows the OS, then follows you (2026-08-13).** See `docs/theme-preference.md`. The
+  theme was `localStorage.getItem(key) || "light"` — OS-blind, per browser, and resolved at the
+  *bottom* of `<body>`, so it repainted after the page had already drawn. New
+  `User.ThemePreference` (`System`/`Light`/`Dark`) is rendered onto `<html>` by the layout;
+  `theme.js` resolves the rest in `<head>`, render-blocking, in the order server → localStorage →
+  `prefers-color-scheme` → light. **`System` must render no `data-theme` at all** — it is the
+  default, so every pre-existing account is in it, and emitting `light` there looks perfect to a
+  light-mode user while silently pinning everyone else. Razor renders a null attribute value as
+  `data-theme=""`, not as nothing, which is one `!== null` away from exactly that. Three things
+  worth knowing: an inline script is unavailable (CSP `script-src 'self'` — it renders and never
+  runs), `MapStaticAssets` makes `asp-append-version` emit a **fingerprinted filename** rather than
+  a `?v=` query so an asset-URL assertion on the literal name finds nothing, and the app's first
+  `fetch()` needed **no** antiforgery config — `RequestVerificationToken` is already
+  `HeaderName`'s default, proven by a mutation test that deleted the line and stayed green.
+
 - **The phone logged out constantly and the desktop did not (2026-08-13).** Issue #340. See
   `docs/remember-me.md`. Every sign-in passed `isPersistent: false`, so the cookie had no `Expires`
   and lived only as long as the browser *process* — a desktop browser runs for days, phones kill and
@@ -263,8 +278,6 @@ cap and a newer entry needs to be added; oldest goes first.
   VECs seeded. 8.4 MB of vendored Bootstrap deleted. **Three of these were found by looking rather
   than by being reported**, and two were mis-described by the audit that raised them — see the
   audit-file pointer above.
-
-- **Page smoke tests: every Razor page, actually rendered (2026-08-10).** See `docs/page-smoke-tests.md`. Nothing in this repo rendered Razor — not the build, not the 928 Core tests, not the static-HTML layout harness — and two bugs reached a deployment the same day because of it: a `<form>` carrying both `action=` and `asp-page-handler` (which `FormTagHelper` throws on **at render time**, so the build was clean and the page 500'd for anyone who opened it), and an anchor where `asp-all-route-data` silently discarded `asp-route-id` so every link to a VE pointed at nobody. `WebApplicationFactory` now boots the app in-process against throwaway SQLite and requests **every page discovered from the app's own `EndpointDataSource`**, so a new page is covered the day it exists. **The fake auth scheme is half the value**: every interesting page is `[Authorize]`d, so before this the only way to see one was for a human to log in and click. Seeding happens *before* the host starts because `Program.cs` refuses to start when no account can sign in — the harness satisfies that guard rather than weakening it. And **an empty `href` is the signature of the whole bug class**: the first version of the link test only followed links that had one, and passed with the original bug reintroduced.
 
 Everything through Phase 0-10's initial build (ExamTools ingestion, Zoom/Discord, Square, email
 notifications, FCC ULS watcher, payment reminders, VE tracking, VEC submission tracker, admin
