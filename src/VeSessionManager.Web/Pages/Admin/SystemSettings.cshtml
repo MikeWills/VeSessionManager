@@ -34,6 +34,25 @@
             documented suggestion (see docs/ve-retention.md).
         </p>
 
+        <div class="section-head" style="margin-top:24px;"><h2>Record Retention</h2></div>
+        <div class="meta-grid">
+            <div class="field" style="max-width:240px;">
+                <label for="auditLogRetentionDays">Audit log retention (days)</label>
+                <input id="auditLogRetentionDays" name="auditLogRetentionDays" type="number" min="1" value="@Model.AuditLogRetentionDays" placeholder="Keep forever" />
+            </div>
+            <div class="field" style="max-width:240px;">
+                <label for="jobRunHistoryRetentionDays">Job run history retention (days)</label>
+                <input id="jobRunHistoryRetentionDays" name="jobRunHistoryRetentionDays" type="number" min="1" value="@Model.JobRunHistoryRetentionDays" placeholder="Keep forever" />
+            </div>
+        </div>
+        <p class="session-sub">
+            Both are <strong>blank by default, meaning keep everything</strong>, and nothing is deleted until you set
+            a value. Neither table holds personal data &mdash; audit entries record ids, counts and configuration
+            changes, never candidate names, emails or secrets &mdash; so these windows control growth, not privacy.
+            <strong>Setting an audit window deletes history permanently</strong>, and the audit log is otherwise
+            append-only; the job run history is operational telemetry and grows by roughly 150,000 rows a year.
+        </p>
+
         <div class="section-head" style="margin-top:24px;"><h2>ULS Polling</h2></div>
         <div class="meta-grid">
             <div class="field" style="max-width:200px;">

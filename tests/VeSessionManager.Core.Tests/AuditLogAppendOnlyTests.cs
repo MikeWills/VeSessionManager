@@ -56,6 +56,22 @@ public class AuditLogAppendOnlyTests
     private static string Relative(string root, string file) =>
         Path.GetRelativePath(root, file).Replace(Path.DirectorySeparatorChar, '/');
 
+    /// <summary>
+    /// The single sanctioned delete path, exempted by filename (#86).
+    ///
+    /// <para>docs/audit-log.md called this shot before it was built: retention "becomes the first
+    /// legitimate delete path, and AuditLogAppendOnlyTests will fail. That is the intended
+    /// behaviour. The fix at that point is to make the deletion explicit and narrow, and to update
+    /// this document — <b>not to widen the test until it passes</b>." So the exemption is one file,
+    /// by name, rather than a relaxed pattern: <c>RecordRetentionService</c> deletes on an
+    /// admin-configured window that is null (keep everything) by default, and any <i>second</i>
+    /// delete path anywhere still fails this test, which is the whole point of keeping it.</para>
+    ///
+    /// <para>Moving or renaming that file fails the test too. That is deliberate: it forces whoever
+    /// moves it to come here and re-affirm the exemption, rather than carrying it along silently.</para>
+    /// </summary>
+    private const string SanctionedRetentionFile = "RecordRetentionService.cs";
+
     private static IEnumerable<string> SourceFiles() =>
         Directory.EnumerateFiles(Path.Combine(RepositoryRoot().FullName, "src"), "*.cs", SearchOption.AllDirectories)
             .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}bin{Path.DirectorySeparatorChar}", StringComparison.Ordinal)
@@ -70,6 +86,11 @@ public class AuditLogAppendOnlyTests
 
         foreach (var file in SourceFiles())
         {
+            if (Path.GetFileName(file) == SanctionedRetentionFile)
+            {
+                continue;
+            }
+
             var text = File.ReadAllText(file);
             foreach (var operation in ForbiddenOperations.Where(text.Contains))
             {
@@ -78,9 +99,18 @@ public class AuditLogAppendOnlyTests
         }
 
         Assert.True(offenders.Count == 0,
-            "The audit log is append-only, and these would break that:\n  " + string.Join("\n  ", offenders) +
-            "\n\nIf audit retention is genuinely wanted (see #86), it needs a decision and a documented " +
-            "position first — not a delete call added alongside other work. See docs/audit-log.md.");
+            "The audit log is append-only apart from one sanctioned retention pass, and these would break that:\n  "
+            + string.Join("\n  ", offenders) +
+            $"\n\nRetention lives in {SanctionedRetentionFile} and is the only exemption. A second delete path " +
+            "needs a decision and a documented position first — not a delete call added alongside other work. " +
+            "See docs/audit-log.md.");
+
+        // An exemption for a file that no longer deletes anything is an open door left standing after
+        // the room behind it was demolished. If retention is ever removed, this fails and the
+        // exemption goes with it.
+        var sanctioned = SourceFiles().SingleOrDefault(f => Path.GetFileName(f) == SanctionedRetentionFile);
+        Assert.True(sanctioned is not null, $"{SanctionedRetentionFile} is exempted above but no longer exists — drop the exemption.");
+        Assert.Contains("AuditLogs", File.ReadAllText(sanctioned!), StringComparison.Ordinal);
     }
 
     /// <summary>

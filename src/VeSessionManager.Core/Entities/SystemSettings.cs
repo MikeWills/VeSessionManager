@@ -21,6 +21,31 @@ public class SystemSettings
     public int? VeContactRetentionYears { get; set; }
 
     /// <summary>
+    /// How many days of audit history to keep (#86). Null means keep forever, and that is the
+    /// shipped default — every existing deployment stays exactly as it was until an admin chooses
+    /// otherwise, which is the only safe default for a table whose value is that it is complete.
+    ///
+    /// <para>These rows carry no PII by design — ids, counts and config values, with secrets and
+    /// candidate names/emails/FRNs deliberately excluded — so this is a growth control, not a
+    /// privacy one. That is also why it is opt-in rather than a sensible-looking default: nothing
+    /// here <i>needs</i> deleting, so nobody's history should start disappearing because a job
+    /// shipped.</para>
+    ///
+    /// <para><b>Turning this on makes the first and only legitimate delete path against AuditLogs
+    /// live.</b> See docs/audit-log.md — append-only is a convention enforced by the absence of such
+    /// a path, and <c>AuditLogAppendOnlyTests</c> exempts exactly one call site by name.</para>
+    /// </summary>
+    public int? AuditLogRetentionDays { get; set; }
+
+    /// <summary>
+    /// How many days of job-run history to keep (#296). Null means keep forever, same opt-in rule as
+    /// <see cref="AuditLogRetentionDays"/>, though the argument is weaker here: these rows are
+    /// operational telemetry with no evidentiary value, and TeamPipeline writes six per team per
+    /// tick — roughly 150k rows a year on this deployment.
+    /// </summary>
+    public int? JobRunHistoryRetentionDays { get; set; }
+
+    /// <summary>
     /// Hours between UlsWatcherJob checks, anchored to UlsWatcherStartHourEt rather than Worker start
     /// time (default 8/12 -> checks at 08:00 and 20:00 ET). Anchored to wall-clock ET because FCC
     /// issues licenses at 02:00 ET, so a morning slot lands after that day's grants exist.
