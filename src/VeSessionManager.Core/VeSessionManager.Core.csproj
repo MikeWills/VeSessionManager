@@ -20,4 +20,12 @@
     <PackageReference Include="Square" Version="45.0.1" />
   </ItemGroup>
 
+
+  <!-- ZoomClient builds its own HttpClient, so pagination cannot be exercised without a handler seam
+       (#251). Test-only visibility rather than making the constructor public: the seam exists for a
+       test and should not read as a supported way to construct the client. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="VeSessionManager.Core.Tests" />
+  </ItemGroup>
+
 </Project>
