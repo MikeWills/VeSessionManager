@@ -321,4 +321,53 @@ public class TwoFactorAuthTests : IClassFixture<WebAppFactory>
         Assert.Contains("<svg", page);
         Assert.Contains("totp-key", page);
     }
+
+    /// <summary>
+    /// The enrolment page must offer all three ways of adding the account, and the
+    /// <c>otpauth://</c> URI is the one that matters most for a password manager — Bitwarden and
+    /// 1Password take it whole, which needs neither a camera nor sixteen typed characters, and it
+    /// carries the issuer and account label so the vault entry names itself.
+    ///
+    /// <para>It shipped computed-but-never-rendered: the page built the URI, fed it to the QR
+    /// encoder, and showed only the QR and the bare key. Nothing failed, nothing looked wrong, and
+    /// the most useful field on the page was simply absent — which is why this asserts on the URI
+    /// specifically rather than on "the page renders".</para>
+    /// </summary>
+    [Fact]
+    public async Task EnrolmentOffersTheOtpauthUriForPasswordManagers()
+    {
+        using var client = _factory.CreateClientAs(UserRole.SystemAdmin);
+
+        var page = await client.GetStringAsync("/Account/EnableAuthenticator");
+
+        Assert.Contains("otpauth://totp/", page);
+        Assert.Contains("id=\"authenticatorUri\"", page);
+
+        // Copyable, not merely present: a disabled input cannot be selected or copied, and a
+        // password-manager workflow that ends in "now retype this" defeats the point.
+        var field = Regex.Match(page, "<input id=\"authenticatorUri\"[^>]*>").Value;
+        Assert.Contains("readonly", field);
+        Assert.DoesNotContain("disabled", field);
+    }
+
+    /// <summary>
+    /// The QR must not carry a hardcoded size far larger than the layout expects. It shipped at
+    /// 305px, relying on a CSS rule that did not take effect on the deployed page, and crowded the
+    /// step it belongs to. Asserted on the generated attribute rather than on CSS, because the
+    /// attribute is what survived when the CSS did not.
+    /// </summary>
+    [Fact]
+    public async Task TheQrCodeIsGeneratedAtASensibleSize()
+    {
+        using var client = _factory.CreateClientAs(UserRole.SystemAdmin);
+
+        var page = await client.GetStringAsync("/Account/EnableAuthenticator");
+
+        var width = Regex.Match(page, @"<svg[^>]*width=""(?<w>[0-9]+)""").Groups["w"].Value;
+        Assert.False(string.IsNullOrEmpty(width), "The QR should carry an explicit width.");
+        var pixels = int.Parse(width);
+
+        // Generous bounds on purpose: the point is "not 305, and still scannable", not a pixel spec.
+        Assert.InRange(pixels, 120, 240);
+    }
 }

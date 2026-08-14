@@ -84,13 +84,23 @@ public static class TwoFactorSetup
     ///
     /// <para>ECC level Q (~25% recoverable) rather than L: this is scanned off a screen at an angle,
     /// often a glossy one, and the size cost is a few hundred bytes of markup.</para>
+    ///
+    /// <para><b>Sized here as well as in CSS, deliberately.</b> QRCoder writes literal
+    /// <c>width</c>/<c>height</c> attributes, and the first version left those at 305px and relied on
+    /// <c>.qr-holder svg</c> to scale it down — which did not take effect on the deployed page, so the
+    /// code rendered at 305px and crowded the step it belongs to. Rather than chase why one CSS rule
+    /// lost, the intrinsic size is now correct on its own and the CSS is belt-and-braces. A QR is one
+    /// of the few things where "renders bigger than intended" is harmless and "renders smaller than
+    /// intended" is not scannable, so erring on the generous side of the CSS is the right way round.</para>
     /// </summary>
     public static string BuildQrCodeSvg(string authenticatorUri)
     {
         using var generator = new QRCodeGenerator();
         using var data = generator.CreateQrCode(authenticatorUri, QRCodeGenerator.ECCLevel.Q);
         return new SvgQRCode(data).GetGraphic(
-            pixelsPerModule: 5,
+            // 61 modules at 3px plus quiet zones lands a little under 200px — big enough to scan
+            // off a laptop screen, small enough to sit inside a step rather than dominate the page.
+            pixelsPerModule: 3,
             darkColorHex: "#000000",
             lightColorHex: "#ffffff",
             drawQuietZones: true);
