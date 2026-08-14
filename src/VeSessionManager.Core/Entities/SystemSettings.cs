@@ -9,6 +9,18 @@ public class SystemSettings
     public int? PiiRetentionWindowDays { get; set; }
 
     /// <summary>
+    /// How many years a VE may be inactive before the retention purge clears their contact details
+    /// (#313 / L-07). Null means "not yet set", and the VE pass is skipped entirely — the same
+    /// explicit-opt-in rule as <see cref="PiiRetentionWindowDays"/>, and for a stronger reason here:
+    /// nobody expects a volunteer roster to start forgetting people because a job shipped.
+    ///
+    /// <para>Years, not days, because the two answer different questions. A candidate's window is
+    /// tied to an FCC process that finishes in weeks; a VE's is tied to "have they stopped
+    /// volunteering", which is only legible over years. Five is the documented suggestion.</para>
+    /// </summary>
+    public int? VeContactRetentionYears { get; set; }
+
+    /// <summary>
     /// Hours between UlsWatcherJob checks, anchored to UlsWatcherStartHourEt rather than Worker start
     /// time (default 8/12 -> checks at 08:00 and 20:00 ET). Anchored to wall-clock ET because FCC
     /// issues licenses at 02:00 ET, so a morning slot lands after that day's grants exist.

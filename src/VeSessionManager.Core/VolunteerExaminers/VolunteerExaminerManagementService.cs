@@ -117,6 +117,11 @@ public class VolunteerExaminerManagementService(AppDbContext dbContext, TimeProv
         person.ContactPreference = details.ContactPreference;
         person.UpdatedUtc = now;
 
+        // A returning VE stops looking purged (#313). PiiPurgedUtc is the purge pass's idempotency
+        // guard, so leaving it set would mean these freshly re-entered details are never eligible
+        // again — the record would carry a stamp saying "cleared" while holding a home address.
+        person.PiiPurgedUtc = null;
+
         dbContext.AddAuditLog(actingUserId, "VeContactDetailsUpdatedBySelf", nameof(VolunteerExaminer), person.Id,
             $"{person.CallSign ?? person.Name} updated their own contact details"
             + (actingUserId is null ? " (self-service link)." : " while signed in."), now);
