@@ -12,12 +12,24 @@
 **All changes land on `main` via a pull request — no direct pushes.** One logical change per PR;
 title matches the commit convention above.
 
-This is a **convention, not a server-enforced rule.** GitHub branch protection (blocking direct
-pushes, requiring status checks/reviews before merge) requires either a paid plan or a public repo
-for a private repository — this repo is private and stays on the free plan, so there's no technical
-gate stopping a direct push to `main`. It relies on discipline instead. Repo admins may push
-directly in a genuine emergency, but shouldn't as routine practice — see `CLAUDE.md`'s Definition of
-Done for the review-before-merge policy this pairs with.
+**`main` is protected** (enabled 2026-08-13), so this is enforced rather than trusted:
+
+- a pull request is required — a direct push to `main` is rejected
+- **`build-and-test` must be green** before the merge button is available
+- the branch must be up to date with `main` before merging
+- force pushes and branch deletion are blocked
+
+**No approving review is required**, deliberately: this is a single-maintainer project, and a
+mandatory approval would mean nothing could ever merge. That is a staffing fact, not a statement
+about review being unimportant — see `CLAUDE.md`'s Definition of Done for the review-before-merge
+policy this pairs with, including Claude's own pre-PR review pass.
+
+Administrators are not included in the rule, so a direct push remains technically possible in a
+genuine emergency. It is not routine practice, and the protection exists so that "I'll just push
+this one small thing" stops being a decision anyone has to make at 2am.
+
+If you are contributing from a fork: open a PR as normal. Workflow runs from forks require
+maintainer approval, so your checks may sit queued until someone starts them.
 
 ## Building and testing
 
