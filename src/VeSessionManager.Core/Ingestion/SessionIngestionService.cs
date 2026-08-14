@@ -248,11 +248,18 @@ public class SessionIngestionService(
         // Scoped to this team — otherwise another team's still-active sessions (never in this
         // team's own remoteIds, since ExamTools' feed is per-team) would look "disappeared" below
         // and get wrongly marked Cancelled.
-        // Payments are eager-loaded because CandidatePiiFields.Clear (used by the auto-withdrawal
-        // below) nulls a candidate's live Square checkout link too — with Payments unloaded it would
-        // silently clear only the Candidate half and leave a payable link alive.
+        //
+        // Scalar Session fields only. This used to carry
+        // `.Include(s => s.Candidates).ThenInclude(c => c.Payments)`, bounded by TeamId alone — so
+        // every session the team had ever run, with every candidate and every payment, was
+        // materialized and tracked hourly, through two nested collection Includes (#246). Every
+        // other consumer of this data got a window when the historical import landed
+        // (PaymentEligibilityWindow, ResultSyncWindow, the scheduling cutoff); this query never did.
+        //
+        // What the graph was actually for is bounded much more tightly than the sessions are: only
+        // sessions present in this run's feed ever have their candidates read. See the second query
+        // below, once remoteIds exists to bound it.
         var localSessions = await dbContext.Sessions
-            .Include(s => s.Candidates).ThenInclude(c => c.Payments)
             .Where(s => s.TeamId == team.Id)
             .ToListAsync(cancellationToken);
         var localByExternalId = localSessions.ToDictionary(s => s.ExamToolsSessionId);
@@ -282,6 +289,36 @@ public class SessionIngestionService(
         remoteSessions.AddRange(closedSessions.Where(c => !pendIds.Contains(c.Id) && !IsSettledLocally(c)));
 
         var remoteIds = remoteSessions.Select(r => r.Id).ToHashSet();
+
+        // The other half of the split above (#246): candidates, and their payments, for the sessions
+        // this run's feed actually returned — never the team's whole history.
+        //
+        // remoteIds is the correct bound because it is exactly the set that can reach a read of
+        // Session.Candidates. Both such reads are inside `foreach (var remote in remoteSessions)`:
+        // ApplyRescheduleRules' blocking-candidate check, and the candidate-sync loop further down.
+        // The cancellation diff and closedBeforeThisRun read scalar Session fields only, so they are
+        // unaffected by the Includes going away. Sessions created later in this run are new and have
+        // no stored candidates to load.
+        //
+        // Payments are eager-loaded for the original reason: CandidatePiiFields.Clear (used by the
+        // auto-withdrawal below) nulls a candidate's live Square checkout link too — with Payments
+        // unloaded it would silently clear only the Candidate half and leave a payable link alive.
+        //
+        // Loaded into the change tracker rather than assigned anywhere: these are the same tracked
+        // Session instances, so EF's relationship fixup populates each Session.Candidates as the rows
+        // materialize, which is what keeps the code below reading exactly as it did.
+        var sessionIdsInFeed = localSessions
+            .Where(s => remoteIds.Contains(s.ExamToolsSessionId))
+            .Select(s => s.Id)
+            .ToList();
+
+        if (sessionIdsInFeed.Count > 0)
+        {
+            await dbContext.Candidates
+                .Where(c => sessionIdsInFeed.Contains(c.SessionId))
+                .Include(c => c.Payments)
+                .LoadAsync(cancellationToken);
+        }
 
         // Captured *before* this run stamps any new closes. "Poll while the session is open"
         // has to include the poll that discovers it closed — that run is the last chance to pick up

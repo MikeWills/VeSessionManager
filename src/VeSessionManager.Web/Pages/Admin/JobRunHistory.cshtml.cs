@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Authorization;
+﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
@@ -26,7 +26,7 @@ public class JobRunHistoryModel(AppDbContext dbContext, UserManager<User> userMa
         }
 
         var scoped = adminAccessScope.ScopeJobRunHistory(dbContext.JobRunHistories.Include(j => j.Team), user);
-        var runs = await scoped.OrderByDescending(j => j.StartedUtc).Take(200).ToListAsync();
+        var runs = await scoped.OrderByDescending(j => j.StartedUtc).Take(200).ToListAsync(HttpContext.RequestAborted);
 
         Runs = runs.Select(j => new JobRunRow(j.JobName, j.Team?.Name, j.StartedUtc, j.CompletedUtc, j.Success, j.ErrorMessage, j.ResultSummary, j.IsRunning, j.StatusText)).ToList();
         return Page();
@@ -50,7 +50,7 @@ public class JobRunHistoryModel(AppDbContext dbContext, UserManager<User> userMa
 
         // Scoped identically to the page — a TeamAdmin must not export runs they cannot see.
         var scoped = adminAccessScope.ScopeJobRunHistory(dbContext.JobRunHistories.Include(j => j.Team), user);
-        var runs = await scoped.OrderByDescending(j => j.StartedUtc).Take(ExportRowLimit).ToListAsync();
+        var runs = await scoped.OrderByDescending(j => j.StartedUtc).Take(ExportRowLimit).ToListAsync(HttpContext.RequestAborted);
 
         var csv = new StringBuilder();
         csv.AppendLine("StartedUtc,CompletedUtc,DurationSeconds,Job,Team,Status,Result,Error");

@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using VeSessionManager.Core.Data;
 
@@ -10,9 +11,11 @@ using VeSessionManager.Core.Data;
 namespace VeSessionManager.Core.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260814202002_AddPaymentCandidateIdIndex")]
+    partial class AddPaymentCandidateIdIndex
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.10");
@@ -713,12 +716,6 @@ namespace VeSessionManager.Core.Migrations
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int?>("AuditLogRetentionDays")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int?>("JobRunHistoryRetentionDays")
                         .HasColumnType("INTEGER");
 
                     b.Property<int?>("PiiRetentionWindowDays")

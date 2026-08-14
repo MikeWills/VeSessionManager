@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.DataProtection;
+﻿using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using Serilog;
 using VeSessionManager.Core;
@@ -9,6 +9,7 @@ using VeSessionManager.Core.Email;
 using VeSessionManager.Core.ExamResults;
 using VeSessionManager.Core.ExamTools;
 using VeSessionManager.Core.Reconciliation;
+using VeSessionManager.Core.Retention;
 using VeSessionManager.Core.Uls;
 using VeSessionManager.Core.Ingestion;
 using VeSessionManager.Core.Jobs;
@@ -125,6 +126,8 @@ builder.Services.AddScoped<PiiPurgeService>();
 // it at all — it was a Web-only service until the purge job started using it.
 builder.Services.AddScoped<VeSelfServiceLinkService>();
 
+builder.Services.AddScoped<RecordRetentionService>();
+
 builder.Services.AddScoped<TeamSecretsMigrationService>();
 
 builder.Services.AddScoped<JobRunHistoryLogger>();
@@ -137,6 +140,7 @@ builder.Services.AddHostedService<SquareLinkPurgeJob>();
 builder.Services.AddHostedService<PiiPurgeJob>();
 builder.Services.AddHostedService<HistoricalImportJob>();
 builder.Services.AddHostedService<ReconciliationJob>();
+builder.Services.AddHostedService<RecordRetentionJob>();
 
 // A mistyped switch used to be ignored in silence: the Worker started normally, did none of the
 // one-off work that was asked for, and looked identical to a successful run. Checked before the

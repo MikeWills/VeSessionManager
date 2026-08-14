@@ -54,11 +54,39 @@ cannot be asserted by calling anything. Same shape as `NoNulBytesInSourceTests`.
 
 ## Retention
 
-Growth is unbounded and is **not** this document's subject — it is issue #86, together with the same
-problem on `JobRunHistories` (#296). Worth noting the two interact: if audit retention is ever built,
-it becomes the first legitimate delete path, and `AuditLogAppendOnlyTests` will fail. That is the
-intended behaviour. The fix at that point is to make the deletion explicit and narrow, and to update
-this document — not to widen the test until it passes.
+**Built 2026-08-14** (#86, with `JobRunHistories` in #296). This section used to predict what would
+happen when it was, and the prediction is worth keeping because it was followed exactly:
+
+> if audit retention is ever built, it becomes the first legitimate delete path, and
+> `AuditLogAppendOnlyTests` will fail. That is the intended behaviour. The fix at that point is to
+> make the deletion explicit and narrow, and to update this document — not to widen the test until
+> it passes.
+
+What exists now:
+
+- `SystemSettings.AuditLogRetentionDays` — **null by default, meaning keep everything**, and null is
+  what every deployment has until an admin types a number on Admin → System Settings. The job wakes
+  daily, finds no window, logs one INFO line and deletes nothing. Same explicit-opt-in rule as
+  `PiiRetentionWindowDays` and `VeContactRetentionYears`, and for the same reason: nothing in this
+  table *has* to be deleted, so the default must be the one that loses nothing.
+- `RecordRetentionService` (`Core/Retention`) is the **only** place an audit row is deleted, and
+  `AuditLogAppendOnlyTests` exempts it **by filename** — not by relaxing the forbidden-operation
+  list. A second delete path anywhere else still fails the build, which is the property the guard
+  was protecting in the first place. Renaming or moving that file also fails, deliberately: it
+  forces whoever moves it to come back here and re-affirm the exemption rather than carry it along
+  silently. And the test asserts the exempted file still contains an `AuditLogs` delete, so the
+  exemption cannot rot into an open door standing after the room behind it was demolished.
+- `RecordRetentionJob` runs it daily. It is **not** folded into `PiiPurgeJob` despite the identical
+  cadence — neither table holds personal data, and a run filed under "PII purge" is a run nobody
+  finds when they go looking for why audit history disappeared.
+
+The deletion is logged at INFO with its count whenever a window is set. Deleting audit history
+silently would be a small betrayal of what the table is for.
+
+**This is a growth control, not a privacy one.** These rows carry no PII by design (see above), so
+turning it on buys disk and nothing else — and costs history that cannot be recovered. The
+deployment default of "keep everything" is the right one for a table whose value is that it is
+complete.
 
 ## Source-address recording
 

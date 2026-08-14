@@ -108,7 +108,10 @@ public class VeRosterModel(AppDbContext dbContext, UserManager<User> userManager
 
         if (HasTeamContext)
         {
-            Counts = await reportService.GetSessionCountsAsync(teamIds, fromUtc, toUtc, Search, CancellationToken.None);
+            // RequestAborted, not None (#299): this page is a read with no POST handler at all, so
+            // there is no write for a disconnect to tear — only a report query left running against
+            // the shared SQLite file for a reader who has already gone.
+            Counts = await reportService.GetSessionCountsAsync(teamIds, fromUtc, toUtc, Search, HttpContext.RequestAborted);
         }
     }
 

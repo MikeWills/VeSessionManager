@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using VeSessionManager.Core.Admin;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Entities;
@@ -67,7 +67,7 @@ public class SystemSettingsServiceTests
         dbContext.Users.Add(user);
         await dbContext.SaveChangesAsync();
 
-        var result = await CreateService(dbContext).UpdateAsync(90, veContactRetentionYears: null, 12, 9, 15, testModeEnabled: false, testModeOverrideEmail: null, user.Id, CancellationToken.None);
+        var result = await CreateService(dbContext).UpdateAsync(90, veContactRetentionYears: null, auditLogRetentionDays: null, jobRunHistoryRetentionDays: null, 12, 9, 15, testModeEnabled: false, testModeOverrideEmail: null, user.Id, CancellationToken.None);
 
         Assert.Equal(SystemSettingsActionResult.Success, result);
         var settings = await dbContext.SystemSettings.SingleAsync();
@@ -93,7 +93,7 @@ public class SystemSettingsServiceTests
         dbContext.Users.Add(user);
         await dbContext.SaveChangesAsync();
 
-        var result = await CreateService(dbContext).UpdateAsync(null, veContactRetentionYears: null, 24, 8, 60, testModeEnabled: false, testModeOverrideEmail: null, user.Id, CancellationToken.None);
+        var result = await CreateService(dbContext).UpdateAsync(null, veContactRetentionYears: null, auditLogRetentionDays: null, jobRunHistoryRetentionDays: null, 24, 8, 60, testModeEnabled: false, testModeOverrideEmail: null, user.Id, CancellationToken.None);
 
         Assert.Equal(SystemSettingsActionResult.Success, result);
         var settings = await dbContext.SystemSettings.SingleAsync();
@@ -116,7 +116,7 @@ public class SystemSettingsServiceTests
         var original = await CreateService(dbContext).GetAsync(CancellationToken.None);
         var originalInterval = original.UlsWatcherIntervalHours;
 
-        var result = await CreateService(dbContext).UpdateAsync(retention, veContactRetentionYears: null, intervalHours, startHourEt, sessionIngestionMinutes, testModeEnabled: false, testModeOverrideEmail: null, user.Id, CancellationToken.None);
+        var result = await CreateService(dbContext).UpdateAsync(retention, veContactRetentionYears: null, auditLogRetentionDays: null, jobRunHistoryRetentionDays: null, intervalHours, startHourEt, sessionIngestionMinutes, testModeEnabled: false, testModeOverrideEmail: null, user.Id, CancellationToken.None);
 
         Assert.Equal(SystemSettingsActionResult.InvalidValue, result);
         var settings = await dbContext.SystemSettings.SingleAsync();
@@ -132,7 +132,7 @@ public class SystemSettingsServiceTests
         dbContext.Users.Add(user);
         await dbContext.SaveChangesAsync();
 
-        var result = await CreateService(dbContext).UpdateAsync(90, veContactRetentionYears: null, 24, 8, 60, testModeEnabled: true, testModeOverrideEmail: "tester@example.com", user.Id, CancellationToken.None);
+        var result = await CreateService(dbContext).UpdateAsync(90, veContactRetentionYears: null, auditLogRetentionDays: null, jobRunHistoryRetentionDays: null, 24, 8, 60, testModeEnabled: true, testModeOverrideEmail: "tester@example.com", user.Id, CancellationToken.None);
 
         Assert.Equal(SystemSettingsActionResult.Success, result);
         var settings = await dbContext.SystemSettings.SingleAsync();
@@ -151,7 +151,7 @@ public class SystemSettingsServiceTests
         await dbContext.SaveChangesAsync();
         await CreateService(dbContext).GetAsync(CancellationToken.None); // ensure the singleton row already exists
 
-        var result = await CreateService(dbContext).UpdateAsync(90, veContactRetentionYears: null, 24, 8, 60, testModeEnabled: true, testModeOverrideEmail: "  ", user.Id, CancellationToken.None);
+        var result = await CreateService(dbContext).UpdateAsync(90, veContactRetentionYears: null, auditLogRetentionDays: null, jobRunHistoryRetentionDays: null, 24, 8, 60, testModeEnabled: true, testModeOverrideEmail: "  ", user.Id, CancellationToken.None);
 
         Assert.Equal(SystemSettingsActionResult.TestModeMissingOverrideEmail, result);
         var settings = await dbContext.SystemSettings.SingleAsync();

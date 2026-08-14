@@ -105,6 +105,7 @@ public static class JobSchedules
     public const string LicenseWatch = "LicenseWatch";
     public const string VeLicenseWatch = "VeLicenseWatch";
     public const string Reconciliation = "Reconciliation";
+    public const string RecordRetention = "RecordRetention";
 
     // LicenseWatchStartHourEt = 6 lived here until 2026-08-11 (issue #301). It had no callers: the
     // descriptor below passes StartHourEt: 8 and reads SystemSettings.UlsWatcherStartHourEt, because
@@ -171,6 +172,17 @@ public static class JobSchedules
             "Clears candidate personal data once past the retention period.",
             JobCadenceKind.IntervalFromWorkerStart,
             "Jobs:PiiPurgeIntervalHours",
+            DefaultIntervalHours: 24,
+            TickIntervalSeconds: 86400),
+
+        // Separate from the PII purge deliberately, despite the identical cadence: nothing this job
+        // deletes is personal data, and folding it in would file every run under "PII purge" in the
+        // history and on this page. A job's name is how its runs are found.
+        new(RecordRetention,
+            "Audit & job history retention",
+            "Deletes audit entries and job-run history past their retention windows. Both windows are off by default, and the job does nothing until an admin sets one.",
+            JobCadenceKind.IntervalFromWorkerStart,
+            "Jobs:RecordRetentionIntervalHours",
             DefaultIntervalHours: 24,
             TickIntervalSeconds: 86400),
 

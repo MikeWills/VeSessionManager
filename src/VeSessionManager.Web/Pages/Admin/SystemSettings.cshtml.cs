@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Authorization;
+﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
@@ -18,6 +18,12 @@ public class SystemSettingsModel(UserManager<User> userManager, SystemSettingsSe
 
     /// <summary>Years a VE may be inactive before the purge clears their contact details. Null = off (#313).</summary>
     public int? VeContactRetentionYears { get; private set; }
+
+    /// <summary>Days of audit history to keep. Null = keep forever, and that is the default (#86).</summary>
+    public int? AuditLogRetentionDays { get; private set; }
+
+    /// <summary>Days of job-run history to keep. Null = keep forever, and that is the default (#296).</summary>
+    public int? JobRunHistoryRetentionDays { get; private set; }
     public bool TestModeEnabled { get; private set; }
     public string? TestModeOverrideEmail { get; private set; }
     public DateTime? UpdatedUtc { get; private set; }
@@ -50,13 +56,16 @@ public class SystemSettingsModel(UserManager<User> userManager, SystemSettingsSe
         UlsWatcherStartHourEt = settings.UlsWatcherStartHourEt;
         SessionIngestionIntervalMinutes = settings.SessionIngestionIntervalMinutes;
         VeContactRetentionYears = settings.VeContactRetentionYears;
+        AuditLogRetentionDays = settings.AuditLogRetentionDays;
+        JobRunHistoryRetentionDays = settings.JobRunHistoryRetentionDays;
         TestModeEnabled = settings.TestModeEnabled;
         TestModeOverrideEmail = settings.TestModeOverrideEmail;
         UpdatedUtc = settings.UpdatedUtc;
     }
 
     public async Task<IActionResult> OnPostAsync(
-        int? piiRetentionWindowDays, int? veContactRetentionYears, int ulsWatcherIntervalHours, int ulsWatcherStartHourEt,
+        int? piiRetentionWindowDays, int? veContactRetentionYears, int? auditLogRetentionDays, int? jobRunHistoryRetentionDays,
+        int ulsWatcherIntervalHours, int ulsWatcherStartHourEt,
         int sessionIngestionIntervalMinutes, bool testModeEnabled, string? testModeOverrideEmail)
     {
         // Role re-checked here, not just by the [Authorize(Roles = ...)] attribute (#257). The role
@@ -71,13 +80,14 @@ public class SystemSettingsModel(UserManager<User> userManager, SystemSettingsSe
         }
 
         var result = await systemSettingsService.UpdateAsync(
-            piiRetentionWindowDays, veContactRetentionYears, ulsWatcherIntervalHours, ulsWatcherStartHourEt,
+            piiRetentionWindowDays, veContactRetentionYears, auditLogRetentionDays, jobRunHistoryRetentionDays,
+            ulsWatcherIntervalHours, ulsWatcherStartHourEt,
             sessionIngestionIntervalMinutes, testModeEnabled, testModeOverrideEmail, user.Id, CancellationToken.None);
         TempData[result == SystemSettingsActionResult.Success ? "StatusMessage" : "ErrorMessage"] = result switch
         {
             SystemSettingsActionResult.Success => testModeEnabled ? "System settings updated. Test mode is ON — no real emails will be sent." : "System settings updated.",
             SystemSettingsActionResult.TestModeMissingOverrideEmail => "Could not save — an override email address is required to turn test mode on.",
-            _ => "Could not save — intervals must be at least 1 minute (session ingestion) or 1 hour (ULS polling), the daily watcher start hour must be 0-23, the candidate retention window (if set) at least 1 day, and the VE contact retention (if set) at least 1 year."
+            _ => "Could not save — intervals must be at least 1 minute (session ingestion) or 1 hour (ULS polling), the daily watcher start hour must be 0-23, the candidate retention window (if set) at least 1 day, and the VE contact retention (if set) at least 1 year, and the audit/job-history retention windows (if set) at least 1 day."
         };
 
         return RedirectToPage();

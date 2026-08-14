@@ -87,8 +87,13 @@ public class LicenseWatchJob(
         // beside one red one with no retry, while the comment below claimed separate rows
         // were what prevented exactly that. Requiring a success for *each* name gives the
         // guard the property it was described as having.
+        // TeamId == null is not a narrowing — both names below are logged with teamId: null (see the
+        // two RunAsync calls), so the null-team rows are exactly the ones being counted. It is here
+        // to make the (TeamId, JobName, StartedUtc) index seedable: without a leading TeamId
+        // predicate SQLite cannot use it and this scans the whole table, hourly (#296).
         var successesThisSlot = await dbContext.JobRunHistories
-            .Where(h => (h.JobName == JobSchedules.LicenseWatch || h.JobName == JobSchedules.VeLicenseWatch)
+            .Where(h => h.TeamId == null
+                        && (h.JobName == JobSchedules.LicenseWatch || h.JobName == JobSchedules.VeLicenseWatch)
                         && h.Success
                         && h.StartedUtc >= dueSlotUtc)
             .Select(h => h.JobName)

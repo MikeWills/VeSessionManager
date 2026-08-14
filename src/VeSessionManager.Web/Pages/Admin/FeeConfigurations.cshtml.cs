@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Authorization;
+﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
@@ -52,7 +52,7 @@ public class FeeConfigurationsModel(AppDbContext dbContext, UserManager<User> us
 
         if (user.Role == VeSessionManager.Core.Entities.UserRole.SystemAdmin)
         {
-            AvailableVecs = await dbContext.Vecs.OrderBy(v => v.Name).Select(v => new ValueTuple<int, string>(v.Id, v.Name)).ToListAsync();
+            AvailableVecs = await dbContext.Vecs.OrderBy(v => v.Name).Select(v => new ValueTuple<int, string>(v.Id, v.Name)).ToListAsync(HttpContext.RequestAborted);
         }
         else
         {
@@ -63,7 +63,7 @@ public class FeeConfigurationsModel(AppDbContext dbContext, UserManager<User> us
                 .Distinct()
                 .OrderBy(v => v.Name)
                 .Select(v => new ValueTuple<int, string>(v.Id, v.Name))
-                .ToListAsync();
+                .ToListAsync(HttpContext.RequestAborted);
         }
 
         if (VecId is null && AvailableVecs.Count > 0)
@@ -86,7 +86,7 @@ public class FeeConfigurationsModel(AppDbContext dbContext, UserManager<User> us
             .OrderByDescending(f => f.EffectiveDate)
             .Select(f => new FeeConfigRow(f.Id, f.EffectiveDate, f.FeeCollectionEnabled, f.ExamFeeAmount, f.RetainedAmount, f.YouthExamFeeAmount, f.Notes,
                 dbContext.Sessions.Any(s => s.FeeConfigurationId == f.Id)))
-            .ToListAsync();
+            .ToListAsync(HttpContext.RequestAborted);
 
         return Page();
     }

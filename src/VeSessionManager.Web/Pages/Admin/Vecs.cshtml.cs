@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Authorization;
+﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
@@ -28,14 +28,14 @@ public class VecsModel(AppDbContext dbContext, UserManager<User> userManager, Ve
         var effectiveFees = (await dbContext.FeeConfigurations
                 .Where(f => f.EffectiveDate <= now)
                 .Select(f => new { f.VecId, f.EffectiveDate, f.FeeCollectionEnabled, f.ExamFeeAmount })
-                .ToListAsync())
+                .ToListAsync(HttpContext.RequestAborted))
             .GroupBy(f => f.VecId)
             .ToDictionary(g => g.Key, g => g.OrderByDescending(f => f.EffectiveDate).First());
 
         Vecs = (await dbContext.Vecs
                 .OrderBy(v => v.Name)
                 .Select(v => new { v.Id, v.Name, v.ExamToolsCode, v.SupportsYouthProgram, v.Notes })
-                .ToListAsync())
+                .ToListAsync(HttpContext.RequestAborted))
             .Select(v =>
             {
                 effectiveFees.TryGetValue(v.Id, out var fee);
