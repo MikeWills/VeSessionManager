@@ -434,6 +434,67 @@ public class UserManagementServiceTests
     }
 
     /// <summary>A real acting user — SetManagerAsync fails closed on an actor it cannot find.</summary>
+    /// <summary>
+    /// "Sign out other devices" (#340). The whole action is a security-stamp rotation: the cookie is
+    /// self-contained and nothing server-side tracks it, so changing the stamp is what makes
+    /// SecurityStampValidator reject every copy still in the wild on its next check.
+    ///
+    /// <para>So the assertion is on the stamp changing. There is no session table to inspect, and a
+    /// test that signed in and looked for a 401 would be testing the framework's revalidation
+    /// interval rather than this method.</para>
+    /// </summary>
+    [Fact]
+    public async Task SignOutOtherSessions_RotatesTheSecurityStamp_WhichIsWhatRevokesTheCookies()
+    {
+        await using var dbContext = CreateContext();
+        var userManager = CreateUserManager(dbContext);
+        var service = CreateService(dbContext, userManager);
+
+        var user = new User { UserName = "ve@example.org", Email = "ve@example.org", Name = "VE", Role = UserRole.SessionManager };
+        Assert.True((await userManager.CreateAsync(user, ValidPassword)).Succeeded);
+        var stampBefore = await userManager.GetSecurityStampAsync(user);
+
+        var result = await service.SignOutOtherSessionsAsync(user.Id, CancellationToken.None);
+
+        Assert.Equal(UserActionResult.Success, result);
+        Assert.NotEqual(stampBefore, await userManager.GetSecurityStampAsync(user));
+    }
+
+    /// <summary>
+    /// Revoking your own sessions is a security event, and the audit log is where "was this me?" gets
+    /// answered afterwards. Actor and subject are the same by construction — there is no
+    /// admin-facing variant of this action — which is worth pinning so one is not added carelessly.
+    /// </summary>
+    [Fact]
+    public async Task SignOutOtherSessions_IsAudited_AgainstTheUserThemselves()
+    {
+        await using var dbContext = CreateContext();
+        var userManager = CreateUserManager(dbContext);
+        var service = CreateService(dbContext, userManager);
+
+        var user = new User { UserName = "ve@example.org", Email = "ve@example.org", Name = "VE", Role = UserRole.SessionManager };
+        Assert.True((await userManager.CreateAsync(user, ValidPassword)).Succeeded);
+
+        await service.SignOutOtherSessionsAsync(user.Id, CancellationToken.None);
+
+        var audit = await dbContext.AuditLogs.SingleAsync();
+        Assert.Equal("UserSignedOutOtherSessions", audit.Action);
+        Assert.Equal(user.Id, audit.UserId);
+    }
+
+    [Fact]
+    public async Task SignOutOtherSessions_UnknownUser_IsNotFound()
+    {
+        await using var dbContext = CreateContext();
+        var userManager = CreateUserManager(dbContext);
+        var service = CreateService(dbContext, userManager);
+
+        var result = await service.SignOutOtherSessionsAsync(4242, CancellationToken.None);
+
+        Assert.Equal(UserActionResult.NotFound, result);
+        Assert.Empty(await dbContext.AuditLogs.ToListAsync());
+    }
+
     private static async Task<User> SeedSystemAdminAsync(AppDbContext dbContext, UserManager<User> userManager)
     {
         var admin = new User { UserName = "actor@example.com", Email = "actor@example.com", Name = "Acting Admin", Role = UserRole.SystemAdmin };

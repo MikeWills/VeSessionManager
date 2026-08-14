@@ -446,6 +446,18 @@ footer.roster { margin-top: 28px; background: var(--surface); border: 1px solid 
 .field input, .field select, .field textarea { font-family: "IBM Plex Mono", monospace; font-size: 16px; padding: 10px; max-width: 100%; border: 1px solid var(--line-strong); border-radius: 5px; background: var(--surface); color: var(--ink); }
 .field input:focus, .field select:focus, .field textarea:focus { border-color: var(--focus); }
 
+/* A checkbox with its label beside it, rather than the stacked uppercase-caption shape .field gives
+   every other input. Both child rules have to out-specify `.field label` and `.field input` above
+   (each 0,1,1), which is why they are written two classes deep -- a bare `.field-check label` would
+   lose on font-size and the label would render as an uppercase mono caption. Same specificity trap
+   as `.vesm a` / `.vesm button`, which app.css has been bitten by twice. */
+.field.field-check { flex-direction: row; align-items: flex-start; gap: 9px; flex-wrap: wrap; }
+.field.field-check label { display: flex; align-items: center; gap: 9px; font-family: inherit; font-size: 14px; text-transform: none; letter-spacing: normal; color: var(--ink); cursor: pointer; }
+/* Sized in em so it tracks the label, and given a minimum that stays comfortably tappable on a
+   phone -- this control exists for phone users. */
+.field.field-check input[type="checkbox"] { width: 1.15em; height: 1.15em; min-width: 18px; min-height: 18px; padding: 0; accent-color: var(--focus); }
+.field-hint { flex-basis: 100%; font-size: 12px; color: var(--ink-soft); }
+
 /* Controls inside a dropdown .menu (the Sessions date-range preset/custom-range inputs). Replaces
    the repeated inline style="" those carried, which no media query could reach to fix the iOS
    zoom above. */

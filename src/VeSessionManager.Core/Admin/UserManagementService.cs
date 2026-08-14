@@ -97,6 +97,44 @@ public class UserManagementService(UserManager<User> userManager, AppDbContext d
         return UserActionResult.Success;
     }
 
+    /// <summary>
+    /// Revokes every other signed-in session for this user by rotating their security stamp.
+    ///
+    /// <para><b>Why this exists alongside "Remember me" rather than after it (#340).</b> A remembered
+    /// session lasts 30 days, so a lost or stolen phone stays signed in for a month unless there is
+    /// a way to end it. Before this, the only tool was deactivating the whole account — which also
+    /// locks the owner out, and needs an administrator.</para>
+    ///
+    /// <para><b>How the revocation actually lands.</b> The cookie is self-contained; nothing on the
+    /// server tracks it. What ends it is <c>SecurityStampValidator</c>, which re-checks the stamp in
+    /// the cookie against the database on a rolling interval (30 minutes by default) and rejects the
+    /// principal when they differ. So this is not instant — worth saying plainly, because "signed out
+    /// everywhere" implies it is. The same mechanism already backs account deactivation.</para>
+    ///
+    /// <para>The caller is responsible for re-signing the current browser in
+    /// (<c>SignInManager.RefreshSignInAsync</c>); otherwise the person who just clicked the button
+    /// is logged out too, which reads as the action having failed.</para>
+    /// </summary>
+    public async Task<UserActionResult> SignOutOtherSessionsAsync(int userId, CancellationToken cancellationToken)
+    {
+        var user = await userManager.FindByIdAsync(userId.ToString());
+        if (user is null)
+        {
+            return UserActionResult.NotFound;
+        }
+
+        await userManager.UpdateSecurityStampAsync(user);
+
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+        // Actor and subject are the same person by construction: this action only ever acts on the
+        // caller's own account, and there is no admin-facing variant.
+        AddAudit(user.Id, "UserSignedOutOtherSessions", user.Id,
+            $"User {user.Id} revoked their other signed-in sessions.", now);
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        return UserActionResult.Success;
+    }
+
     public async Task<UserActionResult> SetRoleAsync(int targetUserId, UserRole newRole, int actingUserId, CancellationToken cancellationToken)
     {
         var user = await userManager.FindByIdAsync(targetUserId.ToString());
