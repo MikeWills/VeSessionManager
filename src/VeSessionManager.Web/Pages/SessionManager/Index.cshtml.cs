@@ -156,7 +156,18 @@ public class IndexModel(
     [BindProperty(SupportsGet = true)]
     public int PageSize { get; set; } = DefaultPageSize;
 
-    [BindProperty(SupportsGet = true, Name = "page")]
+    /// <summary>
+    /// <b><c>pageNumber</c>, not <c>page</c>, and the difference is the whole of #368.</b> Razor
+    /// Pages puts this page's own path into route values under the key <c>page</c>
+    /// ("/SessionManager/Index"), and the route value provider runs <i>before</i> the query string
+    /// provider — so <c>?page=2</c> never reached this property. Binding took the route value, failed
+    /// to parse it as an int, and left the default. Every page rendered as page 1.
+    ///
+    /// <para>It failed in total silence: right page count, right "Showing X–Y of Z", pager links
+    /// present and correct, and pressing Next did nothing. Shipped that way from 2026-07-28 until
+    /// 2026-08-14, found only because the audit log grew a pager and hit the identical trap.</para>
+    /// </summary>
+    [BindProperty(SupportsGet = true, Name = "pageNumber")]
     public int PageNumber { get; set; } = 1;
 
     /// <summary>One of DateRangePresets' keys, or "" for no date filter.</summary>
@@ -503,7 +514,7 @@ public class IndexModel(
             qs.Add($"teamId={TeamId}");
         }
         qs.Add($"pageSize={pageSizeOverride ?? PageSize}");
-        qs.Add($"page={page}");
+        qs.Add($"pageNumber={page}");
         if (!string.IsNullOrEmpty(DateRange))
         {
             qs.Add($"dateRange={Uri.EscapeDataString(DateRange)}");
