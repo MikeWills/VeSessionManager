@@ -8,13 +8,106 @@
 
 <div class="page-head">
     <div>
-        <p class="eyebrow">Most recent 200</p>
+        <p class="eyebrow">@Model.TotalCount.ToString("N0") @(Model.TotalCount == 1 ? "entry" : "entries")@(Model.HasFilters ? " matching" : "")</p>
         <h1>Audit Log</h1>
     </div>
 </div>
 
+@* GET, so a filtered view is a shareable URL and the back button works. Every control posts its own
+   query-string key, which BuildPageUrl then re-emits on the pager links. *@
+<form method="get" class="filters" style="margin-bottom:20px; align-items:flex-start;">
+    @if (Model.AvailableActions.Count > 0)
+    {
+        <div class="filter-dropdown">
+            <button type="button" class="kebab @(Model.Action is not null ? "active" : "")">Action: @(Model.Action ?? "Any") <i class="bi bi-caret-down-fill" aria-hidden="true"></i></button>
+            <div class="menu">
+                <label class="item"><input type="radio" name="action" value="" @(Model.Action is null ? "checked" : "") /> Any action</label>
+                @foreach (var action in Model.AvailableActions)
+                {
+                    <label class="item"><input type="radio" name="action" value="@action" @(action == Model.Action ? "checked" : "") /> @action</label>
+                }
+                <hr />
+                <button type="submit" class="item">Apply</button>
+            </div>
+        </div>
+    }
+
+    @if (Model.AvailableEntityTypes.Count > 0)
+    {
+        <div class="filter-dropdown">
+            <button type="button" class="kebab @(Model.EntityType is not null ? "active" : "")">Entity: @(Model.EntityType ?? "Any") <i class="bi bi-caret-down-fill" aria-hidden="true"></i></button>
+            <div class="menu">
+                <label class="item"><input type="radio" name="entityType" value="" @(Model.EntityType is null ? "checked" : "") /> Any entity</label>
+                @foreach (var entityType in Model.AvailableEntityTypes)
+                {
+                    <label class="item"><input type="radio" name="entityType" value="@entityType" @(entityType == Model.EntityType ? "checked" : "") /> @entityType</label>
+                }
+                <hr />
+                <button type="submit" class="item">Apply</button>
+            </div>
+        </div>
+    }
+
+    @{
+        var userLabel = Model.UserId switch
+        {
+            null => "Anyone",
+            VeSessionManager.Web.Pages.Admin.AuditLogModel.BackgroundJobUserId => "Background jobs",
+            _ => Model.AvailableUsers.FirstOrDefault(u => u.Id == Model.UserId).Name ?? "Anyone"
+        };
+    }
+    <div class="filter-dropdown">
+        <button type="button" class="kebab @(Model.UserId is not null ? "active" : "")">User: @userLabel <i class="bi bi-caret-down-fill" aria-hidden="true"></i></button>
+        <div class="menu">
+            <label class="item"><input type="radio" name="userId" value="" @(Model.UserId is null ? "checked" : "") /> Anyone</label>
+            @* Background-job entries have no user at all. Without an explicit choice they are only
+               reachable by scrolling, which is exactly backwards — they are the ones nobody was
+               watching happen. *@
+            <label class="item">
+                <input type="radio" name="userId" value="@VeSessionManager.Web.Pages.Admin.AuditLogModel.BackgroundJobUserId"
+                       @(Model.UserId == VeSessionManager.Web.Pages.Admin.AuditLogModel.BackgroundJobUserId ? "checked" : "") />
+                Background jobs
+            </label>
+            @if (Model.AvailableUsers.Count > 0)
+            {
+                <hr />
+                @foreach (var auditUser in Model.AvailableUsers)
+                {
+                    <label class="item"><input type="radio" name="userId" value="@auditUser.Id" @(auditUser.Id == Model.UserId ? "checked" : "") /> @auditUser.Name</label>
+                }
+            }
+            <hr />
+            <button type="submit" class="item">Apply</button>
+        </div>
+    </div>
+
+    <label class="ve-search">
+        <span class="visually-hidden">Search the details text</span>
+        <i class="bi bi-search" aria-hidden="true"></i>
+        <input type="search" name="search" value="@Model.Search" placeholder="Search details" />
+    </label>
+
+    <div class="field" style="max-width:170px;">
+        <label for="dateFrom">From</label>
+        <input id="dateFrom" name="dateFrom" type="date" value="@Model.DateFrom?.ToString("yyyy-MM-dd")" />
+    </div>
+    <div class="field" style="max-width:170px;">
+        <label for="dateTo">To</label>
+        <input id="dateTo" name="dateTo" type="date" value="@Model.DateTo?.ToString("yyyy-MM-dd")" />
+    </div>
+
+    <input type="hidden" name="pageSize" value="@Model.PageSize" />
+    <button type="submit" class="btn-secondary btn-sm">Apply</button>
+    @if (Model.HasFilters)
+    {
+        <a class="filter-pill" href="/Admin/AuditLog">Clear</a>
+    }
+</form>
+
 <div class="table-scroll">
-<table class="cards" data-sortable="audit-entries">
+@* No data-sortable: this list is paged server-side, and a client sorter would reorder only the rows
+   on screen while looking like it had sorted the log. Newest-first is fixed in the query. *@
+<table class="cards">
     <thead>
         <tr>
             <th>When</th>
@@ -27,13 +120,12 @@
     <tbody>
         @if (Model.Entries.Count == 0)
         {
-            <tr><td colspan="5">No audit entries yet.</td></tr>
+            <tr><td colspan="5">@(Model.HasFilters ? "No audit entries match these filters." : "No audit entries yet.")</td></tr>
         }
         @foreach (var entry in Model.Entries)
         {
             <tr>
-                @* Sorts on the raw timestamp — "MMM d, yyyy" sorts alphabetically as text (Apr before Mar). *@
-                <td class="mono" data-sort-value="@entry.TimestampUtc.ToString("o")">@EasternTimeFormatter.Format(entry.TimestampUtc, "MMM d, yyyy")</td>
+                <td class="mono">@EasternTimeFormatter.Format(entry.TimestampUtc, "MMM d, yyyy")</td>
                 <td>@(entry.UserName ?? "(background job)")</td>
                 <td>@entry.Action</td>
                 <td class="mono">@entry.EntityType #@entry.EntityId</td>
@@ -42,4 +134,37 @@
         }
     </tbody>
 </table>
+</div>
+
+<div class="pagination">
+    @if (Model.TotalCount > 0)
+    {
+        <span class="pagination-summary">
+            Showing @(((Model.PageNumber - 1) * Model.PageSize) + 1)–@(Math.Min(Model.PageNumber * Model.PageSize, Model.TotalCount)) of @Model.TotalCount.ToString("N0")
+        </span>
+        <div class="pagination-controls filters">
+            @if (Model.PageNumber > 1)
+            {
+                <a class="filter-pill" href="@Model.BuildPageUrl(Model.PageNumber - 1)"><i class="bi bi-arrow-left" aria-hidden="true"></i> Prev</a>
+            }
+            <span class="pagination-page">Page @Model.PageNumber of @Model.TotalPages</span>
+            @if (Model.PageNumber < Model.TotalPages)
+            {
+                <a class="filter-pill" href="@Model.BuildPageUrl(Model.PageNumber + 1)">Next <i class="bi bi-arrow-right" aria-hidden="true"></i></a>
+            }
+            <div class="filter-dropdown">
+                <button type="button" class="kebab">Show @Model.PageSize <i class="bi bi-caret-down-fill" aria-hidden="true"></i></button>
+                <div class="menu">
+                    @foreach (var size in VeSessionManager.Web.Pages.Admin.AuditLogModel.AllowedPageSizes)
+                    {
+                        <a class="item" href="@Model.BuildPageUrl(1, size)">@size per page</a>
+                    }
+                </div>
+            </div>
+        </div>
+    }
+    else
+    {
+        <span></span>
+    }
 </div>
