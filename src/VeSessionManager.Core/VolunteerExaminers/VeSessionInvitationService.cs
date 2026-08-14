@@ -1,3 +1,4 @@
+using System.Net;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using VeSessionManager.Core.Data;
@@ -140,8 +141,8 @@ public class VeSessionInvitationService(
                         FromAddress: emailSettings.FromAddress,
                         FromDisplayName: emailSettings.FromDisplayName,
                         ReplyToAddress: emailSettings.ReplyToAddress,
-                        Subject: Render(subject, recipient, session),
-                        HtmlBody: Render(body, recipient, session)),
+                        Subject: Render(subject, recipient, session, encodeHtml: false),
+                        HtmlBody: Render(body, recipient, session, encodeHtml: true)),
                     cancellationToken);
 
                 result.Sent++;
@@ -169,13 +170,39 @@ public class VeSessionInvitationService(
     /// the same choice EmailTemplateRenderer makes, and for the same reason: a visible "{{Typo}}" in
     /// a draft is a bug someone fixes, where a silently empty gap is one nobody notices.
     /// </summary>
-    private static string Render(string text, VolunteerExaminer recipient, Session session) => text
-        .Replace("{{VeName}}", recipient.Name)
-        .Replace("{{CallSign}}", recipient.CallSign ?? "")
-        .Replace("{{SessionTitle}}", session.Title)
-        .Replace("{{SessionDate}}", session.ScheduledStartUtc.ToString("dddd d MMMM yyyy 'at' HH:mm 'UTC'"))
-        .Replace("{{ZoomJoinUrl}}", session.ZoomJoinUrl ?? "")
-        .Replace("{{TeamName}}", session.Team.Name);
+    private static string Render(string text, VolunteerExaminer recipient, Session session, bool encodeHtml)
+    {
+        // HTML-encoded for the body, left alone for the subject — the same rule
+        // EmailTemplateRenderer applies, and for the same stated reason: several of these values
+        // come from the ExamTools feed, which is fed by public registration intake.
+        //
+        // This is the case that renderer exists to prevent, and this method skipped it (#260) while
+        // its two neighbours (VeSelfServiceLinkService, VeEmailChangeService) both encode — an
+        // omission rather than a policy. A Session.Title of
+        //   </p><a href="https://evil/">Click to confirm your VE assignment</a>
+        // rendered as live markup in every invited VE's mail client. Mail clients strip <script>,
+        // so this is link injection for phishing rather than script execution — arriving inside a
+        // genuine invitation from the team's real address, which is what makes it convincing.
+        string E(string value) => encodeHtml ? WebUtility.HtmlEncode(value) : StripLineBreaks(value);
+
+        return text
+            .Replace("{{VeName}}", E(recipient.Name))
+            .Replace("{{CallSign}}", E(recipient.CallSign ?? ""))
+            .Replace("{{SessionTitle}}", E(session.Title))
+            .Replace("{{SessionDate}}", E(session.ScheduledStartUtc.ToString("dddd d MMMM yyyy 'at' HH:mm 'UTC'")))
+            // Lands in href="…" in every real template, so it needs attribute-safe encoding rather
+            // than element-safe. HtmlEncode escapes the quote that would break out of the attribute;
+            // a URL that survives that is still a URL.
+            .Replace("{{ZoomJoinUrl}}", E(session.ZoomJoinUrl ?? ""))
+            .Replace("{{TeamName}}", E(session.Team.Name));
+    }
+
+    /// <summary>Subject lines are mail headers, and a header ends at a newline. Same rule as
+    /// EmailTemplateRenderer's (#261).</summary>
+    private static string StripLineBreaks(string value) =>
+        value.Contains('\r') || value.Contains('\n')
+            ? value.Replace("\r", "").Replace('\n', ' ')
+            : value;
 }
 
 /// <param name="AlreadyOnRoster">Already assigned to this session in ExamTools — usually a reason not to invite them again.</param>

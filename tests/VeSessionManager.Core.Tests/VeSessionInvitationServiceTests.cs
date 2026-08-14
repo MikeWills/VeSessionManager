@@ -294,4 +294,90 @@ public class VeSessionInvitationServiceTests
         var audit = await dbContext.AuditLogs.SingleAsync(a => a.Action == "VeSessionInvitationsSent");
         Assert.Contains("1 sent", audit.Details);
     }
+
+    // ---- #260/#261: the invitation body is HTML and its values come from ExamTools ----
+
+    /// <summary>
+    /// This service hand-builds its body and skipped the encoding EmailTemplateRenderer exists to
+    /// apply — while its two neighbours (VeSelfServiceLinkService, VeEmailChangeService) both
+    /// encode, making it an omission rather than a policy.
+    ///
+    /// <para>Session.Title comes from the ExamTools feed. Mail clients strip &lt;script&gt;, so this
+    /// is link injection for phishing rather than script execution — arriving inside a genuine
+    /// invitation, from the team's real address, which is exactly what makes it work.</para>
+    /// </summary>
+    [Fact]
+    public async Task SendAsync_HtmlEncodesTheSessionTitleInTheBody()
+    {
+        await using var dbContext = CreateContext();
+        var (team, session) = await SeedSessionAsync(dbContext);
+        session.Title = "</p><a href=\"https://evil.example/\">Confirm your VE assignment</a>";
+        await dbContext.SaveChangesAsync();
+        var ve = await SeedVeAsync(dbContext, team, "W0AAA", "ve@example.org");
+
+        var (service, email) = Create(dbContext);
+        await service.SendAsync(session.Id, [ve.Id], "Subject", "<p>Session: {{SessionTitle}}</p>", 1, CancellationToken.None);
+
+        var body = Assert.Single(email.Sent).HtmlBody;
+        Assert.DoesNotContain("<a href=", body);
+        Assert.Contains("&lt;a href=", body);
+    }
+
+    /// <summary>The VE's own name is feed data too, and lands in the body via {{VeName}}.</summary>
+    [Fact]
+    public async Task SendAsync_HtmlEncodesTheVeName()
+    {
+        await using var dbContext = CreateContext();
+        var (team, session) = await SeedSessionAsync(dbContext);
+        var ve = await SeedVeAsync(dbContext, team, "W0AAA", "ve@example.org");
+        ve.Name = "<b>Bold</b> Person";
+        await dbContext.SaveChangesAsync();
+
+        var (service, email) = Create(dbContext);
+        await service.SendAsync(session.Id, [ve.Id], "Subject", "<p>Hi {{VeName}}</p>", 1, CancellationToken.None);
+
+        var body = Assert.Single(email.Sent).HtmlBody;
+        Assert.DoesNotContain("<b>Bold</b>", body);
+        Assert.Contains("&lt;b&gt;Bold&lt;/b&gt;", body);
+    }
+
+    /// <summary>
+    /// {{ZoomJoinUrl}} lands inside href="…" in every real template, so it needs attribute-safe
+    /// encoding — the quote is what breaks out. A URL that survives escaping is still a URL.
+    /// </summary>
+    [Fact]
+    public async Task SendAsync_KeepsAUsableZoomLink_ButEscapesAnAttributeBreakout()
+    {
+        await using var dbContext = CreateContext();
+        var (team, session) = await SeedSessionAsync(dbContext, zoomUrl: "https://zoom.example/j/123?pwd=abc&x=1");
+        var ve = await SeedVeAsync(dbContext, team, "W0AAA", "ve@example.org");
+
+        var (service, email) = Create(dbContext);
+        await service.SendAsync(session.Id, [ve.Id], "Subject", "<a href=\"{{ZoomJoinUrl}}\">Join</a>", 1, CancellationToken.None);
+
+        var body = Assert.Single(email.Sent).HtmlBody;
+        Assert.Contains("https://zoom.example/j/123?pwd=abc&amp;x=1", body);
+        Assert.DoesNotContain("\" onmouseover", body);
+    }
+
+    /// <summary>The subject stays plain text — encoding it would show "&amp;#39;" in an inbox list —
+    /// but it is still a header, so line breaks go (#261).</summary>
+    [Fact]
+    public async Task SendAsync_SubjectIsPlainTextButHasLineBreaksStripped()
+    {
+        await using var dbContext = CreateContext();
+        var (team, session) = await SeedSessionAsync(dbContext);
+        session.Title = "Ada's Session\r\nBcc: victim@example.org";
+        await dbContext.SaveChangesAsync();
+        var ve = await SeedVeAsync(dbContext, team, "W0AAA", "ve@example.org");
+
+        var (service, email) = Create(dbContext);
+        await service.SendAsync(session.Id, [ve.Id], "{{SessionTitle}}", "<p>Hi</p>", 1, CancellationToken.None);
+
+        var subject = Assert.Single(email.Sent).Subject;
+        Assert.DoesNotContain('\r', subject);
+        Assert.DoesNotContain('\n', subject);
+        Assert.Contains("Ada's Session", subject);
+        Assert.DoesNotContain("&#39;", subject);
+    }
 }

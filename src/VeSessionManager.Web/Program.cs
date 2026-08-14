@@ -309,24 +309,33 @@ builder.Services.AddRateLimiter(options =>
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
     options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
     {
-        // /VeSelfService joins /Account here, and it is the more exposed of the two: it is reachable
-        // with no account at all, it sends email on request, and behind it sits a person's home
-        // address. Adding the path to this predicate is what protects it — the pages themselves carry
-        // no per-page limiter attribute, deliberately, so a new page under either prefix is covered
-        // the moment it exists.
-        if (!context.Request.Path.StartsWithSegments("/Account")
-            && !context.Request.Path.StartsWithSegments("/VeSelfService"))
+        // The bucket rule lives in RateLimitPolicy so it can be asserted (#264) — the Square webhook
+        // matched no prefix here and fell through to "no limiter" for months, unnoticed, because a
+        // prefix rule that defaults to Unlimited fails silently for anything new.
+        //
+        // /VeSelfService joins /Account in the Interactive bucket, and it is the more exposed of the
+        // two: reachable with no account at all, it sends email on request, and behind it sits a
+        // person's home address. The pages carry no per-page limiter attribute, deliberately, so a
+        // new page under either prefix is covered the moment it exists.
+        var bucket = RateLimitPolicy.For(context.Request.Path);
+        if (bucket == RateLimitPolicy.Bucket.Unlimited)
         {
             return RateLimitPartition.GetNoLimiter("unlimited");
         }
 
         // Requires UseForwardedHeaders below to be effective behind the Apache reverse proxy —
         // without it every request would carry the proxy's own loopback address and the whole
-        // internet would share one 20/minute bucket. See the pipeline comment.
+        // internet would share one bucket. See the pipeline comment.
         var clientKey = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
-        return RateLimitPartition.GetFixedWindowLimiter(clientKey, _ => new FixedWindowRateLimiterOptions
+        var permitLimit = bucket == RateLimitPolicy.Bucket.Webhook
+            ? RateLimitPolicy.WebhookPermitLimit
+            : RateLimitPolicy.InteractivePermitLimit;
+
+        // Partition key carries the bucket, so a webhook delivery and a login from the same address
+        // cannot exhaust each other's allowance.
+        return RateLimitPartition.GetFixedWindowLimiter($"{bucket}:{clientKey}", _ => new FixedWindowRateLimiterOptions
         {
-            PermitLimit = 20,
+            PermitLimit = permitLimit,
             Window = TimeSpan.FromMinutes(1),
             QueueLimit = 0
         });

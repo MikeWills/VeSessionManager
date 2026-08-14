@@ -101,8 +101,14 @@ public class PasswordResetServiceTests
         return settings;
     }
 
+    /// <param name="lockedOut">Deactivated by an admin — LockoutEnd = MaxValue, the sentinel.</param>
+    /// <param name="temporarilyLockedOut">
+    /// Locked out by failed sign-ins, which is Identity's ordinary behaviour and a completely
+    /// different thing (#262). Both set the same column, which is the whole trap.
+    /// </param>
     private static async Task<User> SeedUserAsync(
-        AppDbContext dbContext, UserManager<User> userManager, bool withPassword = true, bool lockedOut = false)
+        AppDbContext dbContext, UserManager<User> userManager, bool withPassword = true, bool lockedOut = false,
+        bool temporarilyLockedOut = false)
     {
         var user = new User { Name = "Pat Example", Email = "pat@example.com", UserName = "pat@example.com" };
         if (withPassword)
@@ -119,6 +125,13 @@ public class PasswordResetServiceTests
             // How UserManagementService.DeactivateAsync actually deactivates — there is no IsActive flag.
             await userManager.SetLockoutEnabledAsync(user, true);
             await userManager.SetLockoutEndDateAsync(user, DateTimeOffset.MaxValue);
+        }
+
+        if (temporarilyLockedOut)
+        {
+            // What five wrong passwords produce: a few minutes from now, not the sentinel.
+            await userManager.SetLockoutEnabledAsync(user, true);
+            await userManager.SetLockoutEndDateAsync(user, DateTimeOffset.UtcNow.AddMinutes(5));
         }
 
         return user;
@@ -345,5 +358,56 @@ public class PasswordResetServiceTests
         var result = await service.ResetAsync(user.Id, token, "Brand-New-Password9!", CancellationToken.None);
 
         Assert.False(result.Succeeded);
+    }
+
+    // ---- #262: an ordinary failed-login lockout must not disable recovery ----
+
+    /// <summary>
+    /// The finding. The guard tested UserManager.IsLockedOutAsync, which is true both for an
+    /// admin-deactivated account AND during Identity's ~5-minute failed-login lockout. So burning
+    /// five attempts against a known address also killed that user's password reset for the window
+    /// — while the response stayed "Accepted" (correctly non-enumerable), so the victim waited for
+    /// mail nobody sent. Someone who just locked themselves out by forgetting their password is
+    /// exactly who needs this.
+    /// </summary>
+    [Fact]
+    public async Task Request_ForATemporarilyLockedOutAccount_StillSends()
+    {
+        await using var dbContext = CreateContext();
+        var userManager = CreateUserManager(dbContext);
+        await SeedSettingsAsync(dbContext);
+        await SeedUserAsync(dbContext, userManager, temporarilyLockedOut: true);
+        var (service, email, _) = CreateService(dbContext, userManager);
+
+        var result = await service.RequestResetAsync("pat@example.com", StubUrl, CancellationToken.None);
+
+        Assert.Equal(PasswordResetRequestResult.Accepted, result);
+        Assert.Single(email.Sent);
+    }
+
+    /// <summary>
+    /// The other half, and why the fix is a narrower test rather than no test: a DEACTIVATED account
+    /// must still be unrecoverable by whoever holds the mailbox. Delete the IsDeactivated check
+    /// entirely and this fails while the one above passes.
+    /// </summary>
+    [Fact]
+    public async Task Reset_ForATemporarilyLockedOutAccount_IsAllowed_ButNotForADeactivatedOne()
+    {
+        await using var dbContext = CreateContext();
+        var userManager = CreateUserManager(dbContext);
+        await SeedSettingsAsync(dbContext);
+        var user = await SeedUserAsync(dbContext, userManager, temporarilyLockedOut: true);
+        var (service, _, _) = CreateService(dbContext, userManager);
+
+        var token = await userManager.GeneratePasswordResetTokenAsync(user);
+        var ok = await service.ResetAsync(user.Id, token, "New-Password1!", CancellationToken.None);
+        Assert.True(ok.Succeeded);
+
+        // Now deactivate the same account and confirm the door is shut.
+        await userManager.SetLockoutEnabledAsync(user, true);
+        await userManager.SetLockoutEndDateAsync(user, DateTimeOffset.MaxValue);
+        var token2 = await userManager.GeneratePasswordResetTokenAsync(user);
+        var refused = await service.ResetAsync(user.Id, token2, "Another-Password1!", CancellationToken.None);
+        Assert.False(refused.Succeeded);
     }
 }

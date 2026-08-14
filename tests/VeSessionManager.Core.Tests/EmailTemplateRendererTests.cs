@@ -174,4 +174,122 @@ public class EmailTemplateRendererTests
         Assert.Equal("Team A", resultA?.Body);
         Assert.Equal("Team B", resultB?.Body);
     }
+
+    // ---- #261: the subject is a mail header, and a header ends at a newline ----
+
+    /// <summary>
+    /// Not HTML-encoding the subject is correct — it is plain text. What was missing is control
+    /// character stripping. {{CandidateName}} originates in ExamTools' public registration intake,
+    /// so a name carrying CR/LF is attacker-controlled input reaching a header builder.
+    ///
+    /// <para>MimeKit re-encodes headers and is generally not vulnerable, which is why this rates
+    /// Low. The point of the test is that the app no longer depends on an undocumented property of
+    /// a third-party library for its header safety — and that the dependency is now pinned either
+    /// way, rather than assumed.</para>
+    /// </summary>
+    [Fact]
+    public async Task SubjectPlaceholder_HasLineBreaksStripped()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        dbContext.EmailTemplates.Add(new EmailTemplate
+        {
+            TeamId = team.Id,
+            Key = "Test",
+            Subject = "Session for {{FirstName}}",
+            Body = "<p>Hi</p>"
+        });
+        await dbContext.SaveChangesAsync();
+
+        var result = await CreateRenderer(dbContext).RenderAsync(team.Id, "Test",
+            new Dictionary<string, string> { ["FirstName"] = "Roana\r\nBcc: victim@example.org" },
+            CancellationToken.None);
+
+        Assert.NotNull(result);
+        Assert.DoesNotContain('\r', result.Subject);
+        Assert.DoesNotContain('\n', result.Subject);
+        // Readable rather than mangled: CR dropped, LF becomes a space.
+        Assert.Equal("Session for Roana Bcc: victim@example.org", result.Subject);
+    }
+
+    /// <summary>
+    /// The subject must stay plain text — HTML-encoding it would render "O'Brien" as "O&amp;#39;Brien"
+    /// in the recipient's inbox list. Stripping line breaks must not turn into encoding.
+    /// </summary>
+    [Fact]
+    public async Task SubjectPlaceholder_IsNotHtmlEncoded()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        dbContext.EmailTemplates.Add(new EmailTemplate
+        {
+            TeamId = team.Id,
+            Key = "Test",
+            Subject = "For {{FirstName}}",
+            Body = "<p>Hi</p>"
+        });
+        await dbContext.SaveChangesAsync();
+
+        var result = await CreateRenderer(dbContext).RenderAsync(team.Id, "Test",
+            new Dictionary<string, string> { ["FirstName"] = "Ada O'Brien & Co" },
+            CancellationToken.None);
+
+        Assert.Equal("For Ada O'Brien & Co", result!.Subject);
+    }
+
+    /// <summary>
+    /// The Logo placeholder is deliberately raw HTML in the body, so the strip added for the subject
+    /// must not reach it. An early version of the fix applied it to every "raw" case, which included
+    /// this one.
+    ///
+    /// <para>Worth recording what the test found: a caller cannot inject through {{Logo}} at all —
+    /// the renderer overwrites whatever was passed with a tag it builds itself. The exemption is
+    /// narrower than it looks, which is why it is safe.</para>
+    /// </summary>
+    [Fact]
+    public async Task LogoPlaceholder_StaysRawHtmlInTheBody()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        team.LogoBytes = [1, 2, 3];
+        team.LogoContentType = "image/png";
+        dbContext.EmailTemplates.Add(new EmailTemplate
+        {
+            TeamId = team.Id,
+            Key = "Test",
+            Subject = "Hi",
+            Body = "<div>{{Logo}}</div>"
+        });
+        await dbContext.SaveChangesAsync();
+
+        var result = await CreateRenderer(dbContext).RenderAsync(team.Id, "Test",
+            new Dictionary<string, string>(), CancellationToken.None);
+
+        // Live markup, not &lt;img …&gt;.
+        Assert.Contains("<img src=\"cid:", result!.Body);
+        Assert.DoesNotContain("&lt;img", result.Body);
+    }
+
+    /// <summary>The caller cannot override it — the renderer's own value wins.</summary>
+    [Fact]
+    public async Task LogoPlaceholder_CannotBeSuppliedByTheCaller()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        dbContext.EmailTemplates.Add(new EmailTemplate
+        {
+            TeamId = team.Id,
+            Key = "Test",
+            Subject = "Hi",
+            Body = "<div>{{Logo}}</div>"
+        });
+        await dbContext.SaveChangesAsync();
+
+        var result = await CreateRenderer(dbContext).RenderAsync(team.Id, "Test",
+            new Dictionary<string, string> { ["Logo"] = "<script>alert(1)</script>" },
+            CancellationToken.None);
+
+        // No logo uploaded, so it renders empty — and the caller's value never appears.
+        Assert.Equal("<div></div>", result!.Body);
+    }
 }

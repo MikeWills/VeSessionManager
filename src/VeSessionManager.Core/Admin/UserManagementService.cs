@@ -146,6 +146,17 @@ public class UserManagementService(UserManager<User> userManager, AppDbContext d
         user.Role = newRole;
         await userManager.UpdateAsync(user);
 
+        // The role is baked into the auth cookie at sign-in (AppClaimsPrincipalFactory), so changing
+        // the column alone leaves a demoted admin holding a claim that still says SystemAdmin (#257).
+        // Rotating the stamp invalidates their live sessions, which is what DeactivateAsync already
+        // does and what "changed their role" is understood to mean.
+        //
+        // Not instant: SecurityStampValidatorOptions.ValidationInterval is the framework default of
+        // 30 minutes, so that is the window, not the 8-hour cookie lifetime. Most admin pages reload
+        // the User and re-check user.Role, so they fail closed immediately regardless — SystemSettings
+        // and Vecs did not, and now do.
+        await userManager.UpdateSecurityStampAsync(user);
+
         var now = timeProvider.GetUtcNow().UtcDateTime;
         AddAudit(actingUserId, "UserRoleChanged", user.Id, $"User {user.Id} role set to {newRole}.", now);
         await dbContext.SaveChangesAsync(cancellationToken);

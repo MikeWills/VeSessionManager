@@ -55,8 +55,13 @@ public class SystemSettingsModel(UserManager<User> userManager, SystemSettingsSe
         int? piiRetentionWindowDays, int ulsWatcherIntervalHours, int ulsWatcherStartHourEt,
         int sessionIngestionIntervalMinutes, bool testModeEnabled, string? testModeOverrideEmail)
     {
+        // Role re-checked here, not just by the [Authorize(Roles = ...)] attribute (#257). The role
+        // in the cookie is a claim baked in at sign-in; the row is the truth. SetRoleAsync now
+        // rotates the security stamp, but revalidation is only every 30 minutes by default, and
+        // during that window this handler rewrites deployment-wide SMTP credentials — the sender
+        // used for password-reset mail — and the PII retention window.
         var user = await userManager.GetUserAsync(User);
-        if (user is null)
+        if (user is null || user.Role != UserRole.SystemAdmin)
         {
             return Forbid();
         }
@@ -83,8 +88,13 @@ public class SystemSettingsModel(UserManager<User> userManager, SystemSettingsSe
         string? systemSmtpHost, int? systemSmtpPort, string? systemSmtpUsername, string? systemSmtpPassword,
         bool systemSmtpUseStartTls, string? systemSmtpFromAddress, string? systemSmtpFromDisplayName)
     {
+        // Role re-checked here, not just by the [Authorize(Roles = ...)] attribute (#257). The role
+        // in the cookie is a claim baked in at sign-in; the row is the truth. SetRoleAsync now
+        // rotates the security stamp, but revalidation is only every 30 minutes by default, and
+        // during that window this handler rewrites deployment-wide SMTP credentials — the sender
+        // used for password-reset mail — and the PII retention window.
         var user = await userManager.GetUserAsync(User);
-        if (user is null)
+        if (user is null || user.Role != UserRole.SystemAdmin)
         {
             return Forbid();
         }

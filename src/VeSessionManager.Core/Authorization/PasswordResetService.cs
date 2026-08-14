@@ -66,10 +66,17 @@ public class PasswordResetService(
         //  - deactivated account. Deactivation here is lockout-based (UserManagementService sets
         //    LockoutEnd to MaxValue), so that is what must be tested — there is no IsActive flag.
         //    A deactivated account must not be resurrectable by whoever holds the mailbox.
+        //
+        //    User.IsDeactivated tests that sentinel, NOT UserManager.IsLockedOutAsync (#262). The
+        //    latter is also true during Identity's ordinary ~5-minute failed-login lockout, so an
+        //    attacker who burned five attempts against a known address also switched off that
+        //    user's recovery route — while the response stayed "Accepted", correctly non-
+        //    enumerable, so the victim waited for mail nobody sent. Someone who has just locked
+        //    themselves out by forgetting their password is precisely who needs a reset.
         //  - OAuth-only account with no password hash. Sending a reset there would let anyone with
         //    mailbox access ADD a password to an account that deliberately had none, converting an
         //    SSO-protected login into a password login. They still have working OAuth sign-in.
-        if (user is null || await userManager.IsLockedOutAsync(user) || !await userManager.HasPasswordAsync(user))
+        if (user is null || user.IsDeactivated || !await userManager.HasPasswordAsync(user))
         {
             logger.LogInformation("Password reset requested for an address with no eligible account — no mail sent (reported as accepted)");
             return PasswordResetRequestResult.Accepted;
@@ -124,9 +131,11 @@ public class PasswordResetService(
     {
         var user = await dbContext.Users.FirstOrDefaultAsync(u => u.Id == userId, cancellationToken);
 
-        // Same non-disclosure posture as the request side: an unknown or deactivated (locked-out)
-        // user is reported as an invalid token, not as "no such account".
-        if (user is null || await userManager.IsLockedOutAsync(user))
+        // Same non-disclosure posture as the request side: an unknown or deactivated user is
+        // reported as an invalid token, not as "no such account". IsDeactivated, not
+        // IsLockedOutAsync — see the request side (#262). Redeeming a token this user asked for
+        // minutes ago must not fail because they then mistyped their old password.
+        if (user is null || user.IsDeactivated)
         {
             return new PasswordResetResult(false, ["This reset link is no longer valid. Request a new one."]);
         }

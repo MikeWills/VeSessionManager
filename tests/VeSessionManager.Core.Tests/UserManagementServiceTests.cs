@@ -663,4 +663,56 @@ public class UserManagementServiceTests
 
         Assert.Equal(UserActionResult.NotFound, result);
     }
+
+    // ---- #257: a role change must invalidate the claim it contradicts ----
+
+    /// <summary>
+    /// The role is baked into the auth cookie at sign-in (AppClaimsPrincipalFactory), so changing
+    /// the column alone left a demoted admin holding a claim that still said SystemAdmin.
+    /// DeactivateAsync already rotated the stamp; SetRoleAsync did not, which made the inconsistency
+    /// the bug rather than the design.
+    ///
+    /// <para>The window is SecurityStampValidatorOptions.ValidationInterval — the framework default
+    /// of 30 minutes, not the 8-hour cookie lifetime. Bounded, but a stated revocation that has not
+    /// taken effect.</para>
+    /// </summary>
+    [Fact]
+    public async Task SetRoleAsync_RotatesTheSecurityStamp_SoALiveSessionCannotKeepTheOldRole()
+    {
+        await using var dbContext = CreateContext();
+        var userManager = CreateUserManager(dbContext);
+        var actingUser = new User { UserName = "sysadmin@example.com", Email = "sysadmin@example.com", Name = "Sys Admin", Role = UserRole.SystemAdmin };
+        var target = new User { UserName = "target@example.com", Email = "target@example.com", Name = "Target", Role = UserRole.SystemAdmin };
+        await userManager.CreateAsync(actingUser, ValidPassword);
+        await userManager.CreateAsync(target, ValidPassword);
+        var originalSecurityStamp = target.SecurityStamp;
+
+        var result = await CreateService(dbContext, userManager)
+            .SetRoleAsync(target.Id, UserRole.TeamLead, actingUser.Id, CancellationToken.None);
+
+        Assert.Equal(UserActionResult.Success, result);
+        var updated = await userManager.FindByIdAsync(target.Id.ToString());
+        Assert.Equal(UserRole.TeamLead, updated!.Role);
+        Assert.NotEqual(originalSecurityStamp, updated.SecurityStamp);
+    }
+
+    /// <summary>A promotion needs it just as much — the cookie is equally stale in that direction,
+    /// and the claim is what several pages read.</summary>
+    [Fact]
+    public async Task SetRoleAsync_RotatesTheStampOnPromotionToo()
+    {
+        await using var dbContext = CreateContext();
+        var userManager = CreateUserManager(dbContext);
+        var actingUser = new User { UserName = "sysadmin@example.com", Email = "sysadmin@example.com", Name = "Sys Admin", Role = UserRole.SystemAdmin };
+        var target = new User { UserName = "target@example.com", Email = "target@example.com", Name = "Target", Role = UserRole.TeamLead };
+        await userManager.CreateAsync(actingUser, ValidPassword);
+        await userManager.CreateAsync(target, ValidPassword);
+        var originalSecurityStamp = target.SecurityStamp;
+
+        await CreateService(dbContext, userManager)
+            .SetRoleAsync(target.Id, UserRole.TeamAdmin, actingUser.Id, CancellationToken.None);
+
+        var updated = await userManager.FindByIdAsync(target.Id.ToString());
+        Assert.NotEqual(originalSecurityStamp, updated!.SecurityStamp);
+    }
 }
