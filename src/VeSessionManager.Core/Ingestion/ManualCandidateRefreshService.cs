@@ -43,7 +43,37 @@ public class ManualCandidateRefreshService(TeamPipeline pipeline)
     private const string ManualJobNamePrefix = "Manual";
 
     private static ManualRefreshResult ToResult(TeamPipelineResult result) =>
-        new(result.Ingestion.CandidatesAdded, result.Ingestion.CandidatesUpdated, result.Email.Sent);
+        new(result.Ingestion.CandidatesAdded, result.Ingestion.CandidatesUpdated, result.Email.Sent, result.FailedSteps);
 }
 
-public record ManualRefreshResult(int CandidatesAdded, int CandidatesUpdated, int ConfirmationEmailsSent);
+/// <param name="FailedSteps">
+/// Pipeline steps that threw (#242). <b>Check this before reporting the counts.</b> A total failure
+/// produces (0, 0, 0) exactly like a run with nothing to do, so the counts alone cannot tell a
+/// caller which happened — and both page handlers used to render the same green sentence for both.
+/// </param>
+public record ManualRefreshResult(int CandidatesAdded, int CandidatesUpdated, int ConfirmationEmailsSent, int FailedSteps)
+{
+    /// <summary>
+    /// The sentence to show the user, and whether it is good news. One definition, because the two
+    /// call sites differ only in whether they name the team — and they previously differed in being
+    /// wrong in the same way twice.
+    /// </summary>
+    public (bool Success, string Message) Describe(string? teamName)
+    {
+        var subject = teamName is null ? "Refreshed" : $"Refreshed {teamName}";
+
+        if (FailedSteps > 0)
+        {
+            // Deliberately does not restate the zero counts: they are meaningless here, and printing
+            // "0 new candidate(s)" beside a failure is what made the original message so convincing.
+            // Job History is named because it holds the actual error for each failed step.
+            return (false,
+                $"{subject} — {FailedSteps} step(s) failed. Nothing may have been picked up. " +
+                "See Admin → Job History for the error.");
+        }
+
+        return (true,
+            $"{subject} — {CandidatesAdded} new candidate(s), {CandidatesUpdated} updated, " +
+            $"{ConfirmationEmailsSent} confirmation email(s) sent.");
+    }
+}

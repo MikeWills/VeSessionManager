@@ -599,6 +599,19 @@ Keep `README.md` high-level; route deeper technical content to the right file so
 ## Instructions for Claude
 
 - Do not guess at facts, APIs, or library behavior — verify, and cite sources/docs when possible
+- **Leave every issue you touch in a truer state than you found it — update it or close it.** Issues
+  here are mostly audit findings, and they rot: line numbers drift, files move, and the finding
+  itself is sometimes wrong (five were on 2026-08-11; one would have deleted a live authorization
+  check). So verify before acting, and then **write down what you found**. If a bullet is stale,
+  strike it. If the whole issue is already done, close it with the evidence — #161 sat open with a
+  throttle that had existed since PR #77, a deliberate design decision recorded as an oversight, and
+  a WAL bullet that was factually wrong. If counts have drifted, say so in the PR rather than
+  silently fixing a different number than the issue claims.
+  **Do not open a successor issue for a risk nobody has observed whose fix you have just argued
+  against** — that is how the backlog fills with items no one will ever action and everyone will
+  re-verify. Reasoning that constrains code belongs *in* that code, next to the thing it constrains,
+  where it cannot go stale independently of it (see `TeamRefreshThrottle`'s remarks for the worked
+  example). A new issue earns its place when someone could actually pick it up and finish it.
 - Keep responses concise by default; expand only when asked
 - **If you abandon a slow command and try another approach, kill the first one as you pivot.** The
   failure mode is not the slowness, it's the orphan: a `find`/search/build takes too long, you switch

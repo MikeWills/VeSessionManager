@@ -30,13 +30,28 @@ public class JobRunHistoryLogger(AppDbContext dbContext, ILogger<JobRunHistoryLo
     /// that was already being written to a file nobody reads from the dashboard — rather than
     /// inventing a second, drift-prone description of the same run.</para>
     /// </summary>
-    public Task RunAsync<TResult>(string jobName, Func<CancellationToken, Task<TResult>> job, int? teamId, CancellationToken cancellationToken) =>
+    /// <summary>
+    /// Returns <c>true</c> when the step completed, <c>false</c> when it threw (#242).
+    ///
+    /// <para>This logger deliberately catches and does not rethrow — that is what keeps one team's
+    /// bad row from taking down the Worker. The cost was that callers could not tell a clean run from
+    /// a total failure: a pipeline whose every step threw returned zero counts, and the manual
+    /// refresh rendered "Refreshed HRCC — 0 new candidate(s)" in green. Reporting the outcome here
+    /// is what lets a caller say something truthful; nothing about the swallow-and-continue
+    /// behaviour changes.</para>
+    ///
+    /// <para>Existing callers that ignore the value are unaffected — including the ones that pass
+    /// this straight through as a <c>Task</c>, since <c>Task&lt;bool&gt;</c> is one.</para>
+    /// </summary>
+    public Task<bool> RunAsync<TResult>(string jobName, Func<CancellationToken, Task<TResult>> job, int? teamId, CancellationToken cancellationToken) =>
         RunCoreAsync(jobName, async ct => (await job(ct))?.ToString(), teamId, cancellationToken);
 
-    public Task RunAsync(string jobName, Func<CancellationToken, Task> job, int? teamId, CancellationToken cancellationToken) =>
+    /// <inheritdoc cref="RunAsync{TResult}(string, Func{CancellationToken, Task{TResult}}, int?, CancellationToken)"/>
+    public Task<bool> RunAsync(string jobName, Func<CancellationToken, Task> job, int? teamId, CancellationToken cancellationToken) =>
         RunCoreAsync(jobName, async ct => { await job(ct); return null; }, teamId, cancellationToken);
 
-    private async Task RunCoreAsync(string jobName, Func<CancellationToken, Task<string?>> job, int? teamId, CancellationToken cancellationToken)
+    /// <summary>Returns whether the job body completed without throwing — see the public overloads.</summary>
+    private async Task<bool> RunCoreAsync(string jobName, Func<CancellationToken, Task<string?>> job, int? teamId, CancellationToken cancellationToken)
     {
         var jobLabel = teamId is null ? jobName : $"{jobName} (team {teamId})";
 
@@ -104,6 +119,8 @@ public class JobRunHistoryLogger(AppDbContext dbContext, ILogger<JobRunHistoryLo
             history.CompletedUtc = DateTime.UtcNow;
             await TryCompleteHistoryAsync(history, jobLabel, historyTracked, failed);
         }
+
+        return !failed;
     }
 
     /// <summary>
