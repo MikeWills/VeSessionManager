@@ -163,6 +163,17 @@ first** and confirms it's actually up before starting **Web** (both call
 race against the shared SQLite file), then polls `http://localhost:5100/` for a response before
 declaring success.
 
+> **Running this yourself?** The workflow is reusable as-is. Everything server-specific is either a
+> repository secret (the table in step 5) or one of the `env:` values at the top of
+> `deploy.yml` — `DEPLOY_PATH`, `DB_PATH`, `KEYRING_PATH`, `WORKER_SERVICE`, `WEB_SERVICE`,
+> `WEB_PORT`. Set the secrets, adjust that block if your layout differs, run the bootstrap script
+> below on your server, push a tag.
+>
+> Two notes for anyone who is not the original maintainer: the Tailscale step exists because *this*
+> server has no public SSH — delete it and its two secrets if yours is reachable directly — and the
+> references below to reusing NcsScheduler's OAuth client and deploy key are about a sibling project
+> on the same box. Create your own instead; nothing depends on them being shared.
+
 ### One-time setup
 
 Steps 2-4 below can be done by hand, or with a bootstrap script. **The example script at the end of
