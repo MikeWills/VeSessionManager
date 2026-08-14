@@ -10,6 +10,20 @@ CLAUDE.md — this file, like CLAUDE.md's Change Log, is pointers only.
 
 - **Page smoke tests: every Razor page, actually rendered (2026-08-10).** See `docs/page-smoke-tests.md`. Nothing in this repo rendered Razor — not the build, not the 928 Core tests, not the static-HTML layout harness — and two bugs reached a deployment the same day because of it: a `<form>` carrying both `action=` and `asp-page-handler` (which `FormTagHelper` throws on **at render time**, so the build was clean and the page 500'd for anyone who opened it), and an anchor where `asp-all-route-data` silently discarded `asp-route-id` so every link to a VE pointed at nobody. `WebApplicationFactory` now boots the app in-process against throwaway SQLite and requests **every page discovered from the app's own `EndpointDataSource`**, so a new page is covered the day it exists. **The fake auth scheme is half the value**: every interesting page is `[Authorize]`d, so before this the only way to see one was for a human to log in and click. Seeding happens *before* the host starts because `Program.cs` refuses to start when no account can sign in — the harness satisfies that guard rather than weakening it. And **an empty `href` is the signature of the whole bug class**: the first version of the link test only followed links that had one, and passed with the original bug reintroduced.
 
+- **All fourteen VECs seeded with verified ExamTools codes (2026-08-10).** Issue #83. See
+  `docs/vec-examtools-code.md`. The full code↔VEC mapping came from the `From VEC` filter on
+  `hamstudy.org/sessions`, whose per-entry slug is the same code space ExamTools reports — fourteen
+  entries, matching the FCC's accredited count, with `arrl`/`lagroup`/`sandarc` agreeing with codes
+  already confirmed live. **Nine of the fourteen have a code that differs from the display name, so
+  GLAARG was never the exception it looked like.** New `KnownVecs` + `VecDefaultsSeeder` run from
+  Worker startup in every environment, filling gaps only: a VEC is "present" when
+  `ExamToolsCode ?? Name` matches a known code, so hand-made rows keep their name, notes and
+  youth-program flag. Two cases warn rather than act, both meaning a human must look — a name taken
+  by a row resolving to a *different* code (inserting would trip `IX_Vecs_Name`), and an existing row
+  whose match code isn't one of the fourteen (a closed code space, so that row ingests nothing). Note
+  `DevDataSeeder`'s guard moved from `Vecs.AnyAsync()` to a `FeeConfiguration` check — the Vec table
+  is never empty now, which is the same table-wide-guard trap `DevAuthSeeder` hit.
+
 - **v0.3.0: key ring separated, authenticated by default, candidate email corrected (2026-08-10).**
   See `docs/credential-encryption.md`, `docs/admin-auth.md`, `docs/email-notifications.md`,
   `docs/deployment.md`. The Data Protection key ring moved off the database directory to

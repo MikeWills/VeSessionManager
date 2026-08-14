@@ -124,6 +124,25 @@ public class LoginModel(
             return Page();
         }
 
+        // Password proved, but not signed in yet if a second factor is owed (#356).
+        //
+        // Checked BEFORE any app cookie is written: issuing one and then challenging would mean a
+        // half-finished sign-in already carried a usable session, which is the whole thing a second
+        // factor is supposed to prevent.
+        //
+        // A device that has already satisfied a challenge inside the remember-window goes straight
+        // through — that cookie is what stops a 30-day remembered session asking for a code every
+        // time it refreshes.
+        if (user!.TwoFactorEnabled && !await TwoFactorSignIn.IsDeviceRememberedAsync(signInManager, user))
+        {
+            await TwoFactorSignIn.BeginAsync(HttpContext, user, timeProvider.GetUtcNow());
+
+            // Not audited as a sign-in: nobody has signed in yet. The SignedIn row is written on the
+            // other side of the challenge, so the audit log never claims a session that does not
+            // exist.
+            return RedirectToPage("./TwoFactorChallenge", new { ReturnUrl, rememberMe = Input.RememberMe });
+        }
+
         // Ticked: an explicit 30-day window. Unticked: a session cookie, byte for byte what this
         // page produced before #340 — the shared-computer behaviour was deliberate and is preserved.
         await signInManager.SignInAsync(

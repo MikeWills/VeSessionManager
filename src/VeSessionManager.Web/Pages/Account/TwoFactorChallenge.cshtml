@@ -1,0 +1,89 @@
+@page
+@model VeSessionManager.Web.Pages.Account.TwoFactorChallengeModel
+@{
+    ViewData["Title"] = "Two-factor authentication";
+    Layout = "_PublicLayout";
+}
+
+<div class="auth-wrap">
+    <div class="auth-card">
+        <h1>Two-factor authentication</h1>
+
+        @if (Model.ErrorMessage is not null)
+        {
+            <div class="auth-error">@Model.ErrorMessage</div>
+        }
+
+        @if (Model.UseRecoveryCode)
+        {
+            <p class="session-sub">
+                Enter one of the recovery codes you saved when you set up your authenticator. Each code
+                works once.
+            </p>
+        }
+        else
+        {
+            <p class="session-sub">Enter the 6-digit code from your authenticator app.</p>
+        }
+
+        <form method="post">
+            @* Both survive the round trip, or a failed first attempt loses where the user was heading
+               and silently downgrades their "keep me signed in" choice. *@
+            <input type="hidden" asp-for="ReturnUrl" />
+            <input type="hidden" asp-for="RememberMe" />
+            <input type="hidden" asp-for="UseRecoveryCode" />
+            <div asp-validation-summary="ModelOnly" class="field-error"></div>
+
+            <div class="field">
+                <label asp-for="Input.Code"></label>
+                @* inputmode/autocomplete matter here: they are what make a phone offer the code from
+                   its keyboard suggestion bar instead of making someone switch apps and memorise it.
+                   autocomplete="one-time-code" is the specified token for exactly this. *@
+                @if (Model.UseRecoveryCode)
+                {
+                    <input asp-for="Input.Code" autocomplete="off" spellcheck="false" autofocus />
+                }
+                else
+                {
+                    <input asp-for="Input.Code" autocomplete="one-time-code" inputmode="numeric"
+                           pattern="[0-9 ]*" spellcheck="false" autofocus />
+                }
+                <span asp-validation-for="Input.Code" class="field-error"></span>
+            </div>
+
+            @if (!Model.UseRecoveryCode)
+            {
+                <div class="field checkbox-field">
+                    <label>
+                        <input asp-for="Input.RememberDevice" />
+                        Trust this device for @VeSessionManager.Web.Pages.Account.TwoFactorChallengeModel.RememberDeviceDurationLabel
+                    </label>
+                    <p class="session-sub">
+                        Only do this on a device that is yours. Signing out other devices clears this too.
+                    </p>
+                </div>
+            }
+
+            <button type="submit" class="btn-primary">Continue</button>
+        </form>
+
+        <p class="session-sub" style="margin-top:20px;">
+            @if (Model.UseRecoveryCode)
+            {
+                <a asp-page="./TwoFactorChallenge" asp-route-returnUrl="@Model.ReturnUrl" asp-route-rememberMe="@Model.RememberMe">
+                    Use your authenticator app instead
+                </a>
+            }
+            else
+            {
+                <a asp-page="./TwoFactorChallenge" asp-route-returnUrl="@Model.ReturnUrl" asp-route-rememberMe="@Model.RememberMe" asp-route-useRecoveryCode="true">
+                    Lost your authenticator? Use a recovery code
+                </a>
+            }
+        </p>
+    </div>
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

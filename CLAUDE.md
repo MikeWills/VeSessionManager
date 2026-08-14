@@ -126,6 +126,23 @@ would be pure duplication — and goes straight to `CHANGELOG.md` instead. Non-p
 redesigns, hardening passes) start here and move to `CHANGELOG.md` once the section is at/over the
 cap and a newer entry needs to be added; oldest goes first.
 
+- **Two-factor authentication, opt-in and un-enforced on purpose (2026-08-14).** Issue #356. See
+  `docs/two-factor.md`. TOTP with QR enrolment, recovery codes and an admin escape hatch. **Enforcement
+  was deliberately not built**: system SMTP has never been configured here, so an admin who loses a
+  phone cannot be emailed a way back in — and the account that would rescue them is the one that would
+  be locked. A non-dismissible nudge on admin accounts instead. **No application cookie exists until
+  the challenge is passed**, which is the property the whole thing rests on and the easy one to get
+  wrong while a browser still looks right. The pending-user handoff is hand-rolled because #340's
+  one-`Set-Cookie` split means `PasswordSignInAsync` is not used — it writes Identity's own
+  `TwoFactorUserIdScheme` claim shape, which is *behaviour not documentation*, so a test pins the
+  round trip. Four things worth carrying forward: **`GenerateTwoFactorTokenAsync(user,
+  "Authenticator")` returns an empty string** (only a phone can generate; it reads exactly like the
+  method you want and fails against correct code), **Identity recovery codes contain a hyphen** so the
+  space-and-hyphen stripping that is right for a six-digit TOTP silently breaks redemption, **a
+  recovery code must never earn device trust** (it means the authenticator is *lost*), and
+  **"sign out other devices" needs no extra call** — Identity registers its stamp validator on the
+  two-factor cookie too, while `ForgetTwoFactorClientAsync` would clear the wrong device entirely.
+
 - **Nineteen audit findings closed, and two retention questions finally answered (2026-08-14).** See
   `docs/audit-log.md` and `docs/ve-retention.md` (both new), plus issues #238-#240, #243, #257,
   #260-#262, #264, #265, #312, #313. Three themes, and each had one shape. **VE scope**: an id posted
@@ -269,20 +286,6 @@ cap and a newer entry needs to be added; oldest goes first.
   `VeEmailChangeService` confirms via the *old* address and so structurally cannot set a first one,
   while `SetOwnEmailWhenUnsetAsync` refuses the moment an address exists, so there stays exactly one
   way to change a credential field.
-
-- **All fourteen VECs seeded with verified ExamTools codes (2026-08-10).** Issue #83. See
-  `docs/vec-examtools-code.md`. The full code↔VEC mapping came from the `From VEC` filter on
-  `hamstudy.org/sessions`, whose per-entry slug is the same code space ExamTools reports — fourteen
-  entries, matching the FCC's accredited count, with `arrl`/`lagroup`/`sandarc` agreeing with codes
-  already confirmed live. **Nine of the fourteen have a code that differs from the display name, so
-  GLAARG was never the exception it looked like.** New `KnownVecs` + `VecDefaultsSeeder` run from
-  Worker startup in every environment, filling gaps only: a VEC is "present" when
-  `ExamToolsCode ?? Name` matches a known code, so hand-made rows keep their name, notes and
-  youth-program flag. Two cases warn rather than act, both meaning a human must look — a name taken
-  by a row resolving to a *different* code (inserting would trip `IX_Vecs_Name`), and an existing row
-  whose match code isn't one of the fourteen (a closed code space, so that row ingests nothing). Note
-  `DevDataSeeder`'s guard moved from `Vecs.AnyAsync()` to a `FeeConfiguration` check — the Vec table
-  is never empty now, which is the same table-wide-guard trap `DevAuthSeeder` hit.
 
 Everything through Phase 0-10's initial build (ExamTools ingestion, Zoom/Discord, Square, email
 notifications, FCC ULS watcher, payment reminders, VE tracking, VEC submission tracker, admin

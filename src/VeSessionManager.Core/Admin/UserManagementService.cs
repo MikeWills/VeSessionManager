@@ -352,6 +352,52 @@ public class UserManagementService(UserManager<User> userManager, AppDbContext d
         return UserActionResult.Success;
     }
 
+    /// <summary>
+    /// Turns another user's two-factor authentication off — the lost-phone escape hatch (#356).
+    ///
+    /// <para><b>This is the whole reason enrolment could stay optional and still be safe.</b> Without
+    /// it, someone who loses their authenticator and has used up their recovery codes is locked out
+    /// permanently, and on a deployment where system SMTP has historically not been configured there
+    /// is no emailed route back either.</para>
+    ///
+    /// <para><b>It is also, unavoidably, a way to remove someone else's second factor.</b> That is
+    /// why it is restricted to callers who could already reset the account's password — an admin who
+    /// can do that can take the account regardless, so this grants no new reach. Callers enforce
+    /// that; this method assumes it, exactly as SetRoleAsync does.</para>
+    ///
+    /// <para>Resets the authenticator key rather than only clearing the flag, so an app still
+    /// holding the old secret cannot be used to re-enable silently; rotates the security stamp, which
+    /// ends live sessions and invalidates any trusted-device cookies; and audits loudly, because
+    /// "an admin removed a second factor from an account" is exactly the kind of event the log
+    /// exists for.</para>
+    /// </summary>
+    public async Task<UserActionResult> ClearTwoFactorAsync(int targetUserId, int actingUserId, CancellationToken cancellationToken)
+    {
+        var user = await userManager.FindByIdAsync(targetUserId.ToString());
+        if (user is null)
+        {
+            return UserActionResult.NotFound;
+        }
+
+        if (!user.TwoFactorEnabled)
+        {
+            // Idempotent rather than an error: two admins clicking the same button during an
+            // incident should not produce a failure message that reads like something went wrong.
+            return UserActionResult.Success;
+        }
+
+        await userManager.SetTwoFactorEnabledAsync(user, false);
+        await userManager.ResetAuthenticatorKeyAsync(user);
+        await userManager.UpdateSecurityStampAsync(user);
+
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+        AddAudit(actingUserId, "TwoFactorClearedByAdmin", user.Id,
+            $"Two-factor authentication cleared for user {user.Id} by an administrator.", now);
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        return UserActionResult.Success;
+    }
+
     public async Task<UserActionResult> SetManagerAsync(int teamLeadUserId, int? managerUserId, int actingUserId, CancellationToken cancellationToken)
     {
         var user = await dbContext.Users.Include(u => u.UserTeams).FirstOrDefaultAsync(u => u.Id == teamLeadUserId, cancellationToken);

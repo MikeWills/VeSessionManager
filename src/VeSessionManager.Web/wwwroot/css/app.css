@@ -701,3 +701,47 @@ footer.roster { margin-top: 28px; background: var(--surface); border: 1px solid 
 
   footer.roster { margin-top: 36px; padding: 20px 24px; }
 }
+
+/* ---- Two-factor authentication (#356) ---------------------------------------------------------
+   Two rules here need the doubled-class form: `.vesm button` and `.vesm a` are (0,1,1) — class plus
+   element — so a single-class selector loses to them on `color` and `display`. See CLAUDE.md; this
+   has caused two live bugs already. */
+.vesm .setup-steps { margin: 0; padding-left: 20px; }
+.vesm .setup-steps > li { margin-bottom: 22px; line-height: 1.55; }
+
+/* White plate behind the QR regardless of theme. The code is black modules on white by
+   specification, and a dark-mode page would otherwise put dark-on-dark behind the quiet zone and
+   make it unscannable. */
+.vesm .qr-holder {
+  display: inline-block; background: #ffffff; padding: 12px; border-radius: 8px;
+  margin: 12px 0; line-height: 0;
+}
+.vesm .qr-holder svg { width: 190px; height: 190px; display: block; }
+
+.vesm .totp-key {
+  font-family: var(--mono, 'IBM Plex Mono', monospace); font-size: 15px; letter-spacing: 0.08em;
+  user-select: all;
+}
+.vesm .totp-verify { margin-top: 12px; }
+
+.vesm .recovery-codes {
+  list-style: none; margin: 12px 0 0; padding: 0;
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px 16px;
+}
+.vesm .recovery-codes code {
+  font-family: var(--mono, 'IBM Plex Mono', monospace); font-size: 14px; user-select: all;
+}
+
+.vesm .inline-form { display: inline-block; margin: 0 8px 0 0; }
+.vesm .checkbox-field { margin: 14px 0; }
+.vesm .checkbox-field label { display: flex; align-items: center; gap: 8px; font-weight: 400; }
+
+/* The nudge on admin accounts without 2FA. Deliberately quieter than .vesm-alert.error — it is a
+   recommendation, not a failure, and an alarm that is never actionable stops being read. */
+.vesm .twofactor-nudge {
+  border: 1px solid var(--line-strong); border-left: 3px solid var(--focus);
+  background: var(--surface); border-radius: 8px;
+  padding: 10px 16px; margin-bottom: 20px; font-size: 13px;
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+}
+.vesm .twofactor-nudge .spacer { flex: 1; }
