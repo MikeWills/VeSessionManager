@@ -11,7 +11,7 @@ using VeSessionManager.Core.Entities;
 namespace VeSessionManager.Web.Pages.Admin;
 
 /// <summary>Phase 9c: Vec (shared/global VEC reference data) management — SystemAdmin only.</summary>
-[Authorize(Roles = "SystemAdmin")]
+[Authorize(Roles = RoleGroups.SystemAdminOnly)]
 public class VecsModel(AppDbContext dbContext, UserManager<User> userManager, VecManagementService vecManagementService, TimeProvider timeProvider) : PageModel
 {
     public IReadOnlyList<VecRow> Vecs { get; private set; } = [];

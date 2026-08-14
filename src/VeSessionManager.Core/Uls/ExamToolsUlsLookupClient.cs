@@ -29,9 +29,9 @@ public class ExamToolsUlsLookupClient(
     private readonly HttpClient _httpClient = new() { Timeout = TimeSpan.FromSeconds(30) };
     private readonly UlsLookupOptions _options = options.Value;
 
-    public async Task<UlsLookupResult?> LookupByFrnAsync(string frn, CancellationToken cancellationToken)
+    public async Task<UlsLookupResult?> LookupAsync(string frnOrCallSign, CancellationToken cancellationToken)
     {
-        var url = $"{_options.BaseUrl.TrimEnd('/')}/api/uls/lookup2/{Uri.EscapeDataString(frn)}";
+        var url = $"{_options.BaseUrl.TrimEnd('/')}/api/uls/lookup2/{Uri.EscapeDataString(frnOrCallSign)}";
 
         try
         {

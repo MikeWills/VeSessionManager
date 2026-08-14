@@ -12,7 +12,7 @@ using VeSessionManager.Core.Entities;
 namespace VeSessionManager.Web.Pages.Admin;
 
 /// <summary>Phase 9c: per-Team EmailTemplate Subject/Body editing, with the available-placeholder chip list per Key. Same team-picker/lock pattern as TeamSettings.</summary>
-[Authorize(Roles = "SystemAdmin,TeamAdmin")]
+[Authorize(Roles = RoleGroups.Admins)]
 public class EmailTemplatesModel(AppDbContext dbContext, UserManager<User> userManager, AdminAccessScope adminAccessScope, EmailTemplateAdminService emailTemplateAdminService) : PageModel
 {
     [BindProperty(SupportsGet = true)]

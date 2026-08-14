@@ -43,7 +43,7 @@ public class UlsWatcherEasternDateTests
 
     private sealed class FakeUlsLookupClient(UlsLookupResult? result) : IUlsLookupClient
     {
-        public Task<UlsLookupResult?> LookupByFrnAsync(string frn, CancellationToken cancellationToken) =>
+        public Task<UlsLookupResult?> LookupAsync(string frnOrCallSign, CancellationToken cancellationToken) =>
             Task.FromResult(result);
     }
 

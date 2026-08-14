@@ -22,7 +22,7 @@ namespace VeSessionManager.Web.Pages.Admin;
 // a team's configuration to whoever sits down next. no-store is the only directive that also
 // suppresses the back-forward cache.
 [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
-[Authorize(Roles = "SystemAdmin,TeamAdmin")]
+[Authorize(Roles = RoleGroups.Admins)]
 public class TeamSettingsModel(AppDbContext dbContext, UserManager<User> userManager, AdminAccessScope adminAccessScope, TeamSettingsService teamSettingsService) : PageModel
 {
     [BindProperty(SupportsGet = true)]

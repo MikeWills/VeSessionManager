@@ -21,7 +21,7 @@ namespace VeSessionManager.Web.Pages.SessionManager;
 /// <para>Needs exactly one team, like the tag screen — an imported VE joins a roster, and there is
 /// no sensible answer to "which one" while "all teams" is selected.</para>
 /// </summary>
-[Authorize(Roles = "SystemAdmin,TeamAdmin")]
+[Authorize(Roles = RoleGroups.Admins)]
 public class VeImportModel(
     AppDbContext dbContext,
     UserManager<User> userManager,
@@ -108,8 +108,7 @@ public class VeImportModel(
             return RedirectToPage(new { teamId = TeamId });
         }
 
-        var user = await userManager.GetUserWithManagerAsync(dbContext, User)
-            ?? throw new InvalidOperationException("No authenticated user for an [Authorize]d page.");
+        var user = await userManager.GetRequiredUserAsync(dbContext, User);
 
         var result = await importService.ApplyAsync(CsvText, teamId, user.Id, HttpContext.RequestAborted);
 
@@ -128,8 +127,7 @@ public class VeImportModel(
 
     private async Task LoadAsync()
     {
-        var user = await userManager.GetUserWithManagerAsync(dbContext, User)
-            ?? throw new InvalidOperationException("No authenticated user for an [Authorize]d page.");
+        var user = await userManager.GetRequiredUserAsync(dbContext, User);
 
         AvailableTeams = await accessScope.GetAvailableTeamsAsync(dbContext, user);
         ResolvedTeamId = adminAccessScope.TryResolveManageableTeamId(user, TeamId, [.. AvailableTeams.Select(t => t.Id)]);

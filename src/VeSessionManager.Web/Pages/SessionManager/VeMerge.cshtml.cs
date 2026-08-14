@@ -22,7 +22,7 @@ namespace VeSessionManager.Web.Pages.SessionManager;
 /// <para>Nothing merges without an explicit confirmation carrying the real counts. The action is
 /// effectively irreversible, and "are you sure?" without numbers is not consent.</para>
 /// </summary>
-[Authorize(Roles = "SystemAdmin,TeamAdmin")]
+[Authorize(Roles = RoleGroups.Admins)]
 public class VeMergeModel(
     AppDbContext dbContext,
     UserManager<User> userManager,
@@ -56,8 +56,7 @@ public class VeMergeModel(
             return Forbid();
         }
 
-        var user = await userManager.GetUserWithManagerAsync(dbContext, User)
-            ?? throw new InvalidOperationException("No authenticated user for an [Authorize]d page.");
+        var user = await userManager.GetRequiredUserAsync(dbContext, User);
 
         var result = await mergeService.MergeAsync(Id, duplicateId, user.Id, HttpContext.RequestAborted);
 
@@ -79,8 +78,7 @@ public class VeMergeModel(
 
     private async Task<IActionResult?> LoadAsync()
     {
-        var user = await userManager.GetUserWithManagerAsync(dbContext, User)
-            ?? throw new InvalidOperationException("No authenticated user for an [Authorize]d page.");
+        var user = await userManager.GetRequiredUserAsync(dbContext, User);
 
         var person = await dbContext.VolunteerExaminers
             .Include(v => v.TeamMemberships)

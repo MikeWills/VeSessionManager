@@ -13,5 +13,5 @@ public interface IUlsLookupClient
     /// all (network/HTTP failure). Callers must treat those two differently: not-found means "no
     /// change", null means "we learned nothing, try again next run".
     /// </summary>
-    Task<UlsLookupResult?> LookupByFrnAsync(string frn, CancellationToken cancellationToken);
+    Task<UlsLookupResult?> LookupAsync(string frnOrCallSign, CancellationToken cancellationToken);
 }

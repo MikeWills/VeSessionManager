@@ -84,7 +84,7 @@ public class UlsWatcherService(
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var lookup = await lookupClient.LookupByFrnAsync(candidate.Frn!, cancellationToken);
+            var lookup = await lookupClient.LookupAsync(candidate.Frn!, cancellationToken);
 
             // Stamped before the outcome is examined, and on every path including failure. A row
             // that is never stamped keeps null, null sorts first, and it would lead the queue

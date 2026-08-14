@@ -16,7 +16,7 @@ namespace VeSessionManager.Web.Pages.Admin;
 /// ingestion lands is exactly the question a team admin asks after changing something in ExamTools,
 /// and nothing here is sensitive — no credentials, no candidate data, just timings.</para>
 /// </summary>
-[Authorize(Roles = "SystemAdmin,TeamAdmin")]
+[Authorize(Roles = RoleGroups.Admins)]
 public class JobScheduleModel(JobScheduleService jobScheduleService, TimeProvider timeProvider) : PageModel
 {
     public IReadOnlyList<JobScheduleStatus> Jobs { get; private set; } = [];

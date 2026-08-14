@@ -454,9 +454,6 @@ public class VeRosterSyncResult
 {
     public int VolunteerExaminersAdded { get; set; }
 
-    /// <summary>Kept at zero since issue #142 — ExamTools no longer updates anything on an existing VE. Retained so the summary line's shape (and Job History's stored text) doesn't change under anyone reading old runs.</summary>
-    public int VolunteerExaminersUpdated { get; set; }
-
     /// <summary>New (VE, team) memberships established by a VE turning up on that team's roster.</summary>
     public int TeamMembershipsAdded { get; set; }
     public int LinksAdded { get; set; }

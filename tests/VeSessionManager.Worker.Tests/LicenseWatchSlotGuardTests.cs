@@ -39,7 +39,7 @@ public class LicenseWatchSlotGuardTests
     {
         public int Calls { get; private set; }
 
-        public Task<UlsLookupResult?> LookupByFrnAsync(string frn, CancellationToken cancellationToken)
+        public Task<UlsLookupResult?> LookupAsync(string frnOrCallSign, CancellationToken cancellationToken)
         {
             Calls++;
             return Task.FromResult<UlsLookupResult?>(UlsLookupResult.NotFound);

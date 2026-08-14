@@ -27,7 +27,7 @@ namespace VeSessionManager.Web.Pages.SessionManager;
 /// a leaderboard, and the deliberate decision recorded in issue #63 is that those stay on
 /// admin-only screens — which is also why the stats page is aggregate-only.</para>
 /// </summary>
-[Authorize(Roles = "SystemAdmin,TeamAdmin")]
+[Authorize(Roles = RoleGroups.Admins)]
 public class AuditioningReportModel(
     AppDbContext dbContext,
     UserManager<User> userManager,
@@ -64,8 +64,7 @@ public class AuditioningReportModel(
     {
         UtcNow = timeProvider.GetUtcNow().UtcDateTime;
 
-        var user = await userManager.GetCachedUserWithManagerAsync(dbContext, HttpContext, User)
-            ?? throw new InvalidOperationException("No authenticated user for an [Authorize]d page.");
+        var user = await userManager.GetRequiredCachedUserAsync(dbContext, HttpContext, User);
 
         AvailableTeams = await accessScope.GetAvailableTeamsAsync(dbContext, user);
         TeamSummaryLabel = TeamId is not null

@@ -110,6 +110,21 @@ public class AppDbContext(DbContextOptions<AppDbContext> options, IDataProtectio
 
         modelBuilder.Entity<Candidate>(b =>
         {
+
+            // Declared so a model-built schema (EnsureCreated, i.e. the SQLite tests) matches the
+            // migrated one — the identical drift already called out for Team.SquareEnvironment
+            // below (#314, L-18). Each value equals the CLR default, so nothing changes for an EF
+            // insert; what it fixes is a row inserted OUTSIDE EF hitting a NOT NULL failure on one
+            // schema and succeeding on the other.
+            //
+            // Deliberately NOT applied to every migration default: most of the others are one-time
+            // BACKFILL values (TeamId = 1 for the multi-team split, CreatedUtc = a fixed instant)
+            // that exist to populate existing rows and would be wrong as ongoing defaults. Identity's
+            // own columns are left alone for the same reason — they come from IdentityUser, not from
+            // this model.
+            b.Property(c => c.FccHoldReason).HasDefaultValue(FccApplicationHoldReason.None);
+            b.Property(c => c.FccPaymentStatus).HasDefaultValue(FccApplicationPaymentStatus.Unknown);
+
             b.HasIndex(c => new { c.SessionId, c.ExamToolsApplicantId }).IsUnique();
             // Applicant Status and the ULS watcher both select by status across every session, and
             // the terminal statuses are the majority — so this is a filter that removes most rows,
@@ -248,6 +263,10 @@ public class AppDbContext(DbContextOptions<AppDbContext> options, IDataProtectio
 
         modelBuilder.Entity<User>(b =>
         {
+            // See the Candidate block above (#314, L-18).
+            b.Property(u => u.MustChangePassword).HasDefaultValue(false);
+            b.Property(u => u.ThemePreference).HasDefaultValue(ThemePreference.System);
+
             b.HasOne(u => u.ManagedByUser).WithMany().HasForeignKey(u => u.ManagedByUserId).OnDelete(DeleteBehavior.Restrict);
         });
 

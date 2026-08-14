@@ -8,7 +8,7 @@ using VeSessionManager.Core.Entities;
 namespace VeSessionManager.Web.Pages.Admin;
 
 /// <summary>Phase 9c: deployment-wide settings (PII retention window, ULS polling intervals) — SystemAdmin only.</summary>
-[Authorize(Roles = "SystemAdmin")]
+[Authorize(Roles = RoleGroups.SystemAdminOnly)]
 public class SystemSettingsModel(UserManager<User> userManager, SystemSettingsService systemSettingsService) : PageModel
 {
     public int? PiiRetentionWindowDays { get; private set; }

@@ -50,10 +50,10 @@ public class UlsSweepRowIsolationTests
     {
         public List<string> Seen { get; } = [];
 
-        public Task<UlsLookupResult?> LookupByFrnAsync(string frn, CancellationToken cancellationToken)
+        public Task<UlsLookupResult?> LookupAsync(string frnOrCallSign, CancellationToken cancellationToken)
         {
-            Seen.Add(frn);
-            if (frn == throwsFor) throw new InvalidOperationException($"boom for {frn}");
+            Seen.Add(frnOrCallSign);
+            if (frnOrCallSign == throwsFor) throw new InvalidOperationException($"boom for {frnOrCallSign}");
             return Task.FromResult<UlsLookupResult?>(ok);
         }
     }
@@ -66,9 +66,9 @@ public class UlsSweepRowIsolationTests
 
         public int Calls => Seen.Count;
 
-        public Task<UlsLookupResult?> LookupByFrnAsync(string frn, CancellationToken cancellationToken)
+        public Task<UlsLookupResult?> LookupAsync(string frnOrCallSign, CancellationToken cancellationToken)
         {
-            Seen.Add(frn);
+            Seen.Add(frnOrCallSign);
             return Task.FromResult<UlsLookupResult?>(null);
         }
     }
@@ -217,13 +217,13 @@ public class UlsSweepRowIsolationTests
             ("003oldest", Now.AddDays(-9)),
             ("003never", null)
         };
-        foreach (var (frn, checkedUtc) in stamps)
+        foreach (var (frnOrCallSign, checkedUtc) in stamps)
         {
             dbContext.Candidates.Add(new Candidate
             {
                 Session = session,
-                Name = frn,
-                Frn = frn,
+                Name = frnOrCallSign,
+                Frn = frnOrCallSign,
                 Tested = true,
                 ApplicationStatus = CandidateApplicationStatus.Unmatched,
                 InitialLicenseClass = LicenseClass.None,

@@ -97,7 +97,7 @@ namespace VeSessionManager.Web.Pages.SessionManager;
 /// entirely once the order changes. The choice rides along in the existing filter cookie, so it
 /// survives a bare navigation back to this page exactly like Status/TeamId/PageSize already do.
 /// </summary>
-[Authorize(Roles = "SystemAdmin,TeamAdmin,SessionManager,TeamLead")]
+[Authorize(Roles = RoleGroups.AllRoles)]
 public class IndexModel(
     AppDbContext dbContext,
     UserManager<User> userManager,
@@ -195,7 +195,7 @@ public class IndexModel(
         ResolveFilterState();
         BuildSummaryLabels();
 
-        var user = await userManager.GetUserWithManagerAsync(dbContext, User) ?? throw new InvalidOperationException("No authenticated user for an [Authorize]d page.");
+        var user = await userManager.GetRequiredUserAsync(dbContext, User);
         var now = timeProvider.GetUtcNow().UtcDateTime;
 
         AvailableTeams = await accessScope.GetAvailableTeamsAsync(dbContext, user);

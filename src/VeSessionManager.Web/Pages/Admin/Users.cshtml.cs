@@ -18,7 +18,7 @@ namespace VeSessionManager.Web.Pages.Admin;
 /// separate action from role assignment (SetTeamsAsync) since issue #19 — a user can belong to more
 /// than one team.
 /// </summary>
-[Authorize(Roles = "SystemAdmin,TeamAdmin")]
+[Authorize(Roles = RoleGroups.Admins)]
 public class UsersModel(AppDbContext dbContext, UserManager<User> userManager, AdminAccessScope adminAccessScope, UserManagementService userManagementService) : PageModel
 {
     [BindProperty(SupportsGet = true)]

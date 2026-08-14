@@ -121,6 +121,9 @@ builder.Services.AddScoped<NavBadgeCountService>();
 // Phase 10: also used by VeSessionManager.Web's Admin/SystemSettings page to edit the same row.
 builder.Services.AddScoped<SystemSettingsService>();
 builder.Services.AddScoped<PiiPurgeService>();
+// Resolved by PiiPurgeJob for the spent-token sweep (#303, D-03). The Worker had no registration for
+// it at all — it was a Web-only service until the purge job started using it.
+builder.Services.AddScoped<VeSelfServiceLinkService>();
 
 builder.Services.AddScoped<TeamSecretsMigrationService>();
 

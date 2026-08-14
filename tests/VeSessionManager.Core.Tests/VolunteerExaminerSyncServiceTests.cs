@@ -315,7 +315,6 @@ public class VolunteerExaminerSyncServiceTests
         var result = await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
 
         Assert.Equal(0, result.VolunteerExaminersAdded);
-        Assert.Equal(0, result.VolunteerExaminersUpdated);
         Assert.Equal(0, result.LinksAdded);
         Assert.Equal(0, result.LinksRemoved);
         Assert.Single(dbContext.VolunteerExaminers);

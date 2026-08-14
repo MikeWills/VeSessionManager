@@ -22,7 +22,7 @@ namespace VeSessionManager.Web.Pages.SessionManager;
 /// plausibly owe this" eligibility rule the auto-match pass itself uses), one page-load query
 /// shared by every row so this doesn't turn into N+1 selects.
 /// </summary>
-[Authorize(Roles = "SystemAdmin,TeamAdmin,SessionManager")]
+[Authorize(Roles = RoleGroups.SessionStaff)]
 public class UnmatchedPaymentsModel(
     AppDbContext dbContext,
     UserManager<User> userManager,
@@ -51,7 +51,7 @@ public class UnmatchedPaymentsModel(
 
     public async Task OnGetAsync()
     {
-        var user = await userManager.GetUserWithManagerAsync(dbContext, User) ?? throw new InvalidOperationException("No authenticated user for an [Authorize]d page.");
+        var user = await userManager.GetRequiredUserAsync(dbContext, User);
 
         AvailableTeams = await accessScope.GetAvailableTeamsAsync(dbContext, user);
 

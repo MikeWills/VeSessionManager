@@ -7,6 +7,7 @@ using VeSessionManager.Core.ExamTools;
 using VeSessionManager.Core.Ingestion;
 using VeSessionManager.Core.Jobs;
 using VeSessionManager.Core.PiiPurge;
+using VeSessionManager.Core.Email;
 using VeSessionManager.Core.VolunteerExaminers;
 
 namespace VeSessionManager.Worker.Tests;
@@ -176,6 +177,12 @@ public class QueueDrainAndPurgeJobTests
             services.AddScoped<SystemSettingsService>();
             services.AddScoped<JobRunHistoryLogger>();
             services.AddScoped<PiiPurgeService>();
+            // The tick also sweeps spent self-service tokens (#303, D-03), so the job resolves this.
+            // Registered here rather than stubbed: PurgeSpentTokensAsync is a real ExecuteDeleteAsync
+            // against the harness's real SQLite, which is the whole reason that sweep lives at the
+            // job layer and not inside PiiPurgeService (whose own tests are InMemory).
+            services.AddScoped<IEmailSender, NullEmailSender>();
+            services.AddScoped<VeSelfServiceLinkService>();
         });
 
         // Two teams, to show the tick does not fan out over them the way its neighbours do.
@@ -240,5 +247,15 @@ public class QueueDrainAndPurgeJobTests
             EndDate = new DateOnly(2026, 7, 31)
         });
         await dbContext.SaveChangesAsync();
+    }
+
+    /// <summary>The purge never sends anything; this exists only to satisfy the link service's own
+    /// constructor.</summary>
+    private sealed class NullEmailSender : IEmailSender
+    {
+        public bool IsConfigured => false;
+
+        public Task SendAsync(EmailCredentials credentials, EmailMessage message, CancellationToken cancellationToken) =>
+            Task.CompletedTask;
     }
 }

@@ -42,12 +42,4 @@ public static class SessionChips
         status == SessionStatus.Cancelled ? ("chip-neutral", "—")
         : submissionStatus == VecSubmissionStatus.Submitted ? ("chip-green", "Submitted")
         : ("chip-neutral", "Not submitted");
-
-    /// <summary>
-    /// The sort key for a status column, so ordering matches the chip the user is reading rather
-    /// than the underlying columns. Returns the label itself — sorting alphabetically by the visible
-    /// text is what makes the column behave the way someone scanning it expects.
-    /// </summary>
-    public static string StatusSortKey(SessionStatus status, bool rescheduleFlagged, bool isCompleted) =>
-        Status(status, rescheduleFlagged, isCompleted).Label;
 }

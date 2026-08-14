@@ -18,7 +18,7 @@ namespace VeSessionManager.Web.Pages.SessionManager;
 /// people to it, so this is deliberately NOT restricted to admins the way the VE Directory is. It
 /// shows names, tags and eligibility; it does not show contact details.</para>
 /// </summary>
-[Authorize(Roles = "SystemAdmin,TeamAdmin,SessionManager")]
+[Authorize(Roles = RoleGroups.SessionStaff)]
 public class VeInviteModel(
     AppDbContext dbContext,
     UserManager<User> userManager,
@@ -105,8 +105,7 @@ public class VeInviteModel(
             return Forbid();
         }
 
-        var user = await userManager.GetUserWithManagerAsync(dbContext, User)
-            ?? throw new InvalidOperationException("No authenticated user for an [Authorize]d page.");
+        var user = await userManager.GetRequiredUserAsync(dbContext, User);
 
         var result = await invitationService.SendAsync(Id, SelectedVeIds, Subject, Body, user.Id, HttpContext.RequestAborted);
 
@@ -127,8 +126,7 @@ public class VeInviteModel(
 
     private async Task<IActionResult?> LoadAsync()
     {
-        var user = await userManager.GetUserWithManagerAsync(dbContext, User)
-            ?? throw new InvalidOperationException("No authenticated user for an [Authorize]d page.");
+        var user = await userManager.GetRequiredUserAsync(dbContext, User);
 
         var session = await dbContext.Sessions
             .Include(s => s.Team)

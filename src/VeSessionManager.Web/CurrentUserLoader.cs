@@ -33,6 +33,25 @@ public static class CurrentUserLoader
             .FirstOrDefaultAsync(u => u.Id == userId);
     }
 
+    /// <summary>
+    /// The same load, for the ~22 call sites that cannot proceed without a user and were each
+    /// spelling out an identical <c>?? throw new InvalidOperationException(...)</c> (#307, DUP-06).
+    ///
+    /// <para>Null here means the cookie names a user who is no longer in the database — an account
+    /// deleted, or a database restored, beneath a still-valid cookie. On an <c>[Authorize]</c>d page
+    /// that is not a state any handler can do anything sensible with, so it throws rather than
+    /// returning null and inviting a null-check nobody writes.</para>
+    ///
+    /// <para><b>It should be unreachable.</b> <c>StaleAuthCookieFilter</c> runs on every page and
+    /// exists precisely to turn this into a clean sign-out rather than a 500. The throw is the
+    /// backstop for a route that somehow bypasses it, which is why the message names the condition
+    /// rather than apologising.</para>
+    /// </summary>
+    public static async Task<User> GetRequiredUserAsync(
+        this UserManager<User> userManager, AppDbContext dbContext, ClaimsPrincipal principal) =>
+        await userManager.GetUserWithManagerAsync(dbContext, principal)
+            ?? throw new InvalidOperationException("No authenticated user for an [Authorize]d page.");
+
     /// <summary>Key for the per-request cache below. Scoped to this class; nothing else writes it.</summary>
     private const string CachedUserItemKey = "VeSessionManager.CurrentUser";
 
@@ -66,4 +85,14 @@ public static class CurrentUserLoader
         httpContext.Items[CachedUserItemKey] = user;
         return user;
     }
+
+    /// <summary>
+    /// <see cref="GetRequiredUserAsync"/> against the per-request cache — for the read-only pages
+    /// that use <see cref="GetCachedUserWithManagerAsync"/> and equally cannot proceed without a
+    /// user. Same "should be unreachable" reasoning.
+    /// </summary>
+    public static async Task<User> GetRequiredCachedUserAsync(
+        this UserManager<User> userManager, AppDbContext dbContext, HttpContext httpContext, ClaimsPrincipal principal) =>
+        await userManager.GetCachedUserWithManagerAsync(dbContext, httpContext, principal)
+            ?? throw new InvalidOperationException("No authenticated user for an [Authorize]d page.");
 }

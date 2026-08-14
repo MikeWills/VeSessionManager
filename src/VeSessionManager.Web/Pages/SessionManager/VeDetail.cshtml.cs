@@ -20,12 +20,15 @@ namespace VeSessionManager.Web.Pages.SessionManager;
 /// that the person is reachable from a team the user can see, so a guessed id from another
 /// deployment's team cannot be opened or edited by URL.</para>
 ///
-/// <para><b>Email is displayed but not editable here.</b> It is the factor phase 5's self-service
-/// magic link authenticates against, so changing it decides who receives future links — that needs
-/// its own design (parked with Mike, 2026-08-07) rather than riding along in a general contact-details
-/// form.</para>
+/// <para><b>Email IS editable here, and it is the highest-consequence field on the page.</b> It is
+/// what phase 5's self-service magic link authenticates against, so changing it changes who receives
+/// future links. <c>UpdateContactDetailsAsync</c> therefore carries its own uniqueness check and a
+/// distinct "Email address was changed by an admin" audit branch — see docs/ve-self-service.md for
+/// the two-path rule (an admin edits here; a VE changes their own only via confirmation to the OLD
+/// address). This paragraph previously said the field was not editable and parked the design; it had
+/// been editable for some time (#314, L-19).</para>
 /// </summary>
-[Authorize(Roles = "SystemAdmin,TeamAdmin")]
+[Authorize(Roles = RoleGroups.Admins)]
 public class VeDetailModel(
     AppDbContext dbContext,
     UserManager<User> userManager,
@@ -243,8 +246,7 @@ public class VeDetailModel(
     /// three-table user load that LoadAsync had already done on the same request.
     /// </summary>
     private async Task<User> CurrentUserAsync() =>
-        await userManager.GetUserWithManagerAsync(dbContext, User)
-            ?? throw new InvalidOperationException("No authenticated user for an [Authorize]d page.");
+        await userManager.GetRequiredUserAsync(dbContext, User);
 
     /// <summary>
     /// Loads the person and the memberships this user is entitled to act on. Returns non-null when
@@ -253,8 +255,7 @@ public class VeDetailModel(
     /// </summary>
     private async Task<IActionResult?> LoadAsync()
     {
-        var user = await userManager.GetUserWithManagerAsync(dbContext, User)
-            ?? throw new InvalidOperationException("No authenticated user for an [Authorize]d page.");
+        var user = await userManager.GetRequiredUserAsync(dbContext, User);
 
         UtcNow = timeProvider.GetUtcNow().UtcDateTime;
 
