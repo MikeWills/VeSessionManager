@@ -13,6 +13,26 @@ namespace VeSessionManager.Core.Ingestion;
 /// deliberately **not** throttled and does not use this: it is pressed by a Session Manager working
 /// one session in real time, which is exactly the situation the throttle would get in the way of.
 ///
+/// <para><b>The residual race, and why it stays.</b> That button runs the pipeline in the Web process
+/// while the Worker may be running its own tick over the same session's rows — two writers, one
+/// SQLite file. It is narrow: the button has been session-scoped since 2026-08-03 (it used to run the
+/// team-wide pipeline, so one click could mint payment links and email candidates for every other
+/// session), and the duplicate-payment half is closed by T08's unique index. Nothing has ever been
+/// observed hitting it.</para>
+///
+/// <para>The design that removes it is routing refreshes through a Worker-consumed request row, the
+/// HistoricalImportRequest pattern. <b>Considered and rejected 2026-08-14:</b> it makes the button
+/// asynchronous, so it returns "queued" instead of what happened — undoing #242, which exists
+/// precisely so the button tells the truth about failures, and breaking the click-and-see-the-result
+/// loop that is its main use during live session work.</para>
+///
+/// <para>What would change that: a second Web instance (which breaks single-process assumptions
+/// elsewhere too), an actual observed collision, or a polling UI becoming worthwhile for other
+/// reasons — at which point "queue it and show the outcome" stops costing the feedback loop. This
+/// note lives here rather than in an issue because it constrains whoever next touches this button,
+/// and an issue for an unobserved risk whose fix has already been argued against is one nobody
+/// actions and everybody re-verifies.</para>
+///
 /// Schema-free on purpose — it reads the JobRunHistory rows ManualCandidateRefreshService already
 /// writes ("ManualSessionIngestion", the first step of every manual run) rather than adding a
 /// Team column and a migration for a 60-second value. That also means the throttle is naturally
