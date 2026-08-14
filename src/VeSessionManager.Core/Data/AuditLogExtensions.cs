@@ -10,7 +10,14 @@ namespace VeSessionManager.Core.Data;
 /// </summary>
 public static class AuditLogExtensions
 {
-    public static void AddAuditLog(this AppDbContext dbContext, int? userId, string action, string entityType, int entityId, string details, DateTime timestampUtc) =>
+    /// <param name="sourceIpAddress">
+    /// Set for authentication events and PII export only — see <see cref="AuditLog.SourceIpAddress"/>
+    /// for why this is not simply passed everywhere. Optional so the ~175 ordinary call sites did not
+    /// have to change, and so that adding it to one is a deliberate act rather than a default.
+    /// </param>
+    public static void AddAuditLog(
+        this AppDbContext dbContext, int? userId, string action, string entityType, int entityId, string details,
+        DateTime timestampUtc, string? sourceIpAddress = null) =>
         dbContext.AuditLogs.Add(new AuditLog
         {
             UserId = userId,
@@ -18,6 +25,7 @@ public static class AuditLogExtensions
             EntityType = entityType,
             EntityId = entityId,
             TimestampUtc = timestampUtc,
-            Details = details
+            Details = details,
+            SourceIpAddress = sourceIpAddress
         });
 }

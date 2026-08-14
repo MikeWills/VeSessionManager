@@ -16,7 +16,8 @@ well once the multi-team foundation (Phase 6.5) gave each `Team` its own credent
   SessionManager (same session/candidate actions) *within that team* — plus grants
   SessionManager/TeamLead to users within their team.
 - **SessionManager** (unchanged): full visibility/edit on their own team's sessions.
-- **TeamLead** (unchanged): scoped to whichever sessions their assigned manager can see, read-only.
+- **TeamLead** (unchanged): scoped to whichever sessions their assigned manager can see, read-only —
+  with one deliberate exception, the Renewal Monitor; see its own section below.
 
 `UserRole` (`VeSessionManager.Core/Entities/Enums.cs`) is `{ SystemAdmin, TeamAdmin,
 SessionManager, TeamLead }`. Deliberately **not** using ASP.NET Core Identity's own Role tables
@@ -182,6 +183,30 @@ then a real browser click-through: logged in as `sessionmanager@example.com`, la
 (correctly blocked); logged out, logged in as `teamlead@example.com`, landed on `/TeamLead`. Not
 yet live-tested: Google/Microsoft sign-in (no real OAuth app credentials configured yet — see
 [issue #185](https://github.com/MikeWills/VeSessionManager/issues/185)).
+
+### The one place "TeamLead is read-only" does not hold — Renewal Monitor (recorded 2026-08-14)
+
+`Pages/SessionManager/RenewalMonitor` is `[Authorize]` with **no role restriction**, so a TeamLead
+can add and remove watched call signs there. Every other write surface in the app is closed to them.
+
+**This is intended and stays.** A renewal watch is a reminder to chase a licence that is about to
+lapse — the chasing is exactly the kind of legwork a lead does, and the data is a call sign and a
+date, not candidate PII. The class doc on the page says the openness is deliberate; this note exists
+because the invariant stated at the top of this document ("TeamLead … read-only") is otherwise
+absolute, and a reader who finds this page will reasonably think it is a bug (audit item L-08,
+2026-08-11).
+
+Two things that are **not** relaxed, and should be checked if this page is ever changed:
+
+- Team scoping is enforced on both handlers, so a lead only ever sees and edits their own team's
+  watches.
+- The remove handler's guard is written `effectiveTeamIds is not null && effectiveTeamIds.Contains(...)`
+  — the correct form. Written the tempting way, `GetEffectiveTeamIds(user)?.Contains(id) ?? false`,
+  it is **always false for a SystemAdmin**, because null there means "every team" rather than "no
+  teams" (see CLAUDE.md's Known Constraints).
+
+If TeamLead write access is ever widened beyond this page, update the summary at the top of this
+document rather than adding a second exception here.
 
 ## TeamLead read-only view (added 2026-07-22)
 

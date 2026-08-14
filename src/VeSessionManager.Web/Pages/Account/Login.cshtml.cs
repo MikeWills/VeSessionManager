@@ -12,7 +12,12 @@ namespace VeSessionManager.Web.Pages.Account;
 
 // Public by design: Requiring sign-in to reach the sign-in page is the classic redirect loop.
 [AllowAnonymous]
-public class LoginModel(SignInManager<User> signInManager, UserManager<User> userManager, AppDbContext dbContext, TimeProvider timeProvider) : PageModel
+public class LoginModel(
+    SignInManager<User> signInManager,
+    UserManager<User> userManager,
+    AppDbContext dbContext,
+    TimeProvider timeProvider,
+    ILogger<LoginModel> logger) : PageModel
 {
     [BindProperty]
     public InputModel Input { get; set; } = new();
@@ -94,8 +99,27 @@ public class LoginModel(SignInManager<User> signInManager, UserManager<User> use
 
         if (!result.Succeeded)
         {
+            // Audited before the response is written (#265). Nothing recorded sign-ins at all —
+            // success or failure — so a credential-stuffing run or a successful login on stolen
+            // credentials left no trace whatsoever: you could see what an account did, never that it
+            // signed in, from where, or how many times it failed first. PasswordResetService and
+            // BootstrapAdminCommand already audit their auth events, which made this an
+            // inconsistency rather than a policy.
+            //
+            // UserId is null for an unknown username, because there is no user to attribute it to —
+            // the attempted name goes in Details instead. Note this means the audit log DOES record
+            // which names were tried, which is the point: that is the shape of an enumeration run.
+            // The response stays identical either way, so nothing here is observable to the caller.
+            await AuditAuthEventAsync(
+                user?.Id,
+                result.IsLockedOut ? "SignInLockedOut" : "SignInFailed",
+                result.IsLockedOut
+                    ? $"Sign-in refused for '{Input.UserName}' — account locked out."
+                    : $"Failed sign-in for '{Input.UserName}'.");
+
             // One message for "no such user" and "wrong password", as before — the distinction is
-            // exactly what an attacker enumerating accounts wants.
+            // exactly what an attacker enumerating accounts wants. Note IsLockedOut is deliberately
+            // NOT surfaced to the caller for the same reason, even though it is recorded.
             ErrorMessage = "Invalid username or password.";
             return Page();
         }
@@ -107,6 +131,11 @@ public class LoginModel(SignInManager<User> signInManager, UserManager<User> use
             Input.RememberMe
                 ? RememberMe.Properties(timeProvider.GetUtcNow())
                 : new AuthenticationProperties { IsPersistent = false });
+
+        await AuditAuthEventAsync(
+            user!.Id,
+            "SignedIn",
+            Input.RememberMe ? "Signed in (kept signed in on this device)." : "Signed in.");
 
         // Local URLs only. Url.IsLocalUrl rejects absolute and protocol-relative forms, and
         // LocalRedirect throws rather than leaving the site if one slips past — belt and braces on
@@ -133,5 +162,34 @@ public class LoginModel(SignInManager<User> signInManager, UserManager<User> use
         // through empty and are not read here.
         properties.Items[RememberMe.ExternalPropertyKey] = Input.RememberMe ? "true" : "false";
         return new ChallengeResult(provider, properties);
+    }
+
+    /// <summary>
+    /// Writes and saves an authentication audit row, with the source address (#265).
+    ///
+    /// <para>Saved immediately rather than left for a later SaveChanges: this is the only write on
+    /// the failure path, and the whole value of the row is that it exists even when the request goes
+    /// no further.</para>
+    ///
+    /// <para><b>A failure to audit must not become a failure to sign in.</b> The database is shared
+    /// with the Worker (one SQLite file), so a transient "database is locked" is a real possibility —
+    /// and locking every admin out of the app because the audit table was busy would be a far worse
+    /// outcome than a missing row. Logged loudly instead, so the gap is visible in the log even when
+    /// it is not visible in the table.</para>
+    /// </summary>
+    private async Task AuditAuthEventAsync(int? userId, string action, string details)
+    {
+        try
+        {
+            dbContext.AddAuditLog(
+                userId, action, nameof(User), userId ?? 0, details,
+                timeProvider.GetUtcNow().UtcDateTime,
+                SourceIp.For(HttpContext));
+            await dbContext.SaveChangesAsync(HttpContext.RequestAborted);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to write the {Action} audit entry — the sign-in itself was unaffected", action);
+        }
     }
 }

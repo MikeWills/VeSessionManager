@@ -29,12 +29,25 @@ public class FeeConfigurationsModel(AppDbContext dbContext, UserManager<User> us
     public IReadOnlyList<(int Id, string Name)> AvailableVecs { get; private set; } = [];
     public IReadOnlyList<FeeConfigRow> FeeConfigurations { get; private set; } = [];
 
-    public async Task OnGetAsync()
+    /// <summary>
+    /// Returns IActionResult so the no-user case can Forbid (L-14). It used to return Task and bare-
+    /// return, which rendered a fully authenticated-looking page with every list empty — the reader
+    /// cannot tell "you may not see this" from "there is nothing here", and every other page in the
+    /// app answers this with Forbid().
+    ///
+    /// <para><b>Deliberately untested, because the branch is unreachable.</b> Two things already
+    /// intercept every route to it: the app-wide FallbackPolicy redirects an anonymous request
+    /// before the handler runs, and StaleAuthCookieFilter handles the cookie-names-a-deleted-user
+    /// case. A test was written against both and passed with the fix reverted, so it was removed
+    /// rather than kept as false comfort. This is consistency and defence in depth — if either of
+    /// those guards is ever narrowed, this page fails closed like the rest.</para>
+    /// </summary>
+    public async Task<IActionResult> OnGetAsync()
     {
         var user = await userManager.GetUserWithManagerAsync(dbContext, User);
         if (user is null)
         {
-            return;
+            return Forbid();
         }
 
         if (user.Role == VeSessionManager.Core.Entities.UserRole.SystemAdmin)
@@ -58,9 +71,11 @@ public class FeeConfigurationsModel(AppDbContext dbContext, UserManager<User> us
             VecId = AvailableVecs[0].Id;
         }
 
+        // Page(), not Forbid(): "no VEC chosen yet, or the chosen one is not yours to see" is an
+        // empty state rather than a refusal, and the picker above it is how you get out of it.
         if (VecId is null || !AvailableVecs.Any(v => v.Id == VecId))
         {
-            return;
+            return Page();
         }
 
         // "Is this fee configuration in use?" is a correlated EXISTS, not a list scan. This used to
@@ -72,6 +87,8 @@ public class FeeConfigurationsModel(AppDbContext dbContext, UserManager<User> us
             .Select(f => new FeeConfigRow(f.Id, f.EffectiveDate, f.FeeCollectionEnabled, f.ExamFeeAmount, f.RetainedAmount, f.YouthExamFeeAmount, f.Notes,
                 dbContext.Sessions.Any(s => s.FeeConfigurationId == f.Id)))
             .ToListAsync();
+
+        return Page();
     }
 
     public async Task<IActionResult> OnPostCreateAsync(int vecId, DateTime effectiveDate, bool feeCollectionEnabled, decimal? examFeeAmount, decimal? retainedAmount, decimal? youthExamFeeAmount, string? notes)

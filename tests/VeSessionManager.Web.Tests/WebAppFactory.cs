@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using System.Text.Encodings.Web;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.TestHost;
@@ -34,6 +35,20 @@ namespace VeSessionManager.Web.Tests;
 /// </summary>
 public class WebAppFactory : WebApplicationFactory<Program>
 {
+    /// <summary>See the registration in ConfigureTestServices for why this exists.</summary>
+    private sealed class RemoteIpStartupFilter : IStartupFilter
+    {
+        public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next) => app =>
+        {
+            app.Use(async (context, nextMiddleware) =>
+            {
+                context.Connection.RemoteIpAddress ??= System.Net.IPAddress.Loopback;
+                await nextMiddleware();
+            });
+            next(app);
+        };
+    }
+
     /// <summary>Sent by the client to choose who the request is from. Read only by the test auth handler, which exists only in this assembly.</summary>
     public const string RoleHeader = "X-Test-Role";
 
@@ -104,6 +119,14 @@ public class WebAppFactory : WebApplicationFactory<Program>
             // the 20/minute bucket and produce 429s that look like page failures.
             services.Configure<Microsoft.AspNetCore.RateLimiting.RateLimiterOptions>(options =>
                 options.GlobalLimiter = null);
+
+            // TestServer leaves Connection.RemoteIpAddress null — there is no real socket behind it.
+            // Anything reading the client address therefore sees null in tests and a real value in
+            // production, which is the wrong way round for a security feature: the audit log's
+            // source address (#265) and the per-IP rate limiter both depend on it. Setting a
+            // loopback address makes the harness resemble the deployment rather than a case that
+            // never occurs.
+            services.AddSingleton<IStartupFilter>(new RemoteIpStartupFilter());
 
             services.AddLogging(logging => logging.SetMinimumLevel(LogLevel.Warning));
         });

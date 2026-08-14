@@ -82,6 +82,15 @@ jobs:
           mkdir -p ~/.ssh
           echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
+          # Trust-on-first-use, every run: the runner is fresh and ephemeral, so there is no stored
+          # host key to compare against and this accepts whatever answers (audit item L-03).
+          #
+          # Accepted rather than fixed, deliberately. The connection is already inside the tailnet —
+          # WireGuard has authenticated the peer before SSH sees it — so the window for a substituted
+          # host key is "an attacker who is already on the tailnet", which is a bigger problem than
+          # this. Closing it properly means storing the host key as a repo secret (DEPLOY_HOST_KEY)
+          # and writing that to known_hosts instead; worth doing, but it is a change nobody can make
+          # from a PR, since the secret has to exist first or every deploy breaks.
           ssh-keyscan -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts
 
       - name: Backup Data Protection key ring

@@ -85,9 +85,17 @@ public class ReconciliationModel(
         return RedirectToPage(new { includeResolved = IncludeResolved });
     }
 
-    private Task<User> CurrentUserAsync() =>
-        userManager.GetUserWithManagerAsync(dbContext, User)!
-            .ContinueWith(t => t.Result ?? throw new InvalidOperationException("No authenticated user for an [Authorize]d page."));
+    /// <summary>
+    /// Plain await, not ContinueWith (L-12). The previous form was wrong in three ways at once:
+    /// <c>t.Result</c> wraps anything the antecedent threw in an <see cref="AggregateException"/>,
+    /// so the InvalidOperationException intended here — and any OperationCanceledException from a
+    /// cancelled request — arrived as something no caller catches; the continuation ran on
+    /// <c>TaskScheduler.Current</c> rather than the request context; and it issued a second full
+    /// three-table user load that LoadAsync had already done on the same request.
+    /// </summary>
+    private async Task<User> CurrentUserAsync() =>
+        await userManager.GetUserWithManagerAsync(dbContext, User)
+            ?? throw new InvalidOperationException("No authenticated user for an [Authorize]d page.");
 
     private async Task<IActionResult?> LoadAsync()
     {

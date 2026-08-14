@@ -89,6 +89,20 @@ public class VeImportModel(
             return RedirectToPage(new { teamId = TeamId });
         }
 
+        // The same cap the upload path applies (L-13). CsvText arrives here from [BindProperty] —
+        // the preview page posts it back as a hidden field — so the 512 KB check on the FILE does
+        // not constrain it, and a hand-made POST could hand ApplyAsync an arbitrarily large body.
+        //
+        // Defence in depth rather than a live hole: MaxRows = 500 bounds what the parser will act on
+        // and the framework's own form-size limit bounds the request. Checked in characters, not
+        // bytes, because that is what was actually bound — close enough for a guard whose job is to
+        // reject something absurd rather than to measure it.
+        if (CsvText.Length > MaxUploadBytes)
+        {
+            TempData["ErrorMessage"] = $"That file is larger than {MaxUploadBytes / 1024} KB.";
+            return RedirectToPage(new { teamId = TeamId });
+        }
+
         var user = await userManager.GetUserWithManagerAsync(dbContext, User)
             ?? throw new InvalidOperationException("No authenticated user for an [Authorize]d page.");
 

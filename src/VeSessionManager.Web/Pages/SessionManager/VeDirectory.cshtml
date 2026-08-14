@@ -16,7 +16,17 @@
     @* Carries the current filters, so the file matches the list on screen rather than silently
        exporting everything. *@
     @* Export-what-you-see: every filter, or the file and the screen disagree about who is on it. *@
-    <a class="btn-secondary btn-sm" asp-page-handler="Export" asp-all-route-data="@Model.FilterRoute">Export CSV</a>
+    @* A POST, not a link: the export writes an audit row attesting that PII left the building, and
+       as a GET any cross-site <img> could forge that entry (#265/L-11).
+
+       asp-all-route-data carries the filters into the generated action, so this does NOT hit the
+       "asp-page-handler drops the query string" trap CLAUDE.md records — the filters are supplied
+       explicitly rather than inherited from the current URL. And because the tag helper generates
+       the action itself, it emits the antiforgery token automatically; an explicit action= would
+       silently drop it. *@
+    <form method="post" asp-page-handler="Export" asp-all-route-data="@Model.FilterRoute" class="inline-form">
+        <button type="submit" class="btn-secondary btn-sm">Export CSV</button>
+    </form>
 </div>
 
 <form method="get" class="filters" style="margin-bottom:20px; align-items:flex-start;">

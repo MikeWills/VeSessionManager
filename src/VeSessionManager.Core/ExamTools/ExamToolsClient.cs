@@ -151,7 +151,12 @@ public sealed class ExamToolsClient : IExamToolsClient, IDisposable
             }
 
             teamSession.LoggedIn = true;
-            _logger.LogInformation("Logged into ExamTools at {BaseUrl} for team {TeamId} as {Username}", credentials.BaseUrl, credentials.TeamId, credentials.Username);
+            // Team id, not username (L-04). This was the single deviation from an otherwise
+            // ids-only logging discipline across 175 call sites, and it costs nothing to close: the
+            // ExamTools credential is per-team, so the team id already identifies which account was
+            // used. The username stays out of log files that are read far more casually than the
+            // database is.
+            _logger.LogInformation("Logged into ExamTools at {BaseUrl} for team {TeamId}", credentials.BaseUrl, credentials.TeamId);
         }
         finally
         {

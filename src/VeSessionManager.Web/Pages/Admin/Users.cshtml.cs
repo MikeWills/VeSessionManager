@@ -154,9 +154,44 @@ public class UsersModel(AppDbContext dbContext, UserManager<User> userManager, A
             return Forbid();
         }
 
-        var (result, _) = await userManagementService.CreateAsync(email, name, role, password, user.Id, CancellationToken.None, callSign);
+        var (result, created) = await userManagementService.CreateAsync(email, name, role, password, user.Id, CancellationToken.None, callSign);
+
+        // A TeamAdmin's new user joins the team they are working in, immediately (L-09).
+        //
+        // Without this the create button led to a dead end: CanManageUser requires the acting admin
+        // and the target to share a team, and a brand-new user has none — so every follow-up action,
+        // including the "assign a team below" the success message told them to do, returned Forbid().
+        // The account could only be finished by a SystemAdmin. It failed closed, so it was never a
+        // hole; it was an offer that could not be completed.
+        //
+        // Only for a TeamAdmin. A SystemAdmin can manage any user regardless of teams, so for them
+        // the existing "create, then assign" flow is the flexible one and forcing a team would be a
+        // regression.
+        //
+        // ...ForWrite, not the forgiving resolver: it refuses rather than substitutes when a
+        // multi-team admin has not chosen one, which is right here — silently filing someone into
+        // whichever team sorted first is exactly the surprise #263 was about.
+        var assignedTeamMessage = "";
+        if (result == UserActionResult.Success && created is not null && user.Role != UserRole.SystemAdmin)
+        {
+            // Loaded here rather than read from AvailableTeams: that property is populated by
+            // OnGetAsync and is empty on a POST, so using it would have made the resolver see no
+            // candidate teams and silently do nothing — the same dead end, with a comment claiming
+            // otherwise.
+            var manageableTeams = await adminAccessScope.ScopeTeams(dbContext.Teams, user)
+                .Select(t => new ValueTuple<int, string>(t.Id, t.Name)).ToListAsync();
+
+            var teamId = adminAccessScope.TryResolveManageableTeamIdForWrite(user, TeamId, [.. manageableTeams.Select(t => t.Item1)]);
+            if (teamId is { } resolved)
+            {
+                await userManagementService.SetTeamsAsync(created.Id, [resolved], user.Id, CancellationToken.None);
+                assignedTeamMessage = $" and added to {manageableTeams.FirstOrDefault(t => t.Item1 == resolved).Item2}";
+            }
+        }
+
         TempData[result == UserActionResult.Success ? "StatusMessage" : "ErrorMessage"] = result switch
         {
+            UserActionResult.Success when assignedTeamMessage.Length > 0 => $"User '{email}' created{assignedTeamMessage}.",
             UserActionResult.Success => $"User '{email}' created — assign a team below to give them access.",
             UserActionResult.DuplicateEmail => $"A user with email '{email}' already exists.",
             _ => "Could not create user — check the password meets the minimum requirements."
