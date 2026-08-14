@@ -97,9 +97,33 @@ public class VeSessionInvitationService(
             return result;
         }
 
-        var recipients = await dbContext.VolunteerExaminers
-            .Where(v => volunteerExaminerIds.Contains(v.Id))
+        // Scoped through VeTeamMemberships on the session's own team, matching GetCandidatesAsync's
+        // filter exactly (#238). The ids arrive from the posted form, so "the compose screen only
+        // offered team members" is not a constraint — it is a default that a hand-made POST ignores.
+        //
+        // Unscoped, this sent an attacker-authored subject and body from the team's own SMTP
+        // credentials to any VolunteerExaminer row on the deployment: other teams' rosters, retired
+        // members, anyone. The mail is indistinguishable from a genuine invitation because it *is*
+        // genuine — same From, same Reply-To, same server.
+        //
+        // Ids that fall outside the scope are dropped rather than rejected, and counted below. A
+        // legitimate sender can hit this by having the compose screen open while a membership is
+        // deactivated, which should not fail the whole send; anyone reaching it by tampering learns
+        // only a number they already knew.
+        var recipients = await dbContext.VeTeamMemberships
+            .Where(m => m.TeamId == session.TeamId
+                && m.IsActive
+                && volunteerExaminerIds.Contains(m.VolunteerExaminerId))
+            .Select(m => m.VolunteerExaminer)
             .ToListAsync(cancellationToken);
+
+        result.NotOnTeam = volunteerExaminerIds.Distinct().Count() - recipients.Count;
+        if (result.NotOnTeam > 0)
+        {
+            logger.LogWarning(
+                "Session invitation for session {SessionId} requested {Requested} recipient(s), {Dropped} of which are not active members of team {TeamId} and were dropped.",
+                session.Id, volunteerExaminerIds.Distinct().Count(), result.NotOnTeam, session.TeamId);
+        }
 
         // The team's own From/Reply-To, the same row candidate mail sends from — an invitation that
         // arrived from a different address than every other message the team sends would look like
@@ -158,7 +182,8 @@ public class VeSessionInvitationService(
 
         dbContext.AddAuditLog(userId, "VeSessionInvitationsSent", nameof(Session), session.Id,
             $"Invitations for session {session.ExamToolsSessionId}: {result.Sent} sent, {result.Failed} failed, " +
-            $"{result.NoEmailAddress} with no address, {result.TextOnlySkipped} text-only.", now);
+            $"{result.NoEmailAddress} with no address, {result.TextOnlySkipped} text-only, " +
+            $"{result.NotOnTeam} not on the team.", now);
         await dbContext.SaveChangesAsync(cancellationToken);
 
         logger.LogInformation("Session invitations for session {SessionId}: {Result}", session.Id, result);
@@ -226,8 +251,16 @@ public class VeInvitationResult
     /// <summary>Selected but text-only. Unreachable until SMS exists.</summary>
     public int TextOnlySkipped { get; set; }
 
+    /// <summary>
+    /// Requested but not an active member of the session's team, so never contacted (#238). Normally
+    /// zero. A non-zero value from an ordinary send means a membership changed while the compose
+    /// screen was open; any other cause is a tampered form.
+    /// </summary>
+    public int NotOnTeam { get; set; }
+
     public string? Error { get; set; }
 
     public override string ToString() =>
-        $"{Sent} sent, {Failed} failed, {NoEmailAddress} with no address, {TextOnlySkipped} text-only";
+        $"{Sent} sent, {Failed} failed, {NoEmailAddress} with no address, {TextOnlySkipped} text-only, " +
+        $"{NotOnTeam} not on the team";
 }

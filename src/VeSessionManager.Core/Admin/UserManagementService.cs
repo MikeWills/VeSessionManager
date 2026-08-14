@@ -189,6 +189,23 @@ public class UserManagementService(UserManager<User> userManager, AppDbContext d
     }
 
     /// <summary>
+    /// The VolunteerExaminer rows an acting admin may name, scoped through team membership (#239).
+    ///
+    /// <para><b>Null means every team, not no teams.</b> That is
+    /// <c>AdminAccessScope.GetEffectiveTeamIds</c>'s contract for a SystemAdmin, and writing this
+    /// guard as <c>allowedTeamIds?.Contains(...) ?? false</c> is the documented way to accidentally
+    /// lock SystemAdmins out of everything (see CLAUDE.md).</para>
+    ///
+    /// <para>Membership is not filtered on <c>IsActive</c>: a retired member of your own team is
+    /// still your team's record to link. The question here is whose record it is, not whether they
+    /// are currently serving.</para>
+    /// </summary>
+    private IQueryable<VolunteerExaminer> ScopedVolunteerExaminers(IReadOnlyList<int>? allowedTeamIds) =>
+        allowedTeamIds is null
+            ? dbContext.VolunteerExaminers
+            : dbContext.VolunteerExaminers.Where(v => v.TeamMemberships.Any(m => allowedTeamIds.Contains(m.TeamId)));
+
+    /// <summary>
     /// The VE record this login most likely belongs to, or null when there is no unambiguous answer.
     ///
     /// <para>A <b>suggestion</b>, never applied on its own — see SetVolunteerExaminerAsync. Returns
@@ -204,7 +221,8 @@ public class UserManagementService(UserManager<User> userManager, AppDbContext d
     ///   <item>the matched record is already linked to somebody else.</item>
     /// </list>
     /// </summary>
-    public async Task<VolunteerExaminer?> SuggestVolunteerExaminerAsync(int targetUserId, CancellationToken cancellationToken)
+    public async Task<VolunteerExaminer?> SuggestVolunteerExaminerAsync(
+        int targetUserId, IReadOnlyList<int>? allowedTeamIds, CancellationToken cancellationToken)
     {
         var user = await dbContext.Users.FirstOrDefaultAsync(u => u.Id == targetUserId, cancellationToken);
 
@@ -217,7 +235,11 @@ public class UserManagementService(UserManager<User> userManager, AppDbContext d
             return null;
         }
 
-        var matches = await dbContext.VolunteerExaminers
+        // Scoped to the acting admin's own teams, for the same reason SetVolunteerExaminerAsync is
+        // (#239) — and it has to be the same scope, or the page offers a "link this VE" button that
+        // the setter then refuses. Note the count check below is deliberately applied AFTER scoping:
+        // two matches inside one team is still ambiguous and still returns nothing.
+        var matches = await ScopedVolunteerExaminers(allowedTeamIds)
             .Where(v => v.CallSign != null && v.CallSign.ToLower() == callSign.ToLower() && v.MergedIntoVolunteerExaminerId == null)
             .Take(2)
             .ToListAsync(cancellationToken);
@@ -245,7 +267,8 @@ public class UserManagementService(UserManager<User> userManager, AppDbContext d
     /// <para>Grants no access. See <see cref="User.VolunteerExaminerId"/>.</para>
     /// </summary>
     public async Task<UserActionResult> SetVolunteerExaminerAsync(
-        int targetUserId, int? volunteerExaminerId, int actingUserId, CancellationToken cancellationToken)
+        int targetUserId, int? volunteerExaminerId, int actingUserId,
+        IReadOnlyList<int>? allowedTeamIds, CancellationToken cancellationToken)
     {
         var user = await dbContext.Users.FirstOrDefaultAsync(u => u.Id == targetUserId, cancellationToken);
         if (user is null)
@@ -256,7 +279,21 @@ public class UserManagementService(UserManager<User> userManager, AppDbContext d
         var description = "(none)";
         if (volunteerExaminerId is { } veId)
         {
-            var person = await dbContext.VolunteerExaminers.FirstOrDefaultAsync(v => v.Id == veId, cancellationToken);
+            // Scoped to the acting admin's reachable VEs (#239). The caller's AuthorizeManageAsync
+            // authorizes the *target user*; this id is a second, independent object arriving from the
+            // same form, and nothing checked it. Existence plus "not already claimed" is not
+            // authorization — every VE row on the deployment satisfies both.
+            //
+            // The link grants no access, so this is not a privilege-escalation path. What it does is
+            // permanently claim another team's record: the rightful team then gets
+            // VolunteerExaminerAlreadyLinked and cannot link their own person without an admin
+            // unpicking it.
+            //
+            // NotFound rather than a distinct "not yours" result, deliberately — the two are
+            // indistinguishable to the caller by design, so the response cannot be used to test
+            // whether a given id exists on some other team.
+            var person = await ScopedVolunteerExaminers(allowedTeamIds)
+                .FirstOrDefaultAsync(v => v.Id == veId, cancellationToken);
             if (person is null)
             {
                 return UserActionResult.NotFound;

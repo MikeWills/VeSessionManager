@@ -40,6 +40,10 @@ public class VeImportModel(
 
     public IReadOnlyList<(int Id, string Name)> AvailableTeams { get; private set; } = [];
     public int? ResolvedTeamId { get; private set; }
+
+    /// <summary>Which teams' VE records this admin can already see. Null = every team (SystemAdmin).
+    /// Used only to decide what the import preview discloses about a cross-team match (#240).</summary>
+    private IReadOnlyList<int>? VisibleTeamIds { get; set; }
     public VeImportPreview? Preview { get; private set; }
 
     public async Task<IActionResult> OnGetAsync()
@@ -71,7 +75,8 @@ public class VeImportModel(
         using var reader = new StreamReader(file.OpenReadStream());
         CsvText = await reader.ReadToEndAsync(HttpContext.RequestAborted);
 
-        Preview = await importService.ParseAsync(CsvText, teamId, HttpContext.RequestAborted);
+        Preview = await importService.ParseAsync(
+            CsvText, teamId, VisibleTeamIds, HttpContext.RequestAborted);
         return Page();
     }
 
@@ -114,5 +119,9 @@ public class VeImportModel(
 
         AvailableTeams = await accessScope.GetAvailableTeamsAsync(dbContext, user);
         ResolvedTeamId = adminAccessScope.TryResolveManageableTeamId(user, TeamId, [.. AvailableTeams.Select(t => t.Id)]);
+
+        // Null for a SystemAdmin, meaning every team — see ParseAsync's own parameter docs. Held as a
+        // field because LoadAsync is where the user is resolved and the preview handler needs it.
+        VisibleTeamIds = adminAccessScope.GetEffectiveTeamIds(user);
     }
 }

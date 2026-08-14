@@ -73,7 +73,7 @@ public class UserVolunteerExaminerLinkTests
         var person = await SeedVeAsync(dbContext, "W9NB", "Nick Bebout");
 
         var result = await CreateService(dbContext)
-            .SetVolunteerExaminerAsync(target.Id, person.Id, acting.Id, CancellationToken.None);
+            .SetVolunteerExaminerAsync(target.Id, person.Id, acting.Id, allowedTeamIds: null, CancellationToken.None);
 
         Assert.Equal(UserActionResult.Success, result);
         Assert.Equal(person.Id, dbContext.Users.Single(u => u.Id == target.Id).VolunteerExaminerId);
@@ -88,9 +88,9 @@ public class UserVolunteerExaminerLinkTests
         var target = await SeedUserAsync(dbContext, "W9NB", "lead@example.org");
         var person = await SeedVeAsync(dbContext, "W9NB");
         var service = CreateService(dbContext);
-        await service.SetVolunteerExaminerAsync(target.Id, person.Id, acting.Id, CancellationToken.None);
+        await service.SetVolunteerExaminerAsync(target.Id, person.Id, acting.Id, allowedTeamIds: null, CancellationToken.None);
 
-        var result = await service.SetVolunteerExaminerAsync(target.Id, null, acting.Id, CancellationToken.None);
+        var result = await service.SetVolunteerExaminerAsync(target.Id, null, acting.Id, allowedTeamIds: null, CancellationToken.None);
 
         Assert.Equal(UserActionResult.Success, result);
         Assert.Null(dbContext.Users.Single(u => u.Id == target.Id).VolunteerExaminerId);
@@ -109,9 +109,9 @@ public class UserVolunteerExaminerLinkTests
         var second = await SeedUserAsync(dbContext, "W9NB", "second@example.org");
         var person = await SeedVeAsync(dbContext, "W9NB");
         var service = CreateService(dbContext);
-        await service.SetVolunteerExaminerAsync(first.Id, person.Id, acting.Id, CancellationToken.None);
+        await service.SetVolunteerExaminerAsync(first.Id, person.Id, acting.Id, allowedTeamIds: null, CancellationToken.None);
 
-        var result = await service.SetVolunteerExaminerAsync(second.Id, person.Id, acting.Id, CancellationToken.None);
+        var result = await service.SetVolunteerExaminerAsync(second.Id, person.Id, acting.Id, allowedTeamIds: null, CancellationToken.None);
 
         Assert.Equal(UserActionResult.VolunteerExaminerAlreadyLinked, result);
         Assert.Null(dbContext.Users.Single(u => u.Id == second.Id).VolunteerExaminerId);
@@ -126,9 +126,9 @@ public class UserVolunteerExaminerLinkTests
         var target = await SeedUserAsync(dbContext, "W9NB", "lead@example.org");
         var person = await SeedVeAsync(dbContext, "W9NB");
         var service = CreateService(dbContext);
-        await service.SetVolunteerExaminerAsync(target.Id, person.Id, acting.Id, CancellationToken.None);
+        await service.SetVolunteerExaminerAsync(target.Id, person.Id, acting.Id, allowedTeamIds: null, CancellationToken.None);
 
-        var again = await service.SetVolunteerExaminerAsync(target.Id, person.Id, acting.Id, CancellationToken.None);
+        var again = await service.SetVolunteerExaminerAsync(target.Id, person.Id, acting.Id, allowedTeamIds: null, CancellationToken.None);
 
         Assert.Equal(UserActionResult.Success, again);
     }
@@ -143,7 +143,7 @@ public class UserVolunteerExaminerLinkTests
         var person = await SeedVeAsync(dbContext, "W9NB", "Nick Bebout");
         await SeedVeAsync(dbContext, "KM6Z", "Heather J. Parker");
 
-        var suggestion = await CreateService(dbContext).SuggestVolunteerExaminerAsync(user.Id, CancellationToken.None);
+        var suggestion = await CreateService(dbContext).SuggestVolunteerExaminerAsync(user.Id, allowedTeamIds: null, CancellationToken.None);
 
         Assert.Equal(person.Id, suggestion?.Id);
     }
@@ -155,7 +155,7 @@ public class UserVolunteerExaminerLinkTests
         var user = await SeedUserAsync(dbContext, null);
         await SeedVeAsync(dbContext, "W9NB");
 
-        Assert.Null(await CreateService(dbContext).SuggestVolunteerExaminerAsync(user.Id, CancellationToken.None));
+        Assert.Null(await CreateService(dbContext).SuggestVolunteerExaminerAsync(user.Id, allowedTeamIds: null, CancellationToken.None));
     }
 
     /// <summary>
@@ -169,7 +169,7 @@ public class UserVolunteerExaminerLinkTests
         var user = await SeedUserAsync(dbContext, "<UNKNOWN>");
         await SeedVeAsync(dbContext, "<UNKNOWN>");
 
-        Assert.Null(await CreateService(dbContext).SuggestVolunteerExaminerAsync(user.Id, CancellationToken.None));
+        Assert.Null(await CreateService(dbContext).SuggestVolunteerExaminerAsync(user.Id, allowedTeamIds: null, CancellationToken.None));
     }
 
     /// <summary>
@@ -184,7 +184,7 @@ public class UserVolunteerExaminerLinkTests
         await SeedVeAsync(dbContext, "W9NB", "Nick Bebout");
         await SeedVeAsync(dbContext, "W9NB", "Someone Else");
 
-        Assert.Null(await CreateService(dbContext).SuggestVolunteerExaminerAsync(user.Id, CancellationToken.None));
+        Assert.Null(await CreateService(dbContext).SuggestVolunteerExaminerAsync(user.Id, allowedTeamIds: null, CancellationToken.None));
     }
 
     [Fact]
@@ -195,9 +195,9 @@ public class UserVolunteerExaminerLinkTests
         var taken = await SeedUserAsync(dbContext, "W9NB", "taken@example.org");
         var asking = await SeedUserAsync(dbContext, "W9NB", "asking@example.org");
         var person = await SeedVeAsync(dbContext, "W9NB");
-        await CreateService(dbContext).SetVolunteerExaminerAsync(taken.Id, person.Id, acting.Id, CancellationToken.None);
+        await CreateService(dbContext).SetVolunteerExaminerAsync(taken.Id, person.Id, acting.Id, allowedTeamIds: null, CancellationToken.None);
 
-        Assert.Null(await CreateService(dbContext).SuggestVolunteerExaminerAsync(asking.Id, CancellationToken.None));
+        Assert.Null(await CreateService(dbContext).SuggestVolunteerExaminerAsync(asking.Id, allowedTeamIds: null, CancellationToken.None));
     }
 
     /// <summary>Case and whitespace must not decide whether two people are the same person.</summary>
@@ -208,8 +208,133 @@ public class UserVolunteerExaminerLinkTests
         var user = await SeedUserAsync(dbContext, "  w9nb  ");
         var person = await SeedVeAsync(dbContext, "W9NB");
 
-        var suggestion = await CreateService(dbContext).SuggestVolunteerExaminerAsync(user.Id, CancellationToken.None);
+        var suggestion = await CreateService(dbContext).SuggestVolunteerExaminerAsync(user.Id, allowedTeamIds: null, CancellationToken.None);
 
         Assert.Equal(person.Id, suggestion?.Id);
+    }
+
+    // ---- #239: the VE id is a second object from the same form, and needs its own scope ----
+
+    private static async Task<Team> SeedTeamAsync(AppDbContext dbContext, string name)
+    {
+        var team = new Team { Name = name, ExamToolsTeamCode = name, CreatedUtc = Now };
+        dbContext.Teams.Add(team);
+        await dbContext.SaveChangesAsync();
+        return team;
+    }
+
+    private static async Task AddToTeamAsync(AppDbContext dbContext, VolunteerExaminer person, Team team)
+    {
+        dbContext.VeTeamMemberships.Add(new VeTeamMembership
+        {
+            VolunteerExaminer = person, Team = team, IsActive = true, CreatedUtc = Now
+        });
+        await dbContext.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// The finding. AuthorizeManageAsync covers the target USER; this id is a separate one from the
+    /// same form, and the service checked only that the VE existed and was unclaimed — which every
+    /// row on the deployment satisfies. The link grants no access, so this is not privilege
+    /// escalation: it permanently claims another team's record, and the rightful team then gets
+    /// VolunteerExaminerAlreadyLinked and cannot link their own person.
+    /// </summary>
+    [Fact]
+    public async Task LinkingRefusesAVeOutsideTheActingAdminsTeams()
+    {
+        await using var dbContext = CreateContext();
+        var acting = await SeedUserAsync(dbContext, "WX0MIK", "admin@example.org");
+        var target = await SeedUserAsync(dbContext, "W9NB", "lead@example.org");
+        var mine = await SeedTeamAsync(dbContext, "MINE");
+        var theirs = await SeedTeamAsync(dbContext, "THEIRS");
+        var person = await SeedVeAsync(dbContext, "W9NB", "Nick Bebout");
+        await AddToTeamAsync(dbContext, person, theirs);
+
+        var result = await CreateService(dbContext)
+            .SetVolunteerExaminerAsync(target.Id, person.Id, acting.Id, allowedTeamIds: [mine.Id], CancellationToken.None);
+
+        // NotFound, not a distinct "not yours" — the two must be indistinguishable, or the response
+        // itself answers "does this id exist on some other team?".
+        Assert.Equal(UserActionResult.NotFound, result);
+        Assert.Null(dbContext.Users.Single(u => u.Id == target.Id).VolunteerExaminerId);
+        Assert.DoesNotContain(dbContext.AuditLogs, a => a.Action == "UserVolunteerExaminerLinked");
+    }
+
+    [Fact]
+    public async Task LinkingAllowsAVeOnTheActingAdminsOwnTeam()
+    {
+        await using var dbContext = CreateContext();
+        var acting = await SeedUserAsync(dbContext, "WX0MIK", "admin@example.org");
+        var target = await SeedUserAsync(dbContext, "W9NB", "lead@example.org");
+        var mine = await SeedTeamAsync(dbContext, "MINE");
+        var person = await SeedVeAsync(dbContext, "W9NB", "Nick Bebout");
+        await AddToTeamAsync(dbContext, person, mine);
+
+        var result = await CreateService(dbContext)
+            .SetVolunteerExaminerAsync(target.Id, person.Id, acting.Id, allowedTeamIds: [mine.Id], CancellationToken.None);
+
+        Assert.Equal(UserActionResult.Success, result);
+        Assert.Equal(person.Id, dbContext.Users.Single(u => u.Id == target.Id).VolunteerExaminerId);
+    }
+
+    /// <summary>
+    /// Null means every team, not none. Spelled `allowedTeamIds?.Contains(id) ?? false` this locks
+    /// SystemAdmins out of the whole feature — the exact inversion CLAUDE.md records.
+    /// </summary>
+    [Fact]
+    public async Task LinkingWithNullAllowedTeamsReachesEveryTeam()
+    {
+        await using var dbContext = CreateContext();
+        var acting = await SeedUserAsync(dbContext, "WX0MIK", "admin@example.org");
+        var target = await SeedUserAsync(dbContext, "W9NB", "lead@example.org");
+        var theirs = await SeedTeamAsync(dbContext, "THEIRS");
+        var person = await SeedVeAsync(dbContext, "W9NB", "Nick Bebout");
+        await AddToTeamAsync(dbContext, person, theirs);
+
+        var result = await CreateService(dbContext)
+            .SetVolunteerExaminerAsync(target.Id, person.Id, acting.Id, allowedTeamIds: null, CancellationToken.None);
+
+        Assert.Equal(UserActionResult.Success, result);
+    }
+
+    /// <summary>Clearing the link takes no VE id, so scoping must not break it.</summary>
+    [Fact]
+    public async Task ClearingTheLinkIsUnaffectedByScope()
+    {
+        await using var dbContext = CreateContext();
+        var acting = await SeedUserAsync(dbContext, "WX0MIK", "admin@example.org");
+        var target = await SeedUserAsync(dbContext, "W9NB", "lead@example.org");
+        var mine = await SeedTeamAsync(dbContext, "MINE");
+        var person = await SeedVeAsync(dbContext, "W9NB", "Nick Bebout");
+        await AddToTeamAsync(dbContext, person, mine);
+
+        var service = CreateService(dbContext);
+        await service.SetVolunteerExaminerAsync(target.Id, person.Id, acting.Id, allowedTeamIds: [mine.Id], CancellationToken.None);
+        var result = await service.SetVolunteerExaminerAsync(target.Id, null, acting.Id, allowedTeamIds: [mine.Id], CancellationToken.None);
+
+        Assert.Equal(UserActionResult.Success, result);
+        Assert.Null(dbContext.Users.Single(u => u.Id == target.Id).VolunteerExaminerId);
+    }
+
+    /// <summary>
+    /// The suggestion must use the same scope as the setter. Otherwise the page renders another
+    /// team's VE name — a disclosure in itself — beside a button whose POST is then refused.
+    /// </summary>
+    [Fact]
+    public async Task SuggestionIsScopedToTheSameTeamsAsTheSetter()
+    {
+        await using var dbContext = CreateContext();
+        var target = await SeedUserAsync(dbContext, "W9NB", "lead@example.org");
+        var mine = await SeedTeamAsync(dbContext, "MINE");
+        var theirs = await SeedTeamAsync(dbContext, "THEIRS");
+        var person = await SeedVeAsync(dbContext, "W9NB", "Nick Bebout");
+        await AddToTeamAsync(dbContext, person, theirs);
+
+        var service = CreateService(dbContext);
+
+        Assert.Null(await service.SuggestVolunteerExaminerAsync(target.Id, allowedTeamIds: [mine.Id], CancellationToken.None));
+
+        var visible = await service.SuggestVolunteerExaminerAsync(target.Id, allowedTeamIds: null, CancellationToken.None);
+        Assert.Equal(person.Id, visible?.Id);
     }
 }
