@@ -93,9 +93,9 @@ else
                     <tr>
                         <td class="count">@row.LineNumber</td>
                         <td class="mono">@(row.CallSign ?? "—")</td>
-                        <td>@row.Name</td>
+                        <td>@row.DisplayName</td>
                         <td>
-                            @switch (row.Action)
+                            @switch (row.DisplayAction)
                             {
                                 case VeImportAction.Create:
                                     <span class="chip chip-green">New VE</span>

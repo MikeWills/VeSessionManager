@@ -85,8 +85,11 @@ public class UsersModel(AppDbContext dbContext, UserManager<User> userManager, A
         var rows = new List<UserRow>(users.Count);
         foreach (var u in users)
         {
+            // Same scope the setter enforces (#239) — an unscoped suggestion would render a
+            // "link this VE" button, and another team's VE name, for a link the POST then refuses.
             var suggestion = u.VolunteerExaminerId is null
-                ? await userManagementService.SuggestVolunteerExaminerAsync(u.Id, HttpContext.RequestAborted)
+                ? await userManagementService.SuggestVolunteerExaminerAsync(
+                    u.Id, adminAccessScope.GetEffectiveTeamIds(user), HttpContext.RequestAborted)
                 : null;
 
             rows.Add(new UserRow(
@@ -173,8 +176,11 @@ public class UsersModel(AppDbContext dbContext, UserManager<User> userManager, A
         var auth = await AuthorizeManageAsync(targetUserId);
         if (auth is null) return Forbid();
 
+        // AuthorizeManageAsync covers targetUserId. volunteerExaminerId is a second id from the same
+        // form and needs its own scope (#239) — null here means "every team", the SystemAdmin case.
         var result = await userManagementService.SetVolunteerExaminerAsync(
-            targetUserId, volunteerExaminerId, auth.Value.ActingUser.Id, CancellationToken.None);
+            targetUserId, volunteerExaminerId, auth.Value.ActingUser.Id,
+            adminAccessScope.GetEffectiveTeamIds(auth.Value.ActingUser), CancellationToken.None);
 
         TempData[result == UserActionResult.Success ? "StatusMessage" : "ErrorMessage"] = result switch
         {
