@@ -79,6 +79,13 @@ internal class ZoomMeetingWireResponse
 internal class ZoomMeetingListWireResponse
 {
     public List<ZoomMeetingListItemWireResponse> Meetings { get; set; } = [];
+
+    /// <summary>
+    /// Zoom's cursor for the next page, empty when this is the last one. The DTO had no such field
+    /// at all, so every response past the first page was invisible — see ListMeetingsAsync (#251).
+    /// </summary>
+    [JsonPropertyName("next_page_token")]
+    public string? NextPageToken { get; set; }
 }
 
 internal class ZoomMeetingListItemWireResponse

@@ -28,19 +28,36 @@ public sealed class ZoomClient : IZoomClient, IDisposable
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
+    /// <summary>
+    /// Safety bound on the pagination loop in <see cref="ListMeetingsAsync"/>. At Zoom's default page
+    /// size of 30 this is 1,500 scheduled meetings — far beyond any real VE team, and reached only by
+    /// a token that fails to advance, which is a loop rather than a large account.
+    /// </summary>
+    private const int MaxMeetingListPages = 50;
+
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<ZoomClient> _logger;
     private readonly HttpClient _httpClient;
     private readonly ConcurrentDictionary<int, TeamZoomSession> _sessionsByTeamId = new();
 
     public ZoomClient(TimeProvider timeProvider, ILogger<ZoomClient> logger)
+        : this(timeProvider, logger, new SocketsHttpHandler { PooledConnectionLifetime = TimeSpan.FromMinutes(15) })
+    {
+    }
+
+    /// <summary>
+    /// Test seam (#251). ListMeetingsAsync follows Zoom's pagination, and there is no way to prove it
+    /// does without standing in for Zoom — a truncated list is exactly the failure the change exists
+    /// to prevent, so "it looks right" is not good enough.
+    ///
+    /// <para>Internal rather than public: this is not a supported way to construct the client, and a
+    /// public handler parameter would read like one.</para>
+    /// </summary>
+    internal ZoomClient(TimeProvider timeProvider, ILogger<ZoomClient> logger, HttpMessageHandler handler)
     {
         _timeProvider = timeProvider;
         _logger = logger;
-        _httpClient = new HttpClient(new SocketsHttpHandler
-        {
-            PooledConnectionLifetime = TimeSpan.FromMinutes(15)
-        });
+        _httpClient = new HttpClient(handler);
     }
 
     public async Task<ZoomMeeting> CreateMeetingAsync(ZoomCredentials credentials, ZoomMeetingRequest request, CancellationToken cancellationToken)
@@ -80,18 +97,70 @@ public sealed class ZoomClient : IZoomClient, IDisposable
         _logger.LogInformation("Deleted Zoom meeting {ZoomMeetingId} for team {TeamId}", meetingId, credentials.TeamId);
     }
 
+    /// <summary>
+    /// Every scheduled meeting for this account, following Zoom's pagination to the end (#251).
+    ///
+    /// <para><b>This call exists for exactly one reason: it is the query-before-create dedup guard</b>
+    /// behind SessionEventSchedulingService.FindExistingMeetingAsync. A partial list does not degrade
+    /// it — it defeats it. A poll that crashed after Zoom's create succeeded but before the id was
+    /// persisted asks this method "does my meeting already exist?", and a truncated list answers no,
+    /// so the retry creates a second one. That is precisely the bug class the guard was built for
+    /// after the 2026-07-21 Discord incident (~6 real duplicate events).</para>
+    ///
+    /// <para>It previously fetched one page and stopped. Zoom's default page size is 30, and the wire
+    /// DTO had no token field, so the truncation was not merely unhandled — it was invisible. A team
+    /// simply stopped being protected once it had 30 scheduled meetings, with nothing to indicate the
+    /// guard had quietly become decorative.</para>
+    ///
+    /// <para><b>page_size is deliberately not set.</b> Raising it would cut round trips, but Zoom
+    /// rejects an out-of-range value with a 400 and SendAsync throws on non-success — so a wrong
+    /// constant takes Zoom scheduling down entirely, and the maximum could not be verified (Zoom's
+    /// API reference is a JavaScript app that does not render for a fetch). Correctness does not
+    /// depend on the page size: following the token to the end returns everything at any page size,
+    /// including the default. If round trips ever matter, verify the maximum against a live response
+    /// first.</para>
+    /// </summary>
     public async Task<IReadOnlyList<ZoomMeeting>> ListMeetingsAsync(ZoomCredentials credentials, CancellationToken cancellationToken)
     {
-        var response = await SendAsync(
-            credentials, HttpMethod.Get, $"{ApiBaseUrl}/v2/users/{Uri.EscapeDataString(credentials.UserId)}/meetings?type=scheduled",
-            body: null, cancellationToken);
+        var url = $"{ApiBaseUrl}/v2/users/{Uri.EscapeDataString(credentials.UserId)}/meetings?type=scheduled";
+        var meetings = new List<ZoomMeeting>();
+        string? pageToken = null;
+        var pages = 0;
 
-        var list = await response.Content.ReadFromJsonAsync<ZoomMeetingListWireResponse>(JsonOptions, cancellationToken)
-            ?? throw new InvalidOperationException("Zoom list-meetings response body was empty.");
+        do
+        {
+            var pageUrl = pageToken is null ? url : $"{url}&next_page_token={Uri.EscapeDataString(pageToken)}";
+            var response = await SendAsync(credentials, HttpMethod.Get, pageUrl, body: null, cancellationToken);
 
-        return list.Meetings
-            .Select(m => new ZoomMeeting { Id = m.Id.ToString(), JoinUrl = m.JoinUrl, Topic = m.Topic, StartTimeUtc = DateTime.SpecifyKind(m.StartTime, DateTimeKind.Utc) })
-            .ToList();
+            var page = await response.Content.ReadFromJsonAsync<ZoomMeetingListWireResponse>(JsonOptions, cancellationToken)
+                ?? throw new InvalidOperationException("Zoom list-meetings response body was empty.");
+
+            meetings.AddRange(page.Meetings.Select(m => new ZoomMeeting
+            {
+                Id = m.Id.ToString(),
+                JoinUrl = m.JoinUrl,
+                Topic = m.Topic,
+                StartTimeUtc = DateTime.SpecifyKind(m.StartTime, DateTimeKind.Utc)
+            }));
+
+            // Zoom sends an empty string rather than omitting the field on the last page.
+            pageToken = string.IsNullOrEmpty(page.NextPageToken) ? null : page.NextPageToken;
+            pages++;
+        }
+        while (pageToken is not null && pages < MaxMeetingListPages);
+
+        // Bounded, and loud when the bound bites. A token that never clears — a Zoom bug, or a token
+        // that does not advance — would otherwise hold this poll forever, and the whole point of the
+        // change is that a truncated list must never again be silent.
+        if (pageToken is not null)
+        {
+            _logger.LogWarning(
+                "Zoom list-meetings stopped at the {PageLimit}-page limit for team {TeamId} with more pages available — " +
+                "the duplicate-prevention check is working from an incomplete list and may create a duplicate meeting",
+                MaxMeetingListPages, credentials.TeamId);
+        }
+
+        return meetings;
     }
 
     private static ZoomMeetingWireRequest ToWireRequest(ZoomMeetingRequest request) => new()
