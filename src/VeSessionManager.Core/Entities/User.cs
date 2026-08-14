@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations.Schema;
 using Microsoft.AspNetCore.Identity;
 
 namespace VeSessionManager.Core.Entities;
@@ -35,6 +36,24 @@ public class User : IdentityUser<int>
     public DateTime? LastPasswordResetRequestedUtc { get; set; }
 
     public UserRole Role { get; set; }
+
+    /// <summary>
+    /// Deactivated by an admin, as opposed to temporarily locked out by failed sign-ins. Both use
+    /// Identity's <c>LockoutEnd</c> column (there is no IsActive flag — see UserManagementService),
+    /// and <b>only the sentinel value means deactivated</b>: <c>DeactivateAsync</c> sets
+    /// <see cref="DateTimeOffset.MaxValue"/>, while Identity's ordinary lockout sets a few minutes
+    /// from now.
+    ///
+    /// <para>Exists because <c>UserManager.IsLockedOutAsync</c> cannot tell those apart, and code
+    /// that wants "is this account switched off" got "…or did someone just fumble their password
+    /// five times" for free. That was #262: five wrong guesses against a known address also disabled
+    /// that account's password-reset path for the lockout window, and the user was told "check your
+    /// inbox" either way, so they waited for mail that was never sent.</para>
+    ///
+    /// <para>Not mapped: it reads a column that is already mapped.</para>
+    /// </summary>
+    [NotMapped]
+    public bool IsDeactivated => LockoutEnd == DateTimeOffset.MaxValue;
 
     /// <summary>
     /// Light or dark, remembered on the account rather than in one browser's localStorage. Defaults

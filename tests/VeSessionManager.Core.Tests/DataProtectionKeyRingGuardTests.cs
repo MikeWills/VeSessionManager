@@ -152,4 +152,64 @@ public class DataProtectionKeyRingGuardTests
 
         await DataProtectionKeyRingGuard.VerifyAsync(dbContext, NullLogger.Instance);
     }
+
+    // ---- #243: the sixth encrypted column lives on SystemSettings, not Team ----
+
+    /// <summary>
+    /// The finding. The guard iterated Teams only, so an unreadable SystemSmtpPassword sailed past
+    /// it — and that one is the worst to miss: it is used verbatim as an SMTP password, so password
+    /// reset and VE self-service links fail to authenticate, and PasswordResetService swallows send
+    /// failures on purpose to avoid an enumeration oracle. The user is told "check your inbox" and
+    /// waits forever.
+    /// </summary>
+    [Fact]
+    public async Task UnreadableSystemSmtpPassword_Throws()
+    {
+        await using var dbContext = CreateContext();
+        dbContext.SystemSettings.Add(new SystemSettings { SystemSmtpPassword = Ciphertext });
+        await dbContext.SaveChangesAsync();
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => DataProtectionKeyRingGuard.VerifyAsync(dbContext, NullLogger.Instance));
+
+        Assert.Contains(nameof(SystemSettings.SystemSmtpPassword), ex.Message);
+    }
+
+    /// <summary>
+    /// The worst case in the finding, and the one that reads as fine: zero teams but a configured
+    /// system sender. The guard iterated an empty list, logged "verified", and checked nothing at
+    /// all — a deployment where the only stored credential is the unreadable one.
+    /// </summary>
+    [Fact]
+    public async Task NoTeamsButUnreadableSystemSmtpPassword_Throws()
+    {
+        await using var dbContext = CreateContext();
+        dbContext.SystemSettings.Add(new SystemSettings { SystemSmtpPassword = Ciphertext });
+        await dbContext.SaveChangesAsync();
+
+        Assert.Empty(dbContext.Teams);
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            () => DataProtectionKeyRingGuard.VerifyAsync(dbContext, NullLogger.Instance));
+    }
+
+    [Fact]
+    public async Task ReadableSystemSmtpPassword_Passes()
+    {
+        await using var dbContext = CreateContext();
+        dbContext.SystemSettings.Add(new SystemSettings { SystemSmtpPassword = "a-real-password" });
+        await dbContext.SaveChangesAsync();
+
+        await DataProtectionKeyRingGuard.VerifyAsync(dbContext, NullLogger.Instance);
+    }
+
+    /// <summary>A deployment that never configured a system sender has nothing to verify here.</summary>
+    [Fact]
+    public async Task NullSystemSmtpPassword_Passes()
+    {
+        await using var dbContext = CreateContext();
+        dbContext.SystemSettings.Add(new SystemSettings());
+        await dbContext.SaveChangesAsync();
+
+        await DataProtectionKeyRingGuard.VerifyAsync(dbContext, NullLogger.Instance);
+    }
 }
