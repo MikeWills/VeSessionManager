@@ -97,37 +97,47 @@ Back up `/var/lib/vesessionmanager-keys/` **separately from, and not alongside**
 backup — that separation is now the whole point of the directory being separate. Losing it while the
 database survives makes every stored credential permanently unrecoverable.
 
-**Every deploy already takes a snapshot of both**, in `deploy.yml`, before it stops the services:
+**Every deploy already takes a snapshot of both**, in `deploy.yml`, *after* it stops the services:
 
 ```bash
-# Database — snapshot beside the .db file
-sudo rsync --ignore-missing-args \
-  /var/lib/vesessionmanager/vesessionmanager.db \
-  /var/lib/vesessionmanager/vesessionmanager.db.bak-$(date +%Y%m%d%H%M%S)
-
-# Key ring — snapshot INSIDE the key directory, never beside the database
-sudo rsync -a --ignore-missing-args \
-  /var/lib/vesessionmanager-keys/ \
-  /var/lib/vesessionmanager-keys/.bak-$(date +%Y%m%d%H%M%S)/
+sudo /usr/local/sbin/vesessionmanager-backup-db        # -> /var/lib/vesessionmanager/vesessionmanager.db.bak-<stamp>
+sudo /usr/local/sbin/vesessionmanager-backup-keyring   # -> /var/lib/vesessionmanager-keys/.bak-<stamp>/
 ```
 
-Two things about those commands are deliberate and worth not "tidying up":
+Four things here are deliberate and worth not "tidying up":
 
-- **`rsync --ignore-missing-args`, not `cp`.** On a brand-new box neither path exists yet, and an
-  unconditional `cp` made the very first deploy to any server fail before it had stopped anything
-  (found live 2026-08-04). Guarding with `test -f` is not an option either: `sudo test` is not in the
-  deploy user's sudoers allowlist, and an unprivileged `test -f` cannot read `/var/lib/vesessionmanager`
-  at all — so it would report "missing" forever and silently skip every backup from then on, which is
-  worse than the failure it replaces. `/usr/bin/rsync` *is* allowlisted, copies normally when the
-  source is there, and no-ops cleanly when it is not.
+- **Argument-free helpers on the box, not `sudo rsync` from the runner.** A sudoers rule naming
+  `/usr/bin/rsync *` is root-equivalent — it can write any file anywhere — which quietly voided every
+  narrow rule beside it (#254). The helpers take no arguments at all, and refuse to run if given any.
+- **They live in gitignored `ops/`.** A change to either is a server-side edit that no PR carries;
+  the copies in this repo's working tree are the source, copied to the box by hand.
+- **The database snapshot uses `sqlite3 .backup`, not a file copy** (#343), and runs
+  `PRAGMA integrity_check` on the result, deleting it if it fails. It produces one self-contained
+  file: no `-wal`/`-shm` sidecars to restore alongside it. A file copy was correct only while nothing
+  was writing, and got that guarantee from the service stop above — see `BACKUP.md` for the silent
+  data loss (#255) that came of not having it.
 - **The two snapshots go to different directories.** Putting the key ring's copy next to the database
   would rebuild the exact problem that separating them solved — one archive of one directory carrying
   both the ciphertext and the key.
 
+On a brand-new box neither path exists yet — the database is not created until a service first runs
+`Database.Migrate()` — and each helper treats that as normal rather than failing. An unconditional
+copy made the very first deploy to any server fail here (found live 2026-08-04), and guarding from
+the runner side was never an option: `sudo test` is not allowlisted, and an unprivileged `test -f`
+cannot read `/var/lib/vesessionmanager` at all, so it would report "missing" forever once the
+database existed. Inside a helper, running as root, it is just an `if`.
+
 ⚠️ **These are rollback snapshots, not backups.** Both sit on the same disk as the thing they
-protect, so they survive a bad deploy and nothing else. A real off-box backup of
-`/var/lib/vesessionmanager-keys/` — to somewhere with tighter access than wherever the database
-backup goes — is still a separate manual job, and is the one that matters if the box is lost.
+protect, so they survive a bad deploy and nothing else. The off-box backup that matters if the box is
+lost is a separate job, built 2026-08-14 (#256): database and key ring to separate Wasabi buckets
+under separate keys, the key ring GPG-encrypted on top, both halves restore-tested.
+
+Each helper keeps the **newest 5** snapshots and deletes the rest, pruning only after a new one has
+been written and verified — so a failed snapshot can never also discard a good one. Only
+`.bak-<14 digits>` names are eligible, which means a hand-made `…bak-before-migration` is left alone
+by whoever named it that to keep it. Retention is a `RETAIN` constant at the top of each helper, and
+the two are deliberately equal: the snapshots are taken as a pair and restored as a pair, so
+different retentions would leave a stamp with one half present and the other already gone.
 
 **Why `appsettings.Production.json` needs no manual server-side editing:** every real integration
 credential (ExamTools/Zoom/Discord/Square/SMTP) lives per-`Team` in the database, hand-edited there
