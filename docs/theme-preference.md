@@ -103,10 +103,14 @@ failure modes live (the `System` attribute above, and the script's position in t
 Two things the tests caught that review had not:
 
 - The `data-theme=""` rendering described above.
-- **`MapStaticAssets` makes `asp-append-version` emit a fingerprinted *filename*** —
-  `/js/theme.qjcbqpniws.js` — not a `?v=` query. The first version of the ordering test searched for
-  the literal `/js/theme.js`, found nothing, and reported the script as missing when it was right
-  there in the head. Worth knowing for any future test that asserts on an asset URL.
+- **`MapStaticAssets` makes `asp-append-version` emit a fingerprinted *filename*** — the served name
+  is `theme`, a content hash, then `.js`, rather than the source name with a `?v=` query appended.
+  The first version of the ordering test searched for the literal source name, found nothing, and
+  reported the script as missing when it was right there in the head. So an assertion on an asset
+  URL has to match loosely; the hash also changes with the file's contents, which is a second reason
+  not to write one down. (Naming a served path verbatim here would fail
+  `DocumentationReferenceTests` too — it resolves every path a live document names against a real
+  file, and a generated one has none.)
 
 And one mutation that did *not* discriminate, which is why the `AddAntiforgery` line is gone:
 removing it left all eleven tests green.
