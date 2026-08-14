@@ -1,4 +1,4 @@
-using System.Threading.RateLimiting;
+﻿using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.HttpOverrides;
@@ -145,6 +145,10 @@ builder.Services.AddScoped<TeamRefreshThrottle>();
 // Web only ever QUEUES an import (HistoricalImportService.QueueAsync) — the Worker runs it.
 builder.Services.AddScoped<HistoricalImportService>();
 builder.Services.AddSingleton<IngestionHealthCache>();
+
+// Same singleton reasoning as the line above, and for the same layout: the nav badges were four
+// uncached COUNT queries on every authenticated page render (#291).
+builder.Services.AddSingleton<NavBadgeCountCache>();
 
 // Phase 9b: the actual UI-triggered wiring for every Session Manager action — see
 // Pages/SessionManager/Detail.cshtml.cs.

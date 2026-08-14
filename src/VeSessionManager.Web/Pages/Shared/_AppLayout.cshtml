@@ -1,4 +1,4 @@
-@using Microsoft.AspNetCore.Antiforgery
+﻿@using Microsoft.AspNetCore.Antiforgery
 @using Microsoft.AspNetCore.Identity
 @using Microsoft.EntityFrameworkCore
 @using VeSessionManager.Core.Authorization
@@ -8,7 +8,7 @@
 @inject UserManager<User> UserManager
 @inject AppDbContext DbContext
 @inject SessionAccessScope AccessScope
-@inject NavBadgeCountService NavBadgeCounts
+@inject NavBadgeCountCache NavBadgeCounts
 @inject IAntiforgery Antiforgery
 @{
     // One load per request, shared with the page handler that already did this — see
@@ -34,7 +34,7 @@
 
     var badges = currentUser is null
         ? new NavBadgeCounts(0, 0, 0, 0)
-        : await NavBadgeCounts.GetCountsAsync(effectiveTeamIds, Context.RequestAborted);
+        : await NavBadgeCounts.GetAsync(effectiveTeamIds, Context.RequestAborted);
 
     var roleLabel = currentUser?.Role switch
     {
