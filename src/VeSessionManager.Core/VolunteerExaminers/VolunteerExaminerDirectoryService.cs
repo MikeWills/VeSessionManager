@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Entities;
 
@@ -94,6 +94,25 @@ public class VolunteerExaminerDirectoryService(AppDbContext dbContext)
             // case-sensitive, so "Member" and "member" would otherwise be different filters.
             var tag = tagName.Trim().ToLower();
             query = query.Where(m => m.TagAssignments.Any(a => a.VeTag.Name.ToLower() == tag));
+        }
+
+        // Licence status is a property of the PERSON, not of one membership, so filtering memberships
+        // by it is exact — every membership of a given VE agrees. That is what lets it move into SQL
+        // (#298), where it belongs: previously the entire roster was materialised and this ran in C#,
+        // which is the reason this method had no paging path at all.
+        //
+        // The dates inside that predicate are resolved in C# from nowUtc before the query is built —
+        // see VeLicenseStatusFilter. Nothing here asks the database what day it is.
+        if (filter.LicenseStatus is { } licenseStatus)
+        {
+            // Applied as an EXISTS over VolunteerExaminers rather than inlined onto m.VolunteerExaminer,
+            // because composing one expression into another needs Invoke, which EF cannot translate
+            // (and LINQKit is not a dependency here). This stays a single statement — the subquery
+            // matches on the primary key.
+            var matchesStatus = VeLicenseStatusFilter.For(licenseStatus, nowUtc);
+            query = query.Where(m => dbContext.VolunteerExaminers
+                .Where(matchesStatus)
+                .Any(v => v.Id == m.VolunteerExaminerId));
         }
 
         if (!string.IsNullOrWhiteSpace(search))
@@ -197,13 +216,11 @@ public class VolunteerExaminerDirectoryService(AppDbContext dbContext)
             })
             .OrderBy(r => r.VolunteerExaminer.Name)
             .Where(r => !guestsOnly || r.IsGuest)
-            // License status and last-worked join guests on this side of the grouping, and for the
-            // same reason: both are properties of the finished ROW. LastWorkedUtc is the max across
-            // the teams in scope, and the license status is derived in C# from the cached snapshot
-            // (DeriveSnapshotStatus is not translatable to SQL). Filtering memberships would answer
-            // a different question than the column shows.
-            .Where(r => filter.LicenseStatus is not { } status
-                || r.VolunteerExaminer.DeriveSnapshotStatus(nowUtc) == status)
+            // Licence status is NOT filtered here any more — it moved into SQL above (#298), which is
+            // where it belongs: it is a property of the person, identical across their memberships,
+            // so filtering memberships by it is exact. Last-worked stays on this side because it
+            // genuinely is a property of the finished ROW: the max across the teams in scope, which
+            // does not exist until the grouping has happened.
             // A row with no last-worked date satisfies NEITHER "worked since X" nor "not worked
             // since X": both are claims about a date that does not exist. A hand-added prospect is
             // therefore only ever in the unfiltered list, which is the honest answer.
