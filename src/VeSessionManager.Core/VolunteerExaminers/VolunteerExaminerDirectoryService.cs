@@ -211,13 +211,25 @@ public class VolunteerExaminerDirectoryService(AppDbContext dbContext)
             .Where(r => filter.WorkedToUtc is not { } to || (r.LastWorkedUtc is { } d && d <= to))];
     }
 
-    /// <summary>Everything one person's detail screen needs, or null when the id doesn't exist.</summary>
+    /// <summary>
+    /// Everything one person's detail screen needs, or null when the id doesn't exist.
+    ///
+    /// <para><b>AsSplitQuery, because this chains three sibling collections</b> — TeamMemberships,
+    /// VecAccreditations and CallSignHistory (#298). In one statement those multiply: a VE on 3 teams
+    /// with 2 accreditations and 4 past call signs is 24 rows carrying every column of all four
+    /// tables, to build 9 objects. Split, it is four small queries.
+    ///
+    /// <para>Safe here specifically because this loads <b>one</b> row by primary key. Split queries
+    /// run in separate round trips and so can see different snapshots without a surrounding
+    /// transaction; that matters for a paged list, and does not for a single person's detail page.</para>
+    /// </summary>
     public Task<VolunteerExaminer?> GetPersonAsync(int volunteerExaminerId, CancellationToken cancellationToken) =>
         dbContext.VolunteerExaminers
             .Include(v => v.TeamMemberships).ThenInclude(m => m.Team)
             .Include(v => v.TeamMemberships).ThenInclude(m => m.TagAssignments).ThenInclude(a => a.VeTag)
             .Include(v => v.VecAccreditations).ThenInclude(a => a.Vec)
             .Include(v => v.CallSignHistory)
+            .AsSplitQuery()
             .FirstOrDefaultAsync(v => v.Id == volunteerExaminerId, cancellationToken);
 }
 

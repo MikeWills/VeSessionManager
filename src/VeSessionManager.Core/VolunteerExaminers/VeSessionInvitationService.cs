@@ -46,10 +46,16 @@ public class VeSessionInvitationService(
             return [];
         }
 
+        // AsSplitQuery: two sibling collections off each membership (the VE's accreditations and the
+        // membership's tags) multiply against each other in a single statement, across the team's
+        // whole active roster (#298). Read-only, and nothing here depends on the two collections
+        // being a single consistent snapshot — the eligibility check below reads accreditations,
+        // the chips read tags, and neither is compared against the other.
         var memberships = await dbContext.VeTeamMemberships
             .Include(m => m.VolunteerExaminer).ThenInclude(v => v.VecAccreditations)
             .Include(m => m.TagAssignments).ThenInclude(a => a.VeTag)
             .Where(m => m.TeamId == session.TeamId && m.IsActive)
+            .AsSplitQuery()
             .ToListAsync(cancellationToken);
 
         var onRoster = await dbContext.SessionVolunteerExaminers
