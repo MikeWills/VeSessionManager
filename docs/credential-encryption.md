@@ -156,8 +156,18 @@ constraint with nothing enforcing it.
 ### Verifying a restored key ring: `--verify-keyring` (2026-08-12)
 
 ```bash
-sudo -u vesessionmanager dotnet /opt/vesessionmanager/worker/VeSessionManager.Worker.dll --verify-keyring
+sudo -u vesessionmanager env DOTNET_ENVIRONMENT=Production \
+  sh -c 'cd /opt/vesessionmanager/worker && exec dotnet ./VeSessionManager.Worker.dll --verify-keyring'
 ```
+
+⚠️ **The `cd` is load-bearing** — this is not the tidy version of a simpler command. The Worker is a
+generic Host, so its content root is the **current directory**, not the directory holding the DLL.
+The systemd unit sets `WorkingDirectory` for exactly this reason. Run it from a home directory
+instead and no `appsettings` file is found, so there is no connection string at all; SQLite opens an
+anonymous temporary database and the command reports `no such table: Teams` — which reads like a
+damaged database when in fact yours was never opened. The command now detects that case and says so,
+but the working directory is still the fix. Same root cause as the `DOTNET_ENVIRONMENT` gotcha in
+CLAUDE.md: this host takes more from the ambient process than it appears to.
 
 Runs the guard, prints its verdict, exits 0 (readable) or 1 (not), and starts nothing else. Added
 because proving a restored backup previously meant booting a normal Worker — which starts nine

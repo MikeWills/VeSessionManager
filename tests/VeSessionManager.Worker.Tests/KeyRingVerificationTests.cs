@@ -167,6 +167,33 @@ public class KeyRingVerificationTests
     }
 
     /// <summary>
+    /// The failure the very first real run produced, and the one whose own message was misleading.
+    ///
+    /// <para>Run the Worker DLL by hand from the wrong directory and no appsettings file is found,
+    /// so there is no connection string and SQLite opens an anonymous temporary database. The
+    /// resulting "no such table: Teams" reads as a damaged database when in fact the real one was
+    /// never opened. The advice has to appear, or the operator debugs the wrong thing.</para>
+    /// </summary>
+    [Fact]
+    public async Task NoConnectionString_ExplainsTheWorkingDirectory_RatherThanBlamingTheDatabase()
+    {
+        // No connection string at all — exactly what a missing appsettings.json produces.
+        await using var context = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>()
+            .UseSqlite("")
+            .Options);
+
+        var error = new StringWriter();
+        var exitCode = await KeyRingVerification.RunAsync(context, NullLogger.Instance, error);
+
+        var message = error.ToString();
+        Assert.Equal(1, exitCode);
+        Assert.Contains("No connection string was loaded", message);
+        // The two things the reader most needs: their data is untouched, and why.
+        Assert.Contains("nothing was read or written", message);
+        Assert.Contains("CURRENT DIRECTORY", message);
+    }
+
+    /// <summary>
     /// The safety property that lets this run against a restored copy, or on a schedule: it must not
     /// write to the database it is checking. An empty database stays empty — no schema created, no
     /// migration applied — even though the command ran to completion and returned a verdict.
