@@ -172,8 +172,11 @@ public class DetailModel(
         if (auth is null) return Forbid();
 
         var result = await manualRefreshService.RunForSessionAsync(auth.Value.Session.Team, Id, CancellationToken.None);
-        Apply(new ActionOutcome(true,
-            $"Refreshed — {result.CandidatesAdded} new candidate(s), {result.CandidatesUpdated} updated, {result.ConfirmationEmailsSent} confirmation email(s) sent."));
+
+        // Describe(), not a hand-built sentence: a failed pipeline returns zero counts, so the old
+        // message rendered "Refreshed — 0 new candidate(s)" in green over a total failure (#242).
+        var (success, message) = result.Describe(teamName: null);
+        Apply(new ActionOutcome(success, message));
         return RedirectToPage(new { id = Id });
     }
 

@@ -258,4 +258,82 @@ public class TeamPipelineTests
         var actual = await StepNamesAsync(dbContext);
         Assert.Equal(expected, actual);
     }
+
+    // ---- #242: a step that throws must be counted, not swallowed into a clean-looking result ----
+
+    /// <summary>
+    /// Fails every call. Stands in for the real cause of the finding: a team whose ExamTools
+    /// credentials are wrong, where every step that touches the feed throws.
+    /// </summary>
+    private sealed class ThrowingExamToolsClient : IExamToolsClient
+    {
+        private static Exception Boom() => new InvalidOperationException("ExamTools login failed.");
+
+        public Task<IReadOnlyList<ExamToolsSession>> GetTeamSessionsAsync(ExamToolsCredentials credentials, CancellationToken cancellationToken) =>
+            throw Boom();
+
+        public Task<IReadOnlyList<ExamToolsSession>> GetTeamClosedSessionsAsync(ExamToolsCredentials credentials, DateOnly startDateUtc, DateOnly endDateUtc, CancellationToken cancellationToken) =>
+            throw Boom();
+
+        public Task<IReadOnlyList<ExamToolsApplicant>> GetSessionApplicantsAsync(ExamToolsCredentials credentials, string examToolsSessionId, CancellationToken cancellationToken) =>
+            throw Boom();
+
+        public Task<IReadOnlyList<ExamToolsVe>> GetSessionVeRosterAsync(ExamToolsCredentials credentials, string examToolsSessionId, CancellationToken cancellationToken) =>
+            throw Boom();
+
+        public Task<ExamToolsApplicantDetail?> GetApplicantDetailAsync(ExamToolsCredentials credentials, string examToolsSessionId, string applicantId, CancellationToken cancellationToken) =>
+            throw Boom();
+    }
+
+    /// <summary>
+    /// The finding itself. JobRunHistoryLogger catches and does not rethrow — correctly, since that
+    /// is what stops one team's bad row taking down the Worker — so before this the pipeline could
+    /// not tell a caller that anything had gone wrong at all.
+    /// </summary>
+    [Fact]
+    public async Task AFailingStepIsCountedInTheResult()
+    {
+        using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+
+        var result = await CreatePipeline(dbContext, new ThrowingExamToolsClient())
+            .RunAsync(team, jobNamePrefix: "Manual", onlySessionId: null, CancellationToken.None);
+
+        Assert.True(result.FailedSteps > 0,
+            "A pipeline whose ExamTools calls all threw must report failed steps — otherwise its zero " +
+            "counts are indistinguishable from a run that had nothing to do.");
+    }
+
+    /// <summary>
+    /// And the pipeline still completes rather than propagating: the swallow-and-continue behaviour
+    /// is deliberate and must survive this change. A later step failing must not stop earlier ones
+    /// from having run, and the run must still be recorded.
+    /// </summary>
+    [Fact]
+    public async Task AFailingStepDoesNotAbortTheRest()
+    {
+        using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+
+        await CreatePipeline(dbContext, new ThrowingExamToolsClient())
+            .RunAsync(team, jobNamePrefix: "Manual", onlySessionId: null, CancellationToken.None);
+
+        // Every step still got its history row, failures included — that is the ops dashboard's
+        // whole purpose, and it is how the user is told which step broke.
+        var steps = await StepNamesAsync(dbContext);
+        Assert.Equal(ExpectedSteps.Select(s => "Manual" + s).ToArray(), steps);
+    }
+
+    /// <summary>A clean run reports zero, or the failure count is useless.</summary>
+    [Fact]
+    public async Task ACleanRunReportsNoFailedSteps()
+    {
+        using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+
+        var result = await CreatePipeline(dbContext)
+            .RunAsync(team, jobNamePrefix: string.Empty, onlySessionId: null, CancellationToken.None);
+
+        Assert.Equal(0, result.FailedSteps);
+    }
 }

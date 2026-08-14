@@ -54,6 +54,7 @@ public class TeamPipeline(
     /// </param>
     public async Task<TeamPipelineResult> RunAsync(Team team, string jobNamePrefix, int? onlySessionId, CancellationToken cancellationToken)
     {
+        var failedSteps = 0;
         var ingestion = new IngestionResult();
         await RunStepAsync("SessionIngestion", async ct => ingestion = onlySessionId is { } ingestSessionId
             ? await ingestionService.RefreshSessionCandidatesAsync(team, ingestSessionId, ct)
@@ -73,15 +74,34 @@ public class TeamPipeline(
         await RunStepAsync("RegistrationConfirmation", async ct =>
             email = await notificationService.SendRegistrationConfirmationsAsync(team, ct, onlySessionId));
 
-        return new TeamPipelineResult(ingestion, email);
+        return new TeamPipelineResult(ingestion, email, failedSteps);
 
         // Each step is passed as a result-returning delegate on purpose: that binds
         // JobRunHistoryLogger's generic overload, which records the step's own summary
         // ("sent 0, failed 1") on the history row. A void-returning step would log nothing useful.
-        Task RunStepAsync<TResult>(string name, Func<CancellationToken, Task<TResult>> step) =>
-            jobRunHistoryLogger.RunAsync(jobNamePrefix + name, step, team.Id, cancellationToken);
+        //
+        // The step's outcome is counted rather than discarded (#242). The logger swallows the
+        // exception by design, so without this the pipeline cannot distinguish "nothing to do" from
+        // "everything failed" — and a caller reporting the former while the latter happened is how
+        // "Refreshed HRCC — 0 new candidate(s)" came to be rendered in green over a team whose
+        // ExamTools credentials were wrong.
+        async Task RunStepAsync<TResult>(string name, Func<CancellationToken, Task<TResult>> step)
+        {
+            if (!await jobRunHistoryLogger.RunAsync(jobNamePrefix + name, step, team.Id, cancellationToken))
+            {
+                failedSteps++;
+            }
+        }
     }
 }
 
-/// <summary>What the pipeline produced. Only the two results any caller currently reports on — the others are recorded on their JobRunHistory rows.</summary>
-public record TeamPipelineResult(IngestionResult Ingestion, EmailNotificationResult Email);
+/// <summary>
+/// What the pipeline produced. Only the two results any caller currently reports on — the others are
+/// recorded on their JobRunHistory rows.
+/// </summary>
+/// <param name="FailedSteps">
+/// How many of the six steps threw (#242). Zero on a clean run. <b>Non-zero must not be reported as
+/// success</b>: the counts above are all zero in that case too, and are indistinguishable from a run
+/// that simply had nothing to do.
+/// </param>
+public record TeamPipelineResult(IngestionResult Ingestion, EmailNotificationResult Email, int FailedSteps);

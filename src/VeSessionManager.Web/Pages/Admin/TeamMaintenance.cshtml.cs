@@ -160,8 +160,11 @@ public class TeamMaintenanceModel(
         }
 
         var result = await manualRefreshService.RunAsync(team, CancellationToken.None);
-        TempData["StatusMessage"] =
-            $"Refreshed {team.Name} — {result.CandidatesAdded} new candidate(s), {result.CandidatesUpdated} updated, {result.ConfirmationEmailsSent} confirmation email(s) sent.";
+
+        // See Detail's handler and ManualRefreshResult.Describe — the same green-over-failure bug
+        // lived here in its own copy of the sentence (#242).
+        var (success, message) = result.Describe(team.Name);
+        TempData[success ? "StatusMessage" : "ErrorMessage"] = message;
         return RedirectToPage(new { teamId = team.Id });
     }
 
