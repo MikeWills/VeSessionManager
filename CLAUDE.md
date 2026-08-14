@@ -10,14 +10,22 @@ This is a Visual Studio project that is designed to automate many of the mundane
   `docs/audit-2026-08-03-tasks.md` and `docs/spec.md`'s Backlog were each a separate list of "what's
   left"; all three are now stubs pointing at issues. Useful labels: `ops` (configuration/server work,
   not code), `audit-2026-08-03`, `audit-2026-08-11`, `needs-design`, `security`, `tech-debt`.
-  Leading items, all three needing a human rather than code:
-  **[#185](https://github.com/MikeWills/VeSessionManager/issues/185)** (no production account can
-  sign in until the first SystemAdmin exists),
+  Leading items, both needing a human rather than code:
   **[#254](https://github.com/MikeWills/VeSessionManager/issues/254)** (the deploy account's
   `rsync *` sudoers grant is root-equivalent, which quietly voids the narrow `systemctl` rules the
   workflow comments cite as containment — and it lives in gitignored `ops/`, so no PR can fix it) and
-  **[#256](https://github.com/MikeWills/VeSessionManager/issues/256)** (no off-box backup of the
-  database *or* the key ring; without the latter every stored credential is unrecoverable).
+  **[#185](https://github.com/MikeWills/VeSessionManager/issues/185)**, which is now **only the
+  Google/Microsoft SSO configuration** — client secrets are app-level, so they need
+  `Authentication__*` environment variables in the systemd units. **This entry used to say "no
+  production account can sign in until the first SystemAdmin exists". That has been false since
+  2026-08-10**, when `--create-admin` landed and the issue itself was corrected; the description here
+  was never updated, and it was still being read back as a live blocker on 2026-08-13 while the
+  production SystemAdmin had been signing in for over a week. A stale summary of an issue outlives
+  the issue, which is the argument for pointing at issues rather than restating them.
+  **[#256](https://github.com/MikeWills/VeSessionManager/issues/256) (off-box backup) closed
+  2026-08-14** — database and key ring back up to separate Wasabi buckets under separate keys, the
+  key ring GPG-encrypted on top; both halves restore-tested, and the pair verified live with
+  `--verify-keyring`.
 - **[`docs/audit-2026-08-03-tasks.md`](docs/audit-2026-08-03-tasks.md) is still worth reading for its
   "Verified clean" section** — what the six-agent review checked and found sound (zero raw SQL, IDOR
   re-checks on every id-taking POST handler, CSRF correct, and a list of deliberate patterns not to
