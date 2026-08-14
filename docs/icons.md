@@ -35,9 +35,9 @@ An icon font ships the glyphs with the app, so there is no fallback lottery.
 
 ## Why Bootstrap Icons, and why self-hosted
 
-- **Standalone.** It needs no Bootstrap. Worth stating because Bootstrap *is* vendored here but is
-  essentially vestigial — it is loaded by `_Layout.cshtml`, used by exactly one page. Every real
-  screen runs on `app.css`.
+- **Standalone.** It needs no Bootstrap, which is what made it viable here: Bootstrap itself was
+  vendored once, used by essentially nothing, and **deleted in v0.3.0** (8.4 MB). Every screen runs
+  on `app.css`. Bootstrap Icons stayed because it is a font, not a framework.
 - **MIT, no free/pro split**, so no icon is unexpectedly unavailable.
 - **Self-hosted is mandatory, not a preference.** The CSP allows `font-src 'self'` plus Google Fonts
   only — a CDN reference would be blocked outright.

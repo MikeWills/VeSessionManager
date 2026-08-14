@@ -1,250 +1,151 @@
 # VE Session Manager
 
-Automates the mundane tasks a Ham Radio VE (Volunteer Examiner) Session Manager needs to do
-to run a test session — Zoom/Discord scheduling, candidate payment links, reminder emails,
-FCC/ARRL tracking — with a role-based admin backend. See [`docs/spec.md`](docs/spec.md) for
-the full phased build plan and data model.
+Automation for the mundane half of running an amateur radio exam session.
 
-## Prerequisites
+If you are a **Volunteer Examiner Session Manager**, you already know the routine around a session:
+create the Zoom meeting, post the Discord event, chase payments, send the confirmation email, send
+the reminder, then watch the FCC for a week to see whose license actually got granted. This app does
+that work, driven by the sessions you have already scheduled in **ExamTools**.
 
-- [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
-- `dotnet-ef` global tool (`dotnet tool install --global dotnet-ef`) if you need to add/inspect migrations directly
+It is a self-hosted web app plus a background worker. You run it on your own server; nothing about it
+is a service anyone sells you.
 
-## Solution Layout
+## What it does
 
-```
-src/
-  VeSessionManager.Core/     class library — entities, EF Core DbContext/migrations, JobRunHistoryLogger
-  VeSessionManager.Worker/   Worker Service — background jobs
-  VeSessionManager.Web/      ASP.NET Core admin backend
-tests/
-  VeSessionManager.Core.Tests/
-```
+- **Reads your sessions and candidates from ExamTools** and keeps following them — reschedules,
+  cancellations, walk-ins and roster changes all flow in on their own.
+- **Creates the Zoom meeting and the Discord event** for each session, and keeps the links attached
+  to it.
+- **Generates a Square payment link per candidate**, records payment when Square says so, and chases
+  what is still owed.
+- **Sends candidate email** — registration confirmation, day-before reminder, FCC fee reminder — from
+  templates you edit, in your team's own wording.
+- **Watches the FCC** through ExamTools' ULS mirror for the license grant or upgrade that resulted
+  from each exam, and shows you who is still pending.
+- **Tracks the volunteer side too** — VE rosters, accreditation, license expiry, sessions worked.
+- **Purges candidate PII** on a retention window you choose.
 
-## Build / Test / Run
+Everything except ExamTools is optional. Configure only the parts you use.
+
+## Requirements
+
+- [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) to build
+- A Linux server if you want to run it for real (systemd + a reverse proxy); Windows and macOS are
+  fine for development
+- An **ExamTools account** for your team — the one hard requirement
+- Optionally: a Zoom Server-to-Server OAuth app, a Discord bot, a Square account, an SMTP mailbox
+
+SQLite is the database. There is nothing else to install.
+
+## Quick start
 
 ```bash
+git clone https://github.com/MikeWills/VeSessionManager.git
+cd VeSessionManager
+
 dotnet build
 dotnet test
 
-dotnet run --project src/VeSessionManager.Worker
-dotnet run --project src/VeSessionManager.Web
+dotnet run --project src/VeSessionManager.Worker    # background jobs
+dotnet run --project src/VeSessionManager.Web       # admin backend, http://localhost:5158
 ```
 
-The Worker applies EF Core migrations automatically on startup, creating `vesessionmanager.db`
-if it doesn't exist yet. No manual `dotnet ef database update` step is required.
+The database is created and migrated automatically on first start — no `dotnet ef database update`
+step. In Development, four seeded accounts (one per role) let you sign in immediately; they are
+listed in [`docs/configuration.md`](docs/configuration.md#development-seed-accounts) and exist only in
+Development.
 
-To add a new migration after changing entities in `VeSessionManager.Core`:
+## Setting up a real deployment
 
-```bash
-dotnet ef migrations add <Name> --project src/VeSessionManager.Core
-```
+### 1. Create the first administrator
 
-## First sign-in on a new deployment
-
-A brand-new database has **no account anyone can sign into** — `DevAuthSeeder`'s test users only
-exist in Development, and every page that could create a user requires you to already be signed in.
-Nothing is seeded automatically, on purpose: this app never ships a credential that works before you
-have set it up.
-
-Create the first administrator from the command line:
+A new database has **no account anyone can sign into**, on purpose — this app never ships a
+credential that works before you have set it up. The Web service refuses to start until an
+administrator exists, logging `Critical` and exiting rather than serving a login page where nothing
+can succeed.
 
 ```bash
 dotnet VeSessionManager.Web.dll --create-admin --email you@example.org --name "Your Name" [--callsign WX0MIK]
 ```
 
-It applies migrations first (so it works before the services have ever started), prints a generated
-password **once**, and exits without starting the web host. Save that password — it is stored only as
-a hash. If you lose it, run the command again with a different email to create another administrator.
+It applies migrations first (so it works before either service has ever run), prints a generated
+password **once**, and exits. Save it — only the hash is stored. Lost it? Run the command again with
+a different email.
 
-To choose the password yourself — for scripted or repeatable provisioning — set it in the
-environment rather than passing it as an argument, so it stays out of shell history and `ps` output:
+To choose the password yourself, pass it in the environment so it stays out of shell history and
+`ps`:
 
 ```bash
 VSM_ADMIN_PASSWORD='choose-something-long' dotnet VeSessionManager.Web.dll --create-admin --email you@example.org --name "Your Name"
 ```
 
-**The app refuses to start until an administrator exists** — it logs `Critical` and exits rather than
-serving a login page where nothing can succeed. On a server with the systemd unit installed
-(`Restart=always`), that means the Web service restart-loops until you run the command above; it
-recovers by itself as soon as you do. The Worker is unaffected.
+### 2. Start order on a new server
 
-### Start order on a new server
-
-1. **`--create-admin`** — before either service. It applies migrations, so the schema is in place too.
-2. **Worker** — migrations are already applied, so it has nothing to do but start polling.
+1. **`--create-admin`** — before either service; it applies migrations too.
+2. **Worker** — nothing left to migrate, so it just starts polling.
 3. **Web** — comes up clean now that an account exists.
 
-Web and Worker both call `Database.Migrate()` at startup and would otherwise race on the same SQLite
-file, which is why the deploy workflow starts Worker first and waits for it. Running `--create-admin`
-ahead of both means neither service is ever the one applying migrations.
+Web and Worker both migrate at startup and would otherwise race on the same SQLite file. Running
+`--create-admin` first means neither service is ever the one applying migrations.
 
-An automated (tag-triggered) deploy starts both services itself, so on a *first* deploy the Web unit
-restart-loops until you run `--create-admin`. That is expected, and clears on the next restart — see
-[`docs/deployment.md`](docs/deployment.md).
+### 3. Configure your team
 
-### Also worth doing before real sessions run
+Sign in and work through **Admin**:
 
-- **Admin → System Settings → Test Mode** — turn it **on** with an override address until you are
-  ready to email real candidates. Every email in the app routes through it.
-- **Admin → System Settings → System Email** — required before password reset can send anything.
-- **Admin → System Settings → PII retention window** — null by default, and the purge job will not
-  run until it is set.
-- **Admin → VECs** — each VEC needs an ExamTools code (if it differs from the name) *and* a fee
+- **Team Settings** — your ExamTools credentials, and whichever of Zoom / Discord / Square / SMTP you
+  use. Everything is optional except ExamTools.
+- **System Settings → Test Mode** — turn it **on** with an override address until you are ready to
+  email real candidates. Every email in the app routes through it.
+- **System Settings → System Email** — required before password reset can send anything.
+- **System Settings → PII retention window** — null by default; the purge job does nothing until you
+  set it.
+- **VECs** — each VEC needs an ExamTools code (if it differs from the name) *and* a fee
   configuration, or its sessions are silently skipped at ingestion.
 
-## Configuration & Secrets
+Full reference, including what happens when a credential is missing:
+[`docs/configuration.md`](docs/configuration.md).
 
-**ExamTools credentials (Phase 1) now live on the `Team` row in the DB**, hand-edited directly
-(no admin UI yet — see [`docs/multi-team.md`](docs/multi-team.md)), not user-secrets: set
-`Team.ExamToolsUsername`/`ExamToolsPassword`/`ExamToolsTeamCode` per team. One `Team` row is
-seeded automatically by the `Phase6_5MultiTeamFoundation` migration, but its credential columns
-are intentionally left blank (migrations must never contain real secrets) — ingestion for that
-team is silently skipped until they're filled in. Only `ExamTools:BaseUrl` (which host to hit —
-`examtools.dev` in dev, the live site in production) stays in `appsettings.json`, since it's the
-same for every team on one deployment; per-environment overrides pick the right one automatically.
-See [`docs/examtools-api.md`](docs/examtools-api.md) for API details.
+### 4. Put it on a server
 
-> **Anything this app does in ExamTools is attributed to the stored credential's account, not to
-> the person who clicked.** ExamTools is starting to expose its audit log to VEs (already on the
-> alpha site), so those entries will now be visible to your team — and they will all read as
-> whichever VE's login sits in `Team.ExamToolsUsername`, with no trace of the actual end user.
->
-> This app is read-only against ExamTools today (session and candidate ingestion, VE rosters, exam
-> results, the ULS mirror), so there is nothing to misattribute yet. It matters for two reasons:
-> pick a credential whose name you are content to see against every automated action, and treat it
-> as a real cost when weighing any future write-back feature — the app's own audit log would know
-> who did it, and ExamTools' would not. It is part of why "add walk-in candidate" and "move
-> candidate between sessions" were removed in favour of doing those things in ExamTools directly.
+[`docs/deployment.md`](docs/deployment.md) has a complete Linux setup: service account, directory
+layout and permissions, systemd units for both processes, an Apache virtual host, and the manual
+build-and-publish commands.
 
-In the Development environment the Worker also seeds a starter `Vec`/`FeeConfiguration` on
-first run (see `DevDataSeeder`) — without those rows, ingestion intentionally skips sessions
-until fee configuration exists. `Vec` is shared/global across every team, not per-team — see
-`docs/multi-team.md` for why.
+**Two things there are not optional**, and both are about the same risk. The Data Protection key ring
+encrypts your stored credentials, so it must live outside the deployed application directory, and it
+must be backed up **separately from the database** — one archive containing both is the same as
+storing every credential in plaintext. If the key ring is lost, every stored credential is
+permanently unrecoverable.
 
-**As of the multi-team fast-follow, Zoom/Square/Email credentials also live on the `Team` row in
-the DB (hand-edited directly, same pattern as ExamTools above), not user-secrets — only Discord's
-bot token is still a shared, global user-secret.** See [`docs/multi-team.md`](docs/multi-team.md)
-for the full per-team rationale.
+The app is a plain `dotnet publish` output and two systemd units, so deploy it however you already
+deploy things. A tag-triggered GitHub Actions pipeline is included if you want one — it is reusable,
+and [`docs/deployment.md`](docs/deployment.md#automated-deploy-github-actions) covers what to set.
 
-The Zoom/Discord scheduler (Phase 2) needs its own credentials, and both Zoom and Discord are
-**optional**: leave either unconfigured and the Worker just skips that half (logging one quiet
-note per poll, not an error), creating whichever one(s) you *have* set up and back-filling the
-rest automatically the moment you add credentials later. If you don't have a Zoom
-Server-to-Server OAuth app or a Discord bot yet, see
-[`docs/zoom-discord-scheduling.md`](docs/zoom-discord-scheduling.md#account-setup-one-time-before-the-four-secrets-in-the-readme-mean-anything)
-for how to create them — that's account-dashboard setup, not something runnable from this repo.
+## Documentation
 
-Set `Team.ZoomAccountId`/`ZoomClientId`/`ZoomClientSecret` directly on each team's row (a
-`ZoomUserId` of `"me"` is fine for most single-license Zoom accounts). Discord's bot token is
-still one shared credential across every team:
+| | |
+|---|---|
+| [`ARCHITECTURE.md`](ARCHITECTURE.md) | How the pieces fit together, and why |
+| [`docs/configuration.md`](docs/configuration.md) | Every credential, and what happens without it |
+| [`docs/deployment.md`](docs/deployment.md) | Server setup, systemd, CI/CD |
+| [`CONTRIBUTING.md`](CONTRIBUTING.md) | Local dev, tests, branching |
+| [`SECURITY.md`](SECURITY.md) | Reporting a vulnerability |
+| [`docs/spec.md`](docs/spec.md) | Full build plan and data model |
+| [`docs/`](docs/) | One deep-dive per subsystem |
 
-```bash
-dotnet user-secrets set "Discord:BotToken" "<Discord bot token>" --project src/VeSessionManager.Worker
-```
+## Status
 
-On the server: `Discord__BotToken` environment variable. Each team then needs its own
-`Team.DiscordGuildId` (the server events get created in) — not secret, `null`/`0` reads as "not
-configured" the same as a missing BotToken; the shared bot must be invited into that team's
-Discord server before events will actually create. See
-[`docs/zoom-discord-scheduling.md`](docs/zoom-discord-scheduling.md) for API details.
+All planned phases are built and running against real sessions. Outstanding work — features, ops
+tasks, and review findings alike — lives in
+[GitHub issues](https://github.com/MikeWills/VeSessionManager/issues), which is the single list of
+record.
 
-The Square payment-link/webhook flow (Phase 3) reads `Team.SquareAccessToken`/`SquareLocationId`/
-`SquareWebhookSignatureKey`/`SquareWebhookNotificationUrl` for each team; the Web project's
-webhook route is now **`/webhooks/square/{teamId}`** (the route identifies the team before
-signature verification, since verification needs that team's own key), so
-`SquareWebhookNotificationUrl` must include the team's numeric id (e.g.
-`https://<host>/webhooks/square/1` for the seeded team). If you don't have a Square Developer
-account/app yet, see [`docs/square-payments.md`](docs/square-payments.md#account-setup-one-time)
-for how to create one, get sandbox credentials, and register the webhook subscription against
-the team-specific URL. **Sandbox-vs-Production is per-team as well** (`SquareEnvironment`, Sandbox by
-default) — a Square access token only authenticates against the environment it was issued for, so it
-travels with the credentials rather than sitting in `appsettings.json`; that also lets a test team
-stay on Sandbox while a real team runs on Production. **Square is optional** too,
-same pattern as Zoom/Discord: without a team's `SquareAccessToken` set, payment-link generation
-is skipped quietly for that team (Payment rows still get created, `Unpaid`, just without a link
-until Square is configured) rather than erroring every poll. See
-[`docs/square-payments.md`](docs/square-payments.md) for API details.
+## Contributing
 
-Candidate notification emails (Phase 4) read `Team.SmtpHost`/`SmtpPort`/`SmtpUsername`/
-`SmtpPassword`/`SmtpUseStartTls` for each team — **also optional**, same pattern, and deliberately
-with **no baked-in default** on any of the five columns (so a team reads as "not configured" until
-someone actually sets them, not the instant the repo is cloned). `EmailSettings` and
-`EmailTemplate` are both per-team now too — each team gets its own From/Reply-To/privacy-policy
-settings row and its own template wording, seeded once with placeholder content on first run and
-meant to be **hand-edited by a human** (not generated content) before real use; see
-[`docs/email-notifications.md`](docs/email-notifications.md) for the full placeholder reference —
-editable either directly in the DB or via the Phase 9c admin UI's Email Templates screen.
+Issues and pull requests are welcome. [`CONTRIBUTING.md`](CONTRIBUTING.md) covers local setup and
+conventions; the short version is Conventional Commits, one logical change per PR, and tests for
+anything with behaviour.
 
-The FCC ULS watcher (Phase 5) needs **no credentials at all** — `data.fcc.gov` is a public
-dataset — so there's nothing to configure beyond the `FccUls:BaseUrl` default already in
-`appsettings.json`. See [`docs/fcc-uls-watcher.md`](docs/fcc-uls-watcher.md) for the file formats
-and field layout it depends on.
+## License
 
-Payment reminders/expiration (Phase 6) reuse Phase 4's SMTP setup — no separate credentials. The
-one new piece to configure by hand is `EmailSettings.AdminNotificationEmail` (where the 10-day
-expiration notice goes — the Session Manager's inbox, not the candidate's), seeded with a
-placeholder alongside the From/Reply-To/privacy-policy fields; see
-[`docs/payment-reminders.md`](docs/payment-reminders.md).
-
-The admin backend's login (Phase 9a) supports username/password out of the box; Google and
-Microsoft sign-in are **optional**, same pattern as everything else — no credentials configured
-just means that sign-in button doesn't render on the login page. Apple sign-in is deliberately not
-built yet (cost tradeoff, see [`docs/admin-auth.md`](docs/admin-auth.md)).
-
-The PII purge job (Phase 10) needs no credentials either — its one input,
-`SystemSettings.PiiRetentionWindowDays`, is a deployment-wide value with **no default assumed**
-(seeded `null`, must be set explicitly via the Phase 9c System Settings admin screen before the job
-purges anything); see [`docs/pii-purge.md`](docs/pii-purge.md).
-
-```bash
-dotnet user-secrets set "Authentication:Google:ClientId" "<Google OAuth client id>" --project src/VeSessionManager.Web
-dotnet user-secrets set "Authentication:Google:ClientSecret" "<Google OAuth client secret>" --project src/VeSessionManager.Web
-dotnet user-secrets set "Authentication:Microsoft:ClientId" "<Entra app registration client id>" --project src/VeSessionManager.Web
-dotnet user-secrets set "Authentication:Microsoft:ClientSecret" "<Entra app registration client secret>" --project src/VeSessionManager.Web
-```
-
-On the server: `Authentication__Google__ClientId` / `Authentication__Google__ClientSecret` /
-`Authentication__Microsoft__ClientId` / `Authentication__Microsoft__ClientSecret` environment
-variables. In Development, four test users (one per role) are seeded automatically on first run
-by `DevAuthSeeder` — log in at `/Account/Login` with any of these and the shared password below:
-
-| Email | Role | Team |
-|---|---|---|
-| `sysadmin@example.com` | SystemAdmin | none (deployment-wide) |
-| `teamadmin@example.com` | TeamAdmin | the seeded Team (Id 1) |
-| `sessionmanager@example.com` | SessionManager | the seeded Team (Id 1) |
-| `teamlead@example.com` | TeamLead | the seeded Team (Id 1), managed by the SessionManager above |
-
-All four share the password `Dev-Password1!` — Development-only, not a real secret, safe to commit
-in source. See [`docs/admin-auth.md`](docs/admin-auth.md) for the full role model and a seeding
-gotcha worth knowing if you ever touch `DevAuthSeeder`.
-
-## Environments
-
-Config is selected by environment name (`Test` or `Production`; there is no separate
-`Development` environment — the local machine serves that role using the base `appsettings.json`).
-
-**Note:** the Worker project is a plain generic Host, not ASP.NET Core, so it reads
-`DOTNET_ENVIRONMENT` rather than `ASPNETCORE_ENVIRONMENT` (the Web project's `WebApplication`
-host reads both, preferring `ASPNETCORE_ENVIRONMENT`). Neither is set by default outside a
-launch profile, and the Generic Host's own default is `Production` — so running the built DLL
-directly (bypassing `launchSettings.json`) picks up `appsettings.Production.json`, which points
-at a Linux-only absolute path and will fail to open on a dev machine. Always use
-`dotnet run --project ...` locally (it applies `launchSettings.json`'s `DOTNET_ENVIRONMENT` for
-you); don't invoke the built `.dll` directly unless you set the environment variable yourself.
-
-The Worker and Web projects share one SQLite file. `dotnet run --project <path>` sets the
-working directory to that project's own folder, so the base and Test connection strings use
-`Data Source=../../<file>.db` (two levels up from `src/<Project>/`) to land on the same
-repo-root file regardless of which project is running. `appsettings.Production.json` in both
-projects instead points at the same absolute path
-(`/var/lib/vesessionmanager/vesessionmanager.db`) — update that path to match wherever the
-service actually gets deployed.
-
-## Deployment
-
-Target is Linux via systemd (see `.github/workflows/build-and-deploy.yml`), triggered on tag
-push only (e.g. `v1.0.0`), not on every commit to main. The deploy job in that workflow is
-currently a stub — it needs the self-hosted-runner/Tailscale-tailnet and systemd deploy-script
-details from the existing NcsScheduler pattern before it can actually deploy anything.
+[MIT](LICENSE) — © 2026 Mike Wills.

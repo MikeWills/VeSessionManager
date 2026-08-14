@@ -185,20 +185,21 @@ yet live-tested: Google/Microsoft sign-in (no real OAuth app credentials configu
 
 ## TeamLead read-only view (added 2026-07-22)
 
-`Pages/TeamLead/Index.cshtml` above was only ever a placeholder — TeamLead had no real view of
+The TeamLead landing page above (`Pages/TeamLead/Index`, since deleted) was only ever a placeholder — TeamLead had no real view of
 session/candidate data until this addition, tracked as a known gap since Phase 9d's self-audit.
 
 `SessionAccessScope` gained a `CanView` method distinct from the pre-existing `CanEdit` — `CanEdit`
 still returns `false` for TeamLead unconditionally (write actions stay off-limits), but `CanView`
 doesn't carve TeamLead out, so it can gate page *display* separately from write actions.
-`Pages/SessionManager/Index.cshtml.cs`/`Detail.cshtml.cs`/`VeRoster.cshtml.cs`/
-`VecSubmission.cshtml.cs` all added `TeamLead` to `[Authorize]`; `Detail.cshtml.cs`'s page-load gate
+`Pages/SessionManager/Index.cshtml.cs`/`Detail.cshtml.cs`/`VeRoster.cshtml.cs` and the VEC
+submission page all added `TeamLead` to `[Authorize]` (that page was later folded into the
+Sessions list, #56 — the authorization described here moved with it); `Detail.cshtml.cs`'s page-load gate
 switched from `CanEdit` to `CanView` (it had been reusing the write-gate to decide visibility, which
 is why TeamLead access needed more than just the role attribute), and a new `CanEdit` property on
-the page model lets `Detail.cshtml`/`VecSubmission.cshtml` hide every write control (buttons, forms,
+the page model lets `Detail.cshtml` and the VEC submission page hide every write control (buttons, forms,
 kebab menu, modals) instead of showing a TeamLead dead controls that would 403. `RoleLandingPages`
-now sends TeamLead to `/SessionManager/Index` like every other role; the old
-`Pages/TeamLead/Index.cshtml` placeholder was deleted.
+now sends TeamLead to `/SessionManager/Index` like every other role; the old TeamLead
+placeholder page was deleted.
 
 **A second, previously-latent bug was found and fixed in the same pass:**
 `SessionAccessScope.GetEffectiveTeamId`'s TeamLead branch reads `user.ManagedByUser?.TeamId`, which

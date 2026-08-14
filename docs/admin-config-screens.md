@@ -25,16 +25,23 @@ as needed; it wraps `SessionAccessScope` for team-resolution and adds
 holds deployment-wide values:
 
 - `PiiRetentionWindowDays` (nullable, seeded `NULL` — spec.md is explicit "no default is assumed")
-- ULS polling settings (`FccDailyWatcherIntervalHours`/`FccDailyWatcherStartHourEt`/
-  `FccWeeklyCatchupIntervalHours`/`FccWeeklyCatchupDayOfWeek`, seeded from the current
-  `appsettings.json` `Jobs:*` defaults) — `FccWeeklyCatchupJob` reads these from the DB once at
-  `ExecuteAsync` startup (falling back to `IConfiguration` only if the row is somehow missing), so an
-  admin edit takes effect on the Worker's *next restart*, not live mid-run. `FccDailyWatcherJob` is
-  the one exception: it re-reads its two settings every hourly tick (needed since 2026-07-23's
-  same-day-retry fix ticks continuously and has to notice a changed start hour/interval without a
-  restart — see docs/fcc-uls-watcher.md), so an edit there takes effect within the hour instead.
-- Later gained `SessionIngestionIntervalMinutes` (see `docs/candidate-refresh.md`) and
-  `TestModeEnabled`/`TestModeOverrideEmail` (see `docs/test-mode.md`).
+- ULS polling settings — `UlsWatcherIntervalHours`/`UlsWatcherStartHourEt`, seeded from the
+  `Jobs:*` defaults in `src/Shared/appsettings.Shared.json`. Read through `JobSchedules`, which both
+  hosts share, so the Worker schedules from the same values Web reports on the Job Schedule screen.
+  **Three jobs move together when these change** — `UlsWatcher`, `LicenseWatch` and `VeLicenseWatch`
+  all read this one pair (see `docs/job-schedule.md`), which is deliberate: they read the same FCC
+  data through the same mirror, and splitting their schedules once meant a renewal sat unseen for
+  most of a day.
+- Later gained `SessionIngestionIntervalMinutes` (see `docs/candidate-refresh.md`),
+  `TestModeEnabled`/`TestModeOverrideEmail` (see `docs/test-mode.md`), and the seven `SystemSmtp*`
+  fields behind the System Email screen — the deployment-wide sender used for password reset and
+  other account mail, distinct from each team's own candidate-facing SMTP credentials.
+
+> **Superseded (2026-07-31).** This section originally described four settings —
+> `FccDailyWatcherIntervalHours`, `FccDailyWatcherStartHourEt`, `FccWeeklyCatchupIntervalHours`,
+> `FccWeeklyCatchupDayOfWeek` — belonging to the FCC bulk-file watcher. That subsystem was replaced
+> by the ExamTools ULS mirror (`docs/uls-watcher.md`); the columns survive only in the
+> `Phase9cSystemSettings` migration, which is why they still turn up in a search.
 
 ## FeeConfiguration: real CRUD for the first time
 
