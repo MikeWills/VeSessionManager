@@ -65,8 +65,88 @@ public class PiiPurgeService(
         result.FailedCandidatesPurged = await PurgeFailedCandidatesAsync(cutoffExclusive, retentionWindowDays, now, cancellationToken);
         result.AlreadyPurgedCandidatesRepaired = await RepairIncompletelyPurgedCandidatesAsync(now, cancellationToken);
 
+        result.VolunteerExaminersPurged = await PurgeInactiveVolunteerExaminersAsync(now, settings.VeContactRetentionYears, cancellationToken);
+
         logger.LogInformation("PII purge run finished: {Result}", result);
         return result;
+    }
+
+    /// <summary>
+    /// Clears the contact details of VEs who have stopped volunteering (#313 / L-07).
+    ///
+    /// <para><b>"Inactive" is two conditions, and both are load-bearing.</b> A VE is eligible only
+    /// when they hold <i>no active team membership</i> AND have worked no session inside the window.
+    /// Either alone is wrong: a current roster member who simply had a quiet couple of years would
+    /// lose the email address their team invites them with, and a VE freshly added to a roster has
+    /// never worked a session at all, so a last-worked test on its own would purge them the day they
+    /// join.</para>
+    ///
+    /// <para><b>Never worked, never on a roster</b> falls back to CreatedUtc, so an imported row that
+    /// went nowhere still ages out rather than living forever on a technicality — while a
+    /// just-created one is safe, since its CreatedUtc is today.</para>
+    ///
+    /// <para>Merged-away duplicates (MergedIntoVolunteerExaminerId set) are eligible on the same
+    /// terms rather than immediately: the merge target carries the person forward, so the loser row's
+    /// details are already redundant — but purging it early would be a second rule to reason about
+    /// for no practical gain.</para>
+    ///
+    /// <para>What is kept is the accreditation trail — name, call sign, FRN, accreditations, session
+    /// history. See <see cref="VolunteerExaminerPiiFields"/> and docs/ve-retention.md.</para>
+    /// </summary>
+    private async Task<int> PurgeInactiveVolunteerExaminersAsync(DateTime now, int? retentionYears, CancellationToken cancellationToken)
+    {
+        if (retentionYears is null)
+        {
+            // Same explicit-opt-in rule as the candidate window, and a stronger case for it: nobody
+            // expects a volunteer roster to start forgetting people because a job shipped.
+            logger.LogInformation("VE contact purge skipped: SystemSettings.VeContactRetentionYears is not configured");
+            return 0;
+        }
+
+        var cutoffExclusive = now.Date.AddYears(-retentionYears.Value);
+
+        // Selected on "still carries a contact field" rather than "PiiPurgedUtc is null". Filtering
+        // on the stamp would skip rows purged before a field was added to the definition — the exact
+        // gap that needed RepairIncompletelyPurgedCandidatesAsync on the candidate side, avoided here
+        // by asking what is actually present instead of what was recorded as done.
+        var candidates = await dbContext.VolunteerExaminers
+            .Where(v => v.Email != null || v.Phone != null || v.AddressLine1 != null || v.AddressLine2 != null
+                || v.City != null || v.State != null || v.PostalCode != null || v.DiscordUsername != null
+                || v.Notes != null)
+            .Where(v => !v.TeamMemberships.Any(m => m.IsActive))
+            .Select(v => new
+            {
+                VolunteerExaminer = v,
+                LastWorkedUtc = dbContext.SessionVolunteerExaminers
+                    .Where(l => l.VolunteerExaminerId == v.Id)
+                    .Max(l => (DateTime?)l.Session.ScheduledStartUtc)
+            })
+            .ToListAsync(cancellationToken);
+
+        var purged = 0;
+        foreach (var row in candidates)
+        {
+            var lastActivity = row.LastWorkedUtc ?? row.VolunteerExaminer.CreatedUtc;
+            if (lastActivity >= cutoffExclusive)
+            {
+                continue;
+            }
+
+            VolunteerExaminerPiiFields.Clear(row.VolunteerExaminer, now);
+
+            // Ids only, and no contact details in the message. The whole point of this pass is that
+            // those details stop existing, so writing them into the audit log on the way out would
+            // be self-defeating.
+            dbContext.AddAuditLog(null, "VolunteerExaminerPiiPurged", nameof(VolunteerExaminer), row.VolunteerExaminer.Id,
+                $"Contact details cleared after {retentionYears} year(s) inactive.", now);
+
+            // Saved per row, like every other scan-based job here, so a crash mid-run never loses the
+            // progress already made or repeats it.
+            await dbContext.SaveChangesAsync(cancellationToken);
+            purged++;
+        }
+
+        return purged;
     }
 
     /// <summary>

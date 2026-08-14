@@ -15,6 +15,9 @@ public class SystemSettingsModel(UserManager<User> userManager, SystemSettingsSe
     public int UlsWatcherIntervalHours { get; private set; }
     public int UlsWatcherStartHourEt { get; private set; }
     public int SessionIngestionIntervalMinutes { get; private set; }
+
+    /// <summary>Years a VE may be inactive before the purge clears their contact details. Null = off (#313).</summary>
+    public int? VeContactRetentionYears { get; private set; }
     public bool TestModeEnabled { get; private set; }
     public string? TestModeOverrideEmail { get; private set; }
     public DateTime? UpdatedUtc { get; private set; }
@@ -46,13 +49,14 @@ public class SystemSettingsModel(UserManager<User> userManager, SystemSettingsSe
         UlsWatcherIntervalHours = settings.UlsWatcherIntervalHours;
         UlsWatcherStartHourEt = settings.UlsWatcherStartHourEt;
         SessionIngestionIntervalMinutes = settings.SessionIngestionIntervalMinutes;
+        VeContactRetentionYears = settings.VeContactRetentionYears;
         TestModeEnabled = settings.TestModeEnabled;
         TestModeOverrideEmail = settings.TestModeOverrideEmail;
         UpdatedUtc = settings.UpdatedUtc;
     }
 
     public async Task<IActionResult> OnPostAsync(
-        int? piiRetentionWindowDays, int ulsWatcherIntervalHours, int ulsWatcherStartHourEt,
+        int? piiRetentionWindowDays, int? veContactRetentionYears, int ulsWatcherIntervalHours, int ulsWatcherStartHourEt,
         int sessionIngestionIntervalMinutes, bool testModeEnabled, string? testModeOverrideEmail)
     {
         // Role re-checked here, not just by the [Authorize(Roles = ...)] attribute (#257). The role
@@ -67,13 +71,13 @@ public class SystemSettingsModel(UserManager<User> userManager, SystemSettingsSe
         }
 
         var result = await systemSettingsService.UpdateAsync(
-            piiRetentionWindowDays, ulsWatcherIntervalHours, ulsWatcherStartHourEt,
+            piiRetentionWindowDays, veContactRetentionYears, ulsWatcherIntervalHours, ulsWatcherStartHourEt,
             sessionIngestionIntervalMinutes, testModeEnabled, testModeOverrideEmail, user.Id, CancellationToken.None);
         TempData[result == SystemSettingsActionResult.Success ? "StatusMessage" : "ErrorMessage"] = result switch
         {
             SystemSettingsActionResult.Success => testModeEnabled ? "System settings updated. Test mode is ON — no real emails will be sent." : "System settings updated.",
             SystemSettingsActionResult.TestModeMissingOverrideEmail => "Could not save — an override email address is required to turn test mode on.",
-            _ => "Could not save — intervals must be at least 1 minute (session ingestion) or 1 hour (ULS polling), the daily watcher start hour must be 0-23, and retention window (if set) at least 1 day."
+            _ => "Could not save — intervals must be at least 1 minute (session ingestion) or 1 hour (ULS polling), the daily watcher start hour must be 0-23, the candidate retention window (if set) at least 1 day, and the VE contact retention (if set) at least 1 year."
         };
 
         return RedirectToPage();

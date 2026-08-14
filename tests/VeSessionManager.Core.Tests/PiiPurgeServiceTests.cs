@@ -31,12 +31,14 @@ public class PiiPurgeServiceTests
         new FixedTimeProvider(Now),
         NullLogger<PiiPurgeService>.Instance);
 
-    private static async Task SeedSystemSettingsAsync(AppDbContext dbContext, int? piiRetentionWindowDays)
+    private static async Task SeedSystemSettingsAsync(
+        AppDbContext dbContext, int? piiRetentionWindowDays, int? veContactRetentionYears = null)
     {
         dbContext.SystemSettings.Add(new SystemSettings
         {
             Id = SystemSettingsService.SingletonId,
             PiiRetentionWindowDays = piiRetentionWindowDays,
+            VeContactRetentionYears = veContactRetentionYears,
             UlsWatcherIntervalHours = 24,
             UlsWatcherStartHourEt = 8
         });
@@ -469,5 +471,211 @@ public class PiiPurgeServiceTests
 
         Assert.Equal(0, result.AlreadyPurgedCandidatesRepaired);
         Assert.Equal("Roana", (await dbContext.Candidates.SingleAsync(c => c.Id == candidate.Id)).FirstName);
+    }
+
+    // ---- #313 / L-07: a retired VE's contact details age out ----
+
+    /// <summary>Seeds a VE with contact details, optionally on a team and optionally having worked a session.</summary>
+    private static async Task<VolunteerExaminer> SeedVeAsync(
+        AppDbContext dbContext, bool activeMembership, DateTime? lastWorkedUtc, DateTime? createdUtc = null)
+    {
+        var team = new Team { Name = "HRCC", ExamToolsTeamCode = "HRCC", CreatedUtc = Now };
+        var person = new VolunteerExaminer
+        {
+            Name = "Pat Examiner",
+            CallSign = "W0PAT",
+            Email = "pat@example.org",
+            Phone = "555-0100",
+            AddressLine1 = "12 Private Road",
+            City = "Mankato",
+            State = "MN",
+            PostalCode = "56001",
+            DiscordUsername = "pat-1234",
+            Notes = "Prefers Saturday sessions",
+            CreatedUtc = createdUtc ?? Now.AddYears(-20)
+        };
+        dbContext.Teams.Add(team);
+        dbContext.VolunteerExaminers.Add(person);
+        dbContext.VeTeamMemberships.Add(new VeTeamMembership
+        {
+            VolunteerExaminer = person, Team = team, IsActive = activeMembership, CreatedUtc = Now.AddYears(-20)
+        });
+
+        if (lastWorkedUtc is { } worked)
+        {
+            var vec = new Vec { Name = "ARRL" };
+            var user = new User { Name = "System", Email = "system@localhost", Role = UserRole.SystemAdmin };
+            var session = new Session
+            {
+                ExamToolsSessionId = "s-" + Guid.NewGuid(),
+                Title = "A session",
+                ScheduledStartUtc = worked,
+                DurationMinutes = 60,
+                Team = team,
+                Vec = vec,
+                FeeConfiguration = new FeeConfiguration
+                {
+                    Vec = vec,
+                    EffectiveDate = new DateTime(2000, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+                    FeeCollectionEnabled = false,
+                    CreatedByUser = user,
+                    CreatedUtc = Now.AddYears(-20)
+                },
+                Status = SessionStatus.Active,
+                CreatedUtc = Now.AddYears(-20)
+            };
+            dbContext.Sessions.Add(session);
+            dbContext.SessionVolunteerExaminers.Add(new SessionVolunteerExaminer
+            {
+                Session = session, VolunteerExaminer = person
+            });
+        }
+
+        await dbContext.SaveChangesAsync();
+        return person;
+    }
+
+    private static void AssertContactDetailsCleared(VolunteerExaminer person)
+    {
+        Assert.Null(person.Email);
+        Assert.Null(person.Phone);
+        Assert.Null(person.AddressLine1);
+        Assert.Null(person.City);
+        Assert.Null(person.State);
+        Assert.Null(person.PostalCode);
+        Assert.Null(person.DiscordUsername);
+        Assert.Null(person.Notes);
+        Assert.NotNull(person.PiiPurgedUtc);
+    }
+
+    [Fact]
+    public async Task RetiredVe_InactiveBeyondTheWindow_HasContactDetailsCleared()
+    {
+        await using var dbContext = CreateContext();
+        await SeedSystemSettingsAsync(dbContext, 90, veContactRetentionYears: 5);
+        var person = await SeedVeAsync(dbContext, activeMembership: false, lastWorkedUtc: Now.AddYears(-6));
+
+        var result = await CreateService(dbContext).RunAsync(CancellationToken.None);
+
+        Assert.Equal(1, result.VolunteerExaminersPurged);
+        AssertContactDetailsCleared(person);
+    }
+
+    /// <summary>
+    /// The accreditation trail survives. Clearing it would destroy the record that this person was
+    /// qualified to administer the exams they administered, which is why this is a field-level purge
+    /// and not a row delete.
+    /// </summary>
+    [Fact]
+    public async Task PurgingAVeKeepsTheirNameCallSignAndHistory()
+    {
+        await using var dbContext = CreateContext();
+        await SeedSystemSettingsAsync(dbContext, 90, veContactRetentionYears: 5);
+        var person = await SeedVeAsync(dbContext, activeMembership: false, lastWorkedUtc: Now.AddYears(-6));
+
+        await CreateService(dbContext).RunAsync(CancellationToken.None);
+
+        Assert.Equal("Pat Examiner", person.Name);
+        Assert.Equal("W0PAT", person.CallSign);
+        Assert.Single(dbContext.SessionVolunteerExaminers.Where(l => l.VolunteerExaminerId == person.Id));
+    }
+
+    /// <summary>
+    /// Both halves of "inactive" matter. A current roster member who has had a quiet few years is
+    /// still a current volunteer — losing the address their team invites them with would be a bug,
+    /// not a purge.
+    /// </summary>
+    [Fact]
+    public async Task ActiveTeamMember_IsNeverPurged_HoweverLongSinceTheyWorked()
+    {
+        await using var dbContext = CreateContext();
+        await SeedSystemSettingsAsync(dbContext, 90, veContactRetentionYears: 5);
+        var person = await SeedVeAsync(dbContext, activeMembership: true, lastWorkedUtc: Now.AddYears(-20));
+
+        var result = await CreateService(dbContext).RunAsync(CancellationToken.None);
+
+        Assert.Equal(0, result.VolunteerExaminersPurged);
+        Assert.Equal("pat@example.org", person.Email);
+    }
+
+    [Fact]
+    public async Task RetiredVe_InsideTheWindow_IsNotPurged()
+    {
+        await using var dbContext = CreateContext();
+        await SeedSystemSettingsAsync(dbContext, 90, veContactRetentionYears: 5);
+        var person = await SeedVeAsync(dbContext, activeMembership: false, lastWorkedUtc: Now.AddYears(-2));
+
+        var result = await CreateService(dbContext).RunAsync(CancellationToken.None);
+
+        Assert.Equal(0, result.VolunteerExaminersPurged);
+        Assert.Equal("pat@example.org", person.Email);
+    }
+
+    /// <summary>
+    /// The two-condition rule from the opposite direction: a VE who has never worked a session has
+    /// no last-worked date at all. Anchoring on CreatedUtc means an imported row that went nowhere
+    /// still ages out.
+    /// </summary>
+    [Fact]
+    public async Task NeverWorkedAndOffEveryRoster_AgesOutOnCreatedDate()
+    {
+        await using var dbContext = CreateContext();
+        await SeedSystemSettingsAsync(dbContext, 90, veContactRetentionYears: 5);
+        var old = await SeedVeAsync(dbContext, activeMembership: false, lastWorkedUtc: null, createdUtc: Now.AddYears(-9));
+
+        var result = await CreateService(dbContext).RunAsync(CancellationToken.None);
+
+        Assert.Equal(1, result.VolunteerExaminersPurged);
+        AssertContactDetailsCleared(old);
+    }
+
+    /// <summary>And the case that makes the CreatedUtc fallback safe rather than dangerous.</summary>
+    [Fact]
+    public async Task RecentlyAddedVe_WhoHasNotWorkedYet_IsNotPurged()
+    {
+        await using var dbContext = CreateContext();
+        await SeedSystemSettingsAsync(dbContext, 90, veContactRetentionYears: 5);
+        var person = await SeedVeAsync(dbContext, activeMembership: false, lastWorkedUtc: null, createdUtc: Now.AddDays(-3));
+
+        var result = await CreateService(dbContext).RunAsync(CancellationToken.None);
+
+        Assert.Equal(0, result.VolunteerExaminersPurged);
+        Assert.Equal("pat@example.org", person.Email);
+    }
+
+    /// <summary>
+    /// Nothing is purged until an admin sets a window. Same explicit-opt-in rule as the candidate
+    /// side, and a stronger case for it — nobody expects a volunteer roster to start forgetting
+    /// people because a job shipped.
+    /// </summary>
+    [Fact]
+    public async Task WithNoWindowConfigured_NoVeIsPurged()
+    {
+        await using var dbContext = CreateContext();
+        await SeedSystemSettingsAsync(dbContext, 90, veContactRetentionYears: null);
+        var person = await SeedVeAsync(dbContext, activeMembership: false, lastWorkedUtc: Now.AddYears(-20));
+
+        var result = await CreateService(dbContext).RunAsync(CancellationToken.None);
+
+        Assert.Equal(0, result.VolunteerExaminersPurged);
+        Assert.Equal("pat@example.org", person.Email);
+    }
+
+    /// <summary>
+    /// Audited, with no contact details in the entry — writing them into the audit log on the way
+    /// out would defeat the point of clearing them.
+    /// </summary>
+    [Fact]
+    public async Task PurgingAVeIsAudited_WithoutRestatingTheDetails()
+    {
+        await using var dbContext = CreateContext();
+        await SeedSystemSettingsAsync(dbContext, 90, veContactRetentionYears: 5);
+        await SeedVeAsync(dbContext, activeMembership: false, lastWorkedUtc: Now.AddYears(-6));
+
+        await CreateService(dbContext).RunAsync(CancellationToken.None);
+
+        var audit = Assert.Single(dbContext.AuditLogs.Where(a => a.Action == "VolunteerExaminerPiiPurged"));
+        Assert.DoesNotContain("pat@example.org", audit.Details);
+        Assert.DoesNotContain("Private Road", audit.Details);
     }
 }

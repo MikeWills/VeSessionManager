@@ -126,6 +126,26 @@ would be pure duplication — and goes straight to `CHANGELOG.md` instead. Non-p
 redesigns, hardening passes) start here and move to `CHANGELOG.md` once the section is at/over the
 cap and a newer entry needs to be added; oldest goes first.
 
+- **Nineteen audit findings closed, and two retention questions finally answered (2026-08-14).** See
+  `docs/audit-log.md` and `docs/ve-retention.md` (both new), plus issues #238-#240, #243, #257,
+  #260-#262, #264, #265, #312, #313. Three themes, and each had one shape. **VE scope**: an id posted
+  from a form was checked for existence but never against what the actor could reach — the worst sent
+  attacker-authored mail *from the team's own SMTP* to any VE on the deployment. **Silent failure**:
+  the key-ring guard iterated `Teams` and so missed the sixth encrypted column, on a different
+  entity, exactly as its own doc comment predicted; a deployment with zero teams verified nothing and
+  logged success. **Nothing was watching**: sign-ins were not audited at all, success or failure, so
+  a stuffing run left no trace — now `SignedIn`/`SignInFailed`/`SignInLockedOut` with a source
+  address, deliberately *not* on the ~175 ordinary audit sites, which would make an activity log into
+  a movement record. #313 was a decision, not a bug: **audit append-only is a convention enforced by
+  absence, not by the database** (written down, and guarded by a source scan so a delete path cannot
+  reappear quietly), and **VE contact details now age out** after a configurable inactivity window —
+  off until an admin sets it, keeping name/call sign/accreditations because those are the
+  accreditation trail. Two things worth carrying forward: **`[Required]` on a non-nullable `int` is
+  client-side-only**, the same trap already recorded for `bool`; and **an unreachable branch cannot be
+  tested** — the L-14 fix ships with no test because both routes to it are intercepted upstream, a
+  test was written and passed with the fix reverted, so it was deleted rather than kept as false
+  comfort.
+
 - **Dark mode follows the OS, then follows you (2026-08-13).** See `docs/theme-preference.md`. The
   theme was `localStorage.getItem(key) || "light"` — OS-blind, per browser, and resolved at the
   *bottom* of `<body>`, so it repainted after the page had already drawn. New
@@ -263,21 +283,6 @@ cap and a newer entry needs to be added; oldest goes first.
   whose match code isn't one of the fourteen (a closed code space, so that row ingests nothing). Note
   `DevDataSeeder`'s guard moved from `Vecs.AnyAsync()` to a `FeeConfiguration` check — the Vec table
   is never empty now, which is the same table-wide-guard trap `DevAuthSeeder` hit.
-
-- **v0.3.0: key ring separated, authenticated by default, candidate email corrected (2026-08-10).**
-  See `docs/credential-encryption.md`, `docs/admin-auth.md`, `docs/email-notifications.md`,
-  `docs/deployment.md`. The Data Protection key ring moved off the database directory to
-  `/var/lib/vesessionmanager-keys` — it had satisfied "outside the app path so `rsync --delete`
-  can't touch it" while still meaning **one `tar` of `/var/lib/vesessionmanager/` carried the
-  ciphertext and the key together**. New `DataProtectionKeyRingGuard` refuses to start rather than
-  running with credentials it cannot read, because the converter's legacy-plaintext fallback makes
-  that state *completely silent*. A `FallbackPolicy` makes pages authenticated by default; the
-  fifteen public ones say so explicitly. **Candidate email gave the session time in UTC** while every
-  screen showed ET — now `10:00 AM ET / 7:00 AM PT`, two zones so Central and Mountain can
-  interpolate. Optional per-team BCC on candidate mail (never on token-bearing sends). All fourteen
-  VECs seeded. 8.4 MB of vendored Bootstrap deleted. **Three of these were found by looking rather
-  than by being reported**, and two were mis-described by the audit that raised them — see the
-  audit-file pointer above.
 
 Everything through Phase 0-10's initial build (ExamTools ingestion, Zoom/Discord, Square, email
 notifications, FCC ULS watcher, payment reminders, VE tracking, VEC submission tracker, admin

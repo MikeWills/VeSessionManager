@@ -43,6 +43,7 @@ public class SystemSettingsService(AppDbContext dbContext, TimeProvider timeProv
 
     public async Task<SystemSettingsActionResult> UpdateAsync(
         int? piiRetentionWindowDays,
+        int? veContactRetentionYears,
         int ulsWatcherIntervalHours,
         int ulsWatcherStartHourEt,
         int sessionIngestionIntervalMinutes,
@@ -52,7 +53,7 @@ public class SystemSettingsService(AppDbContext dbContext, TimeProvider timeProv
         CancellationToken cancellationToken)
     {
         if (ulsWatcherIntervalHours < 1 || piiRetentionWindowDays is < 1 || sessionIngestionIntervalMinutes < 1
-            || ulsWatcherStartHourEt is < 0 or > 23)
+            || ulsWatcherStartHourEt is < 0 or > 23 || veContactRetentionYears is < 1)
         {
             return SystemSettingsActionResult.InvalidValue;
         }
@@ -68,6 +69,7 @@ public class SystemSettingsService(AppDbContext dbContext, TimeProvider timeProv
         var now = timeProvider.GetUtcNow().UtcDateTime;
 
         settings.PiiRetentionWindowDays = piiRetentionWindowDays;
+        settings.VeContactRetentionYears = veContactRetentionYears;
         settings.UlsWatcherIntervalHours = ulsWatcherIntervalHours;
         settings.UlsWatcherStartHourEt = ulsWatcherStartHourEt;
         settings.SessionIngestionIntervalMinutes = sessionIngestionIntervalMinutes;
@@ -79,7 +81,7 @@ public class SystemSettingsService(AppDbContext dbContext, TimeProvider timeProv
         // TestModeOverrideEmail is deliberately omitted from the audit trail — it's an admin's
         // own inbox address, not secret, but no other field here logs a raw email address either.
         dbContext.AddAuditLog(userId, "SystemSettingsUpdated", nameof(SystemSettings), SingletonId,
-            $"PiiRetentionWindowDays={piiRetentionWindowDays?.ToString() ?? "null"}, UlsWatcherIntervalHours={ulsWatcherIntervalHours}, UlsWatcherStartHourEt={ulsWatcherStartHourEt}, SessionIngestionIntervalMinutes={sessionIngestionIntervalMinutes}, TestModeEnabled={testModeEnabled}.",
+            $"PiiRetentionWindowDays={piiRetentionWindowDays?.ToString() ?? "null"}, VeContactRetentionYears={veContactRetentionYears?.ToString() ?? "null"}, UlsWatcherIntervalHours={ulsWatcherIntervalHours}, UlsWatcherStartHourEt={ulsWatcherStartHourEt}, SessionIngestionIntervalMinutes={sessionIngestionIntervalMinutes}, TestModeEnabled={testModeEnabled}.",
             now);
 
         await dbContext.SaveChangesAsync(cancellationToken);

@@ -58,4 +58,32 @@
         for historical reporting and so your exam record stays traceable if a question about your
         application ever comes up.
     </p>
+
+    @* The page promised candidates a retention window while saying nothing at all about VEs, whose
+       home addresses it also holds (#313 / L-07). Both states are stated explicitly now, including
+       the "kept indefinitely" one — an unstated indefinite hold is the thing worth avoiding. *@
+    <h2>If you volunteer as an examiner</h2>
+    <p>
+        Volunteer Examiners give their team contact details — including a home address — so that
+        sessions can be organised. This is separate from the address on your public FCC record, and
+        we treat it that way: it is visible only to your team's administrators and to you, and it is
+        never included in the public record we read back from the FCC.
+    </p>
+    @if (Model.VeContactRetentionYears is int veYears)
+    {
+        <p>
+            If you stop volunteering — no active team roster membership, and no session worked for
+            <strong>@veYears years</strong> — we clear your email address, phone number, home
+            address, Discord username and any notes about you. Your name, call sign, FRN,
+            accreditations and the record of sessions you worked are kept, because together they are
+            the record that you were qualified to administer those exams.
+        </p>
+    }
+    else
+    {
+        <p>
+            We currently keep Volunteer Examiner contact details for as long as the record exists.
+            Ask your team's administrators if you would like yours removed.
+        </p>
+    }
 </div>

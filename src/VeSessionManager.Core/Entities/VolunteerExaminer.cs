@@ -84,6 +84,22 @@ public class VolunteerExaminer : ILicenseSnapshot
     public DateTime CreatedUtc { get; set; }
     public DateTime? UpdatedUtc { get; set; }
 
+    /// <summary>
+    /// When this VE's contact details were cleared by the retention purge (#313 / L-07), or null if
+    /// they never have been. Both the "needs purging" query filter and the idempotency guard, the
+    /// same idiom as <see cref="Candidate.PiiPurgedUtc"/> and every other scan-based job here.
+    ///
+    /// <para>A purged VE is not a deleted one: name, call sign, FRN, accreditations and session
+    /// history all remain, because they are the accreditation trail. See
+    /// <see cref="VolunteerExaminerPiiFields"/> for the split and docs/ve-retention.md for the
+    /// policy.</para>
+    ///
+    /// <para>Cleared again if they come back — a returning VE re-enters their details through the
+    /// normal edit path, and this field is set back to null there so the record stops looking
+    /// purged.</para>
+    /// </summary>
+    public DateTime? PiiPurgedUtc { get; set; }
+
     // ---- Cached FCC license state (issue #107) --------------------------------------------------
     // Added with the rest of the columns rather than in a second migration, since this table is
     // being rewritten anyway. Populated by the ULS sweep in phase 3; every field is null until then.
