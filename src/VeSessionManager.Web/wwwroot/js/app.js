@@ -22,15 +22,46 @@
     button.title = label;
   }
 
-  applyTheme(localStorage.getItem(THEME_KEY) || "light");
+  // theme.js — loaded in <head>, before first paint — owns *resolving* which theme applies (server
+  // preference, then localStorage, then the OS setting). By the time this file runs the answer is
+  // already on <html>; all that is left is to paint the toggle button, which did not exist yet at
+  // head time. Do not re-resolve here: reading localStorage again would quietly override the saved
+  // account preference the server just rendered.
+  applyTheme(root.getAttribute("data-theme") || "light");
+
+  // Persist the choice to the signed-in user's account, so it follows them to their phone rather
+  // than living only in this browser. The layout renders the URL and an antiforgery token onto the
+  // button; both are absent on _PublicLayout, where there is nobody to save it for and localStorage
+  // is the whole story. Fire-and-forget on purpose — the theme has already been applied locally, and
+  // a failed save is not worth interrupting someone to report.
+  function saveThemePreference(button, theme) {
+    var url = button.getAttribute("data-save-url");
+    var token = button.getAttribute("data-antiforgery-token");
+    if (!url || !token) return;
+
+    fetch(url, {
+      method: "POST",
+      // A header rather than the hidden form field a <form> would post, since there is no form
+      // here. "RequestVerificationToken" is AntiforgeryOptions.HeaderName's default, so nothing in
+      // Program.cs configures it — see Pages/Account/Theme.cshtml.cs.
+      headers: {
+        "RequestVerificationToken": token,
+        "Content-Type": "application/x-www-form-urlencoded"
+      },
+      body: "theme=" + encodeURIComponent(theme),
+      // The endpoint is authenticated, so the auth cookie has to ride along.
+      credentials: "same-origin"
+    }).catch(function () { /* see above — local state is already correct */ });
+  }
 
   document.addEventListener("DOMContentLoaded", function () {
     var toggle = document.getElementById("themeToggle");
     if (toggle) {
       toggle.addEventListener("click", function () {
         var next = root.getAttribute("data-theme") === "dark" ? "light" : "dark";
-        localStorage.setItem(THEME_KEY, next);
+        try { localStorage.setItem(THEME_KEY, next); } catch (e) { /* see theme.js read() */ }
         applyTheme(next);
+        saveThemePreference(toggle, next);
       });
     }
 

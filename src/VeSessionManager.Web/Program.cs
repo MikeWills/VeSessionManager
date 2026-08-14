@@ -356,6 +356,14 @@ builder.Services.AddAuthorization(options =>
         .Build();
 });
 
+// No AddAntiforgery call here on purpose. The theme toggle is the app's only JavaScript-issued POST
+// (Pages/Account/Theme.cshtml.cs) and sends its token as a "RequestVerificationToken" header rather
+// than the hidden form field a <form> posts — which works untouched, because that is already
+// AntiforgeryOptions.HeaderName's default. An AddAntiforgery(o => o.HeaderName = "…") line was
+// written here first and removed once a mutation test showed it changed nothing: a no-op
+// registration carrying a comment about why it is essential is worse than no line at all.
+// ThemePreferenceTests covers both directions, so nulling or renaming HeaderName fails the build.
+
 // Add services to the container.
 // StaleAuthCookieFilter runs on every page: a cookie can outlive the account it names, and without
 // it that lands as a 500 the person cannot act on. See the filter's own remarks.
