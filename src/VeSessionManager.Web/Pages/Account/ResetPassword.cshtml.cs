@@ -24,7 +24,11 @@ public class ResetPasswordModel(PasswordResetService passwordResetService) : Pag
 
     public class InputModel
     {
-        [Required]
+        // [Range], not [Required] (L-10). A non-nullable int always satisfies Required — the same
+        // trap CLAUDE.md documents for bool — so it read as server-side enforcement and was purely
+        // decorative. Not exploitable either way, since 0 is never a real key and the token check
+        // fails regardless; the problem is a guard that looks like one and is not.
+        [Range(1, int.MaxValue)]
         public int UserId { get; set; }
 
         [Required]

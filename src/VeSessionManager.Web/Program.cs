@@ -304,6 +304,23 @@ if (!string.IsNullOrWhiteSpace(microsoftClientId) && !string.IsNullOrWhiteSpace(
 //
 // 20/minute is far above human use (a login is one GET + one POST) but low enough to make
 // brute-force and mail-flooding useless. Static assets live outside /Account and are unaffected.
+// HSTS: a year, and covering subdomains (L-02). The framework default is 30 days with neither
+// includeSubDomains nor preload — defensible, but a short window means a user who has not visited
+// recently is downgradeable again, and without includeSubDomains a future sibling host under the
+// same domain is not covered at all.
+//
+// Deliberately NOT preload. Preload is a one-way door: removal takes months and is enforced by
+// browsers rather than by this config, so it should not be switched on by a hygiene pass. Worth
+// considering separately once the domain is settled.
+//
+// Note this only ever applies outside Development (see the UseHsts call below), so local http
+// development is unaffected.
+builder.Services.AddHsts(options =>
+{
+    options.MaxAge = TimeSpan.FromDays(365);
+    options.IncludeSubDomains = true;
+});
+
 builder.Services.AddRateLimiter(options =>
 {
     options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
@@ -461,7 +478,6 @@ app.UseForwardedHeaders(new ForwardedHeadersOptions
 if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/Error");
-    // The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
     app.UseHsts();
 }
 

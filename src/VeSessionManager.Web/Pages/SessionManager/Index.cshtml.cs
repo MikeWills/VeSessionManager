@@ -598,7 +598,21 @@ public class IndexModel(
             // but the cookie's Path attribute cares about the request path, not which route matched it.
             Path = "/SessionManager",
             SameSite = SameSiteMode.Lax,
-            IsEssential = true
+            IsEssential = true,
+            // Both default to false, and neither was set (L-01). Nothing reads this from JavaScript,
+            // so HttpOnly costs nothing and removes it from the reach of any future XSS.
+            HttpOnly = true,
+            // Secure is conditional, not unconditional: hardcoding true would silently break local
+            // development over http://localhost, where the filter row would appear to forget itself
+            // on every navigation with nothing to explain why. Request.IsHttps is correct behind the
+            // reverse proxy because of UseForwardedHeaders (Program.cs) — the same dependency the
+            // rate limiter and the audit log's source address have.
+            //
+            // The contents are low-value (a status list, a team id, a page size, a sort key) and
+            // every one is re-validated against an allowlist on read, so a tampered cookie cannot
+            // reach an arbitrary sort expression. This is defence in depth, not a fix for a live
+            // path.
+            Secure = Request.IsHttps
         });
     }
 

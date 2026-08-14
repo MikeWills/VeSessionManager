@@ -127,7 +127,13 @@ public class VeDirectoryModel(
     /// different kinds of exposure, and only one of them leaves the building. The audit entry
     /// records who exported and how many rows, never the contents.</para>
     /// </summary>
-    public async Task<IActionResult> OnGetExportAsync()
+    /// <para><b>POST, not GET (#265/L-11).</b> As a GET, a cross-site link or an
+    /// <c>&lt;img src&gt;</c> could make an authenticated admin emit a <c>VeDirectoryExported</c>
+    /// row from someone else's page. No PII actually leaked — a cross-origin caller cannot read the
+    /// response body — but it polluted the one record that exists specifically to attest who took a
+    /// copy of contact details out of the building, which is the only thing that record is for. A
+    /// POST carries the antiforgery token, so the entry can only be written by a real click here.</para>
+    public async Task<IActionResult> OnPostExportAsync()
     {
         await OnGetAsync();
 
@@ -160,8 +166,11 @@ public class VeDirectoryModel(
 
         var user = await userManager.GetUserWithManagerAsync(dbContext, User)
             ?? throw new InvalidOperationException("No authenticated user for an [Authorize]d page.");
+        // One of the few places a source address is recorded (#265) — this row attests that a copy
+        // of every VE's contact details left the building, so "from where" is part of the attestation.
         dbContext.AddAuditLog(user.Id, "VeDirectoryExported", nameof(VolunteerExaminer), 0,
-            $"Exported {Rows.Count} VE record(s) including contact details.", UtcNow);
+            $"Exported {Rows.Count} VE record(s) including contact details.", UtcNow,
+            SourceIp.For(HttpContext));
         await dbContext.SaveChangesAsync(HttpContext.RequestAborted);
 
         var stamp = UtcNow.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture);
