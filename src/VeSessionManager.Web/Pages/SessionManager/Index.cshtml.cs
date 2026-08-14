@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Authorization;
+﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -217,7 +217,7 @@ public class IndexModel(
             .Skip((PageNumber - 1) * PageSize)
             .Take(PageSize)
             .Select(SessionListRow.Projection)
-            .ToListAsync();
+            .ToListAsync(HttpContext.RequestAborted);
 
         Sessions = rows.Select(r => ToRow(r, now, user)).ToList();
     }

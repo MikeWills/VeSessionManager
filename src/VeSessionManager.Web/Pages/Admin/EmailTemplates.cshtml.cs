@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Authorization;
+﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
@@ -36,7 +36,7 @@ public class EmailTemplatesModel(AppDbContext dbContext, UserManager<User> userM
 
         IsSystemAdmin = user.Role == UserRole.SystemAdmin;
         AvailableTeams = await adminAccessScope.ScopeTeams(dbContext.Teams, user)
-            .OrderBy(t => t.Name).Select(t => new ValueTuple<int, string>(t.Id, t.Name)).ToListAsync();
+            .OrderBy(t => t.Name).Select(t => new ValueTuple<int, string>(t.Id, t.Name)).ToListAsync(HttpContext.RequestAborted);
 
         var effectiveTeamId = adminAccessScope.TryResolveManageableTeamId(user, TeamId, AvailableTeams.Select(t => t.Id).ToList());
         // See TeamSettings: keep the picker's rendered state in step with the auto-selection.
@@ -54,7 +54,7 @@ public class EmailTemplatesModel(AppDbContext dbContext, UserManager<User> userM
             .Where(t => t.TeamId == effectiveTeamId.Value)
             .OrderBy(t => t.Key)
             .Select(t => new TemplateRow(t.Id, t.Key, t.Subject, t.Body, t.UpdatedUtc))
-            .ToListAsync();
+            .ToListAsync(HttpContext.RequestAborted);
 
         return Page();
     }

@@ -167,6 +167,14 @@ public class AppDbContext(DbContextOptions<AppDbContext> options, IDataProtectio
             b.HasIndex(p => new { p.CandidateId, p.Reason })
                 .IsUnique()
                 .HasFilter($"\"Reason\" = {(int)PaymentReason.InitialExam}");
+
+            // Plain FK lookups — Include(c => c.Payments) and c.Payments.Any(...), which run
+            // throughout ingestion, the session detail page and the payment jobs — cannot use the
+            // filtered index above: SQLite only considers a partial index when the query's WHERE
+            // implies its filter, and none of those mention Reason. Without this they full-scan
+            // (#297). An addition, not a replacement — the filtered one is what closes the
+            // duplicate-InitialExam race described above.
+            b.HasIndex(p => p.CandidateId);
         });
 
         modelBuilder.Entity<SessionVolunteerExaminer>(b =>

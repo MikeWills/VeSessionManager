@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Authorization;
+﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
@@ -72,7 +72,7 @@ public class TeamMaintenanceModel(
             return Forbid();
         }
 
-        await LoadTeamPickerAsync(user);
+        await LoadTeamPickerAsync(user, HttpContext.RequestAborted);
 
         var effectiveTeamId = adminAccessScope.TryResolveManageableTeamId(user, TeamId, AvailableTeams.Select(t => t.Id).ToList());
         // See TeamSettings: keep the picker's rendered state in step with the auto-selection.
@@ -100,7 +100,7 @@ public class TeamMaintenanceModel(
             .Where(r => r.TeamId == Team.Id)
             .OrderByDescending(r => r.RequestedUtc)
             .Take(10)
-            .ToListAsync();
+            .ToListAsync(HttpContext.RequestAborted);
 
         var today = DateOnly.FromDateTime(Report.NowUtc);
         DefaultImportStart = new DateOnly(today.Year, 1, 1);
@@ -168,11 +168,17 @@ public class TeamMaintenanceModel(
         return RedirectToPage(new { teamId = team.Id });
     }
 
-    private async Task LoadTeamPickerAsync(User user)
+    /// <summary>
+    /// Takes the token rather than reaching for <c>HttpContext.RequestAborted</c> itself, because its
+    /// two callers want different ones (#299): the GET passes RequestAborted, while AuthorizeAsync
+    /// below runs this on the way into a POST and passes None. A read it may be, but it is the read
+    /// that decides *which team* the write targets — cancelling it midway is not a case worth having.
+    /// </summary>
+    private async Task LoadTeamPickerAsync(User user, CancellationToken cancellationToken)
     {
         IsSystemAdmin = user.Role == UserRole.SystemAdmin;
         AvailableTeams = await adminAccessScope.ScopeTeams(dbContext.Teams, user)
-            .OrderBy(t => t.Name).Select(t => new ValueTuple<int, string>(t.Id, t.Name)).ToListAsync();
+            .OrderBy(t => t.Name).Select(t => new ValueTuple<int, string>(t.Id, t.Name)).ToListAsync(cancellationToken);
     }
 
     private async Task<(User User, Team Team)?> AuthorizeAsync()
@@ -183,7 +189,7 @@ public class TeamMaintenanceModel(
             return null;
         }
 
-        await LoadTeamPickerAsync(user);
+        await LoadTeamPickerAsync(user, CancellationToken.None);
 
         // ...ForWrite (issue #263). Both callers of this are POST handlers — queue a historical
         // import, force a refresh — so substituting a different team the user happens to manage

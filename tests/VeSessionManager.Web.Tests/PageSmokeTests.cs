@@ -115,6 +115,44 @@ public class PageSmokeTests : IAsyncLifetime
         Assert.True(
             (int)response.StatusCode < 400 || response.StatusCode is HttpStatusCode.Forbidden or HttpStatusCode.NotFound,
             $"GET {url} returned {(int)response.StatusCode}.");
+
+        // Only a page that actually rendered has markup worth inspecting; a redirect or a 403 body
+        // is not this page's HTML.
+        if (response.StatusCode == HttpStatusCode.OK)
+        {
+            AssertNoEmptyHrefs(await response.Content.ReadAsStringAsync(), url);
+        }
+    }
+
+    /// <summary>
+    /// <b>An empty href is the signature of a whole bug class.</b> When a tag helper cannot generate
+    /// a URL — a missing route value, a renamed page, a typo'd handler — it does not throw and it
+    /// does not warn. It emits <c>&lt;a href=""&gt;</c>, which renders as a link, looks entirely
+    /// normal, and goes nowhere.
+    ///
+    /// <para>The bug that prompted it: the VE Directory rendered perfectly while every link on it
+    /// pointed at no VE at all, because <c>asp-all-route-data</c> discarded the <c>asp-route-id</c>
+    /// beside it. A "does it return 200" check saw nothing wrong. Verified by reintroducing that
+    /// bug — the anchor came back as <c>&lt;a href=""&gt;Test VE&lt;/a&gt;</c>. Checking only the
+    /// links that *do* have an href would have missed it, exactly as the first version of the
+    /// check did.</para>
+    ///
+    /// <para>Ran against one page until #270; the doc comment above was already describing a bug
+    /// *class*, and the theory above already discovers every page from the app's own
+    /// <c>EndpointDataSource</c>, so scoping it to one page was leaving the other 45 uncovered for
+    /// no reason.</para>
+    /// </summary>
+    private static void AssertNoEmptyHrefs(string html, string url)
+    {
+        var deadLinks = Regex.Matches(html, @"<a[^>]*href=""""[^>]*>(?<text>[^<]*)</a>")
+            .Select(m => m.Groups["text"].Value.Trim())
+            .Where(text => text.Length > 0)
+            .ToList();
+
+        Assert.True(deadLinks.Count == 0,
+            $"GET {url} emitted anchor(s) with an empty href, which means URL generation failed and the "
+            + "link goes nowhere — a missing route value or a renamed page. Link text: "
+            + string.Join(", ", deadLinks));
     }
 
     /// <summary>
@@ -125,12 +163,10 @@ public class PageSmokeTests : IAsyncLifetime
     /// <c>asp-all-route-data</c> discarded the <c>asp-route-id</c> beside it — a "does it return
     /// 200" check saw nothing wrong.</para>
     ///
-    /// <para><b>An empty href is the signature of that whole bug class.</b> When a tag helper cannot
-    /// generate a URL — a missing route value, a renamed page, a typo'd handler — it does not throw
-    /// and it does not warn. It emits <c>&lt;a href=""&gt;</c>, which renders as a link, looks
-    /// entirely normal, and goes nowhere. Verified by reintroducing the original bug: the anchor
-    /// came back as <c>&lt;a href=""&gt;Test VE&lt;/a&gt;</c>. Checking only the links that *do*
-    /// have an href would have missed it exactly as the first version of this test did.</para>
+    /// <para>The empty-href half of this moved to <see cref="AssertNoEmptyHrefs"/> and now runs on
+    /// every page (#270) — see there for why an empty href is the signature of the class. What stays
+    /// here is the part that is specific to this page: that the links it emits name a real VE and
+    /// that following one works.</para>
     /// </summary>
     [Fact]
     public async Task LinksOnTheVeDirectoryPointSomewhereReal()
@@ -140,16 +176,6 @@ public class PageSmokeTests : IAsyncLifetime
         var page = await client.GetAsync("/SessionManager/VeDirectory");
         Assert.Equal(HttpStatusCode.OK, page.StatusCode);
         var html = await page.Content.ReadAsStringAsync();
-
-        var deadLinks = Regex.Matches(html, @"<a[^>]*href=""""[^>]*>(?<text>[^<]*)</a>")
-            .Select(m => m.Groups["text"].Value.Trim())
-            .Where(text => text.Length > 0)
-            .ToList();
-
-        Assert.True(deadLinks.Count == 0,
-            "The page emitted anchor(s) with an empty href, which means URL generation failed and the "
-            + "link goes nowhere — a missing route value or a renamed page. Link text: "
-            + string.Join(", ", deadLinks));
 
         var detailLinks = Regex.Matches(html, @"href=""(?<href>/SessionManager/VeDetail[^""]*)""")
             .Select(m => WebUtility.HtmlDecode(m.Groups["href"].Value))

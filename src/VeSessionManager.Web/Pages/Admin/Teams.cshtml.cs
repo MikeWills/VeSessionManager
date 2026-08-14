@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Authorization;
+﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
@@ -61,7 +61,7 @@ public class TeamsModel(
         Teams = await adminAccessScope.ScopeTeams(dbContext.Teams, user)
             .OrderBy(t => t.Name)
             .Select(t => new TeamRow(t.Id, t.Name, t.CreatedUtc))
-            .ToListAsync();
+            .ToListAsync(HttpContext.RequestAborted);
 
         return Page();
     }

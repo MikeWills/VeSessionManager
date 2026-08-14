@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -204,7 +204,7 @@ public class CandidateDetailModel(
                 .Include(c => c.Session)
                 .Where(c => c.Id != Id && c.Frn == candidate.Frn && c.Session.TeamId == candidate.Session.TeamId)
                 .OrderByDescending(c => c.Session.ScheduledStartUtc)
-                .ToListAsync())
+                .ToListAsync(HttpContext.RequestAborted))
                 .Select(c => new OtherAttemptRow(
                     c.Id,
                     c.Session.Id,

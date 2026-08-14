@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Authorization;
+﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
@@ -24,7 +24,7 @@ public class AuditLogModel(AppDbContext dbContext, UserManager<User> userManager
         }
 
         var scoped = adminAccessScope.ScopeAuditLog(dbContext.AuditLogs.Include(a => a.User), user);
-        var entries = await scoped.OrderByDescending(a => a.TimestampUtc).Take(200).ToListAsync();
+        var entries = await scoped.OrderByDescending(a => a.TimestampUtc).Take(200).ToListAsync(HttpContext.RequestAborted);
 
         Entries = entries.Select(a => new AuditLogRow(a.TimestampUtc, a.User?.Name, a.Action, a.EntityType, a.EntityId, a.Details)).ToList();
         return Page();

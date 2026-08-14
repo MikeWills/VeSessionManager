@@ -76,8 +76,12 @@ public class UlsWatcherJob(
 
         using var scope = scopeFactory.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        // TeamId == null is not a narrowing — this job always logs its run with teamId: null (see
+        // the RunAsync call below), so the rows it is looking for are exactly the null-team ones.
+        // It is here to make the (TeamId, JobName, StartedUtc) index seedable: without a leading
+        // TeamId predicate SQLite cannot use it and this scans the whole table, hourly (#296).
         var alreadyRanThisSlot = await dbContext.JobRunHistories.AnyAsync(
-            h => h.JobName == "UlsWatcher" && h.Success && h.StartedUtc >= dueSlotUtc, stoppingToken);
+            h => h.TeamId == null && h.JobName == "UlsWatcher" && h.Success && h.StartedUtc >= dueSlotUtc, stoppingToken);
         if (alreadyRanThisSlot)
         {
             // `return` (not `continue`) — this is the guarded tick body; returning ends this

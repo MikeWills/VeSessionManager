@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Authorization;
+﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
@@ -49,7 +49,7 @@ public class UsersModel(AppDbContext dbContext, UserManager<User> userManager, A
             : [UserRole.SessionManager, UserRole.TeamLead];
 
         AvailableTeams = await adminAccessScope.ScopeTeams(dbContext.Teams, user)
-            .OrderBy(t => t.Name).Select(t => new ValueTuple<int, string>(t.Id, t.Name)).ToListAsync();
+            .OrderBy(t => t.Name).Select(t => new ValueTuple<int, string>(t.Id, t.Name)).ToListAsync(HttpContext.RequestAborted);
 
         var effectiveTeamId = adminAccessScope.TryResolveManageableTeamId(user, TeamId, AvailableTeams.Select(t => t.Id).ToList());
         TeamId = effectiveTeamId;
@@ -75,7 +75,7 @@ public class UsersModel(AppDbContext dbContext, UserManager<User> userManager, A
             query = query.Where(u => u.UserTeams.Any(ut => ut.TeamId == effectiveTeamId));
         }
 
-        var users = await query.OrderBy(u => u.Name).ToListAsync();
+        var users = await query.OrderBy(u => u.Name).ToListAsync(HttpContext.RequestAborted);
 
         // Suggestions come from the service one user at a time, rather than a bulk query here that
         // re-implements the same rules. Those rules are the careful part — a call-sign match is a
@@ -137,7 +137,7 @@ public class UsersModel(AppDbContext dbContext, UserManager<User> userManager, A
 
         AvailableManagers = (await managerCandidates
                 .Select(u => new { u.Id, u.Name, Teams = u.UserTeams.Select(ut => ut.Team.Name).ToList() })
-                .ToListAsync())
+                .ToListAsync(HttpContext.RequestAborted))
             .OrderBy(u => u.Name)
             // The team is the whole point of the choice when several are listed, and two managers can
             // share a name; without it you are picking blind.
@@ -181,8 +181,14 @@ public class UsersModel(AppDbContext dbContext, UserManager<User> userManager, A
             // OnGetAsync and is empty on a POST, so using it would have made the resolver see no
             // candidate teams and silently do nothing — the same dead end, with a comment claiming
             // otherwise.
+            //
+            // No token, deliberately (#299), even though this is a read and #299 threaded
+            // RequestAborted through the reads on the GET path above. This one sits *between* two
+            // writes — CreateAsync has already committed, SetTeamsAsync has not run — so cancelling
+            // it strands a brand-new account with no team, which is the dead end the whole block
+            // exists to prevent.
             var manageableTeams = await adminAccessScope.ScopeTeams(dbContext.Teams, user)
-                .Select(t => new ValueTuple<int, string>(t.Id, t.Name)).ToListAsync();
+                .Select(t => new ValueTuple<int, string>(t.Id, t.Name)).ToListAsync(CancellationToken.None);
 
             var teamId = adminAccessScope.TryResolveManageableTeamIdForWrite(user, TeamId, [.. manageableTeams.Select(t => t.Item1)]);
             if (teamId is { } resolved)
@@ -344,14 +350,13 @@ public class UsersModel(AppDbContext dbContext, UserManager<User> userManager, A
 
     /// <summary>UserManager.GetUserAsync doesn't include UserTeams (or ManagedByUser.UserTeams) —
     /// every method below needs at least the acting user's own UserTeams loaded for
-    /// AdminAccessScope's Contains-based checks.</summary>
-    private async Task<User?> LoadCurrentUserAsync()
-    {
-        var principalUser = await userManager.GetUserAsync(User);
-        return principalUser is null
-            ? null
-            : await dbContext.Users.Include(u => u.UserTeams).FirstOrDefaultAsync(u => u.Id == principalUser.Id);
-    }
+    /// AdminAccessScope's Contains-based checks.
+    ///
+    /// <para>This used to hand-roll that load with <c>UserTeams</c> only, which was a second
+    /// definition of <see cref="CurrentUserLoader.GetUserWithManagerAsync"/> missing one include
+    /// (#273). Equivalent only for as long as <c>GetEffectiveTeamIds</c> never reads
+    /// <c>ManagedByUser</c> again — the exact drift the shared helper exists to prevent.</para></summary>
+    private Task<User?> LoadCurrentUserAsync() => userManager.GetUserWithManagerAsync(dbContext, User);
 
     private async Task<(User ActingUser, User TargetUser)?> AuthorizeManageAsync(int targetUserId)
     {
