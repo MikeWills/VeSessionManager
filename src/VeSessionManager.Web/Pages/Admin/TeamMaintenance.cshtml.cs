@@ -26,7 +26,7 @@ namespace VeSessionManager.Web.Pages.Admin;
 /// TeamAdmin is locked to their own team regardless of a tampered ?teamId=, and the POST handlers
 /// re-resolve through AdminAccessScope rather than trusting the form.
 /// </summary>
-[Authorize(Roles = "SystemAdmin,TeamAdmin")]
+[Authorize(Roles = RoleGroups.Admins)]
 public class TeamMaintenanceModel(
     AppDbContext dbContext,
     UserManager<User> userManager,

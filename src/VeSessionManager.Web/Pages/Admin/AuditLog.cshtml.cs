@@ -10,7 +10,7 @@ using VeSessionManager.Core.Entities;
 namespace VeSessionManager.Web.Pages.Admin;
 
 /// <summary>Phase 9c: read-only audit log viewer, scoped via AdminAccessScope.ScopeAuditLog (SystemAdmin: global; TeamAdmin: their own team's users' actions only — see that method's doc for the known "misses unattributed background-job entries" limitation).</summary>
-[Authorize(Roles = "SystemAdmin,TeamAdmin")]
+[Authorize(Roles = RoleGroups.Admins)]
 public class AuditLogModel(AppDbContext dbContext, UserManager<User> userManager, AdminAccessScope adminAccessScope) : PageModel
 {
     public IReadOnlyList<AuditLogRow> Entries { get; private set; } = [];

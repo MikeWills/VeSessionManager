@@ -29,9 +29,9 @@ public class AddWatchedLicenseTests
     {
         public List<string> Seen { get; } = [];
 
-        public Task<UlsLookupResult?> LookupByFrnAsync(string frn, CancellationToken cancellationToken)
+        public Task<UlsLookupResult?> LookupAsync(string frnOrCallSign, CancellationToken cancellationToken)
         {
-            Seen.Add(frn);
+            Seen.Add(frnOrCallSign);
             return Task.FromResult(result);
         }
     }

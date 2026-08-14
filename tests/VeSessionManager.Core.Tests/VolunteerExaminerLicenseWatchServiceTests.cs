@@ -24,7 +24,7 @@ public class VolunteerExaminerLicenseWatchServiceTests
     {
         public List<string> LookedUp { get; } = [];
 
-        public Task<UlsLookupResult?> LookupByFrnAsync(string frnOrCallSign, CancellationToken cancellationToken)
+        public Task<UlsLookupResult?> LookupAsync(string frnOrCallSign, CancellationToken cancellationToken)
         {
             LookedUp.Add(frnOrCallSign);
             return Task.FromResult(byKey.TryGetValue(frnOrCallSign, out var r) ? r : UlsLookupResult.NotFound);
@@ -61,11 +61,11 @@ public class VolunteerExaminerLicenseWatchServiceTests
     }
 
     private static UlsLookupResult Found(
-        DateTime? expires, string callSign = "N2SPG", string? frn = "0004511143", LicenseClass operatorClass = LicenseClass.Extra) => new()
+        DateTime? expires, string callSign = "N2SPG", string? frnOrCallSign = "0004511143", LicenseClass operatorClass = LicenseClass.Extra) => new()
     {
         Found = true,
         CallSign = callSign,
-        Frn = frn,
+        Frn = frnOrCallSign,
         LicenseStatus = "Active",
         OperatorClass = operatorClass,
         GrantDateUtc = Now.AddYears(-4),
@@ -143,7 +143,16 @@ public class VolunteerExaminerLicenseWatchServiceTests
         Assert.Equal(0, result.Checked);
 
         var person = await dbContext.VolunteerExaminers.SingleAsync();
-        Assert.Null(person.LicenseLastCheckedUtc);
+
+        // Stamped even though nothing was looked up (#303, D-15) — this assertion used to require
+        // null, which encoded the bug. The query orders by LicenseLastCheckedUtc with nulls first
+        // and takes a bounded window, so an unusable row that keeps its null stamp re-claims a slot
+        // on every run, forever. Once placeholders outnumber the window the sweep does zero real work
+        // while reporting Due = 0.
+        Assert.Equal(Now, person.LicenseLastCheckedUtc);
+
+        // And the derived status is unaffected: stamping records that we looked at the row, not that
+        // we learned anything about the licence.
         Assert.Equal(WatchedLicenseStatus.NoCallSign, person.DeriveSnapshotStatus(Now));
     }
 
@@ -215,8 +224,8 @@ public class VolunteerExaminerLicenseWatchServiceTests
         var second = await SeedVeAsync(dbContext, "KF0JZP");
         var client = new FakeUlsLookupClient(new()
         {
-            ["N2SPG"] = Found(Now.AddYears(4), callSign: "N2SPG", frn: "0004511143"),
-            ["KF0JZP"] = Found(Now.AddYears(4), callSign: "KF0JZP", frn: "0004511143")
+            ["N2SPG"] = Found(Now.AddYears(4), callSign: "N2SPG", frnOrCallSign: "0004511143"),
+            ["KF0JZP"] = Found(Now.AddYears(4), callSign: "KF0JZP", frnOrCallSign: "0004511143")
         });
 
         var result = await CreateService(dbContext, client).RunAsync(CancellationToken.None);
@@ -231,8 +240,8 @@ public class VolunteerExaminerLicenseWatchServiceTests
         Assert.Single(withFrn);
 
         // And the pair is identifiable, not just counted.
-        var (conflicted, owner, frn) = Assert.Single(result.ConflictingFrnOwnerIds);
-        Assert.Equal("0004511143", frn);
+        var (conflicted, owner, frnOrCallSign) = Assert.Single(result.ConflictingFrnOwnerIds);
+        Assert.Equal("0004511143", frnOrCallSign);
         Assert.Contains(owner, new[] { first.Id, second.Id });
         Assert.Contains(conflicted, new[] { first.Id, second.Id });
         Assert.NotEqual(owner, conflicted);
@@ -255,7 +264,7 @@ public class VolunteerExaminerLicenseWatchServiceTests
         person.ConflictingFrn = "0004511143";
         await dbContext.SaveChangesAsync();
 
-        var client = new FakeUlsLookupClient(new() { ["N2SPG"] = Found(Now.AddYears(4), frn: "0004511143") });
+        var client = new FakeUlsLookupClient(new() { ["N2SPG"] = Found(Now.AddYears(4), frnOrCallSign: "0004511143") });
 
         await CreateService(dbContext, client).RunAsync(CancellationToken.None);
 
@@ -279,9 +288,9 @@ public class VolunteerExaminerLicenseWatchServiceTests
 
         var client = new FakeUlsLookupClient(new()
         {
-            ["N2SPG"] = Found(Now.AddYears(4), callSign: "N2SPG", frn: "1"),
+            ["N2SPG"] = Found(Now.AddYears(4), callSign: "N2SPG", frnOrCallSign: "1"),
             ["NP2UU"] = null,   // lookup failure
-            ["W1AW"] = Found(Now.AddYears(4), callSign: "W1AW", frn: "3")
+            ["W1AW"] = Found(Now.AddYears(4), callSign: "W1AW", frnOrCallSign: "3")
         });
 
         var result = await CreateService(dbContext, client).RunAsync(CancellationToken.None);

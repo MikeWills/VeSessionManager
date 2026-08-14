@@ -69,7 +69,6 @@ public class ReconciliationService(
             .ToListAsync(cancellationToken);
 
         var localById = local
-            .Where(s => s.ExamToolsSessionId != null)
             .ToDictionary(s => s.ExamToolsSessionId!, StringComparer.OrdinalIgnoreCase);
         result.LocalSessions = local.Count;
 

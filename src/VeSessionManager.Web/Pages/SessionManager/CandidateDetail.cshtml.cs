@@ -23,7 +23,7 @@ namespace VeSessionManager.Web.Pages.SessionManager;
 /// Every write action here reuses the same Core services Detail.cshtml.cs calls — this page owns
 /// no business logic of its own, same convention as Detail.cshtml.cs's own doc comment.
 /// </summary>
-[Authorize(Roles = "SystemAdmin,TeamAdmin,SessionManager,TeamLead")]
+[Authorize(Roles = RoleGroups.AllRoles)]
 public class CandidateDetailModel(
     AppDbContext dbContext,
     UserManager<User> userManager,

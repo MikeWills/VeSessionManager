@@ -33,7 +33,7 @@ namespace VeSessionManager.Web.Pages.SessionManager;
 /// CanEdit property exposed here is only so the Razor view can hide write controls instead of
 /// showing a TeamLead a page full of buttons that 403 when clicked.
 /// </summary>
-[Authorize(Roles = "SystemAdmin,TeamAdmin,SessionManager,TeamLead")]
+[Authorize(Roles = RoleGroups.AllRoles)]
 public class DetailModel(
     AppDbContext dbContext,
     UserManager<User> userManager,

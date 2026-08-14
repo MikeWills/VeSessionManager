@@ -25,7 +25,7 @@ namespace VeSessionManager.Web.Pages.SessionManager;
 /// and Team Leads get no access at all. Keep the nav gate in _AppLayout.cshtml in step with this
 /// attribute; a role that cannot load the page must not be shown a link that 403s.</para>
 /// </summary>
-[Authorize(Roles = "SystemAdmin,TeamAdmin")]
+[Authorize(Roles = RoleGroups.Admins)]
 public class VeDirectoryModel(
     AppDbContext dbContext,
     UserManager<User> userManager,
@@ -164,8 +164,7 @@ public class VeDirectoryModel(
                 row.LastWorkedUtc?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)));
         }
 
-        var user = await userManager.GetUserWithManagerAsync(dbContext, User)
-            ?? throw new InvalidOperationException("No authenticated user for an [Authorize]d page.");
+        var user = await userManager.GetRequiredUserAsync(dbContext, User);
         // One of the few places a source address is recorded (#265) — this row attests that a copy
         // of every VE's contact details left the building, so "from where" is part of the attestation.
         dbContext.AddAuditLog(user.Id, "VeDirectoryExported", nameof(VolunteerExaminer), 0,
@@ -186,8 +185,7 @@ public class VeDirectoryModel(
     /// </summary>
     public async Task<IActionResult> OnPostAddAsync(int addTeamId, string? callSign, string? name, string? email, string? phone)
     {
-        var user = await userManager.GetUserWithManagerAsync(dbContext, User)
-            ?? throw new InvalidOperationException("No authenticated user for an [Authorize]d page.");
+        var user = await userManager.GetRequiredUserAsync(dbContext, User);
 
         // A posted team must be one this user can actually see. Without this, the team id is just a
         // number in a form and anyone could file a VE onto someone else's roster.
@@ -223,8 +221,7 @@ public class VeDirectoryModel(
         // GetUserWithManagerAsync, never the bare GetUserAsync — GetEffectiveTeamIds reads
         // user.UserTeams, which the plain UserManager call leaves unloaded, silently giving a
         // TeamAdmin an empty team set. See CLAUDE.md.
-        var user = await userManager.GetUserWithManagerAsync(dbContext, User)
-            ?? throw new InvalidOperationException("No authenticated user for an [Authorize]d page.");
+        var user = await userManager.GetRequiredUserAsync(dbContext, User);
 
         AvailableTeams = await accessScope.GetAvailableTeamsAsync(dbContext, user);
         HasTeamContext = AvailableTeams.Count > 0 || user.Role == UserRole.SystemAdmin;

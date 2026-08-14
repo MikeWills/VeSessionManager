@@ -26,7 +26,7 @@ namespace VeSessionManager.Web.Pages.SessionManager;
 /// point of this page is "who's still waiting," not a permanent audit trail — PII purge and the
 /// candidate detail page remain the source of truth for anything older.
 /// </summary>
-[Authorize(Roles = "SystemAdmin,TeamAdmin,SessionManager,TeamLead")]
+[Authorize(Roles = RoleGroups.AllRoles)]
 public class ApplicantStatusModel(
     AppDbContext dbContext,
     UserManager<User> userManager,
@@ -75,7 +75,7 @@ public class ApplicantStatusModel(
 
     public async Task OnGetAsync()
     {
-        var user = await userManager.GetUserWithManagerAsync(dbContext, User) ?? throw new InvalidOperationException("No authenticated user for an [Authorize]d page.");
+        var user = await userManager.GetRequiredUserAsync(dbContext, User);
 
         AvailableTeams = await accessScope.GetAvailableTeamsAsync(dbContext, user);
 

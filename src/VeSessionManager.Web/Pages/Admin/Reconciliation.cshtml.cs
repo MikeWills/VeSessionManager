@@ -24,7 +24,7 @@ namespace VeSessionManager.Web.Pages.Admin;
 /// 31st of May is missing" into a date range. So the row does that translation and offers the
 /// button.</para>
 /// </summary>
-[Authorize(Roles = "SystemAdmin,TeamAdmin")]
+[Authorize(Roles = RoleGroups.Admins)]
 public class ReconciliationModel(
     AppDbContext dbContext,
     UserManager<User> userManager,
@@ -94,8 +94,7 @@ public class ReconciliationModel(
     /// three-table user load that LoadAsync had already done on the same request.
     /// </summary>
     private async Task<User> CurrentUserAsync() =>
-        await userManager.GetUserWithManagerAsync(dbContext, User)
-            ?? throw new InvalidOperationException("No authenticated user for an [Authorize]d page.");
+        await userManager.GetRequiredUserAsync(dbContext, User);
 
     private async Task<IActionResult?> LoadAsync()
     {

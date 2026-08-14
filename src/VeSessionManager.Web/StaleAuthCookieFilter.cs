@@ -14,9 +14,11 @@ namespace VeSessionManager.Web;
 /// <para><b>The situation.</b> A cookie can outlive the account it names — the row is deleted or the
 /// database is restored to an older state, while the browser still holds a perfectly valid,
 /// correctly-signed cookie. Authorization is satisfied (the principal is authenticated), so the page
-/// runs, looks the user up, gets null, and throws. Nineteen call sites across twelve pages did
-/// exactly that, each with the same
-/// <c>?? throw new InvalidOperationException("No authenticated user for an [Authorize]d page.")</c>.
+/// runs, looks the user up, gets null, and throws. Twenty-two call sites across fourteen pages did
+/// exactly that, each spelling out the same throw; they now share
+/// <c>CurrentUserLoader.GetRequiredUserAsync</c> (#307), which throws in one place instead of
+/// twenty-two. <b>This filter is still what makes that throw unreachable</b> — the helper is the
+/// backstop, not the handling.
 /// The person sees a 500 for something that is not their fault and that they cannot fix — the one
 /// thing that would help, signing out, is what the error page does not offer.</para>
 ///

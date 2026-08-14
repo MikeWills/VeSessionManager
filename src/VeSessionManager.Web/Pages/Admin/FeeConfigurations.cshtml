@@ -8,7 +8,7 @@
 
 <div class="page-head">
     <div>
-        <partial name="_ParentCrumb" model='new ParentCrumb("./Vecs", "VECs", "Per VEC", "SystemAdmin")' />
+        <partial name="_ParentCrumb" model='new ParentCrumb("./Vecs", "VECs", "Per VEC", RoleGroups.SystemAdminOnly)' />
         <h1>Fee Configurations</h1>
     </div>
     @* AvailableVecs.Count is part of the condition because the createFeeModal this opens is rendered

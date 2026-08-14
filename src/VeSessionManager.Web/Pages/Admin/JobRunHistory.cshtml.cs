@@ -12,7 +12,7 @@ using VeSessionManager.Core.Entities;
 namespace VeSessionManager.Web.Pages.Admin;
 
 /// <summary>Phase 9c: read-only job run history / ops dashboard, scoped via AdminAccessScope.ScopeJobRunHistory (SystemAdmin: every run including global jobs; TeamAdmin: their own team's per-team runs only).</summary>
-[Authorize(Roles = "SystemAdmin,TeamAdmin")]
+[Authorize(Roles = RoleGroups.Admins)]
 public class JobRunHistoryModel(AppDbContext dbContext, UserManager<User> userManager, AdminAccessScope adminAccessScope) : PageModel
 {
     public IReadOnlyList<JobRunRow> Runs { get; private set; } = [];

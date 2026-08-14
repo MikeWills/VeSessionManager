@@ -59,8 +59,32 @@ public class VolunteerExaminerLicenseWatchService(
             .ToListAsync(cancellationToken);
 
         var due = candidates.Where(v => CallSign.IsUsable(v.CallSign)).Take(MaxLookupsPerRun).ToList();
-        result.Skipped = candidates.Count - due.Count;
+        var skipped = candidates.Where(v => !CallSign.IsUsable(v.CallSign)).ToList();
+        result.Skipped = skipped.Count;
         result.Due = due.Count;
+
+        // Stamp the unusable ones too (audit item D-15), or they never leave the front of the queue.
+        //
+        // The query above orders by LicenseLastCheckedUtc with nulls first and takes a bounded window.
+        // A row whose call sign can never be looked up — ExamTools' literal "<UNKNOWN>" and friends —
+        // is filtered out AFTER that window is chosen, and previously kept its null stamp forever, so
+        // it re-claimed a slot on every single run. Harmless at today's numbers (2 placeholders of
+        // 176); once placeholders exceed the window the sweep does ZERO real work in perpetuity while
+        // cheerfully reporting Due = 0, which is the kind of failure nobody investigates because
+        // nothing looks broken.
+        //
+        // Stamped rather than excluded by a persisted flag: a placeholder call sign is not permanent
+        // — ExamTools fills it in when the VE is identified — so this must age them out of the front
+        // of the queue, not out of the sweep entirely.
+        if (skipped.Count > 0)
+        {
+            foreach (var placeholder in skipped)
+            {
+                placeholder.LicenseLastCheckedUtc = utcNow;
+            }
+
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
 
         // Every FRN already spoken for, so the backfill below can tell "this is my FRN" from "this
         // FRN belongs to somebody else". Loaded once rather than queried per row.
@@ -78,7 +102,7 @@ public class VolunteerExaminerLicenseWatchService(
             // VolunteerExaminerSyncService's per-session guard.
             try
             {
-                var lookup = await lookupClient.LookupByFrnAsync(volunteerExaminer.CallSign!, cancellationToken);
+                var lookup = await lookupClient.LookupAsync(volunteerExaminer.CallSign!, cancellationToken);
                 if (lookup is null)
                 {
                     // The lookup itself failed, so nothing was learned. Deliberately does not stamp

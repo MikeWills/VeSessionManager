@@ -29,7 +29,7 @@ namespace VeSessionManager.Web.Pages.Admin;
 /// <para>Creating a team stays SystemAdmin, enforced in the handler and not merely by hiding the
 /// button: the page is reachable by TeamAdmin now, so the handler is the only real guard.</para>
 /// </summary>
-[Authorize(Roles = "SystemAdmin,TeamAdmin")]
+[Authorize(Roles = RoleGroups.Admins)]
 public class TeamsModel(
     AppDbContext dbContext,
     UserManager<User> userManager,

@@ -23,10 +23,6 @@ namespace VeSessionManager.Core.VolunteerExaminers;
 /// </summary>
 public class VolunteerExaminerImportService(AppDbContext dbContext, TimeProvider timeProvider)
 {
-    /// <summary>Columns the parser understands, in the order the export writes them. Anything else in the header is ignored rather than rejected — a team's own spreadsheet will have extra columns.</summary>
-    public static readonly IReadOnlyList<string> KnownColumns =
-        ["callsign", "name", "email", "phone", "addressline1", "addressline2", "city", "state", "postalcode", "discord", "frn"];
-
     /// <summary>Guards against a pasted novel. Well above any real VE roster; low enough that the hidden-field round-trip stays sane.</summary>
     public const int MaxRows = 500;
 

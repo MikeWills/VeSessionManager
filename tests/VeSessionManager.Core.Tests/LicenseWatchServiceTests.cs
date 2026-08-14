@@ -26,7 +26,7 @@ public class LicenseWatchServiceTests
     {
         public List<string> LookedUp { get; } = [];
 
-        public Task<UlsLookupResult?> LookupByFrnAsync(string frnOrCallSign, CancellationToken cancellationToken)
+        public Task<UlsLookupResult?> LookupAsync(string frnOrCallSign, CancellationToken cancellationToken)
         {
             LookedUp.Add(frnOrCallSign);
             return Task.FromResult(byKey.TryGetValue(frnOrCallSign, out var r) ? r : UlsLookupResult.NotFound);

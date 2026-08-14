@@ -51,6 +51,12 @@ public static class EmailDefaultsSeeder
                 ReplyToAddress = "noreply@example.org",
                 PrivacyPolicyUrl = "https://example.org/privacy",
                 AdminNotificationEmail = "admin@example.org",
+                // DateTime.UtcNow rather than an injected TimeProvider, which every service here
+                // uses (audit item D-16). Deliberate: this is a static startup seeder with no DI
+                // scope of its own, and threading a clock through three static methods and two call
+                // sites would buy a testable timestamp nothing asserts on — the seeder's tests are
+                // about which rows appear, not when. If this ever becomes an instance service, take
+                // the clock then.
                 UpdatedUtc = DateTime.UtcNow
             });
             logger.LogWarning("Seeded default EmailSettings for team {TeamId} ({TeamName}) with placeholder From/Reply-To/PrivacyPolicy/AdminNotification values — these must be updated before sending real candidate email",
@@ -126,9 +132,13 @@ public static class EmailDefaultsSeeder
             not the candidate.</p>
             """);
 
-        // Phase 9b: sent automatically by SessionActionService.MarkCompletedAsync for a candidate
-        // whose Tested flag just flipped true and who has HasFelonyDisclosure = true — informational
-        // only, the club has no role beyond telling them special FCC steps are required.
+        // Sent by a per-candidate button, NOT automatically (#221; this comment said otherwise until
+        // #314/L-19). It used to fire from SessionActionService.MarkCompletedAsync for anyone whose
+        // Tested flag that call flipped — which meant an email about someone's felony disclosure went
+        // out as a side effect of a bulk status change, and could only ever arrive AFTER the exam,
+        // when the candidate can no longer easily ask anyone about it. It is now offered whenever a
+        // disclosure is declared, and Tested is not consulted at all. Informational only: the club
+        // has no role beyond telling them extra FCC steps are required.
         await SeedTemplateIfMissingAsync(dbContext, logger, team, "FelonyDisclosureInstructions",
             "Important: Additional FCC Steps Required",
             """

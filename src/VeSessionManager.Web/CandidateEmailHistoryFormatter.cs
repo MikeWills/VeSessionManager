@@ -43,7 +43,7 @@ public static class CandidateEmailHistoryFormatter
         return lines;
     }
 
-    public static string FormatSentUtc(DateTime sentUtc) =>
+    private static string FormatSentUtc(DateTime sentUtc) =>
         EasternTimeFormatter.Format(sentUtc, "M/d/yyyy h:mm tt");
 }
 

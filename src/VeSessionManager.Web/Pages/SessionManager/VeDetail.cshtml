@@ -329,3 +329,10 @@
         </ul>
     </div>
 }
+
+@* Without this, asp-validation-for renders the markup but nothing populates it: every check becomes
+   a round trip and the message only appears after a POST. Server-side validation is unaffected and
+   remains the actual enforcement (#314, L-15). *@
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

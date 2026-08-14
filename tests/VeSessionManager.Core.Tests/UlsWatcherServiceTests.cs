@@ -23,10 +23,10 @@ public class UlsWatcherServiceTests
 
         public FakeUlsLookupClient(Dictionary<string, UlsLookupResult?> byFrn) => _byFrn = byFrn;
 
-        public Task<UlsLookupResult?> LookupByFrnAsync(string frn, CancellationToken cancellationToken)
+        public Task<UlsLookupResult?> LookupAsync(string frnOrCallSign, CancellationToken cancellationToken)
         {
-            LookedUpFrns.Add(frn);
-            return Task.FromResult(_byFrn.TryGetValue(frn, out var r) ? r : UlsLookupResult.NotFound);
+            LookedUpFrns.Add(frnOrCallSign);
+            return Task.FromResult(_byFrn.TryGetValue(frnOrCallSign, out var r) ? r : UlsLookupResult.NotFound);
         }
     }
 
@@ -46,7 +46,7 @@ public class UlsWatcherServiceTests
         CandidateApplicationStatus status = CandidateApplicationStatus.Unmatched,
         LicenseClass? newLicenseClass = LicenseClass.Technician,
         LicenseClass initialLicenseClass = LicenseClass.None,
-        string frn = "0038704029")
+        string frnOrCallSign = "0038704029")
     {
         var team = new Team { Name = "Test Team", ExamToolsTeamCode = "TEST" };
         var session = new Session { Team = team, ScheduledStartUtc = SessionStart, ExamToolsSessionId = "s1", Title = "Test Session" };
@@ -54,7 +54,7 @@ public class UlsWatcherServiceTests
         {
             Session = session,
             Name = "Test Candidate",
-            Frn = frn,
+            Frn = frnOrCallSign,
             Tested = true,
             ApplicationStatus = status,
             InitialLicenseClass = initialLicenseClass,

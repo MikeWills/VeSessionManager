@@ -86,7 +86,7 @@ public class LicenseWatchService(
             {
                 // Call sign is preferred over FRN: it is what the row is keyed on and what a human
                 // entered, and the endpoint resolves either.
-                var lookup = await lookupClient.LookupByFrnAsync(license.CallSign, cancellationToken);
+                var lookup = await lookupClient.LookupAsync(license.CallSign, cancellationToken);
                 if (lookup is null)
                 {
                     // The lookup itself failed, so nothing was learned. Deliberately does NOT stamp
@@ -150,7 +150,7 @@ public class LicenseWatchService(
             return new AddWatchedLicenseResult(AddWatchedLicenseOutcome.CallSignRequired, "");
         }
 
-        var lookup = await lookupClient.LookupByFrnAsync(trimmed, cancellationToken);
+        var lookup = await lookupClient.LookupAsync(trimmed, cancellationToken);
         if (lookup is null)
         {
             // The endpoint itself was unreachable. Distinct from "no such call sign" — the caller

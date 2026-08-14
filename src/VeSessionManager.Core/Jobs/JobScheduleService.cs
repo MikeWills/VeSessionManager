@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using VeSessionManager.Core.Admin;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Uls;
 
@@ -86,7 +87,11 @@ public class JobScheduleService(AppDbContext dbContext, IConfiguration configura
         var lastRunByJob = lastRuns.ToDictionary(r => r.JobName);
 
         // The one job whose schedule is tunable at runtime rather than only in configuration.
-        var settings = await dbContext.SystemSettings.AsNoTracking().FirstOrDefaultAsync(cancellationToken);
+        // Pinned to the singleton row like every other reader (SystemSettingsService.GetAsync,
+        // IngestionStatusService). Without the predicate this takes whichever row the provider yields
+        // first — harmless while the table has exactly one, silently wrong the moment it does not.
+        var settings = await dbContext.SystemSettings.AsNoTracking()
+            .FirstOrDefaultAsync(s => s.Id == SystemSettingsService.SingletonId, cancellationToken);
 
         var nowUtc = timeProvider.GetUtcNow().UtcDateTime;
         var nowEt = DailySlotSchedule.NowEastern(timeProvider);

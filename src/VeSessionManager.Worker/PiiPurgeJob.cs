@@ -1,5 +1,6 @@
 using VeSessionManager.Core.Jobs;
 using VeSessionManager.Core.PiiPurge;
+using VeSessionManager.Core.VolunteerExaminers;
 
 namespace VeSessionManager.Worker;
 
@@ -38,8 +39,34 @@ public class PiiPurgeJob(
         using var scope = scopeFactory.CreateScope();
         var jobRunHistoryLogger = scope.ServiceProvider.GetRequiredService<JobRunHistoryLogger>();
         var purgeService = scope.ServiceProvider.GetRequiredService<PiiPurgeService>();
+        var selfServiceLinkService = scope.ServiceProvider.GetRequiredService<VeSelfServiceLinkService>();
 
-        await jobRunHistoryLogger.RunAsync("PiiPurge", purgeService.RunAsync, null, stoppingToken);
+        await jobRunHistoryLogger.RunAsync(
+            "PiiPurge",
+            async ct =>
+            {
+                var result = await purgeService.RunAsync(ct);
+
+                // Spent self-service tokens (audit item D-03). PurgeSpentTokensAsync existed and was
+                // called by nothing — an unfinished job rather than dead text, which is why it is
+                // wired in here rather than deleted: VeSelfServiceTokens grows without bound and
+                // every row carries SentToEmail, a real address. A consumed or expired token is
+                // already inert, so this is housekeeping over personal data rather than a security
+                // fix, which makes the PII purge run its natural home.
+                //
+                // Composed HERE rather than inside PiiPurgeService on purpose. PurgeSpentTokensAsync
+                // uses ExecuteDeleteAsync, which needs a relational provider — PiiPurgeService's own
+                // tests run on EF InMemory, so folding it in would have broken every one of them for
+                // a reason that has nothing to do with what they test. The job has real SQLite
+                // underneath it (WorkerTickHarness), so this is the layer that can hold it.
+                //
+                // Unconditional, unlike the two windows above: "already unusable, plus seven days" is
+                // not a retention policy anyone needs to choose.
+                result.SelfServiceTokensPurged = await selfServiceLinkService.PurgeSpentTokensAsync(ct);
+                return result;
+            },
+            null,
+            stoppingToken);
     }
 
 }

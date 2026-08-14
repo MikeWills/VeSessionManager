@@ -25,7 +25,7 @@ namespace VeSessionManager.Web.Pages.SessionManager;
 /// <c>AdminAccessScope.TryResolveManageableTeamId</c> resolves — a SystemAdmin picks, a TeamAdmin is
 /// locked to their own.</para>
 /// </summary>
-[Authorize(Roles = "SystemAdmin,TeamAdmin")]
+[Authorize(Roles = RoleGroups.Admins)]
 public class VeTagsModel(
     AppDbContext dbContext,
     UserManager<User> userManager,
@@ -127,8 +127,7 @@ public class VeTagsModel(
     }
 
     private async Task<User> CurrentUserAsync() =>
-        await userManager.GetUserWithManagerAsync(dbContext, User)
-            ?? throw new InvalidOperationException("No authenticated user for an [Authorize]d page.");
+        await userManager.GetRequiredUserAsync(dbContext, User);
 
     private async Task LoadAsync()
     {

@@ -41,7 +41,6 @@ public class RenewalMonitorModel(
 
     public bool HasTeamContext { get; private set; }
     public IReadOnlyList<(int Id, string Name)> AvailableTeams { get; private set; } = [];
-    public string TeamSummaryLabel { get; private set; } = "All teams";
 
     /// <summary>The watch list proper — everything except the rows currently sitting in <see cref="RecentlyRenewed"/>.</summary>
     public IReadOnlyList<WatchedLicenseRow> Licenses { get; private set; } = [];
@@ -87,7 +86,7 @@ public class RenewalMonitorModel(
     /// </summary>
     public async Task<IActionResult> OnPostAddAsync()
     {
-        var user = await userManager.GetUserWithManagerAsync(dbContext, User) ?? throw new InvalidOperationException("No authenticated user for an [Authorize]d page.");
+        var user = await userManager.GetRequiredUserAsync(dbContext, User);
         AvailableTeams = await accessScope.GetAvailableTeamsAsync(dbContext, user);
 
         // Re-authorized server-side rather than trusting the posted team id: the picker only decides
@@ -123,7 +122,7 @@ public class RenewalMonitorModel(
 
     public async Task<IActionResult> OnPostRemoveAsync(int watchedLicenseId)
     {
-        var user = await userManager.GetUserWithManagerAsync(dbContext, User) ?? throw new InvalidOperationException("No authenticated user for an [Authorize]d page.");
+        var user = await userManager.GetRequiredUserAsync(dbContext, User);
 
         var license = await dbContext.WatchedLicenses.FirstOrDefaultAsync(w => w.Id == watchedLicenseId, HttpContext.RequestAborted);
         if (license is null)
@@ -154,7 +153,7 @@ public class RenewalMonitorModel(
 
     private async Task LoadAsync()
     {
-        var user = await userManager.GetUserWithManagerAsync(dbContext, User) ?? throw new InvalidOperationException("No authenticated user for an [Authorize]d page.");
+        var user = await userManager.GetRequiredUserAsync(dbContext, User);
 
         AvailableTeams = await accessScope.GetAvailableTeamsAsync(dbContext, user);
         AddTeamId ??= TeamId ?? (AvailableTeams.Count == 1 ? AvailableTeams[0].Id : null);
@@ -164,10 +163,6 @@ public class RenewalMonitorModel(
         // hasn't picked a team (the trap CLAUDE.md records for Applicant Status).
         var teamIds = accessScope.ResolveViewableTeamIds(user, TeamId);
         HasTeamContext = teamIds is null || teamIds.Count > 0;
-        TeamSummaryLabel = TeamId is not null
-            ? AvailableTeams.FirstOrDefault(t => t.Id == TeamId).Name ?? "All teams"
-            : "All teams";
-
         if (!HasTeamContext) return;
 
         var query = dbContext.WatchedLicenses.Include(w => w.Team).AsQueryable();

@@ -48,7 +48,7 @@ namespace VeSessionManager.Web.Pages.SessionManager;
 /// Keep the nav gate in _AppLayout.cshtml in step with this attribute; a role that can't load the
 /// page must not be shown a link that 403s.
 /// </summary>
-[Authorize(Roles = "SystemAdmin,TeamAdmin")]
+[Authorize(Roles = RoleGroups.Admins)]
 public class VeRosterModel(AppDbContext dbContext, UserManager<User> userManager, SessionAccessScope accessScope, VolunteerExaminerReportService reportService, TimeProvider timeProvider) : PageModel
 {
     [BindProperty(SupportsGet = true)]
@@ -85,7 +85,7 @@ public class VeRosterModel(AppDbContext dbContext, UserManager<User> userManager
         // and DateRangePresets.TryGetValue throws on a null key.
         DateRange ??= "";
 
-        var user = await userManager.GetUserWithManagerAsync(dbContext, User) ?? throw new InvalidOperationException("No authenticated user for an [Authorize]d page.");
+        var user = await userManager.GetRequiredUserAsync(dbContext, User);
 
         AvailableTeams = await accessScope.GetAvailableTeamsAsync(dbContext, user);
 
