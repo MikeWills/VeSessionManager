@@ -207,6 +207,9 @@
                        how someone finds out the link exists and can be asked for. Hiding it would
                        make it discoverable only to people who already have it. *@
                     <a class="item" asp-page="/Account/MyVeDetails">My VE details</a>
+                    @* Directly above Log out on purpose: "log out" is what someone reaches for when
+                       a device goes missing, and this is the thing they actually need. *@
+                    <a class="item" asp-page="/Account/SignOutOtherDevices">Sign out other devices</a>
                     <form method="post" asp-page="/Account/Logout">
                         <button type="submit" class="item">Log out</button>
                     </form>
