@@ -1,0 +1,39 @@
+@page
+@model VeSessionManager.Web.Pages.Account.SignOutOtherDevicesModel
+@{
+    ViewData["Title"] = "Sign out other devices";
+    Layout = "_AppLayout";
+}
+
+<div class="page-head">
+    <div>
+        <p class="eyebrow">Your account</p>
+        <h1>Sign out other devices</h1>
+    </div>
+</div>
+
+@if (Model.ErrorMessage is not null)
+{
+    <div class="auth-error">@Model.ErrorMessage</div>
+}
+
+<div class="session-panel">
+    <p>
+        This signs you out everywhere except right here — every phone, tablet and computer where you
+        chose <strong>Keep me signed in on this device</strong>, and every ordinary session too. Use it
+        if a device has been lost or stolen, or if you signed in somewhere you should not have.
+    </p>
+    <p>
+        You will stay signed in on this browser. Everywhere else will ask for your password again.
+    </p>
+    <p class="session-sub">
+        A device that is switched off or idle can take up to 30 minutes to notice. Your sign-in is
+        checked against the server periodically rather than on every page, so this is not instant.
+        If a device is lost and the account itself is at risk, change your password as well.
+    </p>
+
+    <form method="post">
+        <button type="submit" class="btn-primary">Sign out my other devices</button>
+        <a class="btn-secondary" asp-page="/Index">Cancel</a>
+    </form>
+</div>

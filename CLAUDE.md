@@ -126,6 +126,22 @@ would be pure duplication — and goes straight to `CHANGELOG.md` instead. Non-p
 redesigns, hardening passes) start here and move to `CHANGELOG.md` once the section is at/over the
 cap and a newer entry needs to be added; oldest goes first.
 
+- **The phone logged out constantly and the desktop did not (2026-08-13).** Issue #340. See
+  `docs/remember-me.md`. Every sign-in passed `isPersistent: false`, so the cookie had no `Expires`
+  and lived only as long as the browser *process* — a desktop browser runs for days, phones kill and
+  restart theirs constantly. **Persistence alone would not have fixed it**, which is the part that
+  looks finished after the first half: `PasswordSignInAsync` takes only an `isPersistent` flag and
+  the resulting cookie still expires after `ExpireTimeSpan` (8h, deliberate, #159), so a
+  once-a-day phone goes from "every time" to "daily". The window has to be set explicitly as
+  `AuthenticationProperties.ExpiresUtc` — 30 days, opt-in, default off. Sliding expiration then
+  slides by the *ticket's own* duration, not `ExpireTimeSpan`. Shipped with **"Sign out other
+  devices"** because a 30-day session needs a way to end it; that is a security-stamp rotation, so
+  it is **not instant** (30-minute revalidation) and the page says so. Three things that are not
+  obvious: the password path checks and signs in as two steps so exactly *one* `Set-Cookie` is
+  written; the provider buttons had to move *inside* the credentials form for the checkbox to reach
+  the external round trip; and **ASP.NET Core writes `expires=`, not `max-age=`** — the first test
+  asserted on the wrong one and failed against a correct cookie.
+
 - **Every Worker job now has its tick driven by a test (2026-08-11).** Issue #325. See
   `docs/worker-job-tests.md`. The Worker had **no test project at all** — nine background jobs running
   unattended on the deploy box, none of which had ever been executed. Each job's tick is now
@@ -249,8 +265,6 @@ cap and a newer entry needs to be added; oldest goes first.
   audit-file pointer above.
 
 - **Page smoke tests: every Razor page, actually rendered (2026-08-10).** See `docs/page-smoke-tests.md`. Nothing in this repo rendered Razor — not the build, not the 928 Core tests, not the static-HTML layout harness — and two bugs reached a deployment the same day because of it: a `<form>` carrying both `action=` and `asp-page-handler` (which `FormTagHelper` throws on **at render time**, so the build was clean and the page 500'd for anyone who opened it), and an anchor where `asp-all-route-data` silently discarded `asp-route-id` so every link to a VE pointed at nobody. `WebApplicationFactory` now boots the app in-process against throwaway SQLite and requests **every page discovered from the app's own `EndpointDataSource`**, so a new page is covered the day it exists. **The fake auth scheme is half the value**: every interesting page is `[Authorize]`d, so before this the only way to see one was for a human to log in and click. Seeding happens *before* the host starts because `Program.cs` refuses to start when no account can sign in — the harness satisfies that guard rather than weakening it. And **an empty `href` is the signature of the whole bug class**: the first version of the link test only followed links that had one, and passed with the original bug reintroduced.
-
-- **ExamTools reconciliation: a nightly check that the feed and the database agree (2026-08-10).** See `docs/reconciliation.md`. Every other job trusts ingestion to have worked; nothing checked, which is how the historical import could drop the last day of every calendar month since it was written and only be caught because HRCC's own Discord bot reads the same API directly and disagreed about whether a VE was still active. Per team, daily: diff ExamTools' closed-session feed against ours over a trailing 120 days. Findings are a **standing table plus a nav badge**, not just a run summary — Job History rotates, renders green because the *job* succeeded, and a count inside a sentence cannot be acted on, which is the same shape as the `sent 0, failed 1` incident. Each row carries the import range that would fix it; the job itself is **read-only**. The tests cover the bookkeeping and cannot cover the premise: the bug that prompted it had a full green suite because the fakes shared our own wrong assumption.
 
 Everything through Phase 0-10's initial build (ExamTools ingestion, Zoom/Discord, Square, email
 notifications, FCC ULS watcher, payment reminders, VE tracking, VEC submission tracker, admin

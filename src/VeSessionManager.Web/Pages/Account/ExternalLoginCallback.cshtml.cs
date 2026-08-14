@@ -15,7 +15,7 @@ namespace VeSessionManager.Web.Pages.Account;
 /// </summary>
 // Public by design: Where Google/Microsoft return to before a local session exists.
 [AllowAnonymous]
-public class ExternalLoginCallbackModel(SignInManager<User> signInManager, UserManager<User> userManager) : PageModel
+public class ExternalLoginCallbackModel(SignInManager<User> signInManager, UserManager<User> userManager, TimeProvider timeProvider) : PageModel
 {
     /// <summary>
     /// Providers whose email address is trusted even though they send no <c>email_verified</c>
@@ -44,10 +44,17 @@ public class ExternalLoginCallbackModel(SignInManager<User> signInManager, UserM
             return Page();
         }
 
+        // The login page's checkbox, carried across the provider round trip in the external
+        // scheme's own properties. Absent (an older in-flight sign-in, or a provider that dropped
+        // it) reads as false — the pre-#340 behaviour, which is the safe direction to fail.
+        var rememberMe = info.AuthenticationProperties?.Items.TryGetValue(RememberMe.ExternalPropertyKey, out var flag) == true
+            && flag == "true";
+
         var signInResult = await signInManager.ExternalLoginSignInAsync(info.LoginProvider, info.ProviderKey, isPersistent: false, bypassTwoFactor: true);
         if (signInResult.Succeeded)
         {
             var linkedUser = await userManager.FindByLoginAsync(info.LoginProvider, info.ProviderKey);
+            await RememberIfAskedAsync(linkedUser!, rememberMe);
             return RedirectToPage(RoleLandingPages.GetPath(linkedUser!.Role));
         }
 
@@ -91,6 +98,21 @@ public class ExternalLoginCallbackModel(SignInManager<User> signInManager, UserM
         }
 
         await signInManager.SignInAsync(existingUser, isPersistent: false);
+        await RememberIfAskedAsync(existingUser, rememberMe);
         return RedirectToPage(RoleLandingPages.GetPath(existingUser.Role));
+    }
+
+    /// <summary>
+    /// Both external paths — already-linked and just-linked — end in a sign-in, and both must honour
+    /// the checkbox. Kept as one method because a fix applied to one branch and not the other is
+    /// precisely the drift this feature is prone to: the two differ only in how the account was
+    /// found, and nothing about that should change how long the session lasts.
+    /// </summary>
+    private async Task RememberIfAskedAsync(User user, bool rememberMe)
+    {
+        if (rememberMe)
+        {
+            await signInManager.SignInAsync(user, RememberMe.Properties(timeProvider.GetUtcNow()));
+        }
     }
 }

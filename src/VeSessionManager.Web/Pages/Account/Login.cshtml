@@ -45,23 +45,38 @@
                 <input asp-for="Input.Password" autocomplete="current-password" />
                 <span asp-validation-for="Input.Password" class="field-error"></span>
             </div>
+            <div class="field field-check">
+                <label>
+                    <input asp-for="Input.RememberMe" />
+                    Keep me signed in on this device
+                </label>
+                <span class="field-hint">
+                    Stays signed in for @LoginModel.RememberMeDurationLabel. Leave this off on a
+                    shared or public computer.
+                </span>
+            </div>
             <button type="submit" class="btn-primary">Log in</button>
-        </form>
 
-        <p class="session-sub"><a asp-page="/Account/ForgotPassword">Forgot your password?</a></p>
-
-        @if (Model.ExternalLogins.Count > 0)
-        {
-            <div class="auth-divider">or</div>
-            <form method="post">
+            @* The provider buttons live in THIS form, not one of their own, so the checkbox above is
+               posted with them — otherwise "keep me signed in" would work with a password and be
+               silently ignored with Google, which is the split this feature exists to remove. They
+               carry formnovalidate because the browser would otherwise demand the empty username and
+               password fields before allowing a submit that does not use them. asp-page-handler puts
+               the handler in each button's formaction; the antiforgery token is the form's own. *@
+            @if (Model.ExternalLogins.Count > 0)
+            {
+                <div class="auth-divider">or</div>
                 @foreach (var provider in Model.ExternalLogins)
                 {
-                    <button type="submit" class="btn-secondary" name="provider" value="@provider.Name" asp-page-handler="ExternalLogin">
+                    <button type="submit" class="btn-secondary" name="provider" value="@provider.Name"
+                            asp-page-handler="ExternalLogin" formnovalidate>
                         Sign in with @provider.DisplayName
                     </button>
                 }
-            </form>
-        }
+            }
+        </form>
+
+        <p class="session-sub"><a asp-page="/Account/ForgotPassword">Forgot your password?</a></p>
     </div>
 </div>
 
