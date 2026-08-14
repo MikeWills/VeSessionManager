@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Email;
@@ -24,6 +24,15 @@ public class VeSessionInvitationServiceTests
         public HashSet<string> FailFor { get; } = [];
         public bool IsConfigured => true;
 
+        /// <summary>
+        /// How many times the batch entry point was used, and how big each batch was. The real
+        /// saving in #293 is one SMTP connection instead of one per recipient, which cannot be
+        /// observed without a live server — what <i>is</i> checkable, and is the contract that makes
+        /// the single connection possible at all, is that the caller hands over the whole set at once
+        /// rather than calling SendAsync N times.
+        /// </summary>
+        public List<int> BatchSizes { get; } = [];
+
         public Task SendAsync(EmailCredentials credentials, EmailMessage message, CancellationToken cancellationToken)
         {
             if (FailFor.Contains(message.ToAddress))
@@ -33,6 +42,32 @@ public class VeSessionInvitationServiceTests
 
             Sent.Add(message);
             return Task.CompletedTask;
+        }
+
+        /// <summary>
+        /// Mirrors the interface's own default implementation — per-message failures recorded, batch
+        /// continues — while recording that the batch path was taken.
+        /// </summary>
+        public async Task<IReadOnlyList<EmailSendOutcome>> SendManyAsync(
+            EmailCredentials credentials, IReadOnlyList<EmailMessage> messages, CancellationToken cancellationToken)
+        {
+            BatchSizes.Add(messages.Count);
+
+            var outcomes = new List<EmailSendOutcome>(messages.Count);
+            foreach (var message in messages)
+            {
+                try
+                {
+                    await SendAsync(credentials, message, cancellationToken);
+                    outcomes.Add(EmailSendOutcome.Success);
+                }
+                catch (Exception ex)
+                {
+                    outcomes.Add(new EmailSendOutcome(false, ex));
+                }
+            }
+
+            return outcomes;
         }
     }
 
@@ -132,6 +167,63 @@ public class VeSessionInvitationServiceTests
         var candidates = await service.GetCandidatesAsync(session.Id, CancellationToken.None);
 
         Assert.Equal("N2SPG", Assert.Single(candidates).VolunteerExaminer.CallSign);
+    }
+
+    /// <summary>
+    /// #293: the whole roster goes to the sender in one call, rather than one call per VE. The saving
+    /// is one SMTP connection instead of thirty — SmtpEmailSender does connect + TLS + AUTH +
+    /// disconnect per message, so a 30-VE invitation was thirty full handshakes inside one POST.
+    /// </summary>
+    [Fact]
+    public async Task EveryRecipientGoesOutInASingleBatch()
+    {
+        await using var dbContext = CreateContext();
+        var (team, session) = await SeedSessionAsync(dbContext);
+        var people = new List<VolunteerExaminer>();
+        for (var i = 0; i < 5; i++)
+        {
+            people.Add(await SeedVeAsync(dbContext, team, $"K0AA{i}", $"ve{i}@example.com"));
+        }
+
+        var (service, email) = Create(dbContext);
+        var result = await service.SendAsync(
+            session.Id, [.. people.Select(p => p.Id)], "Subject", "Body", 1, CancellationToken.None);
+
+        Assert.Equal(5, result.Sent);
+        Assert.Equal([5], email.BatchSizes);
+    }
+
+    /// <summary>
+    /// A failure has to stay attached to the VE it belongs to. Outcomes come back positionally, so an
+    /// off-by-one here would report the wrong volunteer as unreachable — plausible-looking and wrong,
+    /// which is the kind of bug a count-only assertion cannot see. The VEs that skip sending entirely
+    /// (no address, text-only) are the ones that could shift the alignment, so one of each is present.
+    /// </summary>
+    [Fact]
+    public async Task AFailedSendIsAttributedToTheRightRecipient()
+    {
+        await using var dbContext = CreateContext();
+        var (team, session) = await SeedSessionAsync(dbContext);
+
+        var first = await SeedVeAsync(dbContext, team, "K0AAA", "first@example.com");
+        var noAddress = await SeedVeAsync(dbContext, team, "K0BBB", null);
+        var failing = await SeedVeAsync(dbContext, team, "K0CCC", "fails@example.com");
+        var last = await SeedVeAsync(dbContext, team, "K0DDD", "last@example.com");
+
+        var (service, email) = Create(dbContext);
+        email.FailFor.Add("fails@example.com");
+
+        var result = await service.SendAsync(
+            session.Id, [first.Id, noAddress.Id, failing.Id, last.Id], "Subject", "Body", 1, CancellationToken.None);
+
+        Assert.Equal(2, result.Sent);
+        Assert.Equal(1, result.Failed);
+        Assert.Equal(1, result.NoEmailAddress);
+
+        // The two that succeeded are the two that should have, and the batch carried only the three
+        // addressable VEs — the one with no address never became a message.
+        Assert.Equal([3], email.BatchSizes);
+        Assert.Equal(["first@example.com", "last@example.com"], email.Sent.Select(m => m.ToAddress).Order());
     }
 
     /// <summary>The point of the feature: nobody should have to go and find the Zoom link.</summary>

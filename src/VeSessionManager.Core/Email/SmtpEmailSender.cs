@@ -31,6 +31,91 @@ public class SmtpEmailSender(SystemSettingsService systemSettingsService, ILogge
         var settings = await systemSettingsService.GetAsync(cancellationToken);
         var (effectiveMessage, testMode) = TestModeEmailRedirector.Apply(message, settings.TestModeEnabled, settings.TestModeOverrideEmail);
 
+        using var client = new SmtpClient();
+        await ConnectAsync(client, credentials, cancellationToken);
+        await client.SendAsync(BuildMimeMessage(effectiveMessage), cancellationToken);
+        await client.DisconnectAsync(quit: true, cancellationToken);
+
+        LogSent(effectiveMessage, credentials, testMode);
+    }
+
+    /// <summary>
+    /// One connection for the whole batch (#293), which is the entire point — the per-message path
+    /// above does a full connect + TLS + AUTH + disconnect every time, and
+    /// VeSessionInvitationService fans out over a session's whole VE roster inside a POST.
+    ///
+    /// <para>Failures are per message, exactly as the caller's own loop used to do it: a rejected
+    /// recipient is recorded and the batch continues. A failure to <i>connect</i> is different and is
+    /// not swallowed — it means nothing can be sent, and reporting that as N individual send failures
+    /// would bury one cause under a list of symptoms.</para>
+    /// </summary>
+    public async Task<IReadOnlyList<EmailSendOutcome>> SendManyAsync(
+        EmailCredentials credentials, IReadOnlyList<EmailMessage> messages, CancellationToken cancellationToken)
+    {
+        var outcomes = new List<EmailSendOutcome>(messages.Count);
+        if (messages.Count == 0)
+        {
+            return outcomes;
+        }
+
+        // Fetched once rather than per message — it is a deployment-wide row, and re-reading it
+        // inside the loop was part of what made the per-message path expensive.
+        var settings = await systemSettingsService.GetAsync(cancellationToken);
+
+        using var client = new SmtpClient();
+        await ConnectAsync(client, credentials, cancellationToken);
+
+        try
+        {
+            foreach (var message in messages)
+            {
+                var (effectiveMessage, testMode) = TestModeEmailRedirector.Apply(
+                    message, settings.TestModeEnabled, settings.TestModeOverrideEmail);
+
+                try
+                {
+                    await client.SendAsync(BuildMimeMessage(effectiveMessage), cancellationToken);
+                    outcomes.Add(EmailSendOutcome.Success);
+                    LogSent(effectiveMessage, credentials, testMode);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    outcomes.Add(new EmailSendOutcome(false, ex));
+                }
+            }
+        }
+        finally
+        {
+            // In a finally so a cancellation mid-batch still closes the session politely rather than
+            // dropping the socket on the server.
+            await client.DisconnectAsync(quit: true, CancellationToken.None);
+        }
+
+        return outcomes;
+    }
+
+    /// <summary>
+    /// Mandatory TLS, chosen by port and never by configuration — see SmtpSecurity (issue #259).
+    /// A server that will not do it gets a thrown connection rather than a cleartext password.
+    /// </summary>
+    private static async Task ConnectAsync(SmtpClient client, EmailCredentials credentials, CancellationToken cancellationToken)
+    {
+        await client.ConnectAsync(credentials.Host, credentials.Port, SmtpSecurity.OptionsFor(credentials.Port), cancellationToken);
+
+        if (!string.IsNullOrWhiteSpace(credentials.Username))
+        {
+            await client.AuthenticateAsync(credentials.Username, credentials.Password, cancellationToken);
+        }
+    }
+
+    /// <summary>Never log the candidate's address — PII rule established throughout this codebase
+    /// (see SessionIngestionService: log ids/counts, never names/emails/FRNs).</summary>
+    private void LogSent(EmailMessage effectiveMessage, EmailCredentials credentials, bool testMode) =>
+        logger.LogInformation("Sent email with subject {Subject} for team {TeamId} (test mode: {TestMode})",
+            effectiveMessage.Subject, credentials.TeamId, testMode);
+
+    private static MimeMessage BuildMimeMessage(EmailMessage effectiveMessage)
+    {
         var mimeMessage = new MimeMessage();
         mimeMessage.From.Add(new MailboxAddress(effectiveMessage.FromDisplayName ?? "", effectiveMessage.FromAddress));
         mimeMessage.ReplyTo.Add(MailboxAddress.Parse(effectiveMessage.ReplyToAddress));
@@ -62,22 +147,6 @@ public class SmtpEmailSender(SystemSettingsService systemSettingsService, ILogge
         }
 
         mimeMessage.Body = bodyBuilder.ToMessageBody();
-
-        using var client = new SmtpClient();
-        // Mandatory TLS, chosen by port and never by configuration — see SmtpSecurity (issue #259).
-        // A server that will not do it gets a thrown connection rather than a cleartext password.
-        await client.ConnectAsync(credentials.Host, credentials.Port, SmtpSecurity.OptionsFor(credentials.Port), cancellationToken);
-
-        if (!string.IsNullOrWhiteSpace(credentials.Username))
-        {
-            await client.AuthenticateAsync(credentials.Username, credentials.Password, cancellationToken);
-        }
-
-        await client.SendAsync(mimeMessage, cancellationToken);
-        await client.DisconnectAsync(quit: true, cancellationToken);
-
-        // Never log the candidate's address — PII rule established throughout this codebase
-        // (see SessionIngestionService: log ids/counts, never names/emails/FRNs).
-        logger.LogInformation("Sent email with subject {Subject} for team {TeamId} (test mode: {TestMode})", effectiveMessage.Subject, credentials.TeamId, testMode);
+        return mimeMessage;
     }
 }

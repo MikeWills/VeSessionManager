@@ -138,6 +138,13 @@ public class VeSessionInvitationService(
         var credentials = session.Team.ToEmailCredentials();
         var now = timeProvider.GetUtcNow().UtcDateTime;
 
+        // Composed first, sent second (#293). This used to call SendAsync per recipient, and
+        // SmtpEmailSender does a full connect + TLS + AUTH + disconnect per message — so a 30-VE
+        // roster meant 30 SMTP handshakes inside one POST, with the sender watching a spinner.
+        // SendManyAsync holds one connection for the batch.
+        var addressable = new List<VolunteerExaminer>(recipients.Count);
+        var messages = new List<EmailMessage>(recipients.Count);
+
         foreach (var recipient in recipients)
         {
             if (string.IsNullOrWhiteSpace(recipient.Email))
@@ -156,28 +163,33 @@ public class VeSessionInvitationService(
                 continue;
             }
 
-            try
-            {
-                await emailSender.SendAsync(
-                    credentials,
-                    new EmailMessage(
-                        ToAddress: recipient.Email!,
-                        FromAddress: emailSettings.FromAddress,
-                        FromDisplayName: emailSettings.FromDisplayName,
-                        ReplyToAddress: emailSettings.ReplyToAddress,
-                        Subject: Render(subject, recipient, session, encodeHtml: false),
-                        HtmlBody: Render(body, recipient, session, encodeHtml: true)),
-                    cancellationToken);
+            addressable.Add(recipient);
+            messages.Add(new EmailMessage(
+                ToAddress: recipient.Email!,
+                FromAddress: emailSettings.FromAddress,
+                FromDisplayName: emailSettings.FromDisplayName,
+                ReplyToAddress: emailSettings.ReplyToAddress,
+                Subject: Render(subject, recipient, session, encodeHtml: false),
+                HtmlBody: Render(body, recipient, session, encodeHtml: true)));
+        }
 
-                result.Sent++;
-            }
-            catch (Exception ex)
+        // Outcomes come back in the order the messages went in, which is what lets a failure still be
+        // attributed to its VE — the per-recipient reporting this fan-out has always done.
+        var outcomes = await emailSender.SendManyAsync(credentials, messages, cancellationToken);
+
+        for (var i = 0; i < outcomes.Count; i++)
+        {
+            if (outcomes[i].Sent)
             {
-                // Per recipient, like every other fan-out here: one bad address must not stop the
-                // rest of the invitations going out.
-                result.Failed++;
-                logger.LogError(ex, "Failed to send a session invitation to VE {VolunteerExaminerId}", recipient.Id);
+                result.Sent++;
+                continue;
             }
+
+            // One bad address must not stop the rest of the invitations going out; that rule now
+            // lives in the sender, which is the only layer that can keep the connection open across
+            // the failure.
+            result.Failed++;
+            logger.LogError(outcomes[i].Error, "Failed to send a session invitation to VE {VolunteerExaminerId}", addressable[i].Id);
         }
 
         dbContext.AddAuditLog(userId, "VeSessionInvitationsSent", nameof(Session), session.Id,
