@@ -76,10 +76,17 @@ public class SessionIngestionServiceTests
             Task.FromResult<ExamToolsApplicantDetail?>(null);
     }
 
-    private static AppDbContext CreateContext()
+    /// <summary>
+    /// Pass a databaseName to open a <b>second</b> context over the same store. That is the only way
+    /// these tests can see a load actually happen: every other test here seeds and runs through one
+    /// context, so the rows are already in the change tracker and EF's relationship fixup populates
+    /// Session.Candidates whether the service queried for them or not. See the two
+    /// LoadedFromTheDatabase tests, and #246 for what that hid.
+    /// </summary>
+    private static AppDbContext CreateContext(string? databaseName = null)
     {
         var options = new DbContextOptionsBuilder<AppDbContext>()
-            .UseInMemoryDatabase(Guid.NewGuid().ToString())
+            .UseInMemoryDatabase(databaseName ?? Guid.NewGuid().ToString())
             .Options;
         return new AppDbContext(options);
     }
@@ -970,6 +977,107 @@ public class SessionIngestionServiceTests
         // Idempotent: already NotTested, so a second poll withdraws nobody again.
         var repoll = await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
         Assert.Equal(0, repoll.CandidatesWithdrawn);
+    }
+
+    /// <summary>
+    /// #246 split RunAsync's one team-wide `.Include(s => s.Candidates).ThenInclude(c => c.Payments)`
+    /// into a scalar session query plus a second candidate query bounded to the sessions in this
+    /// run's feed. Everything downstream still reads <c>Session.Candidates</c>, which now arrives by
+    /// EF relationship fixup rather than by Include.
+    ///
+    /// <para><b>Nothing in the suite could see that.</b> Every other test here seeds and runs through
+    /// a single context, so the candidates are already tracked and the collection is populated no
+    /// matter what the service queries — the whole 1479-test suite passed with the candidate load
+    /// deleted outright. The second context is the point of this test: it reproduces the Worker's
+    /// real shape, a fresh scope per tick with an empty change tracker.</para>
+    ///
+    /// <para>If the load regresses, <c>local.Candidates</c> is empty, every applicant looks new, and
+    /// ingestion silently re-adds the entire roster — duplicate candidates, and in turn duplicate
+    /// payments and emails.</para>
+    /// </summary>
+    [Fact]
+    public async Task ExistingCandidates_AreLoadedFromTheDatabase_NotReAddedAsNew()
+    {
+        var databaseName = Guid.NewGuid().ToString();
+
+        await using (var seed = CreateContext(databaseName))
+        {
+            await SeedVecAndFeeConfigAsync(seed);
+            var seedTeam = await SeedTeamAsync(seed);
+            var seedClient = new FakeExamToolsClient();
+            seedClient.SessionsFor(seedTeam.Id).Add(PendingSession(applicantCount: 1));
+            seedClient.ApplicantsFor(seedTeam.Id)["session-1"] = [Applicant()];
+            var seeded = await CreateService(seed, seedClient).RunAsync(seedTeam, CancellationToken.None);
+            Assert.Equal(1, seeded.CandidatesAdded);
+        }
+
+        await using var dbContext = CreateContext(databaseName);
+        var team = await dbContext.Teams.SingleAsync();
+        var client = new FakeExamToolsClient();
+        client.SessionsFor(team.Id).Add(PendingSession(applicantCount: 1));
+        client.ApplicantsFor(team.Id)["session-1"] = [Applicant()];
+
+        var result = await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+
+        Assert.Equal(0, result.CandidatesAdded);
+        Assert.Equal(1, dbContext.Candidates.Count());
+    }
+
+    /// <summary>
+    /// The Payments half of the same split. Payments are eager-loaded because
+    /// CandidatePiiFields.Clear nulls a withdrawing candidate's live Square checkout link — with
+    /// Payments unloaded it would clear the Candidate half and leave a payable link alive, which is
+    /// money, and silent.
+    ///
+    /// <para>Second context for the same reason as the test above: the existing withdrawal test
+    /// asserts this exact property and passes even with the candidate load removed entirely,
+    /// because one context tracks everything.</para>
+    /// </summary>
+    [Fact]
+    public async Task WithdrawalClearsTheCheckoutLink_WhenPaymentsWereNotAlreadyTracked()
+    {
+        var databaseName = Guid.NewGuid().ToString();
+
+        await using (var seed = CreateContext(databaseName))
+        {
+            await SeedVecAndFeeConfigAsync(seed);
+            var seedTeam = await SeedTeamAsync(seed);
+            var seedClient = new FakeExamToolsClient();
+            seedClient.SessionsFor(seedTeam.Id).Add(PendingSession(applicantCount: 2));
+            seedClient.ApplicantsFor(seedTeam.Id)["session-1"] =
+                [Applicant(id: "stays"), Applicant(id: "cancels", first: "Dana", last: "Vale", email: "dana@example.com", frn: "0087654321")];
+            await CreateService(seed, seedClient).RunAsync(seedTeam, CancellationToken.None);
+
+            var leaver = seed.Candidates.Single(c => c.ExamToolsApplicantId == "cancels");
+            seed.Payments.Add(new Payment
+            {
+                CandidateId = leaver.Id,
+                Amount = 15m,
+                Status = PaymentStatus.Unpaid,
+                Reason = PaymentReason.InitialExam,
+                PaymentLinkUrl = "https://squareup.com/pay/abc",
+                CreatedUtc = Now
+            });
+            await seed.SaveChangesAsync();
+        }
+
+        await using var dbContext = CreateContext(databaseName);
+        var team = await dbContext.Teams.SingleAsync();
+        var client = new FakeExamToolsClient();
+        client.SessionsFor(team.Id).Add(PendingSession(applicantCount: 1));
+        client.ApplicantsFor(team.Id)["session-1"] = [Applicant(id: "stays")];
+
+        var result = await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+
+        Assert.Equal(1, result.CandidatesWithdrawn);
+        var withdrawn = dbContext.Candidates.Single(c => c.ExamToolsApplicantId == "cancels");
+        Assert.Null(withdrawn.Name);
+
+        // The row survives; only the live checkout link is nulled. This is the assertion that needs
+        // Payments to have come back with the candidate.
+        var payment = dbContext.Payments.Single(p => p.CandidateId == withdrawn.Id);
+        Assert.Equal(15m, payment.Amount);
+        Assert.Null(payment.PaymentLinkUrl);
     }
 
     [Fact]
