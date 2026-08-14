@@ -35,6 +35,12 @@ internal static class KeyRingVerification
         TextWriter error,
         CancellationToken cancellationToken = default)
     {
+        // Which database is about to be checked, stated before checking it. The first real run of
+        // this command was against the wrong one and said so only as "no such table: Teams" — see
+        // NoConnectionStringAdvice below.
+        var dataSource = DescribeDataSource(dbContext);
+        logger.LogInformation("Verifying the Data Protection key ring against {DataSource}", dataSource);
+
         // Deliberately no Database.Migrate() anywhere in this path. A check meant to be safe to run
         // on any schedule must not write to the database it is checking, and a restored backup older
         // than this binary should be reported rather than silently upgraded by the act of verifying
@@ -46,7 +52,7 @@ internal static class KeyRingVerification
         }
         catch (Exception ex)
         {
-            await error.WriteLineAsync(CouldNotComplete(ex));
+            await error.WriteLineAsync(CouldNotComplete(ex) + NoConnectionStringAdvice(dbContext));
             return 1;
         }
 
@@ -88,4 +94,49 @@ internal static class KeyRingVerification
     /// </summary>
     private static string CouldNotComplete(Exception ex) =>
         $"Could not verify the key ring — the check did not complete: {ex.Message}";
+
+    /// <summary>
+    /// The connection string as configured, for the "which database did it actually open?" question
+    /// that every failure here raises first.
+    /// </summary>
+    private static string DescribeDataSource(AppDbContext dbContext)
+    {
+        var connectionString = dbContext.Database.GetConnectionString();
+        return string.IsNullOrWhiteSpace(connectionString)
+            ? "(no connection string configured)"
+            : connectionString;
+    }
+
+    /// <summary>
+    /// The failure this command actually produced the first time it was run for real, and the
+    /// message it produced on its own was actively misleading.
+    ///
+    /// <para><b>What happens.</b> The Worker is a generic Host, so its content root is the
+    /// <i>current directory</i> — not the directory the DLL lives in. The systemd unit sets
+    /// <c>WorkingDirectory=/opt/vesessionmanager/worker</c>, so the service finds
+    /// <c>appsettings.Production.json</c> and its absolute database path. Run the same DLL by hand
+    /// from a home directory and none of those files are found, so there is no connection string;
+    /// SQLite then opens an anonymous temporary database, which naturally contains no tables. The
+    /// operator sees <c>no such table: Teams</c> and reasonably concludes their database is
+    /// damaged, when nothing was ever opened, read, or written.</para>
+    ///
+    /// <para>Sibling of the <c>DOTNET_ENVIRONMENT</c> gotcha in CLAUDE.md, and the same root cause
+    /// class: this host takes more of its configuration from the ambient process than it looks
+    /// like.</para>
+    /// </summary>
+    private static string NoConnectionStringAdvice(AppDbContext dbContext)
+    {
+        if (!string.IsNullOrWhiteSpace(dbContext.Database.GetConnectionString()))
+        {
+            return string.Empty;
+        }
+
+        return Environment.NewLine + Environment.NewLine +
+            "No connection string was loaded, so this opened an empty temporary database rather than yours — " +
+            "nothing was read or written. The Worker takes its content root from the CURRENT DIRECTORY, so " +
+            "appsettings.json is only found when you run from the application directory (the systemd unit sets " +
+            "WorkingDirectory for exactly this reason). Run it as:" + Environment.NewLine + Environment.NewLine +
+            "  sudo -u vesessionmanager env DOTNET_ENVIRONMENT=Production \\" + Environment.NewLine +
+            "    sh -c 'cd /opt/vesessionmanager/worker && exec dotnet ./VeSessionManager.Worker.dll --verify-keyring'";
+    }
 }
