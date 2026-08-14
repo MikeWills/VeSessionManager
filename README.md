@@ -117,28 +117,9 @@ must be backed up **separately from the database** — one archive containing bo
 storing every credential in plaintext. If the key ring is lost, every stored credential is
 permanently unrecoverable.
 
-### Deploying with the included pipeline
-
-`.github/workflows/deploy.yml` deploys on a pushed version tag (`v*.*.*`) and **is meant to be
-reusable** — it builds, tests, publishes, backs up the database, stops both services, syncs, starts
-Worker before Web, and health-checks before declaring success. Nothing about it is specific to one
-server except values you supply:
-
-1. **Prepare the server** with the bootstrap script in
-   [`docs/deployment.md`](docs/deployment.md#one-time-setup) — service account, directories, sudoers
-   rules, both systemd units.
-2. **Set five repository secrets** — `DEPLOY_HOST`, `DEPLOY_USER`, `SSH_PRIVATE_KEY`,
-   `TS_OAUTH_CLIENT_ID`, `TS_OAUTH_SECRET`.
-3. **Adjust the `env:` block** at the top of the workflow if your paths, service names, or web port
-   differ from the defaults.
-4. **Push a tag.**
-
-One opinionated piece: the runner joins a **Tailscale** network before connecting, because the
-server it was written for has no public SSH. If yours is reachable directly, drop the Tailscale step
-and the two secrets that feed it.
-
-You do not have to use any of this. The app is a plain `dotnet publish` output and two systemd
-units — deploy it however you like.
+The app is a plain `dotnet publish` output and two systemd units, so deploy it however you already
+deploy things. A tag-triggered GitHub Actions pipeline is included if you want one — it is reusable,
+and [`docs/deployment.md`](docs/deployment.md#automated-deploy-github-actions) covers what to set.
 
 ## Documentation
 

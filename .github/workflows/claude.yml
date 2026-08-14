@@ -12,11 +12,37 @@ on:
 
 jobs:
   claude:
+    # Two conditions, and the second one is the security boundary.
+    #
+    # These triggers (issue_comment / issues / review) run in THIS repository's context with its
+    # secrets — unlike a fork's pull_request, which GitHub deliberately runs with no secrets at all.
+    # The repository is public, so without an author check any stranger could open an issue saying
+    # "@claude ..." and spend the maintainer's CLAUDE_CODE_OAUTH_TOKEN. author_association is
+    # evaluated by GitHub from the event payload, not supplied by the commenter.
+    #
+    # OWNER/MEMBER/COLLABORATOR only: everyone who can already push. Deliberately NOT
+    # CONTRIBUTOR — that means "has had a PR merged", which is not the same as being trusted to
+    # spend a credential, and it is a status an attacker can earn with one typo fix.
+    #
+    # This is belt-and-braces: claude-code-action performs its own actor permission check. Cheap
+    # enough that the quota should not depend on a third-party action's default staying put.
+    # Each trigger is paired with ITS OWN actor. A single shared author check at the end would be a
+    # bypass: on an issue_comment event, github.event.issue.author_association describes whoever
+    # opened the issue, not whoever wrote the comment — so a stranger commenting on the maintainer's
+    # own issue would satisfy it.
     if: |
-      (github.event_name == 'issue_comment' && contains(github.event.comment.body, '@claude')) ||
-      (github.event_name == 'pull_request_review_comment' && contains(github.event.comment.body, '@claude')) ||
-      (github.event_name == 'pull_request_review' && contains(github.event.review.body, '@claude')) ||
-      (github.event_name == 'issues' && (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')))
+      (github.event_name == 'issue_comment' &&
+        contains(github.event.comment.body, '@claude') &&
+        contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)) ||
+      (github.event_name == 'pull_request_review_comment' &&
+        contains(github.event.comment.body, '@claude') &&
+        contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)) ||
+      (github.event_name == 'pull_request_review' &&
+        contains(github.event.review.body, '@claude') &&
+        contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.review.author_association)) ||
+      (github.event_name == 'issues' &&
+        (contains(github.event.issue.body, '@claude') || contains(github.event.issue.title, '@claude')) &&
+        contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.issue.author_association))
     runs-on: ubuntu-latest
     permissions:
       contents: read
