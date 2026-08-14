@@ -51,8 +51,13 @@ public class VecsModel(AppDbContext dbContext, UserManager<User> userManager, Ve
 
     public async Task<IActionResult> OnPostCreateAsync(string name, string? examToolsCode, bool supportsYouthProgram, string? notes)
     {
+        // Role re-checked here, not just by the [Authorize(Roles = ...)] attribute (#257). The role
+        // in the cookie is a claim baked in at sign-in; the row is the truth. SetRoleAsync now
+        // rotates the security stamp, but revalidation is only every 30 minutes by default, and
+        // during that window this handler rewrites shared VEC reference data, including
+        // ExamToolsCode, which controls ingestion matching for every team on the deployment.
         var user = await userManager.GetUserAsync(User);
-        if (user is null)
+        if (user is null || user.Role != UserRole.SystemAdmin)
         {
             return Forbid();
         }
@@ -73,8 +78,13 @@ public class VecsModel(AppDbContext dbContext, UserManager<User> userManager, Ve
 
     public async Task<IActionResult> OnPostUpdateAsync(int vecId, string name, string? examToolsCode, bool supportsYouthProgram, string? notes)
     {
+        // Role re-checked here, not just by the [Authorize(Roles = ...)] attribute (#257). The role
+        // in the cookie is a claim baked in at sign-in; the row is the truth. SetRoleAsync now
+        // rotates the security stamp, but revalidation is only every 30 minutes by default, and
+        // during that window this handler rewrites shared VEC reference data, including
+        // ExamToolsCode, which controls ingestion matching for every team on the deployment.
         var user = await userManager.GetUserAsync(User);
-        if (user is null)
+        if (user is null || user.Role != UserRole.SystemAdmin)
         {
             return Forbid();
         }

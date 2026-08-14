@@ -1,3 +1,4 @@
+using System.Net;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using VeSessionManager.Core.Data;
@@ -96,9 +97,33 @@ public class VeSessionInvitationService(
             return result;
         }
 
-        var recipients = await dbContext.VolunteerExaminers
-            .Where(v => volunteerExaminerIds.Contains(v.Id))
+        // Scoped through VeTeamMemberships on the session's own team, matching GetCandidatesAsync's
+        // filter exactly (#238). The ids arrive from the posted form, so "the compose screen only
+        // offered team members" is not a constraint — it is a default that a hand-made POST ignores.
+        //
+        // Unscoped, this sent an attacker-authored subject and body from the team's own SMTP
+        // credentials to any VolunteerExaminer row on the deployment: other teams' rosters, retired
+        // members, anyone. The mail is indistinguishable from a genuine invitation because it *is*
+        // genuine — same From, same Reply-To, same server.
+        //
+        // Ids that fall outside the scope are dropped rather than rejected, and counted below. A
+        // legitimate sender can hit this by having the compose screen open while a membership is
+        // deactivated, which should not fail the whole send; anyone reaching it by tampering learns
+        // only a number they already knew.
+        var recipients = await dbContext.VeTeamMemberships
+            .Where(m => m.TeamId == session.TeamId
+                && m.IsActive
+                && volunteerExaminerIds.Contains(m.VolunteerExaminerId))
+            .Select(m => m.VolunteerExaminer)
             .ToListAsync(cancellationToken);
+
+        result.NotOnTeam = volunteerExaminerIds.Distinct().Count() - recipients.Count;
+        if (result.NotOnTeam > 0)
+        {
+            logger.LogWarning(
+                "Session invitation for session {SessionId} requested {Requested} recipient(s), {Dropped} of which are not active members of team {TeamId} and were dropped.",
+                session.Id, volunteerExaminerIds.Distinct().Count(), result.NotOnTeam, session.TeamId);
+        }
 
         // The team's own From/Reply-To, the same row candidate mail sends from — an invitation that
         // arrived from a different address than every other message the team sends would look like
@@ -140,8 +165,8 @@ public class VeSessionInvitationService(
                         FromAddress: emailSettings.FromAddress,
                         FromDisplayName: emailSettings.FromDisplayName,
                         ReplyToAddress: emailSettings.ReplyToAddress,
-                        Subject: Render(subject, recipient, session),
-                        HtmlBody: Render(body, recipient, session)),
+                        Subject: Render(subject, recipient, session, encodeHtml: false),
+                        HtmlBody: Render(body, recipient, session, encodeHtml: true)),
                     cancellationToken);
 
                 result.Sent++;
@@ -157,7 +182,8 @@ public class VeSessionInvitationService(
 
         dbContext.AddAuditLog(userId, "VeSessionInvitationsSent", nameof(Session), session.Id,
             $"Invitations for session {session.ExamToolsSessionId}: {result.Sent} sent, {result.Failed} failed, " +
-            $"{result.NoEmailAddress} with no address, {result.TextOnlySkipped} text-only.", now);
+            $"{result.NoEmailAddress} with no address, {result.TextOnlySkipped} text-only, " +
+            $"{result.NotOnTeam} not on the team.", now);
         await dbContext.SaveChangesAsync(cancellationToken);
 
         logger.LogInformation("Session invitations for session {SessionId}: {Result}", session.Id, result);
@@ -169,13 +195,39 @@ public class VeSessionInvitationService(
     /// the same choice EmailTemplateRenderer makes, and for the same reason: a visible "{{Typo}}" in
     /// a draft is a bug someone fixes, where a silently empty gap is one nobody notices.
     /// </summary>
-    private static string Render(string text, VolunteerExaminer recipient, Session session) => text
-        .Replace("{{VeName}}", recipient.Name)
-        .Replace("{{CallSign}}", recipient.CallSign ?? "")
-        .Replace("{{SessionTitle}}", session.Title)
-        .Replace("{{SessionDate}}", session.ScheduledStartUtc.ToString("dddd d MMMM yyyy 'at' HH:mm 'UTC'"))
-        .Replace("{{ZoomJoinUrl}}", session.ZoomJoinUrl ?? "")
-        .Replace("{{TeamName}}", session.Team.Name);
+    private static string Render(string text, VolunteerExaminer recipient, Session session, bool encodeHtml)
+    {
+        // HTML-encoded for the body, left alone for the subject — the same rule
+        // EmailTemplateRenderer applies, and for the same stated reason: several of these values
+        // come from the ExamTools feed, which is fed by public registration intake.
+        //
+        // This is the case that renderer exists to prevent, and this method skipped it (#260) while
+        // its two neighbours (VeSelfServiceLinkService, VeEmailChangeService) both encode — an
+        // omission rather than a policy. A Session.Title of
+        //   </p><a href="https://evil/">Click to confirm your VE assignment</a>
+        // rendered as live markup in every invited VE's mail client. Mail clients strip <script>,
+        // so this is link injection for phishing rather than script execution — arriving inside a
+        // genuine invitation from the team's real address, which is what makes it convincing.
+        string E(string value) => encodeHtml ? WebUtility.HtmlEncode(value) : StripLineBreaks(value);
+
+        return text
+            .Replace("{{VeName}}", E(recipient.Name))
+            .Replace("{{CallSign}}", E(recipient.CallSign ?? ""))
+            .Replace("{{SessionTitle}}", E(session.Title))
+            .Replace("{{SessionDate}}", E(session.ScheduledStartUtc.ToString("dddd d MMMM yyyy 'at' HH:mm 'UTC'")))
+            // Lands in href="…" in every real template, so it needs attribute-safe encoding rather
+            // than element-safe. HtmlEncode escapes the quote that would break out of the attribute;
+            // a URL that survives that is still a URL.
+            .Replace("{{ZoomJoinUrl}}", E(session.ZoomJoinUrl ?? ""))
+            .Replace("{{TeamName}}", E(session.Team.Name));
+    }
+
+    /// <summary>Subject lines are mail headers, and a header ends at a newline. Same rule as
+    /// EmailTemplateRenderer's (#261).</summary>
+    private static string StripLineBreaks(string value) =>
+        value.Contains('\r') || value.Contains('\n')
+            ? value.Replace("\r", "").Replace('\n', ' ')
+            : value;
 }
 
 /// <param name="AlreadyOnRoster">Already assigned to this session in ExamTools — usually a reason not to invite them again.</param>
@@ -199,8 +251,16 @@ public class VeInvitationResult
     /// <summary>Selected but text-only. Unreachable until SMS exists.</summary>
     public int TextOnlySkipped { get; set; }
 
+    /// <summary>
+    /// Requested but not an active member of the session's team, so never contacted (#238). Normally
+    /// zero. A non-zero value from an ordinary send means a membership changed while the compose
+    /// screen was open; any other cause is a tampered form.
+    /// </summary>
+    public int NotOnTeam { get; set; }
+
     public string? Error { get; set; }
 
     public override string ToString() =>
-        $"{Sent} sent, {Failed} failed, {NoEmailAddress} with no address, {TextOnlySkipped} text-only";
+        $"{Sent} sent, {Failed} failed, {NoEmailAddress} with no address, {TextOnlySkipped} text-only, " +
+        $"{NotOnTeam} not on the team";
 }

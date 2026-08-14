@@ -138,40 +138,37 @@ jobs:
             "sudo systemctl stop $WEB_SERVICE && sudo systemctl stop $WORKER_SERVICE"
 
       - name: Backup database
-        # **Runs AFTER the services stop, and copies -wal/-shm too. Both halves are the fix for #255.**
+        # **One file, via SQLite's own backup API, verified with PRAGMA integrity_check** (#343).
         #
         # The database is in WAL mode — EF Core enables it on databases it creates, and journal mode
         # is persisted in the file header. BACKUP.md asserted the opposite ("rollback-journal mode,
         # not WAL, nothing sets PRAGMA journal_mode"): the second half is true and the conclusion is
         # not. In WAL mode committed transactions live in the -wal file until checkpoint, so the
-        # .db-only copy this used to take was MISSING every transaction since the last checkpoint —
-        # and it opens cleanly, so the loss was silent.
+        # .db-only copy this step originally took was MISSING every transaction since the last
+        # checkpoint — and it opens cleanly, so the loss was silent. That was #255.
         #
-        # Taking it after the stop is what makes a plain file copy correct: nothing is writing, so
-        # the three files are mutually consistent. Before the stop they were not, and adding -wal
-        # alone would have traded silent loss for a torn copy.
+        # #255 fixed it by moving the snapshot after the service stop and copying the -wal and -shm
+        # sidecars alongside the .db. That was correct, but only conditionally: a plain file copy is
+        # consistent only while nothing is writing, and restoring meant putting all three files back
+        # together with their shared stamp. `.backup` takes a proper read lock and resolves the WAL
+        # itself, so the result is ONE self-contained file and the ordering constraint is gone.
+        #
+        # The stop stays anyway. It costs nothing here, and everything after it already depends on it.
         #
         # A server-side helper rather than `sudo rsync` — see the key ring step and #254 for why the
-        # `/usr/bin/rsync *` sudoers rule this replaced was root-equivalent.
+        # `/usr/bin/rsync *` sudoers rule this replaced was root-equivalent. The helper still owns
+        # the "no database yet" case: on a brand-new server the .db does not exist until a service
+        # first runs Database.Migrate(), and an unconditional snapshot made the very FIRST deploy to
+        # any box fail here (found 2026-08-04). Guarding with `test -f` from this side was never an
+        # option in either form — `sudo test` is not allowlisted, and an unprivileged `test -f`
+        # cannot read /var/lib/vesessionmanager at all, so it would report "missing" forever once the
+        # database existed. Inside the helper, running as root, it is just an `if`.
         #
-        # The helper keeps every property the flags used to carry. Missing files are skipped rather
-        # than failing: a cleanly checkpointed database has no -wal or -shm, and on a brand-new server
-        # the .db itself does not exist until a service first runs Database.Migrate() — an
-        # unconditional cp made the very FIRST deploy to any box fail here (found 2026-08-04).
-        # Guarding with `test -f` from this side was never an option in either form: `sudo test` is
-        # not allowlisted, and an unprivileged `test -f` cannot read /var/lib/vesessionmanager at all,
-        # so it would report "missing" forever once the database existed. Inside the helper, running
-        # as root, it is just an `if`.
-        #
-        # It also stamps all three files once, so the set shares a suffix and can be restored
-        # together — previously done on the runner for the same reason.
-        #
-        # `sqlite3 '.backup'` / VACUUM INTO would be better still — one consistent file, no ordering
-        # constraint. That is now a change to the helper rather than a new sudoers grant, which is
-        # worth doing when #256 (real off-box backup) is built.
+        # The helper lives on the box in gitignored ops/, so a change to it is NOT carried by this
+        # workflow or by any PR — it has to be copied to the server by hand. Same constraint as #254.
         #
         # NOTE: this is a rollback snapshot, not a backup. It lives on the same disk as the thing it
-        # protects — see #256.
+        # protects. The off-box backup is a separate job (#256, built 2026-08-14).
         run: |
           ssh -i ~/.ssh/deploy_key "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" \
             "sudo /usr/local/sbin/vesessionmanager-backup-db"

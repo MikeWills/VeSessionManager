@@ -44,19 +44,38 @@ public static class DataProtectionKeyRingGuard
         var teams = await dbContext.Teams.AsNoTracking().ToListAsync(cancellationToken);
 
         var affected = teams
-            .Select(team => (team, columns: UnreadableColumns(team)))
+            .Select(team => (Name: team.Name, columns: UnreadableColumns(team)))
             .Where(x => x.columns.Count > 0)
             .ToList();
 
+        // The sixth encrypted column, and the one this guard used to miss entirely (#243). It lives
+        // on the SystemSettings singleton rather than on Team, so iterating Teams never saw it — and
+        // this method's own doc comment predicted exactly that ("a column added there and missed here
+        // is simply not checked").
+        //
+        // Two reasons it is the worst one to miss. Its failure is invisible: an unreadable
+        // SystemSmtpPassword is used verbatim as an SMTP password, so password reset and VE
+        // self-service sign-in links fail to authenticate — and PasswordResetService deliberately
+        // swallows send failures to avoid an enumeration oracle, so the user is told "check your
+        // inbox" and waits forever. And a deployment with ZERO teams but a configured system sender
+        // iterated an empty list, logged "verified", and checked nothing at all.
+        var settings = await dbContext.SystemSettings.AsNoTracking().FirstOrDefaultAsync(cancellationToken);
+        if (LooksLikeCiphertext(settings?.SystemSmtpPassword))
+        {
+            affected.Add(("System settings", [nameof(SystemSettings.SystemSmtpPassword)]));
+        }
+
         if (affected.Count == 0)
         {
-            logger.LogInformation("Data Protection key ring verified — {TeamCount} team(s), all stored credentials readable", teams.Count);
+            logger.LogInformation(
+                "Data Protection key ring verified — {TeamCount} team(s) plus system settings, all stored credentials readable",
+                teams.Count);
             return;
         }
 
-        var detail = string.Join("; ", affected.Select(x => $"{x.team.Name} ({string.Join(", ", x.columns)})"));
+        var detail = string.Join("; ", affected.Select(x => $"{x.Name} ({string.Join(", ", x.columns)})"));
         throw new InvalidOperationException(
-            "Data Protection key ring cannot decrypt stored team credentials: " + detail + ". " +
+            "Data Protection key ring cannot decrypt stored credentials: " + detail + ". " +
             "This process is using a key ring that did not encrypt them — the usual causes are a changed " +
             "DataProtection:KeyRingPath whose new directory was never populated with the existing keys, a lost " +
             "key ring, or Web and Worker disagreeing on application name or path. " +
@@ -67,9 +86,13 @@ public static class DataProtectionKeyRingGuard
     }
 
     /// <summary>
-    /// The five encrypted columns, by the names an operator sees in Team Settings. Kept in step with
-    /// AppDbContext's <c>HasConversion(encryptedString)</c> list — a column added there and missed
-    /// here is simply not checked, which is a gap rather than a false alarm.
+    /// The five encrypted columns on Team, by the names an operator sees in Team Settings. Kept in
+    /// step with AppDbContext's <c>HasConversion(encryptedString)</c> list — a column added there and
+    /// missed here is simply not checked, which is a gap rather than a false alarm.
+    ///
+    /// <para>The sixth encrypted column is <c>SystemSettings.SystemSmtpPassword</c>, checked in
+    /// VerifyAsync rather than here because it is not on Team. <c>EncryptedColumnCoverageTests</c>
+    /// fails the build if a seventh appears and neither place grows to meet it.</para>
     /// </summary>
     private static List<string> UnreadableColumns(Team team)
     {
