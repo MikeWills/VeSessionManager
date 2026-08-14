@@ -30,7 +30,14 @@ public class VolunteerExaminerImportService(AppDbContext dbContext, TimeProvider
     /// <summary>Guards against a pasted novel. Well above any real VE roster; low enough that the hidden-field round-trip stays sane.</summary>
     public const int MaxRows = 500;
 
-    public async Task<VeImportPreview> ParseAsync(string csvText, int teamId, CancellationToken cancellationToken)
+    /// <param name="visibleTeamIds">
+    /// Teams the person running the import can already see, used only to decide what the preview
+    /// discloses about a cross-team match (#240). <b>Null means every team</b> — the SystemAdmin
+    /// case, matching AdminAccessScope.GetEffectiveTeamIds' convention. It never changes which
+    /// records are matched.
+    /// </param>
+    public async Task<VeImportPreview> ParseAsync(
+        string csvText, int teamId, IReadOnlyList<int>? visibleTeamIds, CancellationToken cancellationToken)
     {
         var rows = new List<VeImportRow>();
         var lines = SplitLines(csvText);
@@ -123,6 +130,19 @@ public class VolunteerExaminerImportService(AppDbContext dbContext, TimeProvider
 
             var alreadyOnTeam = match?.TeamMemberships.Any(m => m.TeamId == teamId) ?? false;
 
+            // Whether this match is a record the person running the import can already see anyway
+            // (#240). null visibleTeamIds means every team — the SystemAdmin case, and the same
+            // convention AdminAccessScope.GetEffectiveTeamIds uses.
+            //
+            // This changes ONLY what the preview renders. The match itself stays deployment-wide on
+            // purpose: a VE already on another team's roster must be matched rather than duplicated,
+            // which is the entire point of the person model (see docs/ve-management.md). Redacting
+            // the match instead of the display would create duplicate people, which is a worse bug
+            // than the one being fixed.
+            var matchIsOutsideVisibleScope = match is not null
+                && visibleTeamIds is not null
+                && !match.TeamMemberships.Any(m => visibleTeamIds.Contains(m.TeamId));
+
             rows.Add(new VeImportRow(
                 i + 1,
                 callSign,
@@ -138,7 +158,11 @@ public class VolunteerExaminerImportService(AppDbContext dbContext, TimeProvider
                 frn,
                 match?.Id,
                 match is null ? VeImportAction.Create : alreadyOnTeam ? VeImportAction.Update : VeImportAction.AddToTeam,
-                null));
+                null)
+            {
+                SubmittedName = name,
+                MatchIsOutsideVisibleScope = matchIsOutsideVisibleScope
+            });
         }
 
         return new VeImportPreview(rows, null);
@@ -150,7 +174,9 @@ public class VolunteerExaminerImportService(AppDbContext dbContext, TimeProvider
     /// </summary>
     public async Task<VeImportResult> ApplyAsync(string csvText, int teamId, int userId, CancellationToken cancellationToken)
     {
-        var preview = await ParseAsync(csvText, teamId, cancellationToken);
+        // visibleTeamIds: null — the apply step renders nothing, so there is nothing to redact, and
+        // the display members are not consulted here. Row.Name and Row.Action carry the truth.
+        var preview = await ParseAsync(csvText, teamId, visibleTeamIds: null, cancellationToken);
         if (preview.Error is not null)
         {
             return new VeImportResult(0, 0, 0, preview.Rows.Count(r => !r.IsValid), preview.Error);
@@ -399,6 +425,34 @@ public record VeImportRow(
     /// <summary>Set by the apply step so the caller can link to the person it just wrote. Not part of the parse.</summary>
     public int? AppliedVolunteerExaminerId { get; set; }
 
+    /// <summary>The name as it appeared in the file, or null if the file supplied none. Distinct from
+    /// <see cref="Name"/>, which falls back to a matched record's name so the apply step does not
+    /// overwrite a real name with a call sign.</summary>
+    public string? SubmittedName { get; init; }
+
+    /// <summary>This row matched a VE the importer cannot otherwise see — see the display members below (#240).</summary>
+    public bool MatchIsOutsideVisibleScope { get; init; }
+
+    /// <summary>
+    /// What the preview shows, as opposed to what the apply step does (#240).
+    ///
+    /// <para>Uploading 500 call signs with no <c>Name</c> column and stopping at the preview was an
+    /// existence-and-name oracle over the whole deployment: every <c>AddToTeam</c> row meant "this
+    /// person exists on some team that is not yours", and <see cref="Name"/> rendered *their* record's
+    /// name. Read-only, 500 probes a request, and unaudited — <c>VeDirectoryImported</c> is only
+    /// written on apply.</para>
+    ///
+    /// <para>So the preview echoes back what was submitted, and reports the row as <c>Create</c>,
+    /// which is what it looks like from where the importer is standing. <see cref="Name"/> and
+    /// <see cref="Action"/> keep the truth for the apply step, which still matches deployment-wide
+    /// and still adds a membership rather than duplicating the person.</para>
+    /// </summary>
+    public string DisplayName => MatchIsOutsideVisibleScope ? SubmittedName ?? CallSign ?? Name : Name;
+
+    /// <inheritdoc cref="DisplayName"/>
+    public VeImportAction DisplayAction =>
+        MatchIsOutsideVisibleScope && Action == VeImportAction.AddToTeam ? VeImportAction.Create : Action;
+
     public static VeImportRow Invalid(int lineNumber, string? callSign, string? name, string problem) =>
         new(lineNumber, callSign, name ?? "", null, null, null, null, null, null, null, null, null, null, VeImportAction.Invalid, problem);
 }
@@ -406,9 +460,12 @@ public record VeImportRow(
 /// <param name="Error">Set when the file could not be read at all, in which case no row is actionable.</param>
 public record VeImportPreview(IReadOnlyList<VeImportRow> Rows, string? Error)
 {
-    public int CreateCount => Rows.Count(r => r.Action == VeImportAction.Create);
-    public int UpdateCount => Rows.Count(r => r.Action == VeImportAction.Update);
-    public int AddToTeamCount => Rows.Count(r => r.Action == VeImportAction.AddToTeam);
+    // DisplayAction, not Action: a summary reading "3 will be added to the team" is the same
+    // existence oracle as the per-row badge, just aggregated (#240). On the apply path every row's
+    // DisplayAction equals its Action, so these are unchanged there.
+    public int CreateCount => Rows.Count(r => r.DisplayAction == VeImportAction.Create);
+    public int UpdateCount => Rows.Count(r => r.DisplayAction == VeImportAction.Update);
+    public int AddToTeamCount => Rows.Count(r => r.DisplayAction == VeImportAction.AddToTeam);
     public int InvalidCount => Rows.Count(r => !r.IsValid);
 }
 
