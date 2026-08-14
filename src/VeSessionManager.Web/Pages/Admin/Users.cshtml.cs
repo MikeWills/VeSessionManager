@@ -96,7 +96,7 @@ public class UsersModel(AppDbContext dbContext, UserManager<User> userManager, A
                 u.Id, u.Email ?? "", u.Name, u.CallSign, u.Role,
                 string.Join(", ", u.UserTeams.Select(ut => ut.Team.Name).OrderBy(n => n)),
                 u.UserTeams.Select(ut => ut.TeamId).ToList(),
-                IsActive(u), u.ManagedByUser?.Name,
+                IsActive(u), u.ManagedByUser?.Name, u.TwoFactorEnabled,
                 LinkedVeName: u.VolunteerExaminer is { } linked ? $"{linked.CallSign ?? "?"} — {linked.Name}" : null,
                 SuggestedVeId: suggestion?.Id,
                 SuggestedVeName: suggestion is null ? null : $"{suggestion.CallSign ?? "?"} — {suggestion.Name}"));
@@ -281,6 +281,25 @@ public class UsersModel(AppDbContext dbContext, UserManager<User> userManager, A
         return RedirectToPage(new { teamId = TeamId });
     }
 
+    /// <summary>
+    /// Clears another user's two-factor authentication — the lost-phone escape hatch (#356).
+    ///
+    /// <para>Gated by the same AuthorizeManageAsync every other action on this page uses, which is
+    /// the right bar: an admin who can reach this row can already reset that account's password, so
+    /// this grants no reach they did not have. It is audited loudly all the same.</para>
+    /// </summary>
+    public async Task<IActionResult> OnPostClearTwoFactorAsync(int targetUserId)
+    {
+        var auth = await AuthorizeManageAsync(targetUserId);
+        if (auth is null) return Forbid();
+
+        var result = await userManagementService.ClearTwoFactorAsync(targetUserId, auth.Value.ActingUser.Id, CancellationToken.None);
+        TempData[result == UserActionResult.Success ? "StatusMessage" : "ErrorMessage"] = result == UserActionResult.Success
+            ? "Two-factor authentication cleared. They can sign in with their password and set it up again."
+            : "User not found.";
+        return RedirectToPage(new { teamId = TeamId });
+    }
+
     public async Task<IActionResult> OnPostSetManagerAsync(int targetUserId, int? managerUserId)
     {
         var auth = await AuthorizeManageAsync(targetUserId);
@@ -357,6 +376,6 @@ public class UsersModel(AppDbContext dbContext, UserManager<User> userManager, A
     /// whenever the answer is not unambiguous — no call sign, a placeholder, several matches, or the
     /// match already claimed. See UserManagementService.SuggestVolunteerExaminerAsync.
     /// </param>
-    public record UserRow(int Id, string Email, string Name, string? CallSign, UserRole Role, string TeamNames, IReadOnlyList<int> TeamIds, bool IsActive, string? ManagerName,
+    public record UserRow(int Id, string Email, string Name, string? CallSign, UserRole Role, string TeamNames, IReadOnlyList<int> TeamIds, bool IsActive, string? ManagerName, bool TwoFactorEnabled,
         string? LinkedVeName, int? SuggestedVeId, string? SuggestedVeName);
 }

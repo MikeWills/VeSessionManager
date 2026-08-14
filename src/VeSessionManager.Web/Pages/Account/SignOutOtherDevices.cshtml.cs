@@ -43,6 +43,17 @@ public class SignOutOtherDevicesModel(
             return Page();
         }
 
+        // Trusted devices are covered by the same stamp rotation (#356), and deliberately WITHOUT
+        // calling ForgetTwoFactorClientAsync here. Identity registers its security-stamp validator on
+        // the two-factor remember-me cookie as well as the application cookie, so rotating the stamp
+        // invalidates other devices' "trust this device" cookies on their next revalidation — the
+        // same up-to-30-minutes window this page already warns about.
+        //
+        // ForgetTwoFactorClientAsync would clear THIS browser's trust instead, which is the one
+        // device the button is not about: RefreshSignInAsync below deliberately keeps the person who
+        // clicked signed in, and challenging them on their own machine afterwards would be a
+        // surprise, not a security gain.
+
         // The stamp this browser's cookie carries is now stale too, so without re-signing in, the
         // person who just clicked the button is bounced to the login page — which reads as the
         // action having failed rather than having worked. Same reason ChangePassword does it.

@@ -1,0 +1,76 @@
+@page
+@model VeSessionManager.Web.Pages.Account.TwoFactorModel
+@{
+    ViewData["Title"] = "Two-factor authentication";
+    Layout = "_AppLayout";
+}
+
+<div class="page-head">
+    <div>
+        <p class="eyebrow">Your account</p>
+        <h1>Two-factor authentication</h1>
+    </div>
+</div>
+
+@if (Model.NewRecoveryCodes.Count > 0)
+{
+    @* Shown once. Identity stores only hashes, so there is no page anywhere that can show these
+       again — which is worth saying on the page rather than discovering later. *@
+    <div class="vesm-alert success" style="display:block;">
+        <strong>Save these recovery codes now.</strong> Each one signs you in once if you lose your
+        authenticator. They are shown only this once and cannot be retrieved again.
+        <ul class="recovery-codes">
+            @foreach (var code in Model.NewRecoveryCodes)
+            {
+                <li><code>@code</code></li>
+            }
+        </ul>
+    </div>
+}
+
+<div class="session-panel" style="display:block;max-width:640px;">
+    @if (Model.IsEnabled)
+    {
+        <p><strong>Two-factor authentication is on</strong> for this account.</p>
+        <p class="session-sub">
+            You have <strong>@Model.RecoveryCodesRemaining</strong> recovery code(s) left.
+            @if (Model.RecoveryCodesRemaining == 0)
+            {
+                <text>Generate more now — without any, losing your authenticator means losing access to this account.</text>
+            }
+            @if (Model.IsDeviceRemembered)
+            {
+                <text>This device is trusted, so it will not ask for a code again for now.</text>
+            }
+        </p>
+
+        <div class="row-actions">
+            <form method="post" asp-page-handler="RegenerateRecoveryCodes" class="inline-form">
+                <button type="submit" class="btn-secondary">Generate new recovery codes</button>
+            </form>
+            <form method="post" asp-page-handler="Disable" class="inline-form">
+                <button type="submit" class="btn-secondary">Turn off two-factor authentication</button>
+            </form>
+        </div>
+        <p class="session-sub">
+            Turning it off, or generating new codes, signs out every other device.
+        </p>
+    }
+    else
+    {
+        <p><strong>Two-factor authentication is off</strong> for this account.</p>
+        <p class="session-sub">
+            With it on, signing in needs your password <em>and</em> a code from your phone, so a
+            stolen or reused password is not enough on its own.
+            @if (Model.Role == VeSessionManager.Core.Entities.UserRole.SystemAdmin
+                || Model.Role == VeSessionManager.Core.Entities.UserRole.TeamAdmin)
+            {
+                <text>
+                    <strong>Strongly recommended for your account</strong> — it can read candidate
+                    personal data and change deployment settings.
+                </text>
+            }
+        </p>
+        <a class="btn-primary" asp-page="./EnableAuthenticator">Set up two-factor authentication</a>
+    }
+</div>

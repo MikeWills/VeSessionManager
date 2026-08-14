@@ -50,6 +50,15 @@ public class ExternalLoginCallbackModel(SignInManager<User> signInManager, UserM
         var rememberMe = info.AuthenticationProperties?.Items.TryGetValue(RememberMe.ExternalPropertyKey, out var flag) == true
             && flag == "true";
 
+        // bypassTwoFactor: true is a DECISION, not an oversight (#356). Google and Microsoft both
+        // enforce their own second factor, so this app's TOTP challenge would be a second factor
+        // stacked on a factor it does not control and cannot verify. The thing it would add is
+        // protection against a provider account that has already passed the provider's own 2FA —
+        // thin, against real friction on every sign-in.
+        //
+        // Worth knowing if this is ever revisited: SSO is not configured on this deployment yet
+        // (#185), so neither behaviour can be exercised live today. Flipping this to false would
+        // ship an untestable change to the one sign-in path nobody can currently try.
         var signInResult = await signInManager.ExternalLoginSignInAsync(info.LoginProvider, info.ProviderKey, isPersistent: false, bypassTwoFactor: true);
         if (signInResult.Succeeded)
         {

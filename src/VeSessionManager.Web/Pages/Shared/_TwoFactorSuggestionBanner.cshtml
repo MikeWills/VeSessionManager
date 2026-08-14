@@ -1,0 +1,31 @@
+@model VeSessionManager.Core.Entities.User?
+@*
+    The nudge for admin accounts without two-factor (#356).
+
+    Enforcement was considered and deliberately not built: this deployment's system SMTP has
+    historically not been configured, so an admin who loses a phone cannot necessarily be emailed a
+    way back in — and the account that would rescue them is the one that would be locked. So the
+    door stays open and this is loud instead.
+
+    Shown only to SystemAdmin and TeamAdmin: those are the accounts that read candidate personal
+    data and hold team credentials. Showing it to every role would make it wallpaper, and wallpaper
+    is not a nudge.
+
+    Not dismissible, on purpose. A dismissed nudge is a nudge that stops working the moment it is
+    inconvenient, and the only way to make it go away — turning 2FA on — is the point.
+*@
+@if (Model is { } user
+    && !user.TwoFactorEnabled
+    && user.Role is VeSessionManager.Core.Entities.UserRole.SystemAdmin
+        or VeSessionManager.Core.Entities.UserRole.TeamAdmin)
+{
+    <div class="twofactor-nudge">
+        <i class="bi bi-shield-exclamation" aria-hidden="true"></i>
+        <span>
+            <strong>Two-factor authentication is off.</strong>
+            Strongly recommended for an account that can read candidate personal data.
+        </span>
+        <span class="spacer"></span>
+        <a class="btn-secondary btn-sm" asp-page="/Account/TwoFactor">Set it up</a>
+    </div>
+}

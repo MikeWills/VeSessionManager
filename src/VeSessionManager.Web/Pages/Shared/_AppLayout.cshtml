@@ -227,6 +227,7 @@
                     <div class="menu-head">@roleLabel &middot; @teamName</div>
                     <hr>
                     <a class="item" asp-page="/Account/ChangePassword">Change password</a>
+                    <a class="item" asp-page="/Account/TwoFactor">Two-factor authentication</a>
                     @* Shown to everyone, not only linked accounts: the page's own unlinked state is
                        how someone finds out the link exists and can be asked for. Hiding it would
                        make it discoverable only to people who already have it. *@
@@ -260,6 +261,8 @@
     @* Admin-only, and cached — see the partial's own comments. Passed the role rather than
        re-querying the user the layout has already loaded. *@
     <partial name="_IngestionHealthBanner" model="currentUser?.Role" />
+    @* Admin accounts without a second factor (#356). The partial decides whether to render. *@
+    <partial name="_TwoFactorSuggestionBanner" model="currentUser" />
 
     <main class="@mainClass">
         @if (TempData["StatusMessage"] is string statusMessage)

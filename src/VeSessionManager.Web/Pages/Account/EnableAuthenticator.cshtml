@@ -1,0 +1,58 @@
+@page
+@model VeSessionManager.Web.Pages.Account.EnableAuthenticatorModel
+@{
+    ViewData["Title"] = "Set up two-factor authentication";
+    Layout = "_AppLayout";
+}
+
+<div class="page-head">
+    <div>
+        <p class="eyebrow"><a asp-page="./TwoFactor">Two-factor authentication</a></p>
+        <h1>Set up</h1>
+    </div>
+</div>
+
+@if (Model.ErrorMessage is not null)
+{
+    <div class="vesm-alert error">@Model.ErrorMessage</div>
+}
+
+<div class="session-panel" style="display:block;max-width:640px;">
+    <ol class="setup-steps">
+        <li>
+            <strong>Install an authenticator app</strong> if you do not have one — Google Authenticator,
+            Microsoft Authenticator, Authy, 1Password and Bitwarden all work.
+        </li>
+        <li>
+            <strong>Scan this code</strong>, or type the key in by hand.
+            @* Inline SVG rather than an <img>: no CSP exception needed, and it stays crisp at any
+               size, which matters when someone is holding a phone up to a laptop screen. *@
+            <div class="qr-holder">@Html.Raw(Model.QrCodeSvg)</div>
+            <p class="session-sub">
+                Key: <code class="totp-key">@Model.DisplayKey</code>
+            </p>
+        </li>
+        <li>
+            <strong>Enter the 6-digit code</strong> your app now shows, to prove it is working.
+            <form method="post" class="totp-verify">
+                <div class="field" style="max-width:220px;">
+                    <label asp-for="Input.Code"></label>
+                    <input asp-for="Input.Code" autocomplete="one-time-code" inputmode="numeric"
+                           pattern="[0-9 ]*" spellcheck="false" autofocus />
+                    <span asp-validation-for="Input.Code" class="field-error"></span>
+                </div>
+                <button type="submit" class="btn-primary">Turn on two-factor authentication</button>
+            </form>
+        </li>
+    </ol>
+
+    <p class="session-sub">
+        Two-factor authentication is not switched on until a code verifies, so a mistyped key or a
+        phone with the wrong clock cannot lock you out. You will be given recovery codes immediately
+        afterwards — save them.
+    </p>
+</div>
+
+@section Scripts {
+    <partial name="_ValidationScriptsPartial" />
+}

@@ -116,6 +116,18 @@ else
                             {
                                 <button type="button" class="item" data-open-modal="managerModal-@u.Id">Assign manager</button>
                             }
+                            @if (u.TwoFactorEnabled)
+                            {
+                                @* Offered only when it would do something. The lost-phone escape
+                                   hatch (#356) — without it, a user who loses their authenticator
+                                   and has spent their recovery codes is locked out for good, and on
+                                   this deployment system SMTP may not be configured either. *@
+                                <form method="post" asp-page-handler="ClearTwoFactor">
+                                    <input type="hidden" name="teamId" value="@Model.TeamId" />
+                                    <input type="hidden" name="targetUserId" value="@u.Id" />
+                                    <button type="submit" class="item">Clear two-factor</button>
+                                </form>
+                            }
                             <hr>
                             @if (u.IsActive)
                             {
