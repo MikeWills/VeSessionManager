@@ -1,4 +1,4 @@
-/* VeSessionManager admin UI design system — recreated from design_handoff_vesessionmanager_admin_ui
+﻿/* VeSessionManager admin UI design system — recreated from design_handoff_vesessionmanager_admin_ui
    (Phase 9's Claude Design mockup handoff). Tokens/components documented in that bundle's README;
    this file is the Razor Pages implementation, used by _AppLayout.cshtml (authenticated admin/SM
    screens) and, as of Phase 9d, _PublicLayout.cshtml (the public /Privacy page — no chassis nav,
@@ -12,6 +12,8 @@
   --amber: #E8A33D; --amber-dim: #F4D9A8;
   --green: #3F8F5F; --green-dim: #CFE6D8;
   --brick: #C24C3F; --brick-dim: #F1D4D0;
+  /* Upcoming sessions. Same blue the stats charts use for candidate volume. */
+  --blue: #3D6F9E; --blue-dim: #D6E3EF;
   --line: #D8DBD6; --line-strong: #B8BEB9;
   --focus: #2E6F8E;
   --chip-neutral-bg: #E9EBE7;
@@ -21,6 +23,7 @@
   --chip-green-text: #245C3B;
   --chip-amber-text: #7A5313;
   --chip-brick-text: #7E2E24;
+  --chip-blue-text: #21496B;
 }
 
 :root[data-theme="dark"] {
@@ -30,6 +33,7 @@
   --amber: #F0B15A; --amber-dim: #4A3A1E;
   --green: #54B37B; --green-dim: #1E3A2A;
   --brick: #E17262; --brick-dim: #4A241E;
+  --blue: #6FA8D6; --blue-dim: #1D3346;
   --line: #2B3236; --line-strong: #3D454A;
   --focus: #5AA6C9;
   --chip-neutral-bg: #262E31;
@@ -39,6 +43,7 @@
   --chip-green-text: #8FE0AE;
   --chip-amber-text: #F5CE8C;
   --chip-brick-text: #F3A79A;
+  --chip-blue-text: #A9CDEA;
   color-scheme: dark;
 }
 
@@ -266,6 +271,8 @@ tbody tr.row-past:hover { background: var(--row-hover); }
 .chip-tag::before { background: var(--tag-color); }
 .chip-brick { background: var(--brick-dim); color: var(--chip-brick-text); }
 .chip-brick::before { background: var(--brick); }
+.chip-blue { background: var(--blue-dim); color: var(--chip-blue-text); }
+.chip-blue::before { background: var(--blue); }
 .flag { color: var(--amber); font-size: 14px; }
 .view-link { font-family: "IBM Plex Mono", monospace; font-size: 12px; font-weight: 600; color: var(--focus); text-decoration: none; }
 .view-link:hover { text-decoration: underline; }

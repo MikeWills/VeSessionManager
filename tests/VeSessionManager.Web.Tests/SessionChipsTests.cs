@@ -1,4 +1,4 @@
-using VeSessionManager.Core.Entities;
+﻿using VeSessionManager.Core.Entities;
 using VeSessionManager.Web;
 using Xunit;
 
@@ -20,11 +20,12 @@ public class SessionChipsTests
     /// Copied verbatim from Index.cshtml.cs's "status" sort key. If that changes and this does not,
     /// the comparison below fails.
     /// </summary>
-    private static string InlineStatusSortKey(Session s) =>
+    private static string InlineStatusSortKey(Session s, bool hasStarted) =>
         s.Status == SessionStatus.Cancelled ? "Cancelled"
         : s.RescheduleFlaggedForReview ? "Reschedule flagged"
         : s.TestingCompletedUtc != null || s.ExamToolsClosedUtc != null ? "Completed"
-        : "Active";
+        : hasStarted ? "Active"
+        : "Upcoming";
 
     /// <summary>Copied verbatim from Index.cshtml.cs's "vecsubmission" sort key.</summary>
     private static string InlineVecSortKey(Session s) =>
@@ -33,17 +34,18 @@ public class SessionChipsTests
         : "Not submitted";
 
     /// <summary>Every combination that can reach a chip, including contradictory ones.</summary>
-    public static TheoryData<SessionStatus, bool, DateTime?, DateTime?, VecSubmissionStatus> Matrix()
+    public static TheoryData<SessionStatus, bool, DateTime?, DateTime?, VecSubmissionStatus, bool> Matrix()
     {
-        var data = new TheoryData<SessionStatus, bool, DateTime?, DateTime?, VecSubmissionStatus>();
+        var data = new TheoryData<SessionStatus, bool, DateTime?, DateTime?, VecSubmissionStatus, bool>();
         DateTime? stamp = new DateTime(2026, 8, 10, 0, 0, 0, DateTimeKind.Utc);
         foreach (var status in new[] { SessionStatus.Active, SessionStatus.Cancelled })
         foreach (var flagged in new[] { false, true })
         foreach (var tested in new[] { (DateTime?)null, stamp })
         foreach (var closed in new[] { (DateTime?)null, stamp })
         foreach (var submitted in new[] { VecSubmissionStatus.NotSubmitted, VecSubmissionStatus.Submitted })
+        foreach (var hasStarted in new[] { false, true })
         {
-            data.Add(status, flagged, tested, closed, submitted);
+            data.Add(status, flagged, tested, closed, submitted, hasStarted);
         }
 
         return data;
@@ -52,7 +54,7 @@ public class SessionChipsTests
     [Theory]
     [MemberData(nameof(Matrix))]
     public void ChipLabelsAndSortKeysAgree(
-        SessionStatus status, bool flagged, DateTime? tested, DateTime? closed, VecSubmissionStatus submitted)
+        SessionStatus status, bool flagged, DateTime? tested, DateTime? closed, VecSubmissionStatus submitted, bool hasStarted)
     {
         var session = new Session
         {
@@ -66,8 +68,8 @@ public class SessionChipsTests
         };
 
         Assert.Equal(
-            SessionChips.Status(status, flagged, session.IsCompleted).Label,
-            InlineStatusSortKey(session));
+            SessionChips.Status(status, flagged, session.IsCompleted, hasStarted).Label,
+            InlineStatusSortKey(session, hasStarted));
 
         Assert.Equal(
             SessionChips.VecSubmission(status, submitted).Label,
@@ -82,10 +84,50 @@ public class SessionChipsTests
     [Fact]
     public void ContradictoryStatesResolveByPriority()
     {
-        Assert.Equal("Cancelled", SessionChips.Status(SessionStatus.Cancelled, rescheduleFlagged: true, isCompleted: true).Label);
-        Assert.Equal("Reschedule flagged", SessionChips.Status(SessionStatus.Active, rescheduleFlagged: true, isCompleted: true).Label);
-        Assert.Equal("Completed", SessionChips.Status(SessionStatus.Active, rescheduleFlagged: false, isCompleted: true).Label);
-        Assert.Equal("Active", SessionChips.Status(SessionStatus.Active, rescheduleFlagged: false, isCompleted: false).Label);
+        Assert.Equal("Cancelled", SessionChips.Status(SessionStatus.Cancelled, rescheduleFlagged: true, isCompleted: true, hasStarted: true).Label);
+        Assert.Equal("Reschedule flagged", SessionChips.Status(SessionStatus.Active, rescheduleFlagged: true, isCompleted: true, hasStarted: true).Label);
+        Assert.Equal("Completed", SessionChips.Status(SessionStatus.Active, rescheduleFlagged: false, isCompleted: true, hasStarted: true).Label);
+        Assert.Equal("Active", SessionChips.Status(SessionStatus.Active, rescheduleFlagged: false, isCompleted: false, hasStarted: true).Label);
+    }
+
+
+    /// <summary>
+    /// A session that has not started yet reads <b>Upcoming</b>, not "Active" (Mike, 2026-08-15).
+    ///
+    /// <para>"Active" is <c>Session.Status</c>'s word and it only ever means "not cancelled" — it is
+    /// never set to Completed and has nothing to do with whether testing is happening. That is a trap
+    /// this codebase has hit three times in query logic; the chip was the last place it still reached
+    /// users, where it read as "testing in progress" on a session two weeks away.</para>
+    ///
+    /// <para>"Active" now means what a reader assumes: started, and not yet closed out. On this
+    /// deployment that is a handful of sessions at a time, all within a day or two of running, since
+    /// ingestion closes them once ExamTools does.</para>
+    /// </summary>
+    [Fact]
+    public void ASessionThatHasNotStartedYetIsUpcoming()
+    {
+        Assert.Equal("Upcoming",
+            SessionChips.Status(SessionStatus.Active, rescheduleFlagged: false, isCompleted: false, hasStarted: false).Label);
+    }
+
+    [Fact]
+    public void ASessionThatHasStartedButIsNotClosedOutIsActive()
+    {
+        Assert.Equal("Active",
+            SessionChips.Status(SessionStatus.Active, rescheduleFlagged: false, isCompleted: false, hasStarted: true).Label);
+    }
+
+    /// <summary>
+    /// Upcoming sits below the states that mean something happened: a cancelled or flagged session in
+    /// the future is still cancelled or flagged. Only the plain not-yet-started case changes.
+    /// </summary>
+    [Fact]
+    public void UpcomingLosesToCancelledAndFlagged()
+    {
+        Assert.Equal("Cancelled",
+            SessionChips.Status(SessionStatus.Cancelled, rescheduleFlagged: false, isCompleted: false, hasStarted: false).Label);
+        Assert.Equal("Reschedule flagged",
+            SessionChips.Status(SessionStatus.Active, rescheduleFlagged: true, isCompleted: false, hasStarted: false).Label);
     }
 
     /// <summary>

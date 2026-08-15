@@ -215,7 +215,7 @@ public class IndexModel(
             : "All teams";
 
         var query = ApplyFilters(accessScope.Scope(dbContext.Sessions, user, TeamId), now, out var defaultsToNewestFirst);
-        query = ApplySort(query, defaultsToNewestFirst);
+        query = ApplySort(query, defaultsToNewestFirst, now);
 
         TotalCount = await query.CountAsync();
         TotalPages = Math.Max(1, (int)Math.Ceiling(TotalCount / (double)PageSize));
@@ -358,7 +358,7 @@ public class IndexModel(
     /// flag, TestingCompletedUtc) into one label, and sorting by anything other than what the user
     /// can read in the cell would look broken.
     /// </summary>
-    private IQueryable<Session> ApplySort(IQueryable<Session> query, bool defaultsToNewestFirst)
+    private IQueryable<Session> ApplySort(IQueryable<Session> query, bool defaultsToNewestFirst, DateTime now)
     {
         if (!SortableColumns.Contains(Sort))
         {
@@ -386,15 +386,16 @@ public class IndexModel(
             // session; counting them made a session look fuller than it is.
             "candidates" => Order(s => s.Candidates.Count(c => c.ApplicationStatus != CandidateApplicationStatus.NotTested)),
             // Spelled out rather than calling SessionChips: this runs inside an EF expression tree,
-            // which cannot invoke a method. It must stay in step with SessionChips.Status — same four
+            // which cannot invoke a method. It must stay in step with SessionChips.Status — same five
             // states, same priority order — and SessionChipsTests asserts exactly that, because a
             // mismatch here sorts a column by something the user cannot see, which was a real
-            // reported bug once.
+            // reported bug once. It caught the Upcoming split (2026-08-15) before it shipped.
             "status" => Order(s =>
                 s.Status == SessionStatus.Cancelled ? "Cancelled"
                 : s.RescheduleFlaggedForReview ? "Reschedule flagged"
                 : s.TestingCompletedUtc != null || s.ExamToolsClosedUtc != null ? "Completed"
-                : "Active"),
+                : s.ScheduledStartUtc <= now ? "Active"
+                : "Upcoming"),
             "vecsubmission" => Order(s =>
                 s.Status == SessionStatus.Cancelled ? "—"
                 : s.VecSubmissionStatus == VecSubmissionStatus.Submitted ? "Submitted"
@@ -567,7 +568,13 @@ public class IndexModel(
 
     private static string StatusLabel(string status) => status switch
     {
-        "Active" => "Active",
+        // The stored filter value stays "Active" — it is the SQL rule "not cancelled and not
+        // completed", which now renders as two different chips depending on whether the session has
+        // started. Only the label widens, so a user ticking it gets what the words promise. Adding a
+        // separate "Upcoming" status filter was considered and rejected: the Date range dropdown
+        // already has an Upcoming preset, and two controls spelled the same would be worse than one
+        // honest label.
+        "Active" => "Active or upcoming",
         "RescheduleFlagged" => "Reschedule flagged",
         "Completed" => "Completed",
         "Cancelled" => "Cancelled",
@@ -701,7 +708,8 @@ public class IndexModel(
         // Both chips come from SessionChips so the list, session detail and the sort key below cannot
         // drift apart. The Status *filter* still spells its rule out separately — it has to translate
         // to SQL, which a C# switch cannot.
-        var (statusClass, statusLabel) = SessionChips.Status(s.Status, s.RescheduleFlaggedForReview, s.IsCompleted);
+        var (statusClass, statusLabel) = SessionChips.Status(
+            s.Status, s.RescheduleFlaggedForReview, s.IsCompleted, hasStarted: s.ScheduledStartUtc <= now);
         var (vecClass, vecLabel) = SessionChips.VecSubmission(s.Status, s.VecSubmissionStatus);
 
         // Same availability rules the session Detail page applies to the same actions, so a control
