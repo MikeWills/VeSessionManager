@@ -1,4 +1,4 @@
-using VeSessionManager.Core.Authorization;
+﻿using VeSessionManager.Core.Authorization;
 using VeSessionManager.Core.Entities;
 using Xunit;
 
@@ -19,7 +19,7 @@ namespace VeSessionManager.Core.Tests;
 /// <c>availableTeamIds is { Count: 1 }</c> guard was already added to avoid for SystemAdmins.</para>
 ///
 /// <para>So the write path gets a resolver that refuses instead of substituting. Both remain, because
-/// both behaviours are wanted — the bug was having only one.</para>
+/// both behaviors are wanted — the bug was having only one.</para>
 /// </summary>
 public class ManageableTeamIdForWriteTests
 {

@@ -25,7 +25,7 @@ public class UserDeleteCoverageTests
     /// <para>Three are deliberately <b>not</b> blockers: <c>UserTeam</c> is the account's own
     /// membership configuration and is removed with it; <c>AuditLog</c> is split — rows <i>about</i>
     /// this user go with it, rows where it <i>acted</i> block — and that split is asserted by
-    /// behaviour in <c>UserDeleteTests</c>, not here.</para>
+    /// behavior in <c>UserDeleteTests</c>, not here.</para>
     /// </summary>
     private static readonly HashSet<string> Accounted =
     [

@@ -113,7 +113,7 @@ public class UsersModel(AppDbContext dbContext, UserManager<User> userManager, A
         // TeamLead's team was impossible from the default view (reported 2026-08-07). Same null-
         // comparison trap CLAUDE.md records for `x.Id != someNullableInt`.
         //
-        // Branched explicitly rather than made null-tolerant in one expression, so the behaviour
+        // Branched explicitly rather than made null-tolerant in one expression, so the behavior
         // no longer depends on how a provider treats a null comparison at all.
         var managerCandidates = dbContext.Users
             .Where(u => u.Role == UserRole.SessionManager || u.Role == UserRole.TeamAdmin);

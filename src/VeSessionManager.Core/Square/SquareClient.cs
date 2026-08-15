@@ -166,7 +166,7 @@ public sealed class SquareClient : ISquareClient
     /// either one changing alone produces a client pointed at the wrong place.</para>
     /// </summary>
     /// <remarks>internal, not private, so a test can observe the identity of the returned client —
-    /// "was it rebuilt?" is the entire behaviour here and there is nothing else to assert on without
+    /// "was it rebuilt?" is the entire behavior here and there is nothing else to assert on without
     /// a live Square account (issue #325's convention for the Worker job ticks).</remarks>
     internal global::Square.SquareClient GetOrCreateClient(SquareCredentials credentials)
     {
@@ -189,7 +189,7 @@ public sealed class SquareClient : ISquareClient
         _clientsByTeamId[credentials.TeamId] = replacement;
 
         // Deliberately not logging which token or environment — the token is a secret and the pair
-        // would narrow it. The team id is enough to explain a behaviour change in the log.
+        // would narrow it. The team id is enough to explain a behavior change in the log.
         _logger.LogInformation(
             "Square credentials changed for team {TeamId} — rebuilt the cached client", credentials.TeamId);
 

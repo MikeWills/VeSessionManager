@@ -1,4 +1,4 @@
-namespace VeSessionManager.Core.Entities;
+﻿namespace VeSessionManager.Core.Entities;
 
 /// <summary>
 /// A volunteer examiner — <b>a person, not a team's copy of a person</b> (issue #142, 2026-08-07).
@@ -53,7 +53,7 @@ public class VolunteerExaminer : ILicenseSnapshot
 
     // ---- Contact details (issue #142) -----------------------------------------------------------
     // On the person, deliberately shared across every team they serve: this deployment hosts
-    // cooperating teams rather than unrelated organisations, so three teams holding three divergent
+    // cooperating teams rather than unrelated organizations, so three teams holding three divergent
     // addresses for one person would be worse than one shared record.
     //
     // **Visible to TeamAdmin/SystemAdmin and to the VE themselves. Nobody else — not a Session

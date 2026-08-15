@@ -72,7 +72,7 @@ public class TeamPickerTests : IClassFixture<WebAppFactory>
     /// <summary>
     /// The admin shape: no "All teams". These pages edit one team's configuration, so a merged view
     /// has no meaning — and without the option there is no way to express "no filter", which makes
-    /// this a behavioural difference rather than a cosmetic one.
+    /// this a behavioral difference rather than a cosmetic one.
     /// </summary>
     [Fact]
     public async Task AnAdminConfigPageOffersNoAllTeamsOption()

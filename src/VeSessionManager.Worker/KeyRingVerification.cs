@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using VeSessionManager.Core.Data;
 
@@ -15,7 +15,7 @@ namespace VeSessionManager.Worker;
 /// mail real candidates. See BackupScripts' <c>runbooks/restore.md</c>.</para>
 ///
 /// <para><b>Why this is its own type rather than a branch in Program.cs.</b> Top-level statements
-/// are unreachable from the test projects, and the interesting behaviour here is not the guard —
+/// are unreachable from the test projects, and the interesting behavior here is not the guard —
 /// which has its own tests — but the three decisions layered on top of it: no migration, zero teams
 /// is a failure, and an exit code instead of an exception.</para>
 /// </summary>

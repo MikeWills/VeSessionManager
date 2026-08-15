@@ -126,7 +126,7 @@ else
                 <div class="field" style="max-width:220px;"><label for="zoomUserId">Zoom user ID <span style="text-transform:none; font-weight:400;">(optional)</span></label><input id="zoomUserId" name="zoomUserId" value="@Model.Team.ZoomUserId" placeholder="me" /></div>
                 <div class="field" style="max-width:160px;"><label for="breakoutRoomCount">Breakout rooms</label><input id="breakoutRoomCount" name="breakoutRoomCount" type="number" min="0" value="@Model.Team.ZoomBreakoutRoomCount" /></div>
             </div>
-            <p class="session-sub"><b>Zoom user ID:</b> leave blank to use the account that owns the API credentials — only needed if your Zoom organisation has multiple users and sessions should be hosted by a specific one.</p>
+            <p class="session-sub"><b>Zoom user ID:</b> leave blank to use the account that owns the API credentials — only needed if your Zoom organization has multiple users and sessions should be hosted by a specific one.</p>
             <p class="session-sub">Every session's Zoom meeting gets this many empty "Exam Room N" breakout rooms pre-created — VEs move candidates into them manually during the meeting. Set to 0 to skip creating any.</p>
             <button type="submit" class="btn-primary btn-sm" style="margin-top:12px;">Save Zoom</button>
         </form>

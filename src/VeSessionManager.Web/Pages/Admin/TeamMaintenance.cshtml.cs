@@ -136,7 +136,7 @@ public class TeamMaintenanceModel(
     ///
     /// Deliberately does NOT touch Team.LastIngestionRunUtc: a manual run is extra work on top of
     /// the schedule, not a substitute for it, so pressing this must not push the next scheduled poll
-    /// an hour further out. That was already the behaviour — it is now a decision rather than an
+    /// an hour further out. That was already the behavior — it is now a decision rather than an
     /// accident (see the field's own comment).
     /// </summary>
     public async Task<IActionResult> OnPostRefreshNowAsync()

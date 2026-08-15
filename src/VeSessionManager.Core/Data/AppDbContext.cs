@@ -58,7 +58,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options, IDataProtectio
     ///
     /// <para><b>The whole-model convention, which is not any one entity's business:</b> the app never
     /// hard-deletes rows with dependents — PII is nulled in place, the row is not removed (see the
-    /// Candidate/Payment purge behaviour in the spec) — so every foreign key is <c>Restrict</c>
+    /// Candidate/Payment purge behavior in the spec) — so every foreign key is <c>Restrict</c>
     /// rather than <c>Cascade</c>. That also sidesteps SQL Server-style "multiple cascade paths"
     /// errors from the several relationships that both point at User/Vec.</para>
     ///

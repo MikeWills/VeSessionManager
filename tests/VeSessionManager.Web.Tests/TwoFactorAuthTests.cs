@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -122,7 +122,7 @@ public class TwoFactorAuthTests : IClassFixture<WebAppFactory>
     /// Pins the handoff between the two requests. <c>GetTwoFactorAuthenticationUserAsync</c> expects
     /// the user id in a <c>ClaimTypes.Name</c> claim on the TwoFactorUserId cookie — Identity's own
     /// internal shape, which this app writes by hand because it does not use
-    /// <c>PasswordSignInAsync</c> (see TwoFactorSignIn). That is behaviour rather than documentation,
+    /// <c>PasswordSignInAsync</c> (see TwoFactorSignIn). That is behavior rather than documentation,
     /// so it gets a test rather than trust.
     /// </summary>
     [Fact]

@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using VeSessionManager.Core.Data;
@@ -69,7 +69,7 @@ public class ExamResultSyncService(
     /// <i>immutable</i>. Exam results are not: they are normally settled at close, but a VE team
     /// <i>can</i> amend paperwork afterwards. Rarely — which is exactly what makes a final-poll
     /// marker dangerous rather than merely imprecise. It would stop polling permanently, so the rare
-    /// amendment would be lost in silence, and the thing lost is a candidate's licence class.</para>
+    /// amendment would be lost in silence, and the thing lost is a candidate's license class.</para>
     ///
     /// <para>The apparent cost of the window is also mostly illusory, which was the other half of
     /// what #186 asked. The per-candidate gate in ApplyResultsAsync excludes anyone already

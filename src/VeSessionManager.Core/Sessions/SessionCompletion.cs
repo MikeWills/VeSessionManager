@@ -1,4 +1,4 @@
-using System.Linq.Expressions;
+﻿using System.Linq.Expressions;
 using VeSessionManager.Core.Entities;
 
 namespace VeSessionManager.Core.Sessions;
@@ -17,7 +17,7 @@ namespace VeSessionManager.Core.Sessions;
 ///
 /// <para><b>Why this is three members and not one.</b> EF Core cannot translate a C# method or
 /// property into SQL, and cannot compose one expression into another without a predicate-rewriting
-/// dependency (LINQKit), which this project does not take. So the rule needs a form for materialised
+/// dependency (LINQKit), which this project does not take. So the rule needs a form for materialized
 /// objects and a form per entity a query starts from. They live here, adjacent, rather than spread
 /// across eleven call sites — and <c>SessionCompletionRuleTests</c> asserts they agree, since the
 /// language cannot.</para>

@@ -1,4 +1,4 @@
-using Microsoft.Data.Sqlite;
+﻿using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Entities;
@@ -10,7 +10,7 @@ namespace VeSessionManager.Core.Tests;
 /// <summary>
 /// Paging the VE directory (#298).
 ///
-/// <para>The directory used to materialise the whole roster and apply three filters in C#
+/// <para>The directory used to materialize the whole roster and apply three filters in C#
 /// afterwards, so it had no paging path at all. Getting one meant making every filter translatable
 /// — including "guest" (no tag on <i>any</i> team in scope) and last-worked (a maximum across the
 /// teams in scope), which are properties of the grouped row rather than of a membership.</para>
@@ -20,7 +20,7 @@ namespace VeSessionManager.Core.Tests;
 /// rendering zero rows while the pager says "showing 1–25 of 176" — worse than the unpaged list. So
 /// these tests page <i>with a filter applied</i> and check the page is full and the count honest.</para>
 ///
-/// <para>Real SQLite: the licence filter uses GLOB, which InMemory cannot run.</para>
+/// <para>Real SQLite: the license filter uses GLOB, which InMemory cannot run.</para>
 /// </summary>
 public class VeDirectoryPagingSqliteTests : IDisposable
 {

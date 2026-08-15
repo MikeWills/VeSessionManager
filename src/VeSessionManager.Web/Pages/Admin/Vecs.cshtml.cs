@@ -110,7 +110,7 @@ public class VecsModel(AppDbContext dbContext, UserManager<User> userManager, Ve
         /// <summary>
         /// The code ingestion matches ExamTools' session <c>vec</c> field against — the override when
         /// there is one, the name otherwise. Mirrors <see cref="Vec.MatchCode"/>, which cannot be
-        /// reached from here because the query projects to an anonymous type rather than materialising
+        /// reached from here because the query projects to an anonymous type rather than materializing
         /// whole <see cref="Vec"/> entities. Keep the two definitions identical.
         /// </summary>
         public string MatchCode => ExamToolsCode ?? Name;

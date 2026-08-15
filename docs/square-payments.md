@@ -149,6 +149,41 @@ SquarePaymentReferenceId`, so `SquareWebhookHandler` hands it off here instead o
   way (`SquareWebhookHandler`'s own `order_id` lookup), since that amount was already fixed by
   this app's own generated payment link.
 
+### Dismissing one instead of matching it (#99, 2026-08-15)
+
+Not every unmatched payment has a candidate behind it. A test charge, a donation, a duplicate of
+something already recorded, or a refund the team handled in Square directly all arrive here and none
+of them will ever match anyone — so before this the page had exactly one action and a row that could
+not take it stayed forever, counting against the nav badge.
+
+`SquarePaymentMatchingService.DismissAsync` resolves the row without touching any `Payment`:
+`ResolvedUtc`/`ResolvedByUserId` set, **`MatchedPaymentId` left null**. That pairing — resolved, with
+no matched payment — is the only stored signal separating a dismissal from a match, which is why
+`UnmatchedSquarePayment.MatchedPaymentId` carries a remark saying so and why the dismissed-rows
+filter tests both halves. Filtering on the null alone would sweep in every still-pending row.
+
+Three deliberate choices:
+
+- **It does nothing in Square.** No refund, no order completion, no API call at all — there is a test
+  asserting the Square client is never touched, because the confirmation wording promises exactly
+  that. "Dismiss" is the one word on this screen a user could reasonably read as "send it back", so
+  the modal says *"This clears it from this screen only. It does not refund the payment in Square"*
+  in bold before it says anything else.
+- **The reason is optional.** Requiring one mostly produces the word "duplicate". It is stored on the
+  row (`ResolutionNote`, so the dismissed view can show it without a join) *and* copied into the
+  audit entry alongside the Square order id and amount — that entry is what survives if the row is
+  ever purged, and the order id and amount are what someone reconciling against a Square statement
+  months later would search for.
+- **It reuses `SquareManualMatchResult`** rather than growing a parallel enum. The three outcomes
+  reachable — resolved, gone, already resolved — are the same three the match path returns, so the
+  page's existing switch needed no new arm. The two candidate-shaped members simply never occur, and
+  the page still handles them so a future member cannot fall silently into the default.
+
+Dismissed rows are behind a "View dismissed" toggle rather than in the main list: the page exists to
+be emptied. Matched rows appear in neither — those became real `Payment`s and are visible on the
+candidate. Both actions share the one `ResolvedUtc` guard, so dismissing genuinely closes a row
+rather than hiding it from a filter (there is a test that dismisses and then tries to match).
+
 ## Order completion (post-launch addition)
 
 `ISquareClient.CompleteOrderAsync` (Square [Orders API](https://developer.squareup.com/reference/square/orders-api),

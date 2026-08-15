@@ -1,4 +1,4 @@
-@page "/youth-confirm/{token:guid}"
+﻿@page "/youth-confirm/{token:guid}"
 @model VeSessionManager.Web.Pages.Public.YouthConfirmModel
 @using VeSessionManager.Core.Payments
 @{
@@ -12,16 +12,29 @@
 
         @if (Model.Outcome == YouthConfirmationOutcome.Success)
         {
+            @* No ARRL URL here, deliberately (#192). The claim form is an external ARRL document
+               this app neither hosts nor tracks, and the address for it has changed before — a link
+               that rots on a page candidates are sent to is worse than no link. The existing
+               post-exam ArrlYouthProgramInstructions email already points at it, and takes the same
+               approach for the same reason. A candidate cannot claim before passing anyway, so
+               nothing is lost by saying so here and sending the detail when it is useful. *@
             <p class="policy-note">
-                TODO: final copy about the ARRL scholarship program (reimburses the FCC license fee)
-                goes here, including a link to
-                the reimbursement claim form to fill out and email to us along with
-                your test session.
+                <strong>After you pass, you may be able to claim the FCC license fee back.</strong>
+                ARRL runs a youth program that reimburses the FCC application fee for candidates
+                under 18. It is separate from the reduced exam fee below, and it is claimed after you
+                have your call sign — not now. We will send you the form and instructions once your
+                license is granted.
             </p>
             <p class="policy-note">
-                <strong>Under 13?</strong> ExamTools requires a separate COPPA consent form for
-                candidates under 13 — TODO: final instructions and a link to where that form should
-                be sent go here. This is a reminder only; nothing below confirms or records it.
+                <strong>Under 13?</strong> ExamTools requires a separate COPPA consent form, signed
+                by a parent or guardian, before you can be tested. Ask your VE team for it and send
+                the completed form back to them
+                @if (!string.IsNullOrWhiteSpace(Model.TeamContactEmail))
+                {
+                    <text>at <a href="mailto:@Model.TeamContactEmail">@Model.TeamContactEmail</a></text>
+                }
+                before your session. This is a reminder only — nothing on this page confirms or
+                records it.
             </p>
 
             <form method="post">

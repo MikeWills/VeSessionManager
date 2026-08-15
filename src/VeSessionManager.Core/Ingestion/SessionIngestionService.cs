@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using VeSessionManager.Core.Data;
@@ -26,7 +26,7 @@ public class SessionIngestionService(
     /// ExamTools' "In progress" state — the session is running right now (confirmed against the
     /// dev site's own session list, 2026-07-31, where this renders as a blue "In progress" row).
     /// First-ingestable exactly like "pend": a session can gain a new candidate while it is
-    /// underway, and before this was recognised a session first seen in this state fell through
+    /// underway, and before this was recognized a session first seen in this state fell through
     /// ShouldIngestNewSession's final "unknown state" case and became invisible — along with every
     /// candidate on it — until it eventually closed.
     /// </summary>
@@ -110,7 +110,7 @@ public class SessionIngestionService(
             {
                 // Already stored, so there is nothing to create — but still reconcile the VEC
                 // submission flag. That is deliberately NOT inside the create branch: a range
-                // imported before this behaviour existed would otherwise stay NotSubmitted forever,
+                // imported before this behavior existed would otherwise stay NotSubmitted forever,
                 // since re-running an import skips every session it already has. Re-running the
                 // range is the supported way to fix such a backlog.
                 await MarkHistoricalSessionSubmittedAsync(remote.Id, team, requestedByUserId, now, result, cancellationToken);
@@ -552,7 +552,7 @@ public class SessionIngestionService(
     }
 
     /// <summary>
-    /// A state this app doesn't recognise means ExamTools has a lifecycle step we don't model, and
+    /// A state this app doesn't recognize means ExamTools has a lifecycle step we don't model, and
     /// every session in it is silently invisible. That is exactly how "go" (In progress) went
     /// unnoticed until 2026-07-31 — it was dropped by a bare `else` with no log line at all. One
     /// aggregate line per run, not per session, so an unmodelled state announces itself the first
@@ -570,7 +570,7 @@ public class SessionIngestionService(
             return;
         }
 
-        logger.LogWarning("ExamTools returned session state(s) this app does not recognise for team {TeamId} ({TeamName}): {UnknownStates} — those sessions were not ingested. Known states are {KnownStates}.",
+        logger.LogWarning("ExamTools returned session state(s) this app does not recognize for team {TeamId} ({TeamName}): {UnknownStates} — those sessions were not ingested. Known states are {KnownStates}.",
             team.Id, team.Name, string.Join(", ", unknown), string.Join("/", KnownStates));
     }
 

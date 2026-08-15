@@ -1,4 +1,4 @@
-namespace VeSessionManager.Core.Entities;
+﻿namespace VeSessionManager.Core.Entities;
 
 /// <summary>
 /// Not in the original shared data model — added as a multi-team foundation. A Team is the group
@@ -180,7 +180,7 @@ public class Team
     /// <summary>
     /// Whether an integration is switched on for this team. <b>Not</b> a configuration check — see
     /// the IsXConfigured members above, which answer a different question and want the opposite
-    /// retry behaviour.
+    /// retry behavior.
     /// </summary>
     public bool IsEnabled(TeamIntegration integration) =>
         !IntegrationOverridesEnabled || integration switch

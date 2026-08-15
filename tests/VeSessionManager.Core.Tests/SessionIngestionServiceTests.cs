@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using VeSessionManager.Core.Data;
@@ -379,7 +379,7 @@ public class SessionIngestionServiceTests
     }
 
     /// <summary>
-    /// The backlog case: a range imported before this behaviour existed is already stored, and an
+    /// The backlog case: a range imported before this behavior existed is already stored, and an
     /// import skips sessions it already has — so the marking must happen outside the create branch,
     /// or re-running the range would fix nothing.
     /// </summary>
@@ -540,7 +540,7 @@ public class SessionIngestionServiceTests
         Assert.Equal(vec.Id, dbContext.Sessions.Single().VecId);
     }
 
-    /// <summary>A VEC whose code is null still matches on its name — the pre-ExamToolsCode behaviour.</summary>
+    /// <summary>A VEC whose code is null still matches on its name — the pre-ExamToolsCode behavior.</summary>
     [Fact]
     public async Task NewSession_VecWithNoExamToolsCode_StillMatchesOnName()
     {
@@ -1352,7 +1352,7 @@ public class SessionIngestionServiceTests
     // ---- RefreshSessionCandidatesAsync (session-scoped Detail-page refresh, 2026-08-03) ----
 
     /// <summary>
-    /// The key behavioural guarantee versus RunAsync: a session-scoped refresh must never run
+    /// The key behavioral guarantee versus RunAsync: a session-scoped refresh must never run
     /// cancellation detection or create sessions. Another local Active session that happens to be
     /// absent from the feed at that moment would be flipped to Cancelled by RunAsync's diff — a
     /// scoped refresh must leave it (and its candidates) completely alone.

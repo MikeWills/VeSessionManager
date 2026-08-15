@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Entities;
 using VeSessionManager.Core.Sessions;
@@ -62,10 +62,10 @@ public class SessionStatsService(AppDbContext dbContext)
                     && c.ApplicationStatus != CandidateApplicationStatus.NotTested),
                 Failed = s.Candidates.Count(c => c.ApplicationStatus == CandidateApplicationStatus.Failed),
 
-                // A licence class is only set once a candidate passed something this sitting, so
-                // these two together are "people who walked out with a licence". Walking in with
-                // None (or nothing recorded) makes it a first licence; anything else is an upgrade.
-                NewLicences = s.Candidates.Count(c => c.NewLicenseClass != null
+                // A license class is only set once a candidate passed something this sitting, so
+                // these two together are "people who walked out with a license". Walking in with
+                // None (or nothing recorded) makes it a first license; anything else is an upgrade.
+                NewLicenses = s.Candidates.Count(c => c.NewLicenseClass != null
                     && (c.InitialLicenseClass == null || c.InitialLicenseClass == LicenseClass.None)),
                 Upgrades = s.Candidates.Count(c => c.NewLicenseClass != null
                     && c.InitialLicenseClass != null && c.InitialLicenseClass != LicenseClass.None)
@@ -88,7 +88,7 @@ public class SessionStatsService(AppDbContext dbContext)
                 g.Sum(r => r.Tested),
                 g.Sum(r => r.Passed),
                 g.Sum(r => r.Failed),
-                g.Sum(r => r.NewLicences),
+                g.Sum(r => r.NewLicenses),
                 g.Sum(r => r.Upgrades)))
             .OrderBy(p => p.MonthUtc)
             .ToList();
@@ -101,7 +101,7 @@ public class SessionStatsService(AppDbContext dbContext)
             rows.Sum(r => r.Tested),
             rows.Sum(r => r.Passed),
             rows.Sum(r => r.Failed),
-            rows.Sum(r => r.NewLicences),
+            rows.Sum(r => r.NewLicenses),
             rows.Sum(r => r.Upgrades),
             veActivity);
     }
@@ -148,7 +148,7 @@ public class SessionStatsService(AppDbContext dbContext)
 
 /// <param name="MonthUtc">First of the month, as an Eastern calendar month — see the grouping remarks.</param>
 public record StatsPeriod(
-    DateTime MonthUtc, int Sessions, int CandidatesTested, int Passed, int Failed, int NewLicences, int Upgrades);
+    DateTime MonthUtc, int Sessions, int CandidatesTested, int Passed, int Failed, int NewLicenses, int Upgrades);
 
 public record VeActivityRow(int VolunteerExaminerId, string Name, string? CallSign, int SessionsWorked);
 
@@ -159,7 +159,7 @@ public record SessionStatsReport(
     int TotalCandidatesTested,
     int TotalPassed,
     int TotalFailed,
-    int TotalNewLicences,
+    int TotalNewLicenses,
     int TotalUpgrades,
     IReadOnlyList<VeActivityRow> VolunteerExaminers)
 {

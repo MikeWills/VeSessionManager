@@ -132,6 +132,58 @@ public class SquarePaymentMatchingService(
         return SquareManualMatchResult.Success;
     }
 
+    /// <summary>
+    /// Resolve an unmatched payment without matching it to anything (#99) — the outcome for money
+    /// that legitimately has no candidate behind it: a test charge, a donation, a duplicate of a
+    /// payment already recorded, or a refund the team handled in Square directly.
+    ///
+    /// <para><b>This does nothing in Square.</b> It only stops the row nagging on this screen and in
+    /// the nav badge; the money is untouched and un-refunded. The confirmation wording on the page
+    /// says so explicitly, because "dismiss" is the one word here a user could reasonably read as
+    /// "send it back".</para>
+    ///
+    /// <para>Deliberately reuses <see cref="SquareManualMatchResult"/> rather than growing a parallel
+    /// enum: the three outcomes reachable here — resolved, gone, already resolved — are the same
+    /// three, and the caller's switch already handles them. The candidate-shaped members simply
+    /// never occur, which is why the page's mapping needs no new arm.</para>
+    ///
+    /// <para>Leaves <see cref="UnmatchedSquarePayment.MatchedPaymentId"/> null, which is what makes a
+    /// dismissal distinguishable from a match after the fact.</para>
+    /// </summary>
+    /// <param name="reason">Optional free text. Not a gate — a dismissal with no reason is a valid dismissal.</param>
+    public async Task<SquareManualMatchResult> DismissAsync(
+        int unmatchedSquarePaymentId, string? reason, int userId, CancellationToken cancellationToken)
+    {
+        var unmatched = await dbContext.UnmatchedSquarePayments.FirstOrDefaultAsync(u => u.Id == unmatchedSquarePaymentId, cancellationToken);
+        if (unmatched is null)
+        {
+            return SquareManualMatchResult.NotFound;
+        }
+
+        if (unmatched.ResolvedUtc is not null)
+        {
+            return SquareManualMatchResult.AlreadyResolved;
+        }
+
+        var trimmedReason = string.IsNullOrWhiteSpace(reason) ? null : reason.Trim();
+
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+        unmatched.ResolvedUtc = now;
+        unmatched.ResolvedByUserId = userId;
+        unmatched.ResolutionNote = trimmedReason;
+
+        // The order id and amount are in the audit detail on purpose: this entry is the only record
+        // that survives if the row itself is ever purged, and both are what someone reconciling
+        // against a Square statement months later would search for.
+        dbContext.AddAuditLog(userId, "SquarePaymentDismissed", nameof(UnmatchedSquarePayment), unmatched.Id,
+            $"Square order {unmatched.SquareOrderId} ({Usd.Format(unmatched.AmountUsd)}) dismissed without matching. " +
+            (trimmedReason is null ? "No reason given." : $"Reason: {trimmedReason}"), now);
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        logger.LogInformation("Square order {SquareOrderId} dismissed without matching by user {UserId}", unmatched.SquareOrderId, userId);
+        return SquareManualMatchResult.Success;
+    }
+
     /// <summary>Called by SquareWebhookHandler right after its own normal order_id match marks a Payment Paid — the other "either side can happen second" direction (the session was already marked completed before this payment's webhook arrived). Requires payment.Candidate.Session.Team already loaded by the caller.</summary>
     public Task TryCompleteOrderAsync(Payment payment, CancellationToken cancellationToken) =>
         CompleteOrderIfEligibleAsync(payment, cancellationToken);

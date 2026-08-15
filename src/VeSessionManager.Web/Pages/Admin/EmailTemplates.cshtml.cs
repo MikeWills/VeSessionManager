@@ -101,7 +101,7 @@ public class EmailTemplatesModel(AppDbContext dbContext, UserManager<User> userM
     /// <summary>
     /// Templates grouped by where they fall in a session's life, in the order those things happen.
     /// A Key with no trigger registry entry falls into a trailing "Other" group rather than being
-    /// dropped — an unrecognised template must still be editable.
+    /// dropped — an unrecognized template must still be editable.
     /// </summary>
     public IReadOnlyList<TemplateGroup> GroupedTemplates => [.. Templates
         .GroupBy(t => EmailTemplateTriggers.For(t.Key)?.Phase)

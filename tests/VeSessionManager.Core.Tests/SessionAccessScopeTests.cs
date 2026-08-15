@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using VeSessionManager.Core.Authorization;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Entities;
@@ -232,7 +232,7 @@ public class SessionAccessScopeTests
     /// <b>The leak this replaced.</b> A manager may work across several teams; a lead belongs to one.
     /// Inheriting the manager's set gave the lead sight of every other team that manager covered —
     /// reported 2026-08-07 ("I could have a session for two different teams, but the team lead is
-    /// only on one of the teams"). The previous test asserted that inheritance as correct behaviour.
+    /// only on one of the teams"). The previous test asserted that inheritance as correct behavior.
     /// </summary>
     [Fact]
     public async Task TeamLead_DoesNotInheritTheirManagersOtherTeams()

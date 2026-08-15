@@ -41,7 +41,7 @@ public class AdminAccessScope(SessionAccessScope sessionAccessScope)
     /// got that for free via the effectiveTeamIds[0] fallback below, so this closes an asymmetry
     /// that punished the higher-privileged role. Deliberately only auto-selects at a count of one:
     /// with two or more, making the choice explicit is what stops an admin editing the wrong team's
-    /// credentials by inheriting a stale selection. Omit it to keep the previous behaviour exactly.
+    /// credentials by inheriting a stale selection. Omit it to keep the previous behavior exactly.
     /// </param>
     public int? TryResolveManageableTeamId(User actingUser, int? requestedTeamId, IReadOnlyList<int>? availableTeamIds = null)
     {
@@ -76,7 +76,7 @@ public class AdminAccessScope(SessionAccessScope sessionAccessScope)
     /// TeamAdmin following a wrong link can overwrite Team X's Square access token believing they are
     /// editing Team Y.</para>
     ///
-    /// <para>So this one refuses rather than substitutes. Both exist because both behaviours are
+    /// <para>So this one refuses rather than substitutes. Both exist because both behaviors are
     /// wanted; the bug was having only the forgiving one.</para>
     ///
     /// <para>Ambiguity is refused too: no requested id and more than one candidate returns null,
@@ -158,7 +158,7 @@ public class AdminAccessScope(SessionAccessScope sessionAccessScope)
     /// class — a page using the wrong one now gets a compile error rather than a subtly different
     /// team list.</para>
     ///
-    /// <para><b>Projects in SQL, deliberately.</b> Materialising whole Team entities here would run
+    /// <para><b>Projects in SQL, deliberately.</b> Materializing whole Team entities here would run
     /// every row through <c>EncryptedStringConverter</c>, decrypting each team's ExamTools/Zoom/
     /// Square/SMTP secrets on every render that shows a picker, to read two columns. That was a real
     /// fix on the sibling method; keeping the shape identical is the point of sharing.</para>

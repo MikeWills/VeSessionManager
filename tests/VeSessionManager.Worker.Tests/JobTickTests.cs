@@ -1,10 +1,10 @@
-using Microsoft.Extensions.Logging;
+﻿using Microsoft.Extensions.Logging;
 using VeSessionManager.Worker;
 
 namespace VeSessionManager.Worker.Tests;
 
 /// <summary>
-/// <c>JobTick.GuardedAsync</c> — the most load-bearing behaviour in the Worker, and until now
+/// <c>JobTick.GuardedAsync</c> — the most load-bearing behavior in the Worker, and until now
 /// asserted nowhere (issue #325).
 ///
 /// <para>.NET's default <c>BackgroundServiceExceptionBehavior</c> is <c>StopHost</c>, so anything
@@ -60,7 +60,7 @@ public class JobTickTests
         var logger = new RecordingLogger();
         var boom = new InvalidOperationException("database is locked");
 
-        // The assertion is the absence of a throw: this line completing IS the behaviour.
+        // The assertion is the absence of a throw: this line completing IS the behavior.
         await JobTick.GuardedAsync(logger, "TestJob", () => throw boom);
 
         var entry = Assert.Single(logger.Entries);

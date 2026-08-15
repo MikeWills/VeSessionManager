@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Authorization;
+﻿using Microsoft.AspNetCore.Authorization;
 using System.ComponentModel.DataAnnotations;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Identity;
@@ -144,7 +144,7 @@ public class LoginModel(
         }
 
         // Ticked: an explicit 30-day window. Unticked: a session cookie, byte for byte what this
-        // page produced before #340 — the shared-computer behaviour was deliberate and is preserved.
+        // page produced before #340 — the shared-computer behavior was deliberate and is preserved.
         await signInManager.SignInAsync(
             user!,
             Input.RememberMe

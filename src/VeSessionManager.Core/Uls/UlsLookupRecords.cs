@@ -1,4 +1,4 @@
-using System.Text.Json.Serialization;
+﻿using System.Text.Json.Serialization;
 using VeSessionManager.Core.Entities;
 
 namespace VeSessionManager.Core.Uls;
@@ -21,7 +21,7 @@ public sealed record UlsLookupResult
     /// <summary>"Active", "Pending", … — only "Active" is treated as a grant, matching the old HD License Status "A" rule.</summary>
     public string? LicenseStatus { get; init; }
 
-    /// <summary>Current operator class. Unrecognised/legacy values (Novice, Advanced) map to None, which conservatively means "won't confirm an upgrade" rather than guessing.</summary>
+    /// <summary>Current operator class. Unrecognized/legacy values (Novice, Advanced) map to None, which conservatively means "won't confirm an upgrade" rather than guessing.</summary>
     public LicenseClass OperatorClass { get; init; }
 
     /// <summary>Original license grant. Does NOT advance on a class upgrade — FCC pins it to the first issuance (a 2026 upgrade can still report a 2021 grant date).</summary>

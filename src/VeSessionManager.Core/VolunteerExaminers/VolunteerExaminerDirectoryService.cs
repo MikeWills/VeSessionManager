@@ -72,7 +72,7 @@ public class VolunteerExaminerDirectoryService(AppDbContext dbContext)
     /// One page of the directory, plus how many people match in total (#298).
     ///
     /// <para><b>Every filter is applied in SQL before the page is taken</b>, which is the whole point
-    /// — and is why the licence-status, guest and last-worked filters all had to become translatable
+    /// — and is why the license-status, guest and last-worked filters all had to become translatable
     /// first. Paging on some filters and applying the rest to the page afterwards would produce pages
     /// that render empty while the pager cheerfully claims "showing 1–25 of 176", which is worse than
     /// the unpaged list it replaced.</para>
@@ -115,7 +115,7 @@ public class VolunteerExaminerDirectoryService(AppDbContext dbContext)
     /// Every filter the directory offers, as one translatable query over <b>people</b> rather than
     /// memberships (#298).
     ///
-    /// <para>This used to be a per-membership query that materialised the whole roster and then
+    /// <para>This used to be a per-membership query that materialized the whole roster and then
     /// applied three of the filters in C# after grouping. Two of those genuinely are properties of the
     /// grouped row rather than of a membership — "guest" means no tag on <i>any</i> team in scope, and
     /// last-worked is a maximum across the teams in scope — which is why they were there. Both are

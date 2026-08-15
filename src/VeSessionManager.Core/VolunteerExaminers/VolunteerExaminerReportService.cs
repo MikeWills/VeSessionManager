@@ -82,7 +82,7 @@ public class VolunteerExaminerReportService(AppDbContext dbContext)
 
         var yearStartUtc = EasternYearStartUtc(nowUtc);
 
-        // Grouped counts are materialised BEFORE ordering. EF InMemory cannot translate an OrderBy
+        // Grouped counts are materialized BEFORE ordering. EF InMemory cannot translate an OrderBy
         // chained straight onto a GroupBy(...).Select(...) projection — the trap CLAUDE.md records
         // from this very service's GetSessionCountsAsync.
         var byTeam = await worked

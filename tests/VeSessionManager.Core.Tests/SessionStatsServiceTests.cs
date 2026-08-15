@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Entities;
 using VeSessionManager.Core.Reporting;
@@ -141,11 +141,11 @@ public class SessionStatsServiceTests
     }
 
     /// <summary>
-    /// Walking in with nothing is a first licence; walking in with a class is an upgrade. Both need a
+    /// Walking in with nothing is a first license; walking in with a class is an upgrade. Both need a
     /// class earned this sitting, since that is what "walked out with something" means.
     /// </summary>
     [Fact]
-    public async Task NewLicencesAndUpgradesAreSplitByWhatTheyWalkedInWith()
+    public async Task NewLicensesAndUpgradesAreSplitByWhatTheyWalkedInWith()
     {
         await using var dbContext = CreateContext();
         var f = await SeedRefsAsync(dbContext);
@@ -160,7 +160,7 @@ public class SessionStatsServiceTests
 
         var report = await Service(dbContext).GetAsync(null, null, null, CancellationToken.None);
 
-        Assert.Equal(2, report.TotalNewLicences);
+        Assert.Equal(2, report.TotalNewLicenses);
         Assert.Equal(1, report.TotalUpgrades);
     }
 

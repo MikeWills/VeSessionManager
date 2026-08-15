@@ -20,7 +20,7 @@
 /// crosses DST twice a year and had <b>no tests at all</b> while it sat as an internal helper inside
 /// UlsWatcherJob, purely because the tests could not see it.</para>
 ///
-/// <para>Extracted from UlsWatcherJob (2026-08-06) when LicenseWatchJob needed the same behaviour —
+/// <para>Extracted from UlsWatcherJob (2026-08-06) when LicenseWatchJob needed the same behavior —
 /// the alternative was a second copy of DST-sensitive date arithmetic that had no tests at all.</para>
 /// </summary>
 public static class DailySlotSchedule

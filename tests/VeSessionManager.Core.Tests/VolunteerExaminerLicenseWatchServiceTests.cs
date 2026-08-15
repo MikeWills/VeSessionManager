@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Entities;
@@ -152,7 +152,7 @@ public class VolunteerExaminerLicenseWatchServiceTests
         Assert.Equal(Now, person.LicenseLastCheckedUtc);
 
         // And the derived status is unaffected: stamping records that we looked at the row, not that
-        // we learned anything about the licence.
+        // we learned anything about the license.
         Assert.Equal(WatchedLicenseStatus.NoCallSign, person.DeriveSnapshotStatus(Now));
     }
 

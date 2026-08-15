@@ -31,6 +31,10 @@ public enum YouthConfirmationOutcome
 
 public record YouthConfirmationResult(YouthConfirmationOutcome Outcome, string? RedirectUrl = null);
 
+/// <summary>What the public youth page needs to render before the candidate confirms anything (#192).</summary>
+/// <param name="TeamContactEmail">The team's reply-to address, or null when it has no EmailSettings row.</param>
+public record YouthEligibility(YouthConfirmationOutcome Outcome, string? TeamContactEmail);
+
 /// <summary>
 /// Backs the public, unauthenticated youth-rate confirmation page (Pages/Public/YouthConfirm in
 /// the Web project). A candidate who self-identifies as a youth is switched from the session's
@@ -48,27 +52,44 @@ public class YouthPaymentConfirmationService(
     /// <summary>Read-only eligibility check for the page's GET (decide whether to render the form or
     /// an explanatory message) — same checks as ConfirmAsync's early guards, no mutation, no Square
     /// calls.</summary>
-    public async Task<YouthConfirmationOutcome> CheckEligibilityAsync(Guid token, CancellationToken cancellationToken)
+    /// <param name="cancellationToken"></param>
+    /// <returns>
+    /// The outcome, plus the team's own reply-to address when there is one (#192).
+    ///
+    /// <para>The page needs it to tell a candidate under 13 where to send their COPPA consent form.
+    /// Read from the team's <c>EmailSettings</c> rather than written into the markup, because the
+    /// page is shared by every team on the deployment and a hardcoded address would send one team's
+    /// paperwork to another. Null when the team has no settings row yet, and the copy degrades to
+    /// naming no address rather than naming a wrong one.</para>
+    /// </returns>
+    public async Task<YouthEligibility> CheckEligibilityAsync(Guid token, CancellationToken cancellationToken)
     {
         var payment = await dbContext.Payments
             .Include(p => p.Candidate).ThenInclude(c => c.Session).ThenInclude(s => s.FeeConfiguration)
             .FirstOrDefaultAsync(p => p.YouthConfirmationToken == token, cancellationToken);
         if (payment is null)
         {
-            return YouthConfirmationOutcome.NotFound;
+            return new YouthEligibility(YouthConfirmationOutcome.NotFound, null);
         }
 
         if (payment.Status != PaymentStatus.Unpaid)
         {
-            return YouthConfirmationOutcome.AlreadyResolved;
+            return new YouthEligibility(YouthConfirmationOutcome.AlreadyResolved, null);
         }
 
         if (payment.Candidate.Session.FeeConfiguration.YouthExamFeeAmount is null)
         {
-            return YouthConfirmationOutcome.FeeNotConfigured;
+            return new YouthEligibility(YouthConfirmationOutcome.FeeNotConfigured, null);
         }
 
-        return YouthConfirmationOutcome.Success;
+        // Projected, not the whole row: this is an anonymous page and EmailSettings carries more
+        // than it needs to know.
+        var contact = await dbContext.EmailSettings
+            .Where(e => e.TeamId == payment.Candidate.Session.TeamId)
+            .Select(e => e.ReplyToAddress)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        return new YouthEligibility(YouthConfirmationOutcome.Success, contact);
     }
 
     public async Task<YouthConfirmationResult> ConfirmAsync(Guid token, CancellationToken cancellationToken)

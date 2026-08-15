@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using VeSessionManager.Core.Admin;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Jobs;
@@ -127,7 +127,7 @@ public class LicenseWatchJob(
         // say which half broke.
         //
         // This comment used to add that separate rows were what stopped one failing sweep
-        // suppressing the other for the rest of the day. That was the intent and not the behaviour:
+        // suppressing the other for the rest of the day. That was the intent and not the behavior:
         // the guard asked only about "LicenseWatch", so a red VeLicenseWatch beside a green
         // LicenseWatch was skipped until tomorrow (#288). The guard above now requires a success for
         // each name, which is what makes the claim true — and LicenseWatchSlotGuardTests holds it

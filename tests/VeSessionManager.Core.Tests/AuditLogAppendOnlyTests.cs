@@ -61,7 +61,7 @@ public class AuditLogAppendOnlyTests
     /// explicit decision rather than of code appearing.
     ///
     /// <para>docs/audit-log.md called the first one before it was built: retention "becomes the first
-    /// legitimate delete path, and AuditLogAppendOnlyTests will fail. That is the intended behaviour.
+    /// legitimate delete path, and AuditLogAppendOnlyTests will fail. That is the intended behavior.
     /// The fix at that point is to make the deletion explicit and narrow, and to update this document
     /// — <b>not to widen the test until it passes</b>." Both entries below followed that: named
     /// files, not a relaxed pattern, so a <i>third</i> delete path anywhere still fails.</para>

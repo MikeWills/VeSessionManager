@@ -1,11 +1,11 @@
-using System.Globalization;
+﻿using System.Globalization;
 using VeSessionManager.Core;
 using Xunit;
 
 namespace VeSessionManager.Core.Tests;
 
 /// <summary>
-/// Pins the behaviour <see cref="Usd"/> exists for: money formats and parses in the invariant
+/// Pins the behavior <see cref="Usd"/> exists for: money formats and parses in the invariant
 /// culture, never the ambient one.
 ///
 /// <para>Every assertion here runs under <c>de-DE</c>, which uses <c>,</c> as its decimal separator.

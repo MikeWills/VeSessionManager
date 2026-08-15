@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -10,7 +10,7 @@ using Xunit;
 namespace VeSessionManager.Web.Tests;
 
 /// <summary>
-/// The behavioural half of the low-severity hygiene sweep (#312). Items that were documentation
+/// The behavioral half of the low-severity hygiene sweep (#312). Items that were documentation
 /// decisions (L-03, L-08) or pure annotations are not represented here; these are the ones where
 /// something an HTTP caller can observe changed.
 /// </summary>

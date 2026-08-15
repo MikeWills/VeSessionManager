@@ -1,4 +1,4 @@
-using Microsoft.Data.Sqlite;
+﻿using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using VeSessionManager.Core.Data;
@@ -11,7 +11,7 @@ namespace VeSessionManager.Core.Tests;
 /// <summary>
 /// Merging two VE records that turned out to be one person.
 ///
-/// <para><b>Real SQLite, not InMemory.</b> Everything this service relies on is provider behaviour
+/// <para><b>Real SQLite, not InMemory.</b> Everything this service relies on is provider behavior
 /// InMemory does not have: it silently ignores transactions, and enforces neither the
 /// <c>(SessionId, VolunteerExaminerId)</c> primary key collision nor the unique indexes on team
 /// membership and accreditation. A passing InMemory test here would prove nothing.</para>

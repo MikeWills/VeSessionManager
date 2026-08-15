@@ -1,4 +1,4 @@
-using System.Text.RegularExpressions;
+﻿using System.Text.RegularExpressions;
 using Xunit;
 
 namespace VeSessionManager.Web.Tests;
@@ -7,7 +7,7 @@ namespace VeSessionManager.Web.Tests;
 /// A user-facing message for a session or candidate action must be written in exactly one place
 /// (issue #304).
 ///
-/// <para><b>Why a source scan rather than a behavioural test.</b> Two page models producing the same
+/// <para><b>Why a source scan rather than a behavioral test.</b> Two page models producing the same
 /// message is not a defect — it is the <i>normal</i> state right up until someone fixes one of them.
 /// The defect only exists in the gap between the two edits, and no test of either copy in isolation
 /// can see it. What can be checked is the property that makes the gap impossible: one string, one
@@ -87,7 +87,7 @@ public class ActionMessageSingleSourceTests
         }
 
         Assert.True(offenders.Count == 0,
-            "A message with two homes is one edit away from two behaviours — #244 and #274 both " +
+            "A message with two homes is one edit away from two behaviors — #244 and #274 both " +
             "started here. Move it to the shared outcome table:\n  " + string.Join("\n  ", offenders));
     }
 
