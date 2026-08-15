@@ -32,15 +32,16 @@ else
         }
 
         <div class="filter-dropdown">
-            <button type="button" class="kebab @(Model.DateRangeSummaryLabel != "Any time" ? "active" : "")">Date range: @Model.DateRangeSummaryLabel <i class="bi bi-caret-down-fill" aria-hidden="true"></i></button>
+            <button type="button" class="kebab @(Model.HasDateFilter ? "active" : "")">Date range: @Model.DateRangeSummaryLabel <i class="bi bi-caret-down-fill" aria-hidden="true"></i></button>
             <div class="menu" style="width:240px;">
                 <label class="item" style="display:block;">
                     <span style="display:block; margin-bottom:4px;">Preset</span>
+                    @* Calendar ranges ("this year") alongside rolling ones ("last 30 days") — see
+                       StatsDateRanges, which also explains why their boundaries are Eastern. *@
                     <select name="dateRange" class="menu-input">
-                        <option value="">Any time</option>
-                        @foreach (var preset in VeSessionManager.Web.Pages.SessionManager.IndexModel.DateRangePresets)
+                        @foreach (var option in VeSessionManager.Web.StatsDateRanges.Options)
                         {
-                            <option value="@preset.Key" selected="@(preset.Key == Model.DateRange)">@preset.Value.Label</option>
+                            <option value="@option.Key" selected="@(option.Key == Model.DateRange)">@option.Label</option>
                         }
                     </select>
                 </label>
@@ -141,26 +142,41 @@ else
             <div style="position:relative; height:280px;"><canvas id="classChart"></canvas></div>
         </div>
 
+        @* The one panel on this page that does NOT follow the filters above it — a fixed recent
+           window, deliberately (settled 2026-08-15). The heading has to say so out loud or it reads
+           as a bug when the page is filtered to some other year. *@
         <div class="session-panel" style="display:block;">
-            <div class="section-head"><h2>VE testing activity</h2></div>
-            <p class="session-sub">Sessions worked in this range, counted from the rosters of sessions that actually finished.</p>
-            <div class="table-scroll">
-                <table class="cards">
-                    <thead>
-                        <tr><th>VE</th><th>Call sign</th><th>Sessions worked</th></tr>
-                    </thead>
-                    <tbody>
-                        @foreach (var ve in Model.Report.VolunteerExaminers)
-                        {
-                            <tr>
-                                <td class="session-title">@ve.Name</td>
-                                <td class="mono">@(ve.CallSign ?? "—")</td>
-                                <td class="count">@ve.SessionsWorked</td>
-                            </tr>
-                        }
-                    </tbody>
-                </table>
-            </div>
+            <div class="section-head"><h2>Most active VEs — last @VeSessionManager.Core.Reporting.SessionStatsService.VeActivityWindow.Days days</h2></div>
+            <p class="session-sub">
+                Who has been turning up recently: the top @VeSessionManager.Core.Reporting.SessionStatsService.VeActivityTopCount by sessions worked, counted from the rosters of
+                sessions that actually finished. <strong>This panel always covers the last
+                @VeSessionManager.Core.Reporting.SessionStatsService.VeActivityWindow.Days days and ignores the date range above.</strong>
+                For every VE and every session they have ever worked, see <a asp-page="/SessionManager/VeRoster" asp-route-teamId="@Model.TeamId">VE Roster</a>.
+            </p>
+            @if (Model.Report.VolunteerExaminers.Count == 0)
+            {
+                <p class="session-sub">No sessions have finished in the last @VeSessionManager.Core.Reporting.SessionStatsService.VeActivityWindow.Days days.</p>
+            }
+            else
+            {
+                <div class="table-scroll">
+                    <table class="cards">
+                        <thead>
+                            <tr><th>VE</th><th>Call sign</th><th>Sessions worked</th></tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var ve in Model.Report.VolunteerExaminers)
+                            {
+                                <tr>
+                                    <td class="session-title">@ve.Name</td>
+                                    <td class="mono">@(ve.CallSign ?? "—")</td>
+                                    <td class="count">@ve.SessionsWorked</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
         </div>
     }
 }

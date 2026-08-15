@@ -22,10 +22,16 @@ namespace VeSessionManager.Web.Pages.SessionManager;
 /// nobody asked for. Keep the nav gate in _AppLayout.cshtml in step with this attribute — a role that
 /// cannot load the page must not be shown a link that 403s.</para>
 ///
-/// <para>Filters deliberately mirror <c>VeRoster</c> exactly (team picker plus IndexModel's shared
-/// <c>DateRangePresets</c>), because VeRoster's own remarks say it "is expected to move into or merge
-/// with a stats screen" — matching its controls now is what would make that merge a deletion rather
-/// than a reconciliation.</para>
+/// <para>Filters mirror <c>VeRoster</c>'s — team picker and custom from/to — because VeRoster's own
+/// remarks say it "is expected to move into or merge with a stats screen", and matching its controls
+/// is what would make that merge a deletion rather than a reconciliation.</para>
+///
+/// <para><b>One deliberate divergence: the date presets.</b> This page uses
+/// <see cref="StatsDateRanges"/> rather than <c>IndexModel.DateRangePresets</c>, which VeRoster and
+/// the session list share. Those are all rolling windows expressed as a day count, and that shape
+/// cannot express a calendar range — "this year" needs both ends and a fixed start. A stats question
+/// is naturally calendar-shaped ("how did last year go?") where a worklist's is naturally rolling.
+/// Requested 2026-08-15.</para>
 /// </summary>
 [Authorize(Roles = RoleGroups.Admins)]
 public class StatsModel(
@@ -38,9 +44,9 @@ public class StatsModel(
     [BindProperty(SupportsGet = true)]
     public int? TeamId { get; set; }
 
-    /// <summary>One of IndexModel.DateRangePresets' keys, or "" for no date filter.</summary>
+    /// <summary>One of <see cref="StatsDateRanges.Options"/>' keys, or "" for all time.</summary>
     [BindProperty(SupportsGet = true)]
-    public string DateRange { get; set; } = "";
+    public string DateRange { get; set; } = StatsDateRanges.DefaultKey;
 
     [BindProperty(SupportsGet = true)]
     public DateOnly? DateFrom { get; set; }
@@ -50,11 +56,15 @@ public class StatsModel(
 
     public bool HasTeamContext { get; private set; }
     public string TeamSummaryLabel { get; private set; } = "All teams";
-    public string DateRangeSummaryLabel { get; private set; } = "Any time";
+    public string DateRangeSummaryLabel { get; private set; } = StatsDateRanges.LabelFor(StatsDateRanges.DefaultKey);
+
+    /// <summary>Whether any date narrowing is in effect, for the filter button's "active" styling. Compares keys, not the rendered label — the label is display text and comparing against it is how a renamed preset silently stops highlighting.</summary>
+    public bool HasDateFilter => DateFrom is not null || DateTo is not null
+        || !string.IsNullOrEmpty(DateRange);
     public IReadOnlyList<(int Id, string Name)> AvailableTeams { get; private set; } = [];
 
     public SessionStatsReport Report { get; private set; } =
-        new([], 0, 0, 0, 0, 0, 0, 0, 0, 0, null, []);
+        new([], 0, 0, 0, 0, 0, 0, 0, 0, 0, null, 0, []);
 
     /// <summary>
     /// "as of <em>date</em>" for the page head — the earliest session the figures actually include,
@@ -78,8 +88,9 @@ public class StatsModel(
     public async Task OnGetAsync()
     {
         // See IndexModel.OnGetAsync's identical guard — [BindProperty(SupportsGet = true)] can leave
-        // this null rather than its C# default, and DateRangePresets.TryGetValue throws on a null key.
-        DateRange ??= "";
+        // this null rather than its C# default. StatsDateRanges tolerates null, but HasDateFilter and
+        // FilterRoute both read it directly, so normalize once here rather than at each reader.
+        DateRange ??= StatsDateRanges.AllTimeKey;
 
         var user = await userManager.GetRequiredUserAsync(dbContext, User);
 
@@ -101,7 +112,7 @@ public class StatsModel(
             (not null, not null) => $"{DateFrom:MMM d} – {DateTo:MMM d}",
             (not null, null) => $"From {DateFrom:MMM d}",
             (null, not null) => $"Through {DateTo:MMM d}",
-            _ => IndexModel.DateRangePresets.TryGetValue(DateRange, out var preset) ? preset.Label : "Any time"
+            _ => StatsDateRanges.LabelFor(DateRange)
         };
 
         if (!HasTeamContext)
@@ -136,9 +147,7 @@ public class StatsModel(
             return (DateFrom?.ToDateTime(TimeOnly.MinValue), DateTo?.ToDateTime(TimeOnly.MaxValue));
         }
 
-        return IndexModel.DateRangePresets.TryGetValue(DateRange, out var preset)
-            ? (now.AddDays(-preset.Days), null)
-            : (null, null);
+        return StatsDateRanges.Resolve(DateRange, now);
     }
 
     /// <summary>Every filter as route values, so the team picker and range controls round-trip.</summary>
