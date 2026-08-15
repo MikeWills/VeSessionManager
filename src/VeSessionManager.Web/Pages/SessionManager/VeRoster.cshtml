@@ -1,4 +1,4 @@
-@page
+﻿@page
 @model VeSessionManager.Web.Pages.SessionManager.VeRosterModel
 @{
     ViewData["Title"] = "VE Session Counts";
@@ -19,18 +19,7 @@
        context, show nothing" — it now means "all teams merged", so the placeholder is gone. *@
     @if (Model.AvailableTeams.Count > 1)
     {
-        <div class="filter-dropdown">
-            <button type="button" class="kebab @(Model.TeamId is not null ? "active" : "")">Team: @Model.TeamSummaryLabel <i class="bi bi-caret-down-fill" aria-hidden="true"></i></button>
-            <div class="menu">
-                <label class="item"><input type="radio" name="teamId" value="" @(Model.TeamId is null ? "checked" : "") /> All teams</label>
-                @foreach (var team in Model.AvailableTeams)
-                {
-                    <label class="item"><input type="radio" name="teamId" value="@team.Id" @(team.Id == Model.TeamId ? "checked" : "") /> @team.Name</label>
-                }
-                <hr />
-                <button type="submit" class="item">Apply</button>
-            </div>
-        </div>
+        <partial name="_TeamPicker" model="new VeSessionManager.Web.TeamPicker(Model.TeamId, Model.AvailableTeams, Model.TeamSummaryLabel)" />
     }
 
     @* Plain input rather than a dropdown: a search box that needs two clicks to reach is a search

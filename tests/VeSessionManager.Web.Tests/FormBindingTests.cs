@@ -78,8 +78,21 @@ public class FormBindingTests
     private static readonly Regex HandlerFromUrlPage = new(
         @"Url\.Page\(\s*""[^""]*""\s*,\s*""(?<handler>[A-Za-z]+)""", RegexOptions.Compiled);
 
+    /// <summary>
+    /// A posted field's name.
+    ///
+    /// <para>Deliberately excludes <c>&lt;partial name="…"&gt;</c>: the partial tag helper's
+    /// <c>name</c> is the view to render, not a form field, so a shared component sitting inside a
+    /// form looked to this scan like a control binding to nothing. Hit the moment the team picker
+    /// became <c>_TeamPicker</c> (#306) — the scan was right that the markup had changed and wrong
+    /// about what it meant.</para>
+    ///
+    /// <para>Matched on the <i>element</i> rather than by listing partial names, so the next shared
+    /// component is covered without anyone remembering to add it. .NET allows variable-length
+    /// lookbehind, which most engines do not; the bound keeps it from scanning backwards forever.</para>
+    /// </summary>
     private static readonly Regex FieldName = new(
-        @"\bname=""(?<name>[^""@\s]+)""", RegexOptions.Compiled);
+        @"(?<!<partial\b[^>]{0,400})\bname=""(?<name>[^""@\s]+)""", RegexOptions.Compiled);
 
     /// <summary><c>asp-for="Input.Email"</c> renders <c>name="Input.Email"</c>; only the root matters for binding.</summary>
     private static readonly Regex AspFor = new(

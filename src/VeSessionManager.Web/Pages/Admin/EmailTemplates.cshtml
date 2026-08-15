@@ -1,4 +1,4 @@
-@page
+﻿@page
 @model VeSessionManager.Web.Pages.Admin.EmailTemplatesModel
 @{
     ViewData["Title"] = "Email Templates";
@@ -19,17 +19,7 @@
        this page edits one team's configuration, so a merged view has no meaning. The trigger reads
        "Select a team…" until one is chosen, matching the prompt below. *@
     <form method="get" id="teamFilter" class="filters" style="margin-bottom:16px; align-items:flex-start;">
-        <div class="filter-dropdown">
-            <button type="button" class="kebab @(Model.TeamId is not null ? "active" : "")">Team: @Model.TeamSummaryLabel <i class="bi bi-caret-down-fill" aria-hidden="true"></i></button>
-            <div class="menu">
-                @foreach (var team in Model.AvailableTeams)
-                {
-                    <label class="item"><input type="radio" name="teamId" value="@team.Id" @(team.Id == Model.TeamId ? "checked" : "") /> @team.Name</label>
-                }
-                <hr />
-                <button type="submit" class="item">Apply</button>
-            </div>
-        </div>
+        <partial name="_TeamPicker" model="new VeSessionManager.Web.TeamPicker(Model.TeamId, Model.AvailableTeams, Model.TeamSummaryLabel, IncludeAllTeams: false)" />
     </form>
 }
 

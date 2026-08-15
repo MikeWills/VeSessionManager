@@ -678,7 +678,7 @@ public class IndexModel(
         /// reason it is not <c>Status</c>: Status only ever leaves Active on cancellation.
         /// SessionCompletionRuleTests pins this against the entity and against the query filter.
         /// </summary>
-        public bool IsCompleted => TestingCompletedUtc is not null || ExamToolsClosedUtc is not null;
+        public bool IsCompleted => SessionCompletion.IsCompleted(TestingCompletedUtc, ExamToolsClosedUtc);
 
         /// <summary>Mirrors <see cref="Session.HasEnded"/> — see that member for why `now` is passed in.</summary>
         public bool HasEnded(DateTime now) => ScheduledStartUtc.AddMinutes(DurationMinutes) <= now;

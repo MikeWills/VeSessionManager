@@ -1,4 +1,4 @@
-@page
+﻿@page
 @using VeSessionManager.Core.VolunteerExaminers
 @model VeSessionManager.Web.Pages.SessionManager.VeImportModel
 @{
@@ -17,20 +17,7 @@
 @if (Model.AvailableTeams.Count > 1)
 {
     <form method="get" class="filters" style="margin-bottom:20px;">
-        <div class="filter-dropdown">
-            <button type="button" class="kebab @(Model.ResolvedTeamId is not null ? "active" : "")">
-                Team: @(Model.AvailableTeams.FirstOrDefault(t => t.Id == Model.ResolvedTeamId).Name ?? "Choose a team")
-                <i class="bi bi-caret-down-fill" aria-hidden="true"></i>
-            </button>
-            <div class="menu">
-                @foreach (var team in Model.AvailableTeams)
-                {
-                    <label class="item"><input type="radio" name="teamId" value="@team.Id" @(team.Id == Model.ResolvedTeamId ? "checked" : "") /> @team.Name</label>
-                }
-                <hr />
-                <button type="submit" class="item">Apply</button>
-            </div>
-        </div>
+        <partial name="_TeamPicker" model="@(new VeSessionManager.Web.TeamPicker(Model.ResolvedTeamId, Model.AvailableTeams, Model.AvailableTeams.FirstOrDefault(t => t.Id == Model.ResolvedTeamId).Name ?? "Choose a team", IncludeAllTeams: false))" />
     </form>
 }
 

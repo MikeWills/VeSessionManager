@@ -177,8 +177,7 @@ public class TeamMaintenanceModel(
     private async Task LoadTeamPickerAsync(User user, CancellationToken cancellationToken)
     {
         IsSystemAdmin = user.Role == UserRole.SystemAdmin;
-        AvailableTeams = await adminAccessScope.ScopeTeams(dbContext.Teams, user)
-            .OrderBy(t => t.Name).Select(t => new ValueTuple<int, string>(t.Id, t.Name)).ToListAsync(cancellationToken);
+        AvailableTeams = await adminAccessScope.GetAvailableTeamsAsync(dbContext, user, cancellationToken);
     }
 
     private async Task<(User User, Team Team)?> AuthorizeAsync()

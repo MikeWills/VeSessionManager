@@ -1,4 +1,4 @@
-using System.Security.Cryptography;
+﻿using System.Security.Cryptography;
 using System.Text;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -103,13 +103,13 @@ public class VeEmailChangeService(
             logger.LogInformation("Superseded {Count} pending email change(s) for VE {VolunteerExaminerId}", superseded.Count, person.Id);
         }
 
-        var rawToken = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant();
+        var rawToken = OneTimeToken.Mint();
         dbContext.VeEmailChangeRequests.Add(new VeEmailChangeRequest
         {
             VolunteerExaminerId = person.Id,
             NewEmail = newEmail,
             ConfirmationSentToEmail = person.Email!,
-            TokenHash = Hash(rawToken),
+            TokenHash = OneTimeToken.Hash(rawToken),
             CreatedUtc = now,
             ExpiresUtc = now + TokenLifetime
         });
@@ -169,7 +169,7 @@ public class VeEmailChangeService(
         var now = timeProvider.GetUtcNow().UtcDateTime;
         var request = await dbContext.VeEmailChangeRequests
             .AsNoTracking()
-            .FirstOrDefaultAsync(r => r.TokenHash == Hash(rawToken.Trim()), cancellationToken);
+            .FirstOrDefaultAsync(r => r.TokenHash == OneTimeToken.Hash(rawToken.Trim()), cancellationToken);
 
         if (request is null || request.ConfirmedUtc is not null || request.ExpiresUtc <= now)
         {
@@ -192,7 +192,7 @@ public class VeEmailChangeService(
         var now = timeProvider.GetUtcNow().UtcDateTime;
         var request = await dbContext.VeEmailChangeRequests
             .Include(r => r.VolunteerExaminer)
-            .FirstOrDefaultAsync(r => r.TokenHash == Hash(rawToken.Trim()), cancellationToken);
+            .FirstOrDefaultAsync(r => r.TokenHash == OneTimeToken.Hash(rawToken.Trim()), cancellationToken);
 
         if (request is null || request.ConfirmedUtc is not null || request.ExpiresUtc <= now)
         {
@@ -227,8 +227,6 @@ public class VeEmailChangeService(
         return (VeEmailChangeResult.Confirmed, request.NewEmail);
     }
 
-    private static string Hash(string rawToken) =>
-        Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(rawToken))).ToLowerInvariant();
 }
 
 public enum VeEmailChangeResult

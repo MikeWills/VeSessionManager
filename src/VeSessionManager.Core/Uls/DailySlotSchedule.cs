@@ -1,4 +1,4 @@
-namespace VeSessionManager.Core.Uls;
+﻿namespace VeSessionManager.Core.Uls;
 
 /// <summary>
 /// Wall-clock Eastern scheduling for jobs that must run at a stated time of day rather than "every
@@ -107,5 +107,5 @@ public static class DailySlotSchedule
 
     /// <summary>Current Eastern wall-clock time, for feeding <see cref="LatestDueSlotUtc"/>.</summary>
     public static DateTime NowEastern(TimeProvider timeProvider) =>
-        TimeZoneInfo.ConvertTimeFromUtc(timeProvider.GetUtcNow().UtcDateTime, UlsSchedule.EasternTimeZone);
+        UlsSchedule.ToEastern(timeProvider.GetUtcNow().UtcDateTime);
 }

@@ -1,4 +1,4 @@
-@page
+﻿@page
 @using VeSessionManager.Core.Entities
 @using VeSessionManager.Core.Ingestion
 @model VeSessionManager.Web.Pages.Admin.TeamMaintenanceModel
@@ -20,17 +20,7 @@
     @* Same team-picker as Team Settings, deliberately without "All teams": every action on this
        page targets exactly one team, so a merged view has nothing to act on. *@
     <form method="get" id="teamFilter" class="filters" style="margin-bottom:16px; align-items:flex-start;">
-        <div class="filter-dropdown">
-            <button type="button" class="kebab @(Model.TeamId is not null ? "active" : "")">Team: @Model.TeamSummaryLabel <i class="bi bi-caret-down-fill" aria-hidden="true"></i></button>
-            <div class="menu">
-                @foreach (var team in Model.AvailableTeams)
-                {
-                    <label class="item"><input type="radio" name="teamId" value="@team.Id" @(team.Id == Model.TeamId ? "checked" : "") /> @team.Name</label>
-                }
-                <hr />
-                <button type="submit" class="item">Apply</button>
-            </div>
-        </div>
+        <partial name="_TeamPicker" model="new VeSessionManager.Web.TeamPicker(Model.TeamId, Model.AvailableTeams, Model.TeamSummaryLabel, IncludeAllTeams: false)" />
     </form>
 }
 

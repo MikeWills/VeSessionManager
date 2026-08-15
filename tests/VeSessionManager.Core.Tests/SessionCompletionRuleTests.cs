@@ -1,6 +1,7 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Entities;
+using VeSessionManager.Core.Sessions;
 using Xunit;
 
 namespace VeSessionManager.Core.Tests;
@@ -91,6 +92,98 @@ public class SessionCompletionRuleTests
 
         Assert.Equal(fromQuery, fromProperty);
         Assert.Equal(["both", "cancelled-closed", "closed-only", "tested-only"], fromQuery);
+    }
+
+    /// <summary>
+    /// The shared query expression selects exactly what an inline spelling does (#305).
+    ///
+    /// <para>Some call sites cannot use <see cref="SessionCompletion.SessionIsCompleted"/> — a
+    /// predicate nested inside another lambda cannot take an expression object without a
+    /// predicate-rewriting dependency this project does not have — so those still spell the rule out.
+    /// This is what stops the two drifting apart.</para>
+    /// </summary>
+    [Fact]
+    public async Task SharedExpression_AndInlineSpelling_SelectTheSameSessions()
+    {
+        await using var dbContext = await SeedMatrixAsync();
+
+        var fromShared = await dbContext.Sessions
+            .Where(SessionCompletion.SessionIsCompleted)
+            .Select(s => s.ExamToolsSessionId)
+            .OrderBy(id => id)
+            .ToListAsync();
+
+        var fromInline = await dbContext.Sessions
+            .Where(s => s.TestingCompletedUtc != null || s.ExamToolsClosedUtc != null)
+            .Select(s => s.ExamToolsSessionId)
+            .OrderBy(id => id)
+            .ToListAsync();
+
+        Assert.Equal(fromInline, fromShared);
+        Assert.Equal(["both", "cancelled-closed", "closed-only", "tested-only"], fromShared);
+    }
+
+    /// <summary>
+    /// The roster-link spelling is a <i>second</i> expression — the same rule reached through
+    /// <c>sve.Session</c>, which is the shape every "sessions worked" figure counts from. It has to
+    /// agree with the one over Sessions, and nothing in the language makes that true.
+    /// </summary>
+    [Fact]
+    public async Task RosterLinkExpression_AgreesWithTheSessionExpression()
+    {
+        await using var dbContext = await SeedMatrixAsync();
+
+        var person = new VolunteerExaminer { Name = "VE", CallSign = "K0AAA" };
+        dbContext.VolunteerExaminers.Add(person);
+        await dbContext.SaveChangesAsync();
+
+        foreach (var session in await dbContext.Sessions.ToListAsync())
+        {
+            dbContext.SessionVolunteerExaminers.Add(
+                new SessionVolunteerExaminer { SessionId = session.Id, VolunteerExaminerId = person.Id });
+        }
+        await dbContext.SaveChangesAsync();
+
+        var viaRosterLink = await dbContext.SessionVolunteerExaminers
+            .Where(SessionCompletion.RosterLinkIsCompleted)
+            .Select(sve => sve.Session.ExamToolsSessionId)
+            .OrderBy(id => id)
+            .ToListAsync();
+
+        var viaSession = await dbContext.Sessions
+            .Where(SessionCompletion.SessionIsCompleted)
+            .Select(s => s.ExamToolsSessionId)
+            .OrderBy(id => id)
+            .ToListAsync();
+
+        Assert.Equal(viaSession, viaRosterLink);
+    }
+
+    /// <summary>
+    /// The in-memory rule, which the entity and every projected row type now route through rather
+    /// than re-implementing against their own copies of the same two fields.
+    /// </summary>
+    [Theory]
+    [InlineData(false, false, false)]
+    [InlineData(true, false, true)]
+    [InlineData(false, true, true)]
+    [InlineData(true, true, true)]
+    public void PrimitiveRuleMatchesTheEntityProperty(bool tested, bool closed, bool expected)
+    {
+        var testedUtc = tested ? Now.AddHours(-2) : (DateTime?)null;
+        var closedUtc = closed ? Now.AddHours(-1) : (DateTime?)null;
+
+        Assert.Equal(expected, SessionCompletion.IsCompleted(testedUtc, closedUtc));
+
+        var session = new Session
+        {
+            ExamToolsSessionId = "x",
+            Title = "x",
+            ScheduledStartUtc = Now,
+            TestingCompletedUtc = testedUtc,
+            ExamToolsClosedUtc = closedUtc
+        };
+        Assert.Equal(expected, session.IsCompleted);
     }
 
     /// <summary>

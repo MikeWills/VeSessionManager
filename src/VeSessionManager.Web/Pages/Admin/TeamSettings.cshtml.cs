@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Authorization;
+﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
@@ -46,8 +46,7 @@ public class TeamSettingsModel(AppDbContext dbContext, UserManager<User> userMan
         }
 
         IsSystemAdmin = user.Role == UserRole.SystemAdmin;
-        AvailableTeams = await adminAccessScope.ScopeTeams(dbContext.Teams, user)
-            .OrderBy(t => t.Name).Select(t => new ValueTuple<int, string>(t.Id, t.Name)).ToListAsync();
+        AvailableTeams = await adminAccessScope.GetAvailableTeamsAsync(dbContext, user);
 
         var effectiveTeamId = adminAccessScope.TryResolveManageableTeamId(user, TeamId, AvailableTeams.Select(t => t.Id).ToList());
         // Reflect an auto-selected single team back into the bound property, so the picker renders it
@@ -248,8 +247,7 @@ public class TeamSettingsModel(AppDbContext dbContext, UserManager<User> userMan
         }
 
         IsSystemAdmin = user.Role == UserRole.SystemAdmin;
-        AvailableTeams = await adminAccessScope.ScopeTeams(dbContext.Teams, user)
-            .OrderBy(t => t.Name).Select(t => new ValueTuple<int, string>(t.Id, t.Name)).ToListAsync();
+        AvailableTeams = await adminAccessScope.GetAvailableTeamsAsync(dbContext, user);
 
         // ...ForWrite, not the forgiving resolver (issue #263). Every caller of AuthorizeAsync is a
         // POST handler that saves credentials, and the forgiving one substitutes the acting user's
