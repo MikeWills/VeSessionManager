@@ -183,7 +183,13 @@ else
                             @* A bare number so the sorter's numeric path takes it — the visible text
                                ("3 / 12 month(s)") would fall through to a string compare. *@
                             <td data-sort-value="@request.ChunksCompleted">@request.ChunksCompleted / @request.ChunksTotal month(s)</td>
-                            <td data-sort-value="@request.SessionsImported">@request.SessionsImported session(s), @request.CandidatesImported candidate(s)</td>
+                            @* Results are listed separately because on a re-run they are the only
+                               number that moves — the sessions and candidates are already stored, so
+                               both read zero while the import is doing exactly what was asked. *@
+                            <td data-sort-value="@request.SessionsImported">
+                                @request.SessionsImported session(s), @request.CandidatesImported candidate(s)
+                                <div class="session-sub">@request.ResultsRecorded exam result(s) recorded</div>
+                            </td>
                             <td data-sort-value="@request.RequestedUtc.ToString("o")">@EasternTimeFormatter.Format(request.RequestedUtc, "MMM d, h:mm tt")</td>
                         </tr>
                     }

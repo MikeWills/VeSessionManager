@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Entities;
+using VeSessionManager.Core.ExamResults;
 using VeSessionManager.Core.ExamTools;
 using VeSessionManager.Core.Ingestion;
 using VeSessionManager.Core.Jobs;
@@ -48,16 +49,44 @@ public class HistoricalImportServiceTests
             return Task.FromResult<IReadOnlyList<ExamToolsSession>>(inRange);
         }
 
-        public Task<IReadOnlyList<ExamToolsApplicant>> GetSessionApplicantsAsync(ExamToolsCredentials credentials, string examToolsSessionId, CancellationToken cancellationToken) =>
-            Task.FromResult<IReadOnlyList<ExamToolsApplicant>>(
+        /// <summary>Every applicant-roster call. This is the PII-bearing endpoint, so a test can assert a re-run never touches it.</summary>
+        public List<string> ApplicantRosterCalls { get; } = [];
+
+        public Task<IReadOnlyList<ExamToolsApplicant>> GetSessionApplicantsAsync(ExamToolsCredentials credentials, string examToolsSessionId, CancellationToken cancellationToken)
+        {
+            ApplicantRosterCalls.Add(examToolsSessionId);
+            return Task.FromResult<IReadOnlyList<ExamToolsApplicant>>(
                 Applicants.TryGetValue(examToolsSessionId, out var list) ? list : []);
+        }
 
         public Task<IReadOnlyList<ExamToolsVe>> GetSessionVeRosterAsync(ExamToolsCredentials credentials, string examToolsSessionId, CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyList<ExamToolsVe>>([]);
 
-        public Task<ExamToolsApplicantDetail?> GetApplicantDetailAsync(ExamToolsCredentials credentials, string examToolsSessionId, string applicantId, CancellationToken cancellationToken) =>
-            Task.FromResult<ExamToolsApplicantDetail?>(null);
+        /// <summary>Graded elements per ExamTools applicant id. Absent means "no detail" — the pre-2026-08-15 behavior, where this always returned null.</summary>
+        public Dictionary<string, ExamToolsApplicantDetail> ApplicantDetails { get; } = [];
+
+        /// <summary>Every applicant-detail call made, so a test can assert that a resolved session costs none.</summary>
+        public List<string> ApplicantDetailCalls { get; } = [];
+
+        /// <summary>Applicant ids that should throw, for the "one bad session must not abandon the import" case.</summary>
+        public HashSet<string> ThrowOnApplicantDetail { get; } = [];
+
+        public Task<ExamToolsApplicantDetail?> GetApplicantDetailAsync(ExamToolsCredentials credentials, string examToolsSessionId, string applicantId, CancellationToken cancellationToken)
+        {
+            ApplicantDetailCalls.Add(applicantId);
+            if (ThrowOnApplicantDetail.Contains(applicantId))
+            {
+                throw new HttpRequestException($"Simulated ExamTools failure for applicant {applicantId}.");
+            }
+
+            return Task.FromResult(ApplicantDetails.GetValueOrDefault(applicantId));
+        }
     }
+
+    private static ExamToolsApplicantDetail Graded(params (int Element, bool Passed)[] elements) => new()
+    {
+        Exams = [.. elements.Select(e => new ExamToolsExamResult { Element = e.Element, Graded = true, Passed = e.Passed })]
+    };
 
     private static AppDbContext CreateContext() =>
         new(new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
@@ -74,7 +103,10 @@ public class HistoricalImportServiceTests
         // Real logger, not a stub: the import records its VE roster step as its own JobRunHistory
         // run, and that row is what makes "did the import fetch rosters?" answerable on the dashboard.
         var jobRunHistoryLogger = new JobRunHistoryLogger(dbContext, NullLogger<JobRunHistoryLogger>.Instance);
-        return new HistoricalImportService(dbContext, ingestion, veSync, jobRunHistoryLogger, timeProvider,
+        var examResults = new ExamResultSyncService(
+            dbContext, client, timeProvider, Options.Create(new ExamToolsOptions()),
+            NullLogger<ExamResultSyncService>.Instance);
+        return new HistoricalImportService(dbContext, ingestion, veSync, examResults, jobRunHistoryLogger, timeProvider,
             NullLogger<HistoricalImportService>.Instance);
     }
 
@@ -520,6 +552,164 @@ public class HistoricalImportServiceTests
         await CreateService(dbContext, client).RunNextPendingAsync(CancellationToken.None);
 
         Assert.Equal([(new DateOnly(2026, 5, 1), new DateOnly(2026, 5, 31))], client.ClosedFeedCalls);
+    }
+
+    // ---- Exam results (2026-08-15) ----
+    //
+    // Imports before this fetched no results at all: ExamResultSyncService's routine sweep only
+    // looks at sessions started within its 14-day window, and every imported session is already
+    // outside it. A year of history therefore landed with every candidate untested and unclassed,
+    // permanently — 1,699 of 2,130 candidates on this deployment.
+
+    [Fact]
+    public async Task Import_RecordsExamResultsAndLicenseClasses_ForSessionsFarOutsideTheRoutineWindow()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedAsync(dbContext);
+        var client = new FakeExamToolsClient();
+        // Two and a half years before Now — nothing the routine sweep would ever look at again.
+        client.ClosedSessions.Add(DoneSession("old", new DateTime(2024, 2, 14, 17, 0, 0, DateTimeKind.Utc)));
+        client.Applicants["old"] =
+        [
+            new ExamToolsApplicant { Id = "a1", Firstname = "Roana", Lastname = "Glory", Email = "r@example.com", Created = new DateTime(2024, 2, 1, 0, 0, 0, DateTimeKind.Utc) },
+            new ExamToolsApplicant { Id = "a2", Firstname = "Dell", Lastname = "Ridge", Email = "d@example.com", Created = new DateTime(2024, 2, 1, 0, 0, 0, DateTimeKind.Utc) }
+        ];
+        // Passed Element 2 only: walked in unlicensed, walked out a Technician.
+        client.ApplicantDetails["a1"] = Graded((2, true));
+        // Passed Element 4 only: already held General coming in, walked out Extra.
+        client.ApplicantDetails["a2"] = Graded((4, true));
+
+        var service = CreateService(dbContext, client);
+        await service.QueueAsync(team.Id, new DateOnly(2024, 2, 1), new DateOnly(2024, 2, 29), 1, CancellationToken.None);
+        await service.RunNextPendingAsync(CancellationToken.None);
+
+        var candidates = await dbContext.Candidates.OrderBy(c => c.ExamToolsApplicantId).ToListAsync();
+        Assert.Equal(2, candidates.Count);
+        Assert.All(candidates, c => Assert.True(c.Tested));
+        Assert.Equal(LicenseClass.Technician, candidates[0].NewLicenseClass);
+        Assert.Equal(LicenseClass.Extra, candidates[1].NewLicenseClass);
+        Assert.Equal(LicenseClass.General, candidates[1].InitialLicenseClass);
+
+        var request = await dbContext.HistoricalImportRequests.SingleAsync();
+        Assert.Equal(2, request.ResultsRecorded);
+    }
+
+    /// <summary>
+    /// The import must bring back results and license classes and <b>nothing else</b> — no name, no
+    /// email, no FRN. Mike's constraint, 2026-08-15, and it matters most for a candidate whose PII
+    /// has already been purged: re-running a range to collect results must not quietly refill it.
+    ///
+    /// <para><b>What actually enforces this is the session-level skip, not the per-candidate purge
+    /// guard.</b> Worth stating because the guard is the obvious answer and it is the wrong one: on a
+    /// re-run <c>ImportHistoricalRangeAsync</c> sees the session is already stored and never calls
+    /// the applicant roster at all, so the candidate-update block the guard sits in is unreachable.
+    /// This was checked by deleting the guard — every test here still passed. The assertion on
+    /// <c>ApplicantRosterCalls</c> is therefore the load-bearing one; the field assertions below it
+    /// are the backstop for the other direction, ExamResultSyncService itself starting to write
+    /// PII.</para>
+    ///
+    /// <para>The applicant-<i>detail</i> endpoint does return a fuller PII payload over the wire, and
+    /// the result sync does call it. Nothing from it is stored: that service only ever writes Tested,
+    /// ApplicationStatus, the two result stamps and the two license-class fields.</para>
+    /// </summary>
+    [Fact]
+    public async Task Import_DoesNotRestorePiiOnAPurgedCandidate_WhileStillRecordingTheirResult()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedAsync(dbContext);
+        var client = new FakeExamToolsClient();
+        client.ClosedSessions.Add(DoneSession("old", new DateTime(2024, 2, 14, 17, 0, 0, DateTimeKind.Utc)));
+        client.Applicants["old"] =
+        [
+            new ExamToolsApplicant { Id = "a1", Firstname = "Roana", Lastname = "Glory", Email = "r@example.com", Frn = "0012345678", Created = new DateTime(2024, 2, 1, 0, 0, 0, DateTimeKind.Utc) }
+        ];
+        client.ApplicantDetails["a1"] = Graded((2, true));
+
+        var service = CreateService(dbContext, client);
+        await service.QueueAsync(team.Id, new DateOnly(2024, 2, 1), new DateOnly(2024, 2, 29), 1, CancellationToken.None);
+        await service.RunNextPendingAsync(CancellationToken.None);
+
+        // Purge the candidate, then re-run the very same range — the real backfill scenario.
+        var candidate = await dbContext.Candidates.SingleAsync();
+        candidate.Tested = false;
+        candidate.NewLicenseClass = null;
+        candidate.InitialLicenseClass = null;
+        CandidatePiiFields.Clear(candidate, Now);
+        await dbContext.SaveChangesAsync();
+
+        client.ApplicantRosterCalls.Clear();
+        await service.QueueAsync(team.Id, new DateOnly(2024, 2, 1), new DateOnly(2024, 2, 29), 1, CancellationToken.None);
+        await service.RunNextPendingAsync(CancellationToken.None);
+
+        // The load-bearing assertion: the PII-bearing roster endpoint was never called on the re-run,
+        // because the session was already stored. No PII was fetched, so none could be written.
+        Assert.Empty(client.ApplicantRosterCalls);
+
+        var after = await dbContext.Candidates.SingleAsync();
+        // The result still came back — that path is per-candidate and does run...
+        Assert.True(after.Tested);
+        Assert.Equal(LicenseClass.Technician, after.NewLicenseClass);
+        // ...and the PII stayed gone.
+        Assert.NotNull(after.PiiPurgedUtc);
+        Assert.Null(after.Name);
+        Assert.Null(after.Email);
+    }
+
+    [Fact]
+    public async Task Import_MakesNoApplicantDetailCalls_ForASessionWhoseCandidatesAreAlreadyResolved()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedAsync(dbContext);
+        var client = new FakeExamToolsClient();
+        client.ClosedSessions.Add(DoneSession("old", new DateTime(2024, 2, 14, 17, 0, 0, DateTimeKind.Utc)));
+        client.Applicants["old"] =
+        [
+            new ExamToolsApplicant { Id = "a1", Firstname = "Roana", Lastname = "Glory", Created = new DateTime(2024, 2, 1, 0, 0, 0, DateTimeKind.Utc) }
+        ];
+        client.ApplicantDetails["a1"] = Graded((2, true));
+
+        var service = CreateService(dbContext, client);
+        await service.QueueAsync(team.Id, new DateOnly(2024, 2, 1), new DateOnly(2024, 2, 29), 1, CancellationToken.None);
+        await service.RunNextPendingAsync(CancellationToken.None);
+        Assert.Single(client.ApplicantDetailCalls);
+        client.ApplicantDetailCalls.Clear();
+
+        // Everything is resolved now, so a second pass over the same range must cost nothing. This is
+        // what keeps re-running a range cheap, and what the session-level pre-filter is for.
+        await service.QueueAsync(team.Id, new DateOnly(2024, 2, 1), new DateOnly(2024, 2, 29), 1, CancellationToken.None);
+        await service.RunNextPendingAsync(CancellationToken.None);
+
+        Assert.Empty(client.ApplicantDetailCalls);
+    }
+
+    /// <summary>
+    /// A single unreachable applicant record must not abandon a multi-month import and lose every
+    /// later chunk. The failure is logged and skipped; re-running the range retries it, and by then
+    /// everything already resolved is free.
+    /// </summary>
+    [Fact]
+    public async Task Import_OneFailingApplicantDetail_DoesNotAbandonTheRestOfTheImport()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedAsync(dbContext);
+        var client = new FakeExamToolsClient();
+        client.ClosedSessions.Add(DoneSession("jan", new DateTime(2024, 1, 14, 17, 0, 0, DateTimeKind.Utc)));
+        client.ClosedSessions.Add(DoneSession("feb", new DateTime(2024, 2, 14, 17, 0, 0, DateTimeKind.Utc)));
+        client.Applicants["jan"] = [new ExamToolsApplicant { Id = "bad", Firstname = "Bad", Lastname = "Row", Created = new DateTime(2024, 1, 1, 0, 0, 0, DateTimeKind.Utc) }];
+        client.Applicants["feb"] = [new ExamToolsApplicant { Id = "good", Firstname = "Good", Lastname = "Row", Created = new DateTime(2024, 2, 1, 0, 0, 0, DateTimeKind.Utc) }];
+        client.ThrowOnApplicantDetail.Add("bad");
+        client.ApplicantDetails["good"] = Graded((2, true));
+
+        var service = CreateService(dbContext, client);
+        await service.QueueAsync(team.Id, new DateOnly(2024, 1, 1), new DateOnly(2024, 2, 29), 1, CancellationToken.None);
+        await service.RunNextPendingAsync(CancellationToken.None);
+
+        var request = await dbContext.HistoricalImportRequests.SingleAsync();
+        Assert.Equal(HistoricalImportStatus.Completed, request.Status);
+        Assert.Equal(2, request.ChunksCompleted);
+        // February's candidate still got their result, despite January's failure.
+        Assert.Equal(1, request.ResultsRecorded);
+        Assert.True((await dbContext.Candidates.SingleAsync(c => c.ExamToolsApplicantId == "good")).Tested);
     }
 
     private sealed class ThrowOnSecondChunkClient : FakeExamToolsClient

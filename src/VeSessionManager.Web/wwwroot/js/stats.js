@@ -40,7 +40,10 @@
     passed: "#2f6f4e",
     failed: "#c0392b",
     newLicense: "#3d6f9e",
-    upgrade: "#8e6cae"
+    upgrade: "#8e6cae",
+    technician: "#3d6f9e",
+    general: "#2f6f4e",
+    extra: "#b07d2b"
   };
 
   function bar(canvasId, datasets, stacked) {
@@ -76,5 +79,13 @@
   bar("licenseChart", [
     { label: "New licenses", data: data.newLicenses, backgroundColor: palette.newLicense },
     { label: "Upgrades", data: data.upgrades, backgroundColor: palette.upgrade }
+  ], true);
+
+  // Stacked, because the three classes partition the same total the chart above splits a different
+  // way — the bar heights match licenseChart's month for month, which is the point.
+  bar("classChart", [
+    { label: "Technician", data: data.technicians, backgroundColor: palette.technician },
+    { label: "General", data: data.generals, backgroundColor: palette.general },
+    { label: "Extra", data: data.extras, backgroundColor: palette.extra }
   ], true);
 })();

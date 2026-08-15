@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Entities;
+using VeSessionManager.Core.ExamResults;
 using VeSessionManager.Core.Jobs;
 using VeSessionManager.Core.VolunteerExaminers;
 
@@ -13,19 +14,46 @@ namespace VeSessionManager.Core.Ingestion;
 /// rather than work done inline in the web request, and docs/historical-import.md for the whole
 /// design.
 ///
-/// **Scope is deliberately narrower than the routine pipeline: sessions, candidates, and VE roster
-/// only** — and the VE roster part needs `ignoreRetryWindow`, see the call site. No Square payment links, no Zoom/Discord events, no emails. `Session.HasEnded` guards in
+/// **Scope is deliberately narrower than the routine pipeline: sessions, candidates, VE roster and
+/// exam results only** — and the VE roster part needs `ignoreRetryWindow`, see the call site. No Square payment links, no Zoom/Discord events, no emails. `Session.HasEnded` guards in
 /// SessionEventSchedulingService/CandidateNotificationService would suppress most of that anyway,
 /// but relying on them as the sole defence for a *year* of backdated data is exactly the wrong
 /// posture — generating live checkout links for sessions that finished in March, or emailing
 /// "you're registered!" to someone who tested and passed months ago, is the most embarrassing
 /// failure mode available here. So those steps are never invoked at all, and the guards stay as the
 /// backstop they were meant to be.
+///
+/// <para><b>Exam results were missing from that list until 2026-08-15, and the omission was
+/// expensive.</b> The routine <see cref="ExamResultSyncService"/> sweep only looks at sessions that
+/// started within its 14-day <c>ResultSyncWindow</c>, and every session an import creates is already
+/// far outside it — so a year of history landed with every candidate at <c>Tested = false</c> and no
+/// license class, permanently, with nothing ever coming back for them. On this deployment that was
+/// 1,699 of 2,130 candidates: present, correct, and invisible to every figure on the stats page,
+/// which reported 77 tested candidates across three years of sessions. Results are now fetched per
+/// chunk, using the per-session path that deliberately ignores the window. Re-running a range that
+/// was already imported is how the existing gap gets filled — ingestion adds nothing the second
+/// time, and the results arrive.</para>
+///
+/// <para>This belongs here rather than in a one-off switch precisely because it is slow: the chunking
+/// and pauses that already protect ExamTools from the session feed protect it from ~1,700
+/// applicant-detail calls the same way, and the progress counters, resume-after-restart and admin
+/// page all come for free.</para>
+///
+/// <para><b>A re-run collects results without collecting PII</b> (Mike's constraint, 2026-08-15), and
+/// the reason is the session-level skip above, not the per-candidate purge guard in
+/// <c>SessionIngestionService</c>. An already-stored session never has its applicant roster fetched
+/// at all, so no name, email or FRN crosses the wire on a re-run and the guard's block is simply
+/// unreachable — verified by deleting the guard, which broke nothing. The per-candidate result path
+/// does still run, and writes only Tested, ApplicationStatus, the two result stamps and the two
+/// license-class fields. Pinned by
+/// <c>Import_DoesNotRestorePiiOnAPurgedCandidate_WhileStillRecordingTheirResult</c>, whose real
+/// assertion is that the roster endpoint was never called.</para>
 /// </summary>
 public class HistoricalImportService(
     AppDbContext dbContext,
     SessionIngestionService ingestionService,
     VolunteerExaminerSyncService veRosterSyncService,
+    ExamResultSyncService examResultSyncService,
     JobRunHistoryLogger jobRunHistoryLogger,
     TimeProvider timeProvider,
     ILogger<HistoricalImportService> logger)
@@ -36,6 +64,16 @@ public class HistoricalImportService(
     /// comfortably within what the closed-session feed already serves on every routine tick.
     /// </summary>
     public static readonly TimeSpan ChunkPause = TimeSpan.FromSeconds(2);
+
+    /// <summary>
+    /// Breather between the per-session exam-result calls within one chunk.
+    ///
+    /// <para>Shorter than <see cref="ChunkPause"/> and applied far more often — a month chunk can hold
+    /// thirty-odd sessions, each costing one applicant-detail call per unresolved candidate. Without
+    /// it a chunk becomes a burst of hundreds of requests with a two-second pause tacked on the end,
+    /// which is not what "paced" means and would make the pause between chunks decorative.</para>
+    /// </summary>
+    public static readonly TimeSpan SessionResultPause = TimeSpan.FromMilliseconds(500);
 
     /// <summary>
     /// How long a request may sit in <see cref="HistoricalImportStatus.Running"/> before it is
@@ -155,6 +193,10 @@ public class HistoricalImportService(
 
                 var result = await ingestionService.ImportHistoricalRangeAsync(request.Team, chunkStart, chunkEnd, request.RequestedByUserId, cancellationToken);
 
+                // Results for this chunk's sessions, before the counters are saved, so an interrupted
+                // chunk is redone whole rather than counted as finished with its results missing.
+                var resultsRecorded = await SyncChunkExamResultsAsync(request.Team, chunkStart, chunkEnd, cancellationToken);
+
                 // Counters saved after every chunk, not at the end — the page's progress is read
                 // from this row, and a crash mid-import must not lose the record of what already
                 // landed. Same "save immediately after each item" rule every scan-based job here
@@ -162,10 +204,11 @@ public class HistoricalImportService(
                 request.ChunksCompleted++;
                 request.SessionsImported += result.SessionsAdded;
                 request.CandidatesImported += result.CandidatesAdded;
+                request.ResultsRecorded += resultsRecorded;
                 await dbContext.SaveChangesAsync(cancellationToken);
 
-                logger.LogInformation("Historical import {RequestId}: chunk {Done}/{Total} ({ChunkStart}..{ChunkEnd}) added {Sessions} session(s), {Candidates} candidate(s), marked {VecSubmitted} submitted to VEC",
-                    request.Id, request.ChunksCompleted, request.ChunksTotal, chunkStart, chunkEnd, result.SessionsAdded, result.CandidatesAdded, result.SessionsMarkedVecSubmitted);
+                logger.LogInformation("Historical import {RequestId}: chunk {Done}/{Total} ({ChunkStart}..{ChunkEnd}) added {Sessions} session(s), {Candidates} candidate(s), recorded {Results} exam result(s), marked {VecSubmitted} submitted to VEC",
+                    request.Id, request.ChunksCompleted, request.ChunksTotal, chunkStart, chunkEnd, result.SessionsAdded, result.CandidatesAdded, resultsRecorded, result.SessionsMarkedVecSubmitted);
 
                 await Task.Delay(ChunkPause, timeProvider, cancellationToken);
             }
@@ -208,6 +251,75 @@ public class HistoricalImportService(
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// Fetches graded exam results for every session this team has in the chunk's date range, one
+    /// session at a time with a pause between each.
+    ///
+    /// <para>Uses <see cref="ExamResultSyncService.SyncSessionAsync"/> rather than <c>RunAsync</c>
+    /// because the latter is bounded by <c>ResultSyncWindow</c> (14 days) and would match none of
+    /// these sessions — that bound is exactly why historical candidates never got results in the
+    /// first place. The per-session path is the documented escape hatch for a session graded outside
+    /// the window, which is precisely this case.</para>
+    ///
+    /// <para>Queries sessions from the database rather than using the chunk's own import result: the
+    /// point of a re-run is to reach sessions that are <i>already</i> stored, where nothing is added
+    /// and an added-sessions list would be empty.</para>
+    ///
+    /// <para><b>One session's failure does not fail the chunk.</b> A single unreachable applicant
+    /// record should not abandon a multi-month import and lose every later chunk; the session is
+    /// logged and skipped, and re-running the range picks it up again because the per-candidate gate
+    /// makes everything already resolved free. Cancellation is not swallowed — that is a stop, not a
+    /// failure.</para>
+    /// </summary>
+    private async Task<int> SyncChunkExamResultsAsync(
+        Team team, DateOnly chunkStart, DateOnly chunkEnd, CancellationToken cancellationToken)
+    {
+        // Inclusive of the chunk's last day: chunkEnd is a date, and sessions carry an instant.
+        var rangeStartUtc = chunkStart.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
+        var rangeEndUtc = chunkEnd.AddDays(1).ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
+
+        var sessionIds = await dbContext.Sessions
+            .Where(s => s.TeamId == team.Id
+                        && s.Status == SessionStatus.Active
+                        && s.ScheduledStartUtc >= rangeStartUtc && s.ScheduledStartUtc < rangeEndUtc
+                        // No point paying the pause for a session whose candidates are all already
+                        // resolved. This must stay a copy of SyncSessionAsync's own per-candidate
+                        // gate: anything narrower here silently skips a session the service would
+                        // have worked on. In particular the second half of the Tested clause is not
+                        // redundant — an already-Tested candidate with no license class is exactly
+                        // the backfill case, and testing `!c.Tested` alone would drop it.
+                        && s.Candidates.Any(c => c.ExamToolsApplicantId != null
+                                                 && c.ApplicationStatus != CandidateApplicationStatus.NotTested
+                                                 && (c.ApplicationStatus != CandidateApplicationStatus.Failed || c.ResultMarkedByUserId == null)
+                                                 && (!c.Tested || c.NewLicenseClass == null)))
+            .OrderBy(s => s.ScheduledStartUtc)
+            .Select(s => s.Id)
+            .ToListAsync(cancellationToken);
+
+        var recorded = 0;
+        foreach (var sessionId in sessionIds)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            try
+            {
+                var syncResult = await examResultSyncService.SyncSessionAsync(team, sessionId, cancellationToken);
+                recorded += syncResult.CandidatesMarkedTested
+                            + syncResult.CandidatesMarkedFailed
+                            + syncResult.CandidatesBackfilledLicenseClass
+                            + syncResult.CandidatesAutoFailedCorrected;
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                logger.LogWarning(ex, "Historical import: exam result sync failed for session {SessionId} (team {TeamId}) — skipping it and continuing; re-running the range will retry", sessionId, team.Id);
+            }
+
+            await Task.Delay(SessionResultPause, timeProvider, cancellationToken);
+        }
+
+        return recorded;
     }
 
     public static int CountChunks(DateOnly startDate, DateOnly endDate) => Chunks(startDate, endDate).Count();

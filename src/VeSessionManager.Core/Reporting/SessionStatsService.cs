@@ -68,7 +68,16 @@ public class SessionStatsService(AppDbContext dbContext)
                 NewLicenses = s.Candidates.Count(c => c.NewLicenseClass != null
                     && (c.InitialLicenseClass == null || c.InitialLicenseClass == LicenseClass.None)),
                 Upgrades = s.Candidates.Count(c => c.NewLicenseClass != null
-                    && c.InitialLicenseClass != null && c.InitialLicenseClass != LicenseClass.None)
+                    && c.InitialLicenseClass != null && c.InitialLicenseClass != LicenseClass.None),
+
+                // The class each candidate walked out holding — first license and upgrade alike, so
+                // Technicians + Generals + Extras always equals NewLicenses + Upgrades. Someone who
+                // upgraded Technician -> General is counted once, under General: this answers "what
+                // licenses did we produce", not "how many people hold each class", which is an FCC
+                // question this app has no data for.
+                Technicians = s.Candidates.Count(c => c.NewLicenseClass == LicenseClass.Technician),
+                Generals = s.Candidates.Count(c => c.NewLicenseClass == LicenseClass.General),
+                Extras = s.Candidates.Count(c => c.NewLicenseClass == LicenseClass.Extra)
             })
             .ToListAsync(cancellationToken);
 
@@ -89,7 +98,10 @@ public class SessionStatsService(AppDbContext dbContext)
                 g.Sum(r => r.Passed),
                 g.Sum(r => r.Failed),
                 g.Sum(r => r.NewLicenses),
-                g.Sum(r => r.Upgrades)))
+                g.Sum(r => r.Upgrades),
+                g.Sum(r => r.Technicians),
+                g.Sum(r => r.Generals),
+                g.Sum(r => r.Extras)))
             .OrderBy(p => p.MonthUtc)
             .ToList();
 
@@ -103,6 +115,14 @@ public class SessionStatsService(AppDbContext dbContext)
             rows.Sum(r => r.Failed),
             rows.Sum(r => r.NewLicenses),
             rows.Sum(r => r.Upgrades),
+            rows.Sum(r => r.Technicians),
+            rows.Sum(r => r.Generals),
+            rows.Sum(r => r.Extras),
+            // The earliest session actually counted, so the page can say what the numbers cover
+            // rather than leaving the reader to assume they cover everything. Computed from the same
+            // rows every other figure comes from, so it moves with the team and date filters instead
+            // of quietly reporting the deployment's oldest session under every filter.
+            rows.Count == 0 ? null : rows.Min(r => r.ScheduledStartUtc),
             veActivity);
     }
 
@@ -147,8 +167,10 @@ public class SessionStatsService(AppDbContext dbContext)
 }
 
 /// <param name="MonthUtc">First of the month, as an Eastern calendar month — see the grouping remarks.</param>
+/// <param name="Technicians">Walked out holding Technician — first licenses and upgrades together, so these three always sum to NewLicenses + Upgrades.</param>
 public record StatsPeriod(
-    DateTime MonthUtc, int Sessions, int CandidatesTested, int Passed, int Failed, int NewLicenses, int Upgrades);
+    DateTime MonthUtc, int Sessions, int CandidatesTested, int Passed, int Failed, int NewLicenses, int Upgrades,
+    int Technicians, int Generals, int Extras);
 
 public record VeActivityRow(int VolunteerExaminerId, string Name, string? CallSign, int SessionsWorked);
 
@@ -161,8 +183,24 @@ public record SessionStatsReport(
     int TotalFailed,
     int TotalNewLicenses,
     int TotalUpgrades,
+    int TotalTechnicians,
+    int TotalGenerals,
+    int TotalExtras,
+    DateTime? EarliestSessionUtc,
     IReadOnlyList<VeActivityRow> VolunteerExaminers)
 {
+    /// <summary>
+    /// Licenses earned in range, by the class the candidate walked out holding.
+    ///
+    /// <para><b>Reads low for anything before 2026 and that is a data gap, not a quiet year.</b> The
+    /// historical import never fetched graded exam elements — <c>ExamResultSyncService</c> only scans
+    /// sessions started within <c>ResultSyncWindow</c> (14 days), and every imported session was
+    /// already outside it — so ~1,699 candidates carry no <c>NewLicenseClass</c> at all. The rows are
+    /// intact and still hold their <c>ExamToolsApplicantId</c>; the results just have not been pulled
+    /// yet. Until they are, treat this as "licenses we have results for", not "licenses issued".</para>
+    /// </summary>
+    public int TotalLicensesEarned => TotalTechnicians + TotalGenerals + TotalExtras;
+
     /// <summary>
     /// Of those whose result is known. Deliberately excludes candidates still awaiting an FCC
     /// outcome, rather than counting them as failures — a session run last week would otherwise

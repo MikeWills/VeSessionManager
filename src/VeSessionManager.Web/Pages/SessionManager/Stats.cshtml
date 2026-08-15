@@ -10,6 +10,10 @@
     <div>
         <p class="eyebrow">@Model.TeamSummaryLabel · @Model.DateRangeSummaryLabel</p>
         <h1>Stats</h1>
+        @if (Model.DataStartLabel is { } dataStart)
+        {
+            <p class="session-sub" style="margin:4px 0 0;">Covering sessions as of @dataStart.</p>
+        }
     </div>
 </div>
 
@@ -106,6 +110,35 @@ else
                 Walking in unlicensed makes it a first license; walking in with a class makes it an upgrade.
             </p>
             <div style="position:relative; height:280px;"><canvas id="licenseChart"></canvas></div>
+        </div>
+
+        <div class="session-panel" style="display:block; margin-bottom:20px;">
+            <div class="section-head"><h2>Licenses earned by class</h2></div>
+            <div class="meta-grid" style="margin-bottom:16px;">
+                <div>
+                    <p class="eyebrow">Technician</p>
+                    <p class="count" style="font-size:28px;">@Model.Report.TotalTechnicians</p>
+                </div>
+                <div>
+                    <p class="eyebrow">General</p>
+                    <p class="count" style="font-size:28px;">@Model.Report.TotalGenerals</p>
+                </div>
+                <div>
+                    <p class="eyebrow">Extra</p>
+                    <p class="count" style="font-size:28px;">@Model.Report.TotalExtras</p>
+                </div>
+                <div>
+                    <p class="eyebrow">Total earned</p>
+                    <p class="count" style="font-size:28px;">@Model.Report.TotalLicensesEarned</p>
+                </div>
+            </div>
+            <p class="session-sub">
+                The class each candidate walked out holding — first licenses and upgrades counted together,
+                so these add up to the @(Model.Report.TotalNewLicenses + Model.Report.TotalUpgrades) above.
+                Someone who upgraded Technician to General is counted once, under General. This is what the
+                sessions produced, not how many license holders exist.
+            </p>
+            <div style="position:relative; height:280px;"><canvas id="classChart"></canvas></div>
         </div>
 
         <div class="session-panel" style="display:block;">
