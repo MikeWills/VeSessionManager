@@ -22,10 +22,26 @@ public class UnmatchedSquarePayment
     public string? BuyerEmailAddress { get; set; }
     public DateTime ReceivedUtc { get; set; }
 
-    /// <summary>Null while still awaiting manual review. Set once a Session Manager matches it to a candidate (or, in principle, some other future resolution) — never re-flagged as pending again on a Square webhook redelivery for the same order id.</summary>
+    /// <summary>Null while still awaiting manual review. Set once a Session Manager matches it to a candidate, or dismisses it — never re-flagged as pending again on a Square webhook redelivery for the same order id.</summary>
     public DateTime? ResolvedUtc { get; set; }
     public int? ResolvedByUserId { get; set; }
     public User? ResolvedByUser { get; set; }
+
+    /// <summary>
+    /// The Payment this was matched to. Null on a resolved row means it was <b>dismissed</b> rather
+    /// than matched — that pairing (<see cref="ResolvedUtc"/> set, this null) is the only stored
+    /// signal distinguishing the two, so don't read a null here as "unresolved".
+    /// </summary>
     public int? MatchedPaymentId { get; set; }
     public Payment? MatchedPayment { get; set; }
+
+    /// <summary>
+    /// Why it was dismissed, if whoever dismissed it typed anything — optional by design, since
+    /// requiring a reason on a housekeeping action mostly produces the word "duplicate".
+    ///
+    /// <para>Duplicated into the audit log entry rather than only living here, because that entry is
+    /// what survives if this row is ever purged; kept on the row as well so the dismissed-rows view
+    /// can show it without a join.</para>
+    /// </summary>
+    public string? ResolutionNote { get; set; }
 }

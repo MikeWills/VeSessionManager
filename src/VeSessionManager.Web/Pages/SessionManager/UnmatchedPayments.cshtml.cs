@@ -33,6 +33,15 @@ public class UnmatchedPaymentsModel(
     [BindProperty(SupportsGet = true)]
     public int? TeamId { get; set; }
 
+    /// <summary>
+    /// Show rows already dismissed (#99) instead of the ones still waiting. Off by default: the page
+    /// exists to be emptied, and a dismissed row that stayed in the main list would defeat the point
+    /// of dismissing it. Matched rows are not shown either way — those became real Payments and are
+    /// visible on the candidate.
+    /// </summary>
+    [BindProperty(SupportsGet = true)]
+    public bool ShowDismissed { get; set; }
+
     /// <summary>False only when the account belongs to no team at all — a null TeamId now means "all teams merged", not "no context" (2026-07-30, matching the session list).</summary>
     public bool HasTeamContext { get; private set; }
     public IReadOnlyList<(int Id, string Name)> AvailableTeams { get; private set; } = [];
@@ -74,8 +83,17 @@ public class UnmatchedPaymentsModel(
             return;
         }
 
-        var unmatched = await dbContext.UnmatchedSquarePayments
-            .Where(u => (teamIds == null || teamIds.Contains(u.TeamId)) && u.ResolvedUtc == null)
+        // A dismissed row is ResolvedUtc set with no MatchedPaymentId — see UnmatchedSquarePayment's
+        // remarks. Filtering on MatchedPaymentId alone would also sweep in matched rows, which belong
+        // on the candidate, not here.
+        var query = dbContext.UnmatchedSquarePayments
+            .Where(u => teamIds == null || teamIds.Contains(u.TeamId));
+        query = ShowDismissed
+            ? query.Where(u => u.ResolvedUtc != null && u.MatchedPaymentId == null)
+            : query.Where(u => u.ResolvedUtc == null);
+
+        var unmatched = await query
+            .Include(u => u.ResolvedByUser)
             .OrderBy(u => u.ReceivedUtc)
             .ToListAsync();
 
@@ -89,9 +107,13 @@ public class UnmatchedPaymentsModel(
             u.BuyerEmailAddress,
             u.SquareOrderId,
             u.TeamId,
-            teamNamesById.GetValueOrDefault(u.TeamId, "—"))).ToList();
+            teamNamesById.GetValueOrDefault(u.TeamId, "—"),
+            u.ResolvedUtc is { } resolved ? EasternTimeFormatter.Format(resolved, "MMM d, yyyy") : null,
+            u.ResolvedByUser?.Name,
+            u.ResolutionNote)).ToList();
 
-        if (unmatched.Count == 0)
+        // Nothing below is for the dismissed view — those rows are resolved and offer no action.
+        if (unmatched.Count == 0 || ShowDismissed)
         {
             return;
         }
@@ -165,8 +187,48 @@ public class UnmatchedPaymentsModel(
         return RedirectToPage(new { teamId = unmatched.TeamId });
     }
 
+    /// <summary>
+    /// Dismiss an unmatched payment without matching it (#99).
+    ///
+    /// <para>Same defense-in-depth team re-check as OnPostMatchAsync — see the reasoning there,
+    /// including why this must be ResolveViewableTeamIds and not GetEffectiveTeamIds.</para>
+    /// </summary>
+    public async Task<IActionResult> OnPostDismissAsync(int unmatchedPaymentId, string? reason)
+    {
+        var user = await userManager.GetUserWithManagerAsync(dbContext, User);
+        if (user is null)
+        {
+            return Forbid();
+        }
+
+        var unmatched = await dbContext.UnmatchedSquarePayments.FirstOrDefaultAsync(u => u.Id == unmatchedPaymentId);
+        var viewableTeamIds = accessScope.ResolveViewableTeamIds(user, selectedTeamId: null);
+        if (unmatched is null || (viewableTeamIds is not null && !viewableTeamIds.Contains(unmatched.TeamId)))
+        {
+            return Forbid();
+        }
+
+        var result = await matchingService.DismissAsync(unmatchedPaymentId, reason, user.Id, CancellationToken.None);
+        TempData[result == SquareManualMatchResult.Success ? "StatusMessage" : "ErrorMessage"] = result switch
+        {
+            SquareManualMatchResult.Success => "Payment dismissed. Nothing was refunded in Square.",
+            SquareManualMatchResult.AlreadyResolved => "This payment was already resolved.",
+            // Neither arm below is reachable from a dismissal — DismissAsync never looks at a
+            // candidate — but the switch stays exhaustive so a future member can't fall silently
+            // into the default and render as "not found".
+            SquareManualMatchResult.CandidateNotFound => "Candidate not found.",
+            SquareManualMatchResult.NoOutstandingPayment => "That candidate has no outstanding unpaid payment.",
+            _ => "Could not dismiss — payment not found."
+        };
+        return RedirectToPage(new { teamId = unmatched.TeamId });
+    }
+
     /// <summary>ReceivedSortValue carries the raw timestamp behind ReceivedLine for the table's click-to-sort header (see app.js) — "MMM d, yyyy" sorts alphabetically as text, putting Apr before Mar.</summary>
-    public record UnmatchedPaymentRow(int Id, string ReceivedLine, string ReceivedSortValue, decimal AmountUsd, string? BuyerEmailAddress, string SquareOrderId, int TeamId, string TeamName);
+    /// <param name="DismissedLine">Non-null only in the dismissed view.</param>
+    public record UnmatchedPaymentRow(
+        int Id, string ReceivedLine, string ReceivedSortValue, decimal AmountUsd, string? BuyerEmailAddress,
+        string SquareOrderId, int TeamId, string TeamName,
+        string? DismissedLine = null, string? DismissedByName = null, string? ResolutionNote = null);
     /// <summary>TeamId is load-bearing, not decorative: with "All teams" the page lists payments and candidates from several teams at once, and the view uses it to offer only same-team candidates for a given payment. OnPostMatchAsync re-checks it server-side regardless.</summary>
     public record MatchableCandidate(int Id, string Name, string SessionDateLine, decimal AmountOwed, int TeamId);
 }

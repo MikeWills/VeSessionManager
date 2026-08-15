@@ -9,8 +9,13 @@
 
 <div class="page-head">
     <div>
-        <p class="eyebrow">@Model.UnmatchedPayments.Count awaiting match</p>
+        <p class="eyebrow">@Model.UnmatchedPayments.Count @(Model.ShowDismissed ? "dismissed" : "awaiting match")</p>
         <h1>Unmatched Payments</h1>
+    </div>
+    <div class="row-actions">
+        <a class="btn-secondary btn-sm" asp-route-teamId="@Model.TeamId" asp-route-showDismissed="@(Model.ShowDismissed ? null : "true")">
+            @(Model.ShowDismissed ? "Back to awaiting match" : "View dismissed")
+        </a>
     </div>
 </div>
 
@@ -28,7 +33,14 @@
 }
 else
 {
-    <p class="session-sub">Square payments that arrived but couldn't be matched to a candidate automatically — usually a payment taken through a separate online payment page rather than one of this app's own generated links. Pick the right candidate below to mark their outstanding payment paid.</p>
+    @if (Model.ShowDismissed)
+    {
+        <p class="session-sub">Payments resolved by dismissing them rather than matching them to a candidate. They are kept for reconciliation — the money is still in Square, exactly as it was.</p>
+    }
+    else
+    {
+        <p class="session-sub">Square payments that arrived but couldn't be matched to a candidate automatically — usually a payment taken through a separate online payment page rather than one of this app's own generated links. Pick the right candidate below to mark their outstanding payment paid, or dismiss it if no candidate owes it.</p>
+    }
 
     <div class="table-scroll">
     <table class="cards" data-sortable="unmatched-payments">
@@ -42,14 +54,23 @@ else
                 <th>Amount</th>
                 <th>Buyer email</th>
                 <th>Square order</th>
-                @* The match column is a per-row <select>+button, not a value — nothing to order by. *@
-                <th data-sort="none">Match to candidate</th>
+                @if (Model.ShowDismissed)
+                {
+                    <th>Dismissed</th>
+                    <th>Reason</th>
+                }
+                else
+                {
+                    @* The match column is a per-row <select>+button, not a value — nothing to order by. *@
+                    <th data-sort="none">Match to candidate</th>
+                }
             </tr>
         </thead>
         <tbody>
             @if (Model.UnmatchedPayments.Count == 0)
             {
-                <tr><td colspan="@(Model.AvailableTeams.Count > 1 ? 6 : 5)">Nothing waiting on a match.</td></tr>
+                var emptyColumns = (Model.AvailableTeams.Count > 1 ? 5 : 4) + (Model.ShowDismissed ? 2 : 1);
+                <tr><td colspan="@emptyColumns">@(Model.ShowDismissed ? "Nothing has been dismissed." : "Nothing waiting on a match.")</td></tr>
             }
             @foreach (var payment in Model.UnmatchedPayments)
             {
@@ -62,35 +83,83 @@ else
                     <td>@Usd.Format(payment.AmountUsd)</td>
                     <td>@(payment.BuyerEmailAddress ?? "—")</td>
                     <td><span class="session-sub">@payment.SquareOrderId</span></td>
-                    <td class="row-actions" style="text-align:left;">
-                        @* Same-team candidates only — with "All teams" the page shows several teams
-                           at once, and matching Team A's money to Team B's candidate must not be
-                           offerable. OnPostMatchAsync enforces the same rule server-side. *@
-                        @{ var matchable = Model.MatchableCandidates.Where(c => c.TeamId == payment.TeamId).ToList(); }
-                        @if (matchable.Count == 0)
-                        {
-                            <span class="session-sub">No candidates with an outstanding unpaid payment.</span>
-                        }
-                        else
-                        {
-                            <form method="post" asp-page-handler="Match" style="display:flex; gap:8px; align-items:center;">
-                                @* Same team-filter-through-POST reason as Admin/Users — see the note there. *@
-                                <input type="hidden" name="teamId" value="@Model.TeamId" />
-                                <input type="hidden" name="unmatchedPaymentId" value="@payment.Id" />
-                                <select name="candidateId" required class="menu-input">
-                                    <option value="">Select candidate…</option>
-                                    @foreach (var candidate in matchable)
-                                    {
-                                        <option value="@candidate.Id">@candidate.Name — @candidate.SessionDateLine (@Usd.Format(candidate.AmountOwed))</option>
-                                    }
-                                </select>
-                                <button type="submit" class="btn-secondary btn-sm">Match</button>
-                            </form>
-                        }
-                    </td>
+                    @if (Model.ShowDismissed)
+                    {
+                        <td>@payment.DismissedLine<br /><span class="session-sub">by @(payment.DismissedByName ?? "—")</span></td>
+                        <td>@(payment.ResolutionNote ?? "—")</td>
+                    }
+                    else
+                    {
+                        <td class="row-actions" style="text-align:left;">
+                            @* Same-team candidates only — with "All teams" the page shows several teams
+                               at once, and matching Team A's money to Team B's candidate must not be
+                               offerable. OnPostMatchAsync enforces the same rule server-side. *@
+                            @{ var matchable = Model.MatchableCandidates.Where(c => c.TeamId == payment.TeamId).ToList(); }
+                            @if (matchable.Count == 0)
+                            {
+                                <span class="session-sub">No candidates with an outstanding unpaid payment.</span>
+                            }
+                            else
+                            {
+                                <form method="post" asp-page-handler="Match" style="display:flex; gap:8px; align-items:center;">
+                                    @* Same team-filter-through-POST reason as Admin/Users — see the note there. *@
+                                    <input type="hidden" name="teamId" value="@Model.TeamId" />
+                                    <input type="hidden" name="unmatchedPaymentId" value="@payment.Id" />
+                                    <select name="candidateId" required class="menu-input">
+                                        <option value="">Select candidate…</option>
+                                        @foreach (var candidate in matchable)
+                                        {
+                                            <option value="@candidate.Id">@candidate.Name — @candidate.SessionDateLine (@Usd.Format(candidate.AmountOwed))</option>
+                                        }
+                                    </select>
+                                    <button type="submit" class="btn-secondary btn-sm">Match</button>
+                                </form>
+                            }
+                            @* Offered whether or not there is a matchable candidate, and especially when
+                               there isn't: a payment with nobody to match it to is the main thing this
+                               button exists for. *@
+                            <button type="button" class="btn-secondary btn-sm" data-open-modal="dismissModal-@payment.Id">Dismiss</button>
+                        </td>
+                    }
                 </tr>
             }
         </tbody>
     </table>
     </div>
+
+    @* One modal per row rather than one shared modal whose fields get rewritten by script: the CSP is
+       script-src 'self', and app.js's modal handling only opens and closes — it has no notion of
+       populating one. Same shape as Admin/Users' per-row call-sign modal. *@
+    @if (!Model.ShowDismissed)
+    {
+        @foreach (var payment in Model.UnmatchedPayments)
+        {
+            <div class="modal-backdrop" id="dismissModal-@payment.Id">
+                <div class="modal">
+                    <h3>Dismiss @Usd.Format(payment.AmountUsd)?</h3>
+                    <form method="post" asp-page-handler="Dismiss">
+                        <input type="hidden" name="teamId" value="@Model.TeamId" />
+                        <input type="hidden" name="unmatchedPaymentId" value="@payment.Id" />
+                        <p class="session-sub">
+                            Square order <span class="mono">@payment.SquareOrderId</span>, received @payment.ReceivedLine@(payment.BuyerEmailAddress is null ? "" : $" from {payment.BuyerEmailAddress}").
+                        </p>
+                        <p>
+                            <strong>This clears it from this screen only. It does not refund the payment in Square</strong> —
+                            the money stays exactly where it is. Dismiss it when nobody owes it: a test charge, a
+                            donation, a duplicate of something already recorded, or a refund you have already
+                            handled in Square yourself.
+                        </p>
+                        <div class="field">
+                            <label for="dismissReason-@payment.Id">Reason (optional)</label>
+                            <input id="dismissReason-@payment.Id" name="reason" maxlength="500" placeholder="e.g. duplicate of order abc123" />
+                        </div>
+                        <div class="modal-actions">
+                            <button type="button" class="btn-secondary btn-sm" data-close-modal>Cancel</button>
+                            <button type="submit" class="btn-primary btn-sm">Dismiss payment</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        }
+    }
 }

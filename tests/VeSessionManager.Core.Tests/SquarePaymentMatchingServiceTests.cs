@@ -82,6 +82,124 @@ public class SquarePaymentMatchingServiceTests
         return (team, candidate, payment);
     }
 
+    // ---- DismissAsync (#99) ----
+
+    [Fact]
+    public async Task Dismiss_ResolvesRowWithoutMatchingAPayment_AndAuditsOrderIdAndAmount()
+    {
+        await using var dbContext = CreateContext();
+        var (team, _, payment) = await SeedCandidateWithUnpaidPaymentAsync(dbContext);
+        var unmatched = new UnmatchedSquarePayment { TeamId = team.Id, SquareOrderId = "order-donation", SquarePaymentId = "sq-9", AmountUsd = 25m, ReceivedUtc = Now.AddMinutes(-5) };
+        dbContext.UnmatchedSquarePayments.Add(unmatched);
+        await dbContext.SaveChangesAsync();
+
+        var result = await CreateService(dbContext).DismissAsync(unmatched.Id, "  donation, nobody owes it  ", userId: 42, CancellationToken.None);
+
+        Assert.Equal(SquareManualMatchResult.Success, result);
+        var resolvedRow = dbContext.UnmatchedSquarePayments.Single();
+        Assert.Equal(Now, resolvedRow.ResolvedUtc);
+        Assert.Equal(42, resolvedRow.ResolvedByUserId);
+        // The whole point: resolved, but pointing at no Payment. That pairing is what tells a
+        // dismissal from a match later on.
+        Assert.Null(resolvedRow.MatchedPaymentId);
+        Assert.Equal("donation, nobody owes it", resolvedRow.ResolutionNote);
+
+        // And the candidate's own payment is untouched — dismissing is not a way to mark someone paid.
+        Assert.Equal(PaymentStatus.Unpaid, dbContext.Payments.Single(p => p.Id == payment.Id).Status);
+
+        var audit = Assert.Single(dbContext.AuditLogs, a => a.Action == "SquarePaymentDismissed");
+        Assert.Contains("order-donation", audit.Details);
+        Assert.Contains("$25.00", audit.Details);
+        Assert.Contains("donation, nobody owes it", audit.Details);
+    }
+
+    [Fact]
+    public async Task Dismiss_NoReasonGiven_StillSucceeds_AndSaysSoInTheAudit()
+    {
+        await using var dbContext = CreateContext();
+        var (team, _, _) = await SeedCandidateWithUnpaidPaymentAsync(dbContext);
+        var unmatched = new UnmatchedSquarePayment { TeamId = team.Id, SquareOrderId = "order-2", SquarePaymentId = "sq-2", AmountUsd = 15m, ReceivedUtc = Now };
+        dbContext.UnmatchedSquarePayments.Add(unmatched);
+        await dbContext.SaveChangesAsync();
+
+        // Whitespace, not null — the caller is a text input, which is what actually arrives.
+        var result = await CreateService(dbContext).DismissAsync(unmatched.Id, "   ", userId: 1, CancellationToken.None);
+
+        Assert.Equal(SquareManualMatchResult.Success, result);
+        Assert.Null(dbContext.UnmatchedSquarePayments.Single().ResolutionNote);
+        Assert.Contains("No reason given.", Assert.Single(dbContext.AuditLogs, a => a.Action == "SquarePaymentDismissed").Details);
+    }
+
+    [Fact]
+    public async Task Dismiss_NeverCallsSquare()
+    {
+        await using var dbContext = CreateContext();
+        var (team, _, _) = await SeedCandidateWithUnpaidPaymentAsync(dbContext);
+        var unmatched = new UnmatchedSquarePayment { TeamId = team.Id, SquareOrderId = "order-3", SquarePaymentId = "sq-3", AmountUsd = 15m, ReceivedUtc = Now };
+        dbContext.UnmatchedSquarePayments.Add(unmatched);
+        await dbContext.SaveChangesAsync();
+        var squareClient = new FakeSquareClient();
+
+        await CreateService(dbContext, squareClient).DismissAsync(unmatched.Id, null, userId: 1, CancellationToken.None);
+
+        // The confirmation wording promises the money is untouched. This is that promise as a test:
+        // no order completion, no refund, no Square call of any kind.
+        Assert.Empty(squareClient.CompletedOrderIds);
+    }
+
+    [Fact]
+    public async Task Dismiss_AlreadyResolved_ReturnsAlreadyResolved_AndDoesNotOverwriteTheOriginalResolution()
+    {
+        await using var dbContext = CreateContext();
+        var (team, _, payment) = await SeedCandidateWithUnpaidPaymentAsync(dbContext);
+        var unmatched = new UnmatchedSquarePayment
+        {
+            TeamId = team.Id, SquareOrderId = "order-4", SquarePaymentId = "sq-4", AmountUsd = 15m,
+            ReceivedUtc = Now.AddDays(-1), ResolvedUtc = Now.AddDays(-1), ResolvedByUserId = 7, MatchedPaymentId = payment.Id
+        };
+        dbContext.UnmatchedSquarePayments.Add(unmatched);
+        await dbContext.SaveChangesAsync();
+
+        var result = await CreateService(dbContext).DismissAsync(unmatched.Id, "oops", userId: 1, CancellationToken.None);
+
+        Assert.Equal(SquareManualMatchResult.AlreadyResolved, result);
+        var row = dbContext.UnmatchedSquarePayments.Single();
+        // A dismissal landing on an already-matched row would silently erase the match link.
+        Assert.Equal(payment.Id, row.MatchedPaymentId);
+        Assert.Equal(7, row.ResolvedByUserId);
+        Assert.Null(row.ResolutionNote);
+        Assert.Empty(dbContext.AuditLogs.Where(a => a.Action == "SquarePaymentDismissed"));
+    }
+
+    [Fact]
+    public async Task Dismiss_UnmatchedPaymentNotFound_ReturnsNotFound()
+    {
+        await using var dbContext = CreateContext();
+
+        var result = await CreateService(dbContext).DismissAsync(999, null, userId: 1, CancellationToken.None);
+
+        Assert.Equal(SquareManualMatchResult.NotFound, result);
+    }
+
+    [Fact]
+    public async Task Dismiss_ThenManualMatch_IsRefused()
+    {
+        await using var dbContext = CreateContext();
+        var (team, candidate, payment) = await SeedCandidateWithUnpaidPaymentAsync(dbContext);
+        var unmatched = new UnmatchedSquarePayment { TeamId = team.Id, SquareOrderId = "order-5", SquarePaymentId = "sq-5", AmountUsd = 15m, ReceivedUtc = Now };
+        dbContext.UnmatchedSquarePayments.Add(unmatched);
+        await dbContext.SaveChangesAsync();
+        var service = CreateService(dbContext);
+
+        await service.DismissAsync(unmatched.Id, "mistake", userId: 1, CancellationToken.None);
+        var result = await service.ManuallyMatchAsync(unmatched.Id, candidate.Id, userId: 1, CancellationToken.None);
+
+        // The two actions share one ResolvedUtc guard, so dismissing genuinely closes the row rather
+        // than just hiding it from a filter.
+        Assert.Equal(SquareManualMatchResult.AlreadyResolved, result);
+        Assert.Equal(PaymentStatus.Unpaid, dbContext.Payments.Single(p => p.Id == payment.Id).Status);
+    }
+
     // ---- ManuallyMatchAsync ----
 
     [Fact]
