@@ -54,7 +54,16 @@ public class StatsModel(
     public IReadOnlyList<(int Id, string Name)> AvailableTeams { get; private set; } = [];
 
     public SessionStatsReport Report { get; private set; } =
-        new([], 0, 0, 0, 0, 0, 0, []);
+        new([], 0, 0, 0, 0, 0, 0, 0, 0, 0, null, []);
+
+    /// <summary>
+    /// "as of <em>date</em>" for the page head — the earliest session the figures actually include,
+    /// so a reader can tell a genuinely quiet 2023 from a 2023 this deployment has no data for. Null
+    /// when nothing is in range, where the page has no numbers to qualify anyway.
+    /// </summary>
+    public string? DataStartLabel => Report.EarliestSessionUtc is { } earliest
+        ? EasternTimeFormatter.Format(earliest, "MMMM d, yyyy")
+        : null;
 
     /// <summary>
     /// The monthly series as JSON for the charts.
@@ -112,7 +121,10 @@ public class StatsModel(
             passed = Report.Periods.Select(p => p.Passed).ToList(),
             failed = Report.Periods.Select(p => p.Failed).ToList(),
             newLicenses = Report.Periods.Select(p => p.NewLicenses).ToList(),
-            upgrades = Report.Periods.Select(p => p.Upgrades).ToList()
+            upgrades = Report.Periods.Select(p => p.Upgrades).ToList(),
+            technicians = Report.Periods.Select(p => p.Technicians).ToList(),
+            generals = Report.Periods.Select(p => p.Generals).ToList(),
+            extras = Report.Periods.Select(p => p.Extras).ToList()
         });
     }
 

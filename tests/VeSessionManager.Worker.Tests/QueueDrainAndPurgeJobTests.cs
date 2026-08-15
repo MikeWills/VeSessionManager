@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using VeSessionManager.Core.Admin;
 using VeSessionManager.Core.Entities;
+using VeSessionManager.Core.ExamResults;
 using VeSessionManager.Core.ExamTools;
 using VeSessionManager.Core.Ingestion;
 using VeSessionManager.Core.Jobs;
@@ -62,6 +63,8 @@ public class QueueDrainAndPurgeJobTests
             services.AddScoped<JobRunHistoryLogger>();
             services.AddScoped<SessionIngestionService>();
             services.AddScoped<VolunteerExaminerSyncService>();
+            // The import fetches exam results per chunk (2026-08-15) — see HistoricalImportService.
+            services.AddScoped<ExamResultSyncService>();
             services.AddScoped<HistoricalImportService>();
         });
 

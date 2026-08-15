@@ -272,4 +272,98 @@ public class SessionStatsServiceTests
 
         Assert.Equal(1, report.TotalSessions);
     }
+
+    /// <summary>
+    /// The class counts partition the same population the new-license/upgrade split partitions the
+    /// other way, so the two must always agree. An upgrade is counted under the class walked out
+    /// with, never the one walked in with — get that backwards and every Extra shows as a General.
+    /// </summary>
+    [Fact]
+    public async Task LicenseClassCounts_CountTheClassWalkedOutWith_AndAgreeWithNewLicensesPlusUpgrades()
+    {
+        await using var dbContext = CreateContext();
+        var f = await SeedRefsAsync(dbContext);
+        var session = Session(f, Now.AddDays(-10));
+        dbContext.Sessions.Add(session);
+        dbContext.Candidates.AddRange(
+            // Two first-time Technicians.
+            Candidate(session, true, CandidateApplicationStatus.Granted, LicenseClass.None, LicenseClass.Technician),
+            Candidate(session, true, CandidateApplicationStatus.Granted, null, LicenseClass.Technician),
+            // A Technician who upgraded to General — General, not Technician.
+            Candidate(session, true, CandidateApplicationStatus.Granted, LicenseClass.Technician, LicenseClass.General),
+            // A General who upgraded to Extra.
+            Candidate(session, true, CandidateApplicationStatus.Granted, LicenseClass.General, LicenseClass.Extra),
+            // Earned nothing — must not land in any class bucket.
+            Candidate(session, true, CandidateApplicationStatus.Failed));
+        await dbContext.SaveChangesAsync();
+
+        var report = await Service(dbContext).GetAsync(null, null, null, CancellationToken.None);
+
+        Assert.Equal(2, report.TotalTechnicians);
+        Assert.Equal(1, report.TotalGenerals);
+        Assert.Equal(1, report.TotalExtras);
+        Assert.Equal(4, report.TotalLicensesEarned);
+        Assert.Equal(report.TotalNewLicenses + report.TotalUpgrades, report.TotalLicensesEarned);
+
+        var period = Assert.Single(report.Periods);
+        Assert.Equal(2, period.Technicians);
+        Assert.Equal(1, period.Generals);
+        Assert.Equal(1, period.Extras);
+    }
+
+    /// <summary>
+    /// A candidate with no recorded result contributes to no class — which is the entire state of
+    /// this deployment's 2023-2025 history until the backfill runs, so it must read as zero rather
+    /// than being guessed at from ApplicationStatus.
+    /// </summary>
+    [Fact]
+    public async Task GrantedButWithNoRecordedLicenseClass_CountsTowardNoClass()
+    {
+        await using var dbContext = CreateContext();
+        var f = await SeedRefsAsync(dbContext);
+        var session = Session(f, Now.AddDays(-10));
+        dbContext.Sessions.Add(session);
+        // Exactly the historical-import shape: Granted, but never Tested and no class recorded.
+        dbContext.Candidates.Add(Candidate(session, false, CandidateApplicationStatus.Granted));
+        await dbContext.SaveChangesAsync();
+
+        var report = await Service(dbContext).GetAsync(null, null, null, CancellationToken.None);
+
+        Assert.Equal(0, report.TotalLicensesEarned);
+        Assert.Equal(0, report.TotalTechnicians);
+    }
+
+    /// <summary>
+    /// "as of" has to describe what is being shown, so it comes from the filtered rows — not the
+    /// oldest session on the deployment, which would report the same date under every filter and be
+    /// wrong for all but one of them.
+    /// </summary>
+    [Fact]
+    public async Task EarliestSessionUtc_IsTheOldestSessionInRange_NotTheOldestOverall()
+    {
+        await using var dbContext = CreateContext();
+        var f = await SeedRefsAsync(dbContext);
+        var oldest = new DateTime(2023, 3, 4, 17, 0, 0, DateTimeKind.Utc);
+        dbContext.Sessions.Add(Session(f, oldest));
+        dbContext.Sessions.Add(Session(f, new DateTime(2026, 5, 15, 17, 0, 0, DateTimeKind.Utc)));
+        await dbContext.SaveChangesAsync();
+
+        var unfiltered = await Service(dbContext).GetAsync(null, null, null, CancellationToken.None);
+        Assert.Equal(oldest, unfiltered.EarliestSessionUtc);
+
+        var filtered = await Service(dbContext).GetAsync(
+            null, new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc), null, CancellationToken.None);
+        Assert.Equal(new DateTime(2026, 5, 15, 17, 0, 0, DateTimeKind.Utc), filtered.EarliestSessionUtc);
+    }
+
+    [Fact]
+    public async Task EarliestSessionUtc_IsNullWhenNothingIsInRange()
+    {
+        await using var dbContext = CreateContext();
+        await SeedRefsAsync(dbContext);
+
+        var report = await Service(dbContext).GetAsync(null, null, null, CancellationToken.None);
+
+        Assert.Null(report.EarliestSessionUtc);
+    }
 }

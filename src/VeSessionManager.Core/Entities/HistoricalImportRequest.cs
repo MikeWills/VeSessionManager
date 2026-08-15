@@ -44,6 +44,18 @@ public class HistoricalImportRequest
     public int SessionsImported { get; set; }
     public int CandidatesImported { get; set; }
 
+    /// <summary>
+    /// Candidates whose graded exam result — pass/fail, and the license class they walked out with —
+    /// was recorded during this import.
+    ///
+    /// <para>Counted separately from <see cref="CandidatesImported"/> because it is a different
+    /// question and, for a while, a very different number: imports before 2026-08-15 fetched no
+    /// results at all, so a year of history arrived with every candidate at <c>Tested = false</c>
+    /// and no license class. Re-running the same range fills those in without re-adding anything,
+    /// which makes this the counter that moves and the other one zero.</para>
+    /// </summary>
+    public int ResultsRecorded { get; set; }
+
     /// <summary>Set when Status is Failed. Truncated by the service — an ExamTools stack trace is not something to render on an admin page.</summary>
     public string? ErrorMessage { get; set; }
 }
