@@ -15,6 +15,7 @@ using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Discord;
 using VeSessionManager.Core.Email;
 using VeSessionManager.Core.Entities;
+using VeSessionManager.Core.Integrations;
 using VeSessionManager.Core.ExamResults;
 using VeSessionManager.Core.ExamTools;
 using VeSessionManager.Core.Ingestion;
@@ -72,6 +73,11 @@ builder.Configuration.AddJsonFile($"appsettings.{builder.Environment.Environment
 // registration — CandidateActionService.CreateRetestPaymentAsync needs PaymentGenerationService,
 // which needs this, for the "create retest payment" admin action.
 builder.Services.AddSingleton<ISquareClient, SquareClient>();
+// Singleton on purpose: the whole value of TeamIntegrationState is remembering which mute states it
+// has already logged, across the scoped lifetimes background jobs create per tick. Scoped would make
+// it log every tick, which is the behaviour it exists to prevent (#64).
+builder.Services.AddSingleton<TeamIntegrationState>();
+
 builder.Services.AddScoped<PaymentGenerationService>();
 // Backs the public, unauthenticated youth-rate confirmation page (Pages/Public/YouthConfirm).
 builder.Services.AddScoped<YouthPaymentConfirmationService>();

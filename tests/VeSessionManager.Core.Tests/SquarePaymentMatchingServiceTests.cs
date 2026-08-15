@@ -1,9 +1,10 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Entities;
 using VeSessionManager.Core.Payments;
 using VeSessionManager.Core.Square;
+using VeSessionManager.Core.Integrations;
 using Xunit;
 
 namespace VeSessionManager.Core.Tests;
@@ -49,7 +50,7 @@ public class SquarePaymentMatchingServiceTests
     }
 
     private static SquarePaymentMatchingService CreateService(AppDbContext dbContext, ISquareClient? squareClient = null) =>
-        new(dbContext, squareClient ?? new FakeSquareClient(), new FixedTimeProvider(Now), NullLogger<SquarePaymentMatchingService>.Instance);
+        new(dbContext, squareClient ?? new FakeSquareClient(), new FixedTimeProvider(Now), new TeamIntegrationState(NullLogger<TeamIntegrationState>.Instance), NullLogger<SquarePaymentMatchingService>.Instance);
 
     private static async Task<(Team Team, Candidate Candidate, Payment Payment)> SeedCandidateWithUnpaidPaymentAsync(
         AppDbContext dbContext, bool squareConfigured = true, bool sessionCompleted = false)

@@ -30,8 +30,77 @@
 }
 else
 {
+    @if (Model.Team.MutedIntegrations.Count > 0)
+    {
+        @* Same styling as the deployment-wide test-mode banner, for the same reason: a state that
+           silently changes what the app does must be visible without going looking (#64). *@
+        <div style="background:#c0392b;color:#fff;font-weight:600;font-size:13px;padding:8px 16px;letter-spacing:.02em;margin-bottom:16px;">
+            <strong>Integrations muted:</strong> @string.Join(", ", Model.Team.MutedIntegrations).
+            Outbound calls for these are suppressed for this team &mdash; nothing is sent, created, or
+            deleted, and nothing is queued for later. Untick <em>Mute some integrations</em> below to
+            restore normal operation.
+        </div>
+    }
+
     <p class="eyebrow" style="margin-bottom:16px;">Team ID: @Model.Team.Id — needed to build this team's webhook/callback URLs by hand (e.g. <code>/webhooks/square/@Model.Team.Id</code>).</p>
     <div class="session-panel" style="display:block;">
+        @* Per-integration mute switches (#64). Placed first because it changes what every panel
+           below actually does, and because "why did nothing send?" is the question it answers.
+
+           The individual switches are hidden while the master is off — an ordinary production team's
+           settings page should not grow a wall of controls nobody touches. Hiding is presentation
+           only: the handler re-resolves the user and re-checks CanManageTeam server-side, and the
+           master is read first when enforcing, so a switch left set from an old testing session
+           cannot silently mute a team that has since gone live. *@
+        <div class="section-head"><h2>Integrations</h2></div>
+        <form method="post" asp-page-handler="UpdateIntegrationSwitches">
+            <input type="hidden" name="TeamId" value="@Model.TeamId" />
+            <div class="field" style="flex-direction:row; align-items:center; gap:8px; max-width:520px;">
+                <input id="integrationOverridesEnabled" name="integrationOverridesEnabled" type="checkbox" value="true"
+                       checked="@Model.Team.IntegrationOverridesEnabled" style="width:auto;" data-toggle-panel="integrationSwitches" />
+                <label for="integrationOverridesEnabled" style="margin:0;">Mute some integrations for this team</label>
+            </div>
+            <p class="session-sub">
+                Off for a normal team, and off is also the way back: turning this off restores full
+                normal operation in one action, whatever the individual switches below say.
+            </p>
+
+            <div id="integrationSwitches" style="@(Model.Team.IntegrationOverridesEnabled ? "" : "display:none;")">
+                <div class="meta-grid" style="margin-top:12px;">
+                    <div class="field" style="flex-direction:row; align-items:center; gap:8px; max-width:200px;">
+                        <input id="zoomEnabled" name="zoomEnabled" type="checkbox" value="true" checked="@Model.Team.ZoomEnabled" style="width:auto;" />
+                        <label for="zoomEnabled" style="margin:0;">Zoom</label>
+                    </div>
+                    <div class="field" style="flex-direction:row; align-items:center; gap:8px; max-width:200px;">
+                        <input id="discordEnabled" name="discordEnabled" type="checkbox" value="true" checked="@Model.Team.DiscordEnabled" style="width:auto;" />
+                        <label for="discordEnabled" style="margin:0;">Discord</label>
+                    </div>
+                    <div class="field" style="flex-direction:row; align-items:center; gap:8px; max-width:200px;">
+                        <input id="squareEnabled" name="squareEnabled" type="checkbox" value="true" checked="@Model.Team.SquareEnabled" style="width:auto;" />
+                        <label for="squareEnabled" style="margin:0;">Square</label>
+                    </div>
+                    <div class="field" style="flex-direction:row; align-items:center; gap:8px; max-width:200px;">
+                        <input id="emailEnabled" name="emailEnabled" type="checkbox" value="true" checked="@Model.Team.EmailEnabled" style="width:auto;" />
+                        <label for="emailEnabled" style="margin:0;">Email</label>
+                    </div>
+                </div>
+                <p class="session-sub">
+                    Unticking one suppresses <strong>every</strong> call that system makes for this team,
+                    creation and teardown alike &mdash; a cancelled session's Zoom meeting and Discord event
+                    stay put, and stale payment links are not purged. Anything created before a switch went
+                    off is left in the real account permanently, so when muting a team with live resources,
+                    <strong>clean up first and switch off second</strong>.
+                </p>
+                <p class="session-sub">
+                    Nothing is queued while a switch is off: turning it back on starts fresh from that
+                    moment, so a week of muted reminders cannot suddenly reach a real candidate. ExamTools
+                    ingestion, the ULS watcher and the PII purge are never muted &mdash; they are read-only
+                    or local-only, and reproducing issues against them is the point.
+                </p>
+            </div>
+            <button type="submit" class="btn-primary btn-sm" style="margin-top:12px;">Save integration switches</button>
+        </form>
+
         <div class="section-head"><h2>ExamTools</h2></div>
         <form method="post" asp-page-handler="UpdateExamTools">
             <input type="hidden" name="TeamId" value="@Model.TeamId" />

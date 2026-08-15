@@ -1,7 +1,8 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Entities;
+using VeSessionManager.Core.Integrations;
 using VeSessionManager.Core.Square;
 
 namespace VeSessionManager.Core.Payments;
@@ -29,6 +30,7 @@ public class SquarePaymentMatchingService(
     AppDbContext dbContext,
     ISquareClient squareClient,
     TimeProvider timeProvider,
+    TeamIntegrationState integrationState,
     ILogger<SquarePaymentMatchingService> logger)
 {
     /// <summary>
@@ -185,7 +187,13 @@ public class SquarePaymentMatchingService(
         }
 
         var team = payment.Candidate.Session.Team;
-        if (payment.Candidate.Session.TestingCompletedUtc is null || !team.IsSquareConfigured)
+
+        // The inbound webhook stays switchable-off-proof by design — a delivery only arrives because
+        // somebody acted in Square, and processing it is local. But COMPLETING the order is an
+        // outbound call to a real merchant account, so it is muted with the rest of Square (#64).
+        if (payment.Candidate.Session.TestingCompletedUtc is null
+            || !integrationState.ShouldCall(team, TeamIntegration.Square, "completing a Square order")
+            || !team.IsSquareConfigured)
         {
             return;
         }

@@ -1,7 +1,8 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Entities;
+using VeSessionManager.Core.Integrations;
 using VeSessionManager.Core.Square;
 
 namespace VeSessionManager.Core.Payments;
@@ -20,6 +21,7 @@ public class SquarePaymentLinkPurgeService(
     AppDbContext dbContext,
     ISquareClient squareClient,
     TimeProvider timeProvider,
+    TeamIntegrationState integrationState,
     ILogger<SquarePaymentLinkPurgeService> logger)
 {
     public async Task<SquarePaymentLinkPurgeResult> RunAsync(Team team, CancellationToken cancellationToken)
@@ -37,6 +39,14 @@ public class SquarePaymentLinkPurgeService(
             .ToListAsync(cancellationToken);
 
         if (payments.Count == 0)
+        {
+            return result;
+        }
+
+        // Switched off suppresses every outbound Square call and settles rather than retrying (#64).
+        // Checked before IsSquareConfigured so a deliberately muted team is not also told its
+        // credentials are incomplete.
+        if (!integrationState.ShouldCall(team, TeamIntegration.Square, "deleting stale Square payment links"))
         {
             return result;
         }

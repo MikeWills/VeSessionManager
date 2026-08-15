@@ -33,6 +33,20 @@ public class TeamConfiguration : IEntityTypeConfiguration<Team>
         // failure on one and succeeds on the other, which is drift that only shows up in tests.
         b.Property(t => t.SquareEnvironment).HasDefaultValue(SquareApiEnvironment.Sandbox);
 
+        // The four integration switches default to ON in the database, not just in the C# initializer
+        // (#64). Without this the generated migration writes defaultValue: false for every existing
+        // row, which is invisible while IntegrationOverridesEnabled is off — and then mutes every
+        // integration at once the moment an admin turns the master switch on, which is the exact
+        // opposite of what they just asked for.
+        // The master too, at false. Every one of these needs a database-level default, not just a
+        // C# initializer: rows are also created by raw SQL in the legacy-plaintext migration tests,
+        // and a NOT NULL column with no default fails those inserts outright.
+        b.Property(t => t.IntegrationOverridesEnabled).HasDefaultValue(false);
+        b.Property(t => t.ZoomEnabled).HasDefaultValue(true);
+        b.Property(t => t.DiscordEnabled).HasDefaultValue(true);
+        b.Property(t => t.SquareEnabled).HasDefaultValue(true);
+        b.Property(t => t.EmailEnabled).HasDefaultValue(true);
+
         // Encrypted at rest (2026-07-30 security review) — genuine bearer secrets only, not the
         // usernames/ids/URLs alongside them (those stay plaintext, useful to read at a glance).
         // See EncryptedStringConverter's remarks and TeamSecretsMigrationService for existing data.

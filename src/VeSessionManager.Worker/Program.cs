@@ -12,6 +12,7 @@ using VeSessionManager.Core.Reconciliation;
 using VeSessionManager.Core.Retention;
 using VeSessionManager.Core.Uls;
 using VeSessionManager.Core.Ingestion;
+using VeSessionManager.Core.Integrations;
 using VeSessionManager.Core.Jobs;
 using VeSessionManager.Core.Navigation;
 using VeSessionManager.Core.Notifications;
@@ -91,6 +92,11 @@ builder.Services.AddScoped<SessionEventSchedulingService>();
 
 // Singleton: the Square SDK client owns its own HttpClient, same reasoning as the other API clients.
 builder.Services.AddSingleton<ISquareClient, SquareClient>();
+// Singleton on purpose: the whole value of TeamIntegrationState is remembering which mute states it
+// has already logged, across the scoped lifetimes background jobs create per tick. Scoped would make
+// it log every tick, which is the behaviour it exists to prevent (#64).
+builder.Services.AddSingleton<TeamIntegrationState>();
+
 builder.Services.AddScoped<PaymentGenerationService>();
 builder.Services.AddScoped<SquarePaymentLinkPurgeService>();
 

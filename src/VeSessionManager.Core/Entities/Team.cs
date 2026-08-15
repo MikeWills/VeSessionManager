@@ -140,4 +140,77 @@ public class Team
     public bool IsEmailConfigured =>
         !string.IsNullOrWhiteSpace(SmtpHost)
         && !string.IsNullOrWhiteSpace(SmtpUsername);
+
+    // ---- Per-integration mute switches (#64) ----
+    //
+    // The point is running a real production team, a live-monitoring team and a dev team against
+    // ExamTools' development environment in ONE deployment, and exercising one integration at a time
+    // without the others emitting anything public.
+    //
+    // **"Disabled" is not "unconfigured", and the difference is the whole design.** Unconfigured
+    // means an admin has not finished setup: skip quietly, leave the tracking field null, retry every
+    // poll so adding credentials backfills automatically. Disabled means deliberate and indefinite:
+    // suppress the call, settle the work without doing it, log once rather than per tick, and never
+    // retry. Reusing the unconfigured pattern for a disabled integration would re-attempt and re-log
+    // forever and never settle. See TeamIntegrationState.
+
+    /// <summary>
+    /// The master switch. <b>False (the default, and every existing team) means normal operation and
+    /// the individual switches below do not apply at all.</b>
+    ///
+    /// <para>That "do not apply" is deliberate rather than incidental: without it, a switch left off
+    /// from an old testing session stays hidden behind a collapsed panel and silently mutes a team
+    /// that has since gone into production. The corollary is the recovery path — turning this off
+    /// restores full normal operation in one action, whatever the individual switches say.</para>
+    /// </summary>
+    public bool IntegrationOverridesEnabled { get; set; }
+
+    /// <summary>Covers every Zoom call — create, update and delete. Only consulted while <see cref="IntegrationOverridesEnabled"/> is true.</summary>
+    public bool ZoomEnabled { get; set; } = true;
+
+    /// <summary>Covers every Discord call — create, update and delete.</summary>
+    public bool DiscordEnabled { get; set; } = true;
+
+    /// <summary>Covers every outbound Square call: link creation, order completion, and link deletion. Not the inbound webhook, which only arrives if somebody acts in Square and is processed locally.</summary>
+    public bool SquareEnabled { get; set; } = true;
+
+    /// <summary>One switch for all candidate- and admin-facing mail. Per-template granularity was considered and rejected as not worth the UI and settle-marker plumbing.</summary>
+    public bool EmailEnabled { get; set; } = true;
+
+    /// <summary>
+    /// Whether an integration is switched on for this team. <b>Not</b> a configuration check — see
+    /// the IsXConfigured members above, which answer a different question and want the opposite
+    /// retry behaviour.
+    /// </summary>
+    public bool IsEnabled(TeamIntegration integration) =>
+        !IntegrationOverridesEnabled || integration switch
+        {
+            TeamIntegration.Zoom => ZoomEnabled,
+            TeamIntegration.Discord => DiscordEnabled,
+            TeamIntegration.Square => SquareEnabled,
+            TeamIntegration.Email => EmailEnabled,
+            _ => true
+        };
+
+    /// <summary>The switched-off integrations, for the "this team is muted" indicators. Empty for an ordinary team.</summary>
+    public IReadOnlyList<TeamIntegration> MutedIntegrations =>
+        !IntegrationOverridesEnabled
+            ? []
+            : [.. Enum.GetValues<TeamIntegration>().Where(i => !IsEnabled(i))];
+}
+
+/// <summary>
+/// The four outbound systems that can be muted per team (#64).
+///
+/// <para>ExamTools ingestion, the ULS watcher, VE roster and exam-result sync, VEC submission and the
+/// Square inbound webhook are deliberately <b>not</b> here: they are read-only, local-only, or both,
+/// and reproducing issues against them is the entire point of having a dev team. The PII purge is
+/// excluded for the same reason — a muted team's data should age out like anyone else's.</para>
+/// </summary>
+public enum TeamIntegration
+{
+    Zoom,
+    Discord,
+    Square,
+    Email
 }

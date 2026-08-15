@@ -1,10 +1,11 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Email;
 using VeSessionManager.Core.Entities;
 using VeSessionManager.Core.Payments;
+using VeSessionManager.Core.Integrations;
 using Xunit;
 
 namespace VeSessionManager.Core.Tests;
@@ -40,7 +41,7 @@ public class PaymentReminderServiceTests
     private static PaymentReminderService CreateService(AppDbContext dbContext, IEmailSender emailSender, int unmatchedReviewWindowDays = 5) => new(
         dbContext,
         new EmailTemplateRenderer(dbContext, NullLogger<EmailTemplateRenderer>.Instance),
-        emailSender,
+        emailSender, new TeamIntegrationState(NullLogger<TeamIntegrationState>.Instance),
         new FixedTimeProvider(Now),
         Options.Create(new PaymentReminderOptions { UnmatchedReviewWindowDays = unmatchedReviewWindowDays }),
         NullLogger<PaymentReminderService>.Instance);

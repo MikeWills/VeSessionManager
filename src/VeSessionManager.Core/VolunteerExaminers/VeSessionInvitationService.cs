@@ -1,9 +1,10 @@
-using System.Net;
+﻿using System.Net;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Email;
 using VeSessionManager.Core.Entities;
+using VeSessionManager.Core.Integrations;
 
 namespace VeSessionManager.Core.VolunteerExaminers;
 
@@ -27,6 +28,7 @@ namespace VeSessionManager.Core.VolunteerExaminers;
 public class VeSessionInvitationService(
     AppDbContext dbContext,
     IEmailSender emailSender,
+    TeamIntegrationState integrationState,
     TimeProvider timeProvider,
     ILogger<VeSessionInvitationService> logger)
 {
@@ -138,6 +140,15 @@ public class VeSessionInvitationService(
         if (emailSettings is null)
         {
             result.Error = "This team has no email From/Reply-To settings yet, so invitations cannot be sent.";
+            return result;
+        }
+
+        // A muted team sends no invitations either. Reported as an error rather than silently
+        // "sent 0": this is a person pressing a button and waiting, not a background scan, so the
+        // honest answer is that nothing went out and why.
+        if (!integrationState.ShouldCall(session.Team, TeamIntegration.Email, "sending VE session invitations"))
+        {
+            result.Error = "Email is switched off for this team, so invitations were not sent. Turn it back on in Team Settings.";
             return result;
         }
 

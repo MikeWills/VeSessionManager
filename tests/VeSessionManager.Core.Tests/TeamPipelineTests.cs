@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using VeSessionManager.Core;
@@ -16,6 +16,7 @@ using VeSessionManager.Core.Scheduling;
 using VeSessionManager.Core.Square;
 using VeSessionManager.Core.VolunteerExaminers;
 using VeSessionManager.Core.Zoom;
+using VeSessionManager.Core.Integrations;
 using Xunit;
 
 namespace VeSessionManager.Core.Tests;
@@ -103,12 +104,12 @@ public class TeamPipelineTests
             new SessionIngestionService(dbContext, examToolsClient, time, examToolsOptions, NullLogger<SessionIngestionService>.Instance),
             new VolunteerExaminerSyncService(dbContext, examToolsClient, examToolsOptions, time, NullLogger<VolunteerExaminerSyncService>.Instance),
             new ExamResultSyncService(dbContext, examToolsClient, time, examToolsOptions, NullLogger<ExamResultSyncService>.Instance),
-            new SessionEventSchedulingService(dbContext, new UnusedZoomClient(), new UnusedDiscordClient(), time, NullLogger<SessionEventSchedulingService>.Instance),
-            new PaymentGenerationService(dbContext, new UnusedSquareClient(), time, NullLogger<PaymentGenerationService>.Instance),
+            new SessionEventSchedulingService(dbContext, new UnusedZoomClient(), new UnusedDiscordClient(), time, new TeamIntegrationState(NullLogger<TeamIntegrationState>.Instance), NullLogger<SessionEventSchedulingService>.Instance),
+            new PaymentGenerationService(dbContext, new UnusedSquareClient(), time, new TeamIntegrationState(NullLogger<TeamIntegrationState>.Instance), NullLogger<PaymentGenerationService>.Instance),
             new CandidateNotificationService(
                 dbContext,
                 new EmailTemplateRenderer(dbContext, NullLogger<EmailTemplateRenderer>.Instance),
-                new UnusedEmailSender(),
+                new UnusedEmailSender(), new TeamIntegrationState(NullLogger<TeamIntegrationState>.Instance),
                 time,
                 appOptions,
                 NullLogger<CandidateNotificationService>.Instance),

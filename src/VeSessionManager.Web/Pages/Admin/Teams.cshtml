@@ -1,4 +1,4 @@
-@page
+﻿@page
 @model VeSessionManager.Web.Pages.Admin.TeamsModel
 @{
     ViewData["Title"] = "Teams";
@@ -38,7 +38,15 @@
         {
             <tr>
                 <td class="count">@team.Id</td>
-                <td class="session-title">@team.Name</td>
+                <td class="session-title">
+                    @team.Name
+                    @* A muted team's data is indistinguishable from real data, which is the whole
+                       risk of #64 — so say so wherever the team is named. *@
+                    @if (team.MutedIntegrations.Count > 0)
+                    {
+                        <span class="chip chip-brick" title="Outbound calls suppressed for this team">Muted: @string.Join(", ", team.MutedIntegrations)</span>
+                    }
+                </td>
                 <td data-sort-value="@team.CreatedUtc.ToString("o")">@EasternTimeFormatter.Format(team.CreatedUtc, "MMM d, yyyy")</td>
                 @* One kebab menu, matching Vecs.cshtml — the row-action pattern used across the
                    admin tables. It was two bare icon links until 2026-08-06; a third entry made the
