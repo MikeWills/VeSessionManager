@@ -586,6 +586,9 @@ public class UserManagementService(UserManager<User> userManager, AppDbContext d
         await CheckAsync("system setting edited", dbContext.SystemSettings.Where(x => x.UpdatedByUserId == userId).Select(x => x.Id));
         await CheckAsync("unmatched payment resolved", dbContext.UnmatchedSquarePayments.Where(u => u.ResolvedByUserId == userId).Select(u => u.Id));
         await CheckAsync("watched license added", dbContext.WatchedLicenses.Where(w => w.AddedByUserId == userId).Select(w => w.Id));
+        // A refund is a financial record naming who authorized real money going back out (#375).
+        // Of everything on this list it is the one least suitable for quiet removal.
+        await CheckAsync("refund issued", dbContext.Refunds.Where(r => r.RequestedByUserId == userId).Select(r => r.Id));
 
         // Refused rather than nulled, which #188 left open. Nulling would quietly restructure other
         // people's accounts as a side effect of deleting this one; refusing makes the admin reassign

@@ -18,6 +18,27 @@ public class Payment
     public string? PaymentLinkUrl { get; set; }
     public string? SquarePaymentReferenceId { get; set; }
 
+    /// <summary>
+    /// Square's own <b>payment</b> id, captured from the payment.updated webhook that marked this
+    /// Paid — the only id <c>RefundPayment</c> accepts, and the reason refunding from inside the app
+    /// was blocked until #375.
+    ///
+    /// <para>Note what it is not: <see cref="SquarePaymentReferenceId"/>, despite its name, is the
+    /// <b>order</b> id, because payment.updated does not echo our own reference_id back (see the
+    /// known constraint in CLAUDE.md). The payment id was in that same payload all along and simply
+    /// went unread on the matched branch — <c>SquareWebhookHandler</c> already parsed it and only
+    /// passed it down the unmatched path.</para>
+    ///
+    /// <para><b>Null on every row that predates this column</b>, and nothing backfills it: resolving
+    /// order id -> payment id needs an Orders API lookup that has not been proven against a real
+    /// order. Refunding those still means the Square dashboard, and the UI says so rather than
+    /// hiding the action and leaving someone to wonder.</para>
+    /// </summary>
+    public string? SquarePaymentId { get; set; }
+
+    /// <summary>Refunds issued against this payment through the app (#375). Empty for one refunded in the Square dashboard — this app cannot see those.</summary>
+    public ICollection<Refund> Refunds { get; set; } = [];
+
     /// <summary>Square's own payment-link id (distinct from SquarePaymentReferenceId, which is the
     /// Order id) — needed because deleting a payment link via Square's Checkout API is keyed by the
     /// link id, not the order id. See YouthPaymentConfirmationService, which deletes the standard

@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.EntityFrameworkCore;
+using VeSessionManager.Core;
 using VeSessionManager.Core.Authorization;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Entities;
@@ -28,7 +29,9 @@ public class UnmatchedPaymentsModel(
     UserManager<User> userManager,
     SessionAccessScope accessScope,
     NavBadgeCountService badgeCounts,
-    SquarePaymentMatchingService matchingService) : PageModel
+    SquarePaymentMatchingService matchingService,
+    RefundService refundService,
+    TimeProvider timeProvider) : PageModel
 {
     [BindProperty(SupportsGet = true)]
     public int? TeamId { get; set; }
@@ -94,10 +97,12 @@ public class UnmatchedPaymentsModel(
 
         var unmatched = await query
             .Include(u => u.ResolvedByUser)
+            .Include(u => u.Refunds)
             .OrderBy(u => u.ReceivedUtc)
             .ToListAsync();
 
         var teamNamesById = AvailableTeams.ToDictionary(t => t.Id, t => t.Name);
+        var nowUtc = timeProvider.GetUtcNow().UtcDateTime;
 
         UnmatchedPayments = unmatched.Select(u => new UnmatchedPaymentRow(
             u.Id,
@@ -110,7 +115,14 @@ public class UnmatchedPaymentsModel(
             teamNamesById.GetValueOrDefault(u.TeamId, "—"),
             u.ResolvedUtc is { } resolved ? EasternTimeFormatter.Format(resolved, "MMM d, yyyy") : null,
             u.ResolvedByUser?.Name,
-            u.ResolutionNote)).ToList();
+            u.ResolutionNote,
+            // An unmatched payment is money that arrived, so it is "paid" by definition and always
+            // carries the Square payment id — which is exactly why this half of #375 needed no
+            // schema change. What the eligibility check still earns here is the one-year window and
+            // the remainder after a previous attempt, since a refund Square refused leaves a row
+            // behind and the amount must not be double-counted against it.
+            RefundEligibility.For(isPaid: true, u.SquarePaymentId, u.AmountUsd, u.ReceivedUtc, u.Refunds, nowUtc)
+        )).ToList();
 
         // Nothing below is for the dismissed view — those rows are resolved and offer no action.
         if (unmatched.Count == 0 || ShowDismissed)
@@ -223,12 +235,83 @@ public class UnmatchedPaymentsModel(
         return RedirectToPage(new { teamId = unmatched.TeamId });
     }
 
+    /// <summary>
+    /// Refund the payment through Square and then dismiss the row (#375) — the action this screen has
+    /// wanted since #99, when the dismiss modal had to say <b>in bold</b> that dismissing refunds
+    /// nothing, because there was no way to.
+    ///
+    /// <para><b>Refund first, dismiss only if it worked.</b> The order is the whole design: dismissing
+    /// clears the row from the one screen that lists this money, so dismissing after a failed refund
+    /// would hide a payment that is still sitting in the merchant account with nobody looking for it.
+    /// A failed refund therefore leaves the row exactly where it was, which is also where the user
+    /// will look for it.</para>
+    ///
+    /// <para>The dismissal reason records the refund rather than asking for one — "refunded
+    /// {amount}" is more use to whoever reads this back than whatever free text would have been
+    /// typed, and it is the same sentence in the audit log.</para>
+    /// </summary>
+    public async Task<IActionResult> OnPostRefundAndDismissAsync(int unmatchedPaymentId, string? amount, string? reason)
+    {
+        var user = await userManager.GetUserWithManagerAsync(dbContext, User);
+        if (user is null)
+        {
+            return Forbid();
+        }
+
+        // Same defense-in-depth team re-check as the two handlers above, and for the strongest
+        // version of the reason they give: this one moves real money out of a merchant account, so a
+        // posted id from outside the user's teams must not merely fail to render — it must Forbid.
+        var unmatched = await dbContext.UnmatchedSquarePayments.FirstOrDefaultAsync(u => u.Id == unmatchedPaymentId);
+        var viewableTeamIds = accessScope.ResolveViewableTeamIds(user, selectedTeamId: null);
+        if (unmatched is null || (viewableTeamIds is not null && !viewableTeamIds.Contains(unmatched.TeamId)))
+        {
+            return Forbid();
+        }
+
+        // Usd.TryParse, not decimal.TryParse — the latter reads "12.50" as 1250 under a
+        // comma-decimal culture (CLAUDE.md's Usd entry).
+        if (!Usd.TryParse(amount, out var amountUsd))
+        {
+            TempData["ErrorMessage"] = "Enter a refund amount, in dollars.";
+            return RedirectToPage(new { teamId = unmatched.TeamId });
+        }
+
+        var refund = await refundService.RefundUnmatchedPaymentAsync(
+            unmatchedPaymentId, amountUsd, reason, user.Id, CancellationToken.None);
+        var refundOutcome = ActionOutcomes.IssueRefund(refund, amountUsd);
+
+        if (!refundOutcome.Success)
+        {
+            TempData["ErrorMessage"] = refundOutcome.Message;
+            return RedirectToPage(new { teamId = unmatched.TeamId });
+        }
+
+        var dismissal = await matchingService.DismissAsync(
+            unmatchedPaymentId, $"Refunded {Usd.Format(amountUsd)} through Square.", user.Id, CancellationToken.None);
+
+        TempData[dismissal == SquareManualMatchResult.Success ? "StatusMessage" : "ErrorMessage"] =
+            dismissal == SquareManualMatchResult.Success
+                ? $"{refundOutcome.Message} Payment dismissed."
+                // The refund went through and the dismissal did not — an odd pair, and worth saying
+                // plainly rather than reporting the whole thing as a failure. Re-dismissing is safe;
+                // re-refunding would not be, which is why the sentence says which half to redo.
+                : $"{refundOutcome.Message} The payment could not be dismissed from this list — dismiss it separately. Do not refund it again.";
+
+        return RedirectToPage(new { teamId = unmatched.TeamId });
+    }
+
     /// <summary>ReceivedSortValue carries the raw timestamp behind ReceivedLine for the table's click-to-sort header (see app.js) — "MMM d, yyyy" sorts alphabetically as text, putting Apr before Mar.</summary>
     /// <param name="DismissedLine">Non-null only in the dismissed view.</param>
+    /// <param name="Refundability">Whether "Refund and dismiss" is offered, and for how much (#375).</param>
     public record UnmatchedPaymentRow(
         int Id, string ReceivedLine, string ReceivedSortValue, decimal AmountUsd, string? BuyerEmailAddress,
         string SquareOrderId, int TeamId, string TeamName,
-        string? DismissedLine = null, string? DismissedByName = null, string? ResolutionNote = null);
+        string? DismissedLine = null, string? DismissedByName = null, string? ResolutionNote = null,
+        RefundEligibility Refundability = default)
+    {
+        /// <summary>The refundable amount as a plain "12.50" for the amount input — Usd.Raw, never a bare :F2 under an ambient culture.</summary>
+        public string RefundableRaw => Usd.Raw(Refundability.RemainingUsd);
+    }
     /// <summary>TeamId is load-bearing, not decorative: with "All teams" the page lists payments and candidates from several teams at once, and the view uses it to offer only same-team candidates for a given payment. OnPostMatchAsync re-checks it server-side regardless.</summary>
     public record MatchableCandidate(int Id, string Name, string SessionDateLine, decimal AmountOwed, int TeamId);
 }

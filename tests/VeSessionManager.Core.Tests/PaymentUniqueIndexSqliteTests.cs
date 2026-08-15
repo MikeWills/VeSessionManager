@@ -256,6 +256,38 @@ public class PaymentUniqueIndexSqliteTests
         return await dbContext.Candidates.Select(c => c.Id).OrderByDescending(id => id).FirstAsync();
     }
 
+    /// <summary>
+    /// Insert a Payment with raw SQL, for the two tests below that run against a <b>historical</b>
+    /// schema rather than the current one.
+    ///
+    /// <para>They cannot use <see cref="NewPayment"/> and the DbSet: EF writes every column the
+    /// <i>current</i> model has, and the database at <c>MigrationBeforeTheIndex</c> only has the
+    /// columns that existed then. Any column added to Payment afterwards breaks both tests with
+    /// "table Payments has no column named …", which reads as a migration bug and is not one —
+    /// #375's <c>SquarePaymentId</c> was the first to do it. Same reason every other seeder in this
+    /// file is raw SQL; this one was the exception because it predated them.</para>
+    /// </summary>
+    private static async Task SeedPaymentViaSqlAsync(AppDbContext dbContext, int candidateId, PaymentReason reason, string? paymentLinkUrl = null)
+    {
+        // Two whole statements rather than one with an interpolated NULL: ExecuteSqlRawAsync maps
+        // parameters by runtime type and a null has none ("no store type mapping for properties of
+        // type 'DBNull'"), while building the SQL by concatenation trips EF1003. Both SQL strings
+        // stay constants, which is what that analyzer is actually asking for.
+        if (paymentLinkUrl is null)
+        {
+            await dbContext.Database.ExecuteSqlRawAsync(
+                "INSERT INTO Payments (CandidateId, Reason, Amount, Status, CreatedUtc, PaymentLinkUrl, ExpiredUnpaid, RefundRequested) "
+                + "VALUES ({0}, {1}, {2}, {3}, {4}, NULL, 0, 0)",
+                candidateId, (int)reason, 15m, (int)PaymentStatus.Unpaid, Now);
+            return;
+        }
+
+        await dbContext.Database.ExecuteSqlRawAsync(
+            "INSERT INTO Payments (CandidateId, Reason, Amount, Status, CreatedUtc, PaymentLinkUrl, ExpiredUnpaid, RefundRequested) "
+            + "VALUES ({0}, {1}, {2}, {3}, {4}, {5}, 0, 0)",
+            candidateId, (int)reason, 15m, (int)PaymentStatus.Unpaid, Now, paymentLinkUrl);
+    }
+
     private static async Task<int> SeedTeamViaSqlAsync(AppDbContext dbContext, string name)
     {
         await dbContext.Database.ExecuteSqlRawAsync(
@@ -286,10 +318,8 @@ public class PaymentUniqueIndexSqliteTests
         var candidateId = await SeedCandidateViaSqlAsync(dbContext, "applicant-1", sessionId);
 
         // Two provably inert duplicates: Unpaid, never linked, never given a Square order id.
-        dbContext.Payments.AddRange(
-            NewPayment(candidateId, PaymentReason.InitialExam),
-            NewPayment(candidateId, PaymentReason.InitialExam));
-        await dbContext.SaveChangesAsync();
+        await SeedPaymentViaSqlAsync(dbContext, candidateId, PaymentReason.InitialExam);
+        await SeedPaymentViaSqlAsync(dbContext, candidateId, PaymentReason.InitialExam);
         var ids = await dbContext.Payments.Select(p => p.Id).OrderBy(id => id).ToListAsync();
         Assert.Equal(2, ids.Count); // no index yet, so the duplicate really did get in
 
@@ -320,11 +350,9 @@ public class PaymentUniqueIndexSqliteTests
         var sessionId = await SeedSessionViaSqlAsync(dbContext, "applicant-1", teamId, userId);
         var candidateId = await SeedCandidateViaSqlAsync(dbContext, "applicant-1", sessionId);
 
-        var first = NewPayment(candidateId, PaymentReason.InitialExam);
-        var duplicate = NewPayment(candidateId, PaymentReason.InitialExam);
-        duplicate.PaymentLinkUrl = "https://square.link/u/order-5001"; // someone could have paid this
-        dbContext.Payments.AddRange(first, duplicate);
-        await dbContext.SaveChangesAsync();
+        await SeedPaymentViaSqlAsync(dbContext, candidateId, PaymentReason.InitialExam);
+        // Linked — someone could have paid this one.
+        await SeedPaymentViaSqlAsync(dbContext, candidateId, PaymentReason.InitialExam, "https://square.link/u/order-5001");
 
         await Assert.ThrowsAnyAsync<Exception>(() => dbContext.Database.MigrateAsync());
 

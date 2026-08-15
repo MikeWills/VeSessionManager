@@ -1,4 +1,4 @@
-﻿using System.Security.Cryptography;
+using System.Security.Cryptography;
 using System.Text;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -24,6 +24,15 @@ public class SquareWebhookHandlerTests
 
     private sealed class FakeSquareClient : ISquareClient
     {
+        // #375 added these to ISquareClient. Not exercised here — throwing rather than returning a
+        // stub keeps that true: if this test ever starts refunding, it says so instead of passing
+        // against a fake that quietly agrees.
+        public Task<SquareRefund> RefundPaymentAsync(SquareCredentials credentials, SquareRefundRequest request, CancellationToken cancellationToken) =>
+            throw new NotSupportedException("Refunds are not exercised by this test.");
+
+        public Task<SquareRefund> GetRefundAsync(SquareCredentials credentials, string squareRefundId, CancellationToken cancellationToken) =>
+            throw new NotSupportedException("Refunds are not exercised by this test.");
+
         public Task<SquarePaymentLink> CreatePaymentLinkAsync(SquareCredentials credentials, SquarePaymentLinkRequest request, CancellationToken cancellationToken) =>
             throw new NotSupportedException("Not used by SquareWebhookHandlerTests.");
 
@@ -141,6 +150,33 @@ public class SquareWebhookHandlerTests
         var updated = dbContext.Payments.Single(p => p.Id == payment.Id);
         Assert.Equal(PaymentStatus.Paid, updated.Status);
         Assert.Equal(Now, updated.PaidDateUtc);
+    }
+
+    /// <summary>
+    /// Square's <b>payment</b> id, captured on the matched branch (#375).
+    ///
+    /// <para>The payload has carried it all along and this branch discarded it, which is what made
+    /// refunding a candidate's payment from inside the app impossible — <c>RefundPayment</c> is keyed
+    /// by the payment id, and <c>SquarePaymentReferenceId</c> holds the <i>order</i> id despite its
+    /// name. Nothing else can supply it later: recovering it needs an Orders API lookup that has
+    /// never been proven to work, so a payment whose webhook did not store it is un-refundable from
+    /// here forever.</para>
+    /// </summary>
+    [Fact]
+    public async Task ValidSignature_MatchingOrderId_StoresSquaresPaymentIdForRefunding()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        var payment = await SeedPaymentAsync(dbContext, team, "order-123");
+        var body = PaymentUpdatedBody("order-123", "COMPLETED", paymentId: "sq-payment-abc");
+
+        await CreateHandler(dbContext).ProcessAsync(team.Id, body, ComputeValidSignature(body), CancellationToken.None);
+
+        var updated = dbContext.Payments.Single(p => p.Id == payment.Id);
+        Assert.Equal("sq-payment-abc", updated.SquarePaymentId);
+        // The order id is a different value and stays where it was — conflating the two is the
+        // original mistake this whole line exists to correct.
+        Assert.Equal("order-123", updated.SquarePaymentReferenceId);
     }
 
     [Fact]

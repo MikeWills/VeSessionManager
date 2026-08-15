@@ -111,6 +111,8 @@ public class IngestionStampTests
         public Task<SquarePaymentLink> CreatePaymentLinkAsync(SquareCredentials c, SquarePaymentLinkRequest r, CancellationToken ct) => Nope<SquarePaymentLink>();
         public Task CompleteOrderAsync(SquareCredentials c, string o, CancellationToken ct) => Nope<object>();
         public Task DeletePaymentLinkAsync(SquareCredentials c, string l, CancellationToken ct) => Nope<object>();
+        public Task<SquareRefund> RefundPaymentAsync(SquareCredentials c, SquareRefundRequest r, CancellationToken ct) => Nope<SquareRefund>();
+        public Task<SquareRefund> GetRefundAsync(SquareCredentials c, string id, CancellationToken ct) => Nope<SquareRefund>();
 
         public Task SendAsync(EmailCredentials c, EmailMessage m, CancellationToken ct) => Nope<object>();
     }

@@ -124,6 +124,14 @@ public class SquareWebhookHandler(
 
         matched.Status = PaymentStatus.Paid;
         matched.PaidDateUtc = timeProvider.GetUtcNow().UtcDateTime;
+
+        // Square's PAYMENT id, which is what refunding is keyed by and which this branch parsed and
+        // discarded until #375 — the unmatched branch below has been storing it since it was
+        // written. Captured here rather than looked up later because payment.updated is the one
+        // place it arrives for free; recovering it afterwards means an Orders API round trip that
+        // has never been proven to work.
+        matched.SquarePaymentId = payment.Id;
+
         await dbContext.SaveChangesAsync(cancellationToken);
 
         // Covers "the session was already marked completed before this payment's webhook arrived"

@@ -83,6 +83,8 @@ public class TeamPipelineTests
         public Task<SquarePaymentLink> CreatePaymentLinkAsync(SquareCredentials c, SquarePaymentLinkRequest r, CancellationToken t) => throw new InvalidOperationException();
         public Task CompleteOrderAsync(SquareCredentials c, string orderId, CancellationToken t) => throw new InvalidOperationException();
         public Task DeletePaymentLinkAsync(SquareCredentials c, string linkId, CancellationToken t) => throw new InvalidOperationException();
+        public Task<SquareRefund> RefundPaymentAsync(SquareCredentials c, SquareRefundRequest r, CancellationToken t) => throw new InvalidOperationException();
+        public Task<SquareRefund> GetRefundAsync(SquareCredentials c, string refundId, CancellationToken t) => throw new InvalidOperationException();
     }
 
     private sealed class UnusedEmailSender : IEmailSender

@@ -112,6 +112,74 @@ public sealed class SquareClient : ISquareClient
         _logger.LogInformation("Deleted Square payment link {SquarePaymentLinkId} for team {TeamId}", paymentLinkId, credentials.TeamId);
     }
 
+    public async Task<SquareRefund> RefundPaymentAsync(SquareCredentials credentials, SquareRefundRequest request, CancellationToken cancellationToken)
+    {
+        var client = GetOrCreateClient(credentials);
+
+        // Same cents conversion as CreatePaymentLinkAsync, and it has to be the same: a refund
+        // rounded differently from the charge it reverses leaves a cent outstanding, or asks Square
+        // for a cent more than was collected and gets the whole refund refused.
+        var amountCents = (long)Math.Round(request.AmountUsd * 100m, MidpointRounding.AwayFromZero);
+
+        var response = await client.Refunds.RefundPaymentAsync(
+            new RefundPaymentRequest
+            {
+                IdempotencyKey = request.IdempotencyKey,
+                PaymentId = request.SquarePaymentId,
+                AmountMoney = new Money { Amount = amountCents, Currency = Currency.Usd },
+                Reason = request.Reason
+            },
+            cancellationToken: cancellationToken);
+
+        if (response.Errors is not null && response.Errors.Any())
+        {
+            // Deliberately not treated as idempotent no-ops the way DeletePaymentLinkAsync's
+            // NOT_FOUND is — see ISquareClient.RefundPaymentAsync. Every error here means no money
+            // moved, and the caller has to be able to say so.
+            var detail = string.Join("; ", response.Errors.Select(e => $"{e.Category} {e.Code}: {e.Detail}"));
+            throw new SquareRefundException($"Square rejected the refund for payment {request.SquarePaymentId}: {detail}");
+        }
+
+        var refund = response.Refund
+            ?? throw new SquareRefundException($"Square's refund response for payment {request.SquarePaymentId} had no refund and no errors.");
+
+        _logger.LogInformation("Refunded {AmountUsd} against Square payment {SquarePaymentId} for team {TeamId} — refund {SquareRefundId}, status {SquareRefundStatus}",
+            request.AmountUsd, request.SquarePaymentId, credentials.TeamId, refund.Id, refund.Status);
+
+        return ToDomain(refund);
+    }
+
+    public async Task<SquareRefund> GetRefundAsync(SquareCredentials credentials, string squareRefundId, CancellationToken cancellationToken)
+    {
+        var client = GetOrCreateClient(credentials);
+
+        var response = await client.Refunds.GetAsync(
+            new GetRefundsRequest { RefundId = squareRefundId }, cancellationToken: cancellationToken);
+
+        if (response.Errors is not null && response.Errors.Any())
+        {
+            var detail = string.Join("; ", response.Errors.Select(e => $"{e.Category} {e.Code}: {e.Detail}"));
+            throw new SquareRefundException($"Square rejected the get-refund request for refund {squareRefundId}: {detail}");
+        }
+
+        var refund = response.Refund
+            ?? throw new SquareRefundException($"Square's get-refund response for refund {squareRefundId} had no refund and no errors.");
+
+        return ToDomain(refund);
+    }
+
+    /// <summary>
+    /// Status is carried across as Square's own string rather than mapped to this app's enum here:
+    /// the mapping is a domain decision (an unrecognized state must not silently read as one of the
+    /// four known ones) and belongs with the service that persists it, not in the transport wrapper.
+    /// </summary>
+    private static SquareRefund ToDomain(PaymentRefund refund) => new()
+    {
+        Id = refund.Id ?? throw new SquareRefundException("Square's refund response had no id."),
+        Status = refund.Status ?? throw new SquareRefundException("Square's refund response had no status."),
+        AmountUsd = (refund.AmountMoney?.Amount ?? 0) / 100m
+    };
+
     public async Task CompleteOrderAsync(SquareCredentials credentials, string orderId, CancellationToken cancellationToken)
     {
         var client = GetOrCreateClient(credentials);

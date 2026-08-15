@@ -35,6 +35,7 @@ public class UserDeleteCoverageTests
         "Session.RetainedAmountOverrideByUserId",
         "Candidate.ResultMarkedByUserId",
         "Payment.RefundRequestedByUserId",
+        "Refund.RequestedByUserId",
         "HistoricalImportRequest.RequestedByUserId",
         "EmailTemplate.UpdatedByUserId",
         "EmailSettings.UpdatedByUserId",

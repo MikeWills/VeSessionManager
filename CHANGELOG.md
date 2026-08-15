@@ -1,4 +1,4 @@
-# Changelog
+﻿# Changelog
 
 Full history of feature/phase pointer entries, newest first. This is the overflow for
 `CLAUDE.md`'s Change Log: CLAUDE.md is read in full on every conversation turn, so it only keeps a
@@ -7,6 +7,19 @@ already covered by CLAUDE.md's "Current State" phase list; an entry moves here o
 that window, or immediately if it's phase-numbered work already summarized in "Current State." Full
 design rationale for any entry still lives in its linked `/docs/*.md` file, not here or in
 CLAUDE.md — this file, like CLAUDE.md's Change Log, is pointers only.
+
+- **A login and a VE record are the same person (2026-08-11).** Issues #224/#226. See
+  `docs/ve-self-service.md`. `User` and `VolunteerExaminer` had **no FK in either direction** — an
+  absence, not a decision: the *authentication* separation is deliberate and documented, and the
+  *identity* separation appears to have been assumed from it. `User.VolunteerExaminerId` links them
+  (identity only — it grants nothing, and a call-sign match is offered as a suggestion for a human to
+  confirm, never applied automatically, because the FCC reissues call signs). That unlocks
+  `/Account/MyVeDetails`: self-service is entered by clicking a link **mailed to the address on
+  file**, so it can only ever reach a VE who already has one, and **one VE of 176 does**. The loop
+  only opens from inside the app. The email field is the one divergence and only by necessity —
+  `VeEmailChangeService` confirms via the *old* address and so structurally cannot set a first one,
+  while `SetOwnEmailWhenUnsetAsync` refuses the moment an address exists, so there stays exactly one
+  way to change a credential field.
 
 - **Page smoke tests: every Razor page, actually rendered (2026-08-10).** See `docs/page-smoke-tests.md`. Nothing in this repo rendered Razor — not the build, not the 928 Core tests, not the static-HTML layout harness — and two bugs reached a deployment the same day because of it: a `<form>` carrying both `action=` and `asp-page-handler` (which `FormTagHelper` throws on **at render time**, so the build was clean and the page 500'd for anyone who opened it), and an anchor where `asp-all-route-data` silently discarded `asp-route-id` so every link to a VE pointed at nobody. `WebApplicationFactory` now boots the app in-process against throwaway SQLite and requests **every page discovered from the app's own `EndpointDataSource`**, so a new page is covered the day it exists. **The fake auth scheme is half the value**: every interesting page is `[Authorize]`d, so before this the only way to see one was for a human to log in and click. Seeding happens *before* the host starts because `Program.cs` refuses to start when no account can sign in — the harness satisfies that guard rather than weakening it. And **an empty `href` is the signature of the whole bug class**: the first version of the link test only followed links that had one, and passed with the original bug reintroduced.
 

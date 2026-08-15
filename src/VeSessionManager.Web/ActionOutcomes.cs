@@ -1,6 +1,8 @@
 using VeSessionManager.Core;
 using VeSessionManager.Core.CandidateActions;
+using VeSessionManager.Core.Entities;
 using VeSessionManager.Core.Notifications;
+using VeSessionManager.Core.Payments;
 using VeSessionManager.Core.Sessions;
 using VeSessionManager.Core.VecSubmissions;
 
@@ -126,6 +128,52 @@ public static class ActionOutcomes
 
     public static ActionOutcome FlagRefund(CandidateActionResult result) =>
         Candidate(result, "Refund requested flagged.", "Could not flag refund requested.");
+
+    /// <summary>
+    /// Issuing a real refund through Square (#375) — used by both entry points, the candidate's
+    /// payment and an unmatched payment.
+    ///
+    /// <para><b>Success does not say "refunded".</b> Square accepts a refund immediately and then
+    /// takes up to 14 days to settle a card or bank transfer, and it can still end rejected. The
+    /// pending message says submitted and says why it is not instant; only a Completed status claims
+    /// the money went back. Telling a Session Manager a refund is done when Square has not finished
+    /// is the specific failure this wording exists to avoid — they would close the loop with the
+    /// candidate and never look again.</para>
+    ///
+    /// <para><see cref="RefundResult.CallFailed"/> is the other one worth reading carefully: it tells
+    /// the user <i>not</i> to retry by hand. The refund row is persisted with its idempotency key and
+    /// the status job re-sends it, so clicking again is at best redundant — and the instinct after an
+    /// error message is to click again.</para>
+    /// </summary>
+    public static ActionOutcome IssueRefund(RefundOutcome outcome, decimal amountUsd) => outcome.Result switch
+    {
+        RefundResult.Success when outcome.Status == RefundStatus.Completed => new(true,
+            $"Refund completed — {Usd.Format(amountUsd)} returned to the buyer."),
+        RefundResult.Success => new(true,
+            $"Refund of {Usd.Format(amountUsd)} submitted to Square. Card refunds usually clear within "
+            + "a few hours but can take up to 14 days — this page will show it as completed once Square confirms."),
+        RefundResult.NotFound => new(false, "Payment not found."),
+        RefundResult.NoSquarePaymentId => new(false,
+            "Could not refund — this payment was recorded before the app began storing Square's payment id, "
+            + "so it has to be refunded from the Square dashboard."),
+        RefundResult.NotPaid => new(false, "Could not refund — this payment is not marked paid."),
+        RefundResult.SquareNotConfigured => new(false,
+            "Could not refund — this team has no Square credentials configured."),
+        RefundResult.SquareSwitchedOff => new(false,
+            "Could not refund — Square is switched off for this team."),
+        RefundResult.TooOld => new(false,
+            "Could not refund — Square will not refund a payment taken more than a year ago."),
+        RefundResult.RefundLimitReached => new(false,
+            "Could not refund — Square allows at most 20 refunds against one payment."),
+        RefundResult.AmountInvalid => new(false,
+            $"Could not refund — enter an amount between {Usd.Format(0.01m)} and "
+            + $"{Usd.Format(outcome.RemainingRefundableUsd ?? 0m)}, which is what is left to refund."),
+        RefundResult.SquareRefused => new(false,
+            $"Square refused the refund. {outcome.Detail}"),
+        _ => new(false,
+            "Could not reach Square. The refund has been recorded and will be sent again automatically — "
+            + "do not issue it a second time.")
+    };
 
     public static ActionOutcome CreateRetestPayment(CandidateActionResult result) =>
         Candidate(result, "Retest payment created.",

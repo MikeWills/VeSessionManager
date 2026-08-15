@@ -1,5 +1,7 @@
 using VeSessionManager.Core.CandidateActions;
+using VeSessionManager.Core.Entities;
 using VeSessionManager.Core.Notifications;
+using VeSessionManager.Core.Payments;
 using VeSessionManager.Core.Sessions;
 using VeSessionManager.Core.VecSubmissions;
 using VeSessionManager.Web;
@@ -108,6 +110,7 @@ public class ActionOutcomesTests
         {
             SessionCompletionResult r => r.Result.ToString(),
             SessionDeleteResult r => r.Result.ToString(),
+            RefundOutcome r => r.Result.ToString(),
             _ => v.ToString()!
         }).Distinct().ToList();
 
@@ -131,6 +134,13 @@ public class ActionOutcomesTests
             .Select(r => (object)new SessionCompletionResult(r, 3, 0))];
         object[] deletion = [.. Enum.GetValues<SessionActionResult>()
             .Select(r => (object)new SessionDeleteResult(r, 3, 2, 1))];
+        // Success is expanded across every RefundStatus, not just the default: "submitted" and
+        // "completed" are different claims about whether the buyer has their money, and the whole
+        // point of the mapping is that only one of them says refunded (#375).
+        object[] refunds = [.. Enum.GetValues<RefundResult>()
+            .Select(r => (object)new RefundOutcome(r, "Square said no.", RefundStatus.Pending, 5m)),
+            .. Enum.GetValues<RefundStatus>()
+            .Select(s => (object)new RefundOutcome(RefundResult.Success, null, s, null))];
 
         return new TheoryData<string, Func<object, ActionOutcome>, object[]>
         {
@@ -144,11 +154,61 @@ public class ActionOutcomesTests
             { "SetFrn", o => ActionOutcomes.SetFrn((CandidateActionResult)o), candidate },
             { "MarkPaid", o => ActionOutcomes.MarkPaid((CandidateActionResult)o), candidate },
             { "FlagRefund", o => ActionOutcomes.FlagRefund((CandidateActionResult)o), candidate },
+            { "IssueRefund", o => ActionOutcomes.IssueRefund((RefundOutcome)o, 15m), refunds },
             { "CreateRetestPayment", o => ActionOutcomes.CreateRetestPayment((CandidateActionResult)o), candidate },
             { "ResendConfirmation", o => ActionOutcomes.ResendConfirmation((CandidateEmailSendResult)o), email },
             { "SendFelonyInstructions", o => ActionOutcomes.SendFelonyInstructions((CandidateEmailSendResult)o), email },
             { "SendYouthProgram", o => ActionOutcomes.SendYouthProgram((CandidateEmailSendResult)o), email }
         };
+    }
+
+    /// <summary>
+    /// A refund Square has only accepted must not be reported as done (#375). Square answers
+    /// immediately and takes up to 14 days to settle a card refund, so "refunded" at submit time is
+    /// a claim about the buyer's money that nothing has established — and the Session Manager would
+    /// close the loop with the candidate on the strength of it.
+    /// </summary>
+    [Fact]
+    public void IssueRefund_OnlyClaimsTheMoneyWentBackWhenSquareSaysCompleted()
+    {
+        var pending = ActionOutcomes.IssueRefund(new RefundOutcome(RefundResult.Success, Status: RefundStatus.Pending), 15m);
+        var completed = ActionOutcomes.IssueRefund(new RefundOutcome(RefundResult.Success, Status: RefundStatus.Completed), 15m);
+
+        Assert.True(pending.Success);
+        Assert.True(completed.Success);
+
+        // Asserted on the claim rather than the word "completed", which the pending message may
+        // legitimately use about the future ("will show it as completed once Square confirms").
+        // What must not appear is the statement that the buyer has the money.
+        Assert.Contains("submitted", pending.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("returned to the buyer", pending.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("returned to the buyer", completed.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("$15.00", pending.Message);
+    }
+
+    /// <summary>
+    /// The instinct after an error is to click again, and here that would be an attempt to refund
+    /// twice. The refund is already persisted with its idempotency key and gets re-sent by the
+    /// status job, so the message has to say don't.
+    /// </summary>
+    [Fact]
+    public void IssueRefund_TellsTheUserNotToRetryACallThatFailedInFlight()
+    {
+        var failed = ActionOutcomes.IssueRefund(new RefundOutcome(RefundResult.CallFailed, "timeout"), 15m);
+
+        Assert.False(failed.Success);
+        Assert.Contains("do not issue it a second time", failed.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>An invalid amount says what the ceiling is — "invalid" alone leaves the user guessing at a number the app already knows.</summary>
+    [Fact]
+    public void IssueRefund_NamesTheRemainingAmountWhenTheOneEnteredIsTooLarge()
+    {
+        var invalid = ActionOutcomes.IssueRefund(
+            new RefundOutcome(RefundResult.AmountInvalid, RemainingRefundableUsd: 4.50m), 15m);
+
+        Assert.False(invalid.Success);
+        Assert.Contains("$4.50", invalid.Message);
     }
 
     /// <summary>Money in a message goes through Usd, never a bare :F2 — see CLAUDE.md's Usd entry.</summary>

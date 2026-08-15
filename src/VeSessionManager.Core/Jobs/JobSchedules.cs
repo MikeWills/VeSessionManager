@@ -100,6 +100,7 @@ public static class JobSchedules
     public const string DayBeforeReminder = "DayBeforeReminder";
     public const string PaymentReminder = "PaymentReminder";
     public const string SquareLinkPurge = "SquareLinkPurge";
+    public const string RefundStatus = "RefundStatus";
     public const string PiiPurge = "PiiPurge";
     public const string UlsWatcher = "UlsWatcher";
     public const string LicenseWatch = "LicenseWatch";
@@ -166,6 +167,18 @@ public static class JobSchedules
             "Jobs:SquareLinkPurgeIntervalHours",
             DefaultIntervalHours: 24,
             TickIntervalSeconds: 86400),
+
+        // Hourly, unlike the daily Square job above. A refund can sit PENDING for up to 14 days but
+        // usually settles within hours, and a rejected one is money a candidate is still owed with
+        // nothing else watching for it — a daily check would sit on that overnight. Cheap: one
+        // indexed query per team, returning nothing whenever no refund is in flight.
+        new(RefundStatus,
+            "Refund status check",
+            "Follows submitted Square refunds to a final outcome, and re-sends any whose original call never came back.",
+            JobCadenceKind.IntervalFromWorkerStart,
+            "Jobs:RefundStatusIntervalHours",
+            DefaultIntervalHours: 1,
+            TickIntervalSeconds: 3600),
 
         new(PiiPurge,
             "PII purge",
