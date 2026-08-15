@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.DataProtection;
+﻿using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using VeSessionManager.Core.Entities;
@@ -191,6 +191,20 @@ public class AppDbContext(DbContextOptions<AppDbContext> options, IDataProtectio
             // it only arrives once the ULS sweep backfills it. SQLite treats NULLs as distinct in a
             // unique index anyway; the filter states the intent for a reader.
             b.HasIndex(v => v.Frn).IsUnique().HasFilter("\"Frn\" IS NOT NULL");
+
+            // Email is unique where present, and the four code paths that already enforced that
+            // (VolunteerExaminerManagementService x2, VeEmailChangeService x2) were backed by nothing
+            // — two concurrent requests both passed the check and both committed (#284). What made it
+            // more than untidy: VeSelfServiceLinkService then resolved an address with
+            // FirstOrDefaultAsync, so a sign-in link — a bearer credential reaching personal data —
+            // went to whichever duplicate SQLite returned.
+            //
+            // NOCASE, because those four checks compare `Email.ToLower() == ...`. A default index is
+            // case-SENSITIVE in SQLite, so it would have allowed "A@x.com" beside "a@x.com" — a
+            // guard weaker than the rule it is supposed to be enforcing, which is worse than none
+            // because it reads as settled.
+            b.Property(v => v.Email).UseCollation("NOCASE");
+            b.HasIndex(v => v.Email).IsUnique().HasFilter("\"Email\" IS NOT NULL");
 
             // **CallSign is deliberately NOT unique**, though only one person holds a given call at
             // any moment. Two reasons, both practical rather than theoretical:

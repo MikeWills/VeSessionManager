@@ -1,4 +1,4 @@
-using System.Security.Cryptography;
+﻿using System.Security.Cryptography;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using VeSessionManager.Core.Admin;
@@ -71,8 +71,19 @@ public class VeSelfServiceLinkService(
         var normalized = email.Trim();
         var now = timeProvider.GetUtcNow().UtcDateTime;
 
+        // OrderBy before First, on a predicate that is not guaranteed unique by the database (#284).
+        // Four code paths enforce "one VE per email" and none was backed by an index, so two rows
+        // could hold the same address — and this call mails a sign-in link, a bearer credential
+        // reaching that person's own contact details. Without an order, which of the two received it
+        // was whatever SQLite happened to return first.
+        //
+        // The unique index added alongside this makes the ambiguity unreachable going forward. The
+        // ordering stays regardless: it costs nothing, and "the index guarantees one row" is exactly
+        // the kind of assumption that outlives the index.
         var volunteerExaminer = await dbContext.VolunteerExaminers
-            .FirstOrDefaultAsync(v => v.Email != null && v.Email.ToLower() == normalized.ToLower(), cancellationToken);
+            .Where(v => v.Email != null && v.Email.ToLower() == normalized.ToLower())
+            .OrderBy(v => v.Id)
+            .FirstOrDefaultAsync(cancellationToken);
 
         if (volunteerExaminer is null)
         {

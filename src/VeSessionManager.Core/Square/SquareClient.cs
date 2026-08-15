@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Square;
@@ -23,7 +23,7 @@ namespace VeSessionManager.Core.Square;
 public sealed class SquareClient : ISquareClient
 {
     private readonly ILogger<SquareClient> _logger;
-    private readonly ConcurrentDictionary<int, global::Square.SquareClient> _clientsByTeamId = new();
+    private readonly ConcurrentDictionary<int, CachedSquareClient> _clientsByTeamId = new();
 
     public SquareClient(ILogger<SquareClient> logger)
     {
@@ -151,19 +151,61 @@ public sealed class SquareClient : ISquareClient
         _logger.LogInformation("Marked Square order {SquareOrderId} Completed for team {TeamId}", orderId, credentials.TeamId);
     }
 
-    private global::Square.SquareClient GetOrCreateClient(SquareCredentials credentials) =>
-        _clientsByTeamId.GetOrAdd(credentials.TeamId, _ =>
-        {
-            // From the credentials, not deployment config: a token is issued for one environment and
-            // fails against the other, so a single global switch made a real team on Production and a
-            // test team on Sandbox mutually exclusive. The cache is already keyed by team, so nothing
-            // else had to change.
-            var environment = credentials.Environment == SquareApiEnvironment.Production
-                ? SquareEnvironment.Production
-                : SquareEnvironment.Sandbox;
+    /// <summary>
+    /// Cached per team, and <b>rebuilt when the credentials it was built from change</b> (#252).
+    ///
+    /// <para>Keyed by TeamId alone, this cache never noticed a credential edit. The Worker is a
+    /// long-lived process, so changing a team's Square environment or rotating its access token in
+    /// Team Settings had no effect until someone restarted it — and CLAUDE.md's own documented
+    /// post-deploy step is "set live teams back to Production in Team Settings", which therefore did
+    /// nothing. The failure is silent in the worst direction: the cached client keeps talking to
+    /// Sandbox, or keeps presenting a revoked token, and payment links just quietly stop working.</para>
+    ///
+    /// <para>Same shape as <c>ExamToolsClient.GetOrCreateTeamSession</c>, which already rebuilds when
+    /// its BaseUrl changes. The comparison covers both fields the client is constructed from, because
+    /// either one changing alone produces a client pointed at the wrong place.</para>
+    /// </summary>
+    /// <remarks>internal, not private, so a test can observe the identity of the returned client —
+    /// "was it rebuilt?" is the entire behaviour here and there is nothing else to assert on without
+    /// a live Square account (issue #325's convention for the Worker job ticks).</remarks>
+    internal global::Square.SquareClient GetOrCreateClient(SquareCredentials credentials)
+    {
+        // From the credentials, not deployment config: a token is issued for one environment and
+        // fails against the other, so a single global switch made a real team on Production and a
+        // test team on Sandbox mutually exclusive.
+        var environment = credentials.Environment == SquareApiEnvironment.Production
+            ? SquareEnvironment.Production
+            : SquareEnvironment.Sandbox;
 
-            return new global::Square.SquareClient(
-                credentials.AccessToken,
-                clientOptions: new ClientOptions { BaseUrl = environment });
-        });
+        var existing = _clientsByTeamId.GetOrAdd(
+            credentials.TeamId, _ => CreateClient(credentials.AccessToken, environment));
+
+        if (existing.AccessToken == credentials.AccessToken && existing.Environment == environment)
+        {
+            return existing.Client;
+        }
+
+        var replacement = CreateClient(credentials.AccessToken, environment);
+        _clientsByTeamId[credentials.TeamId] = replacement;
+
+        // Deliberately not logging which token or environment — the token is a secret and the pair
+        // would narrow it. The team id is enough to explain a behaviour change in the log.
+        _logger.LogInformation(
+            "Square credentials changed for team {TeamId} — rebuilt the cached client", credentials.TeamId);
+
+        return replacement.Client;
+    }
+
+    private static CachedSquareClient CreateClient(string accessToken, string environment) =>
+        new(new global::Square.SquareClient(accessToken, clientOptions: new ClientOptions { BaseUrl = environment }),
+            accessToken,
+            environment);
+
+    /// <summary>
+    /// The client plus what it was built from, so a change can be detected rather than assumed
+    /// absent. Environment is the SDK's base-URL string (SquareEnvironment.Production/Sandbox are
+    /// string constants), which is exactly what the client was constructed with.
+    /// </summary>
+    private sealed record CachedSquareClient(
+        global::Square.SquareClient Client, string AccessToken, string Environment);
 }
