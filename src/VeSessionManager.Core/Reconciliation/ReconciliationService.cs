@@ -1,9 +1,10 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Entities;
 using VeSessionManager.Core.ExamTools;
+using VeSessionManager.Core.Uls;
 
 namespace VeSessionManager.Core.Reconciliation;
 
@@ -90,8 +91,12 @@ public class ReconciliationService(
         {
             if (!localById.TryGetValue(session.Id, out var localSession))
             {
+                // Eastern, matching the page's own Session Date column and the date a VE would
+                // recognise. ExamTools' Date is a UTC instant and most sessions here run in the
+                // evening ET, so formatting it raw names tomorrow — a card headed "Apr 15, 2026 ET"
+                // whose own text read "a closed session on 2026-04-16", reported live 2026-08-15.
                 seen.Add((ReconciliationFindingKind.MissingSession, session.Id, session.Date,
-                    $"ExamTools has a closed session on {session.Date:yyyy-MM-dd} that this app never ingested."));
+                    $"ExamTools has a closed session on {UlsSchedule.ToEasternDate(session.Date):yyyy-MM-dd} that this app never ingested."));
                 continue;
             }
 
@@ -102,7 +107,7 @@ public class ReconciliationService(
             if (session.ApplicantCount is { } remoteCount && remoteCount > localSession.CandidateCount)
             {
                 seen.Add((ReconciliationFindingKind.CandidateCountMismatch, session.Id, session.Date,
-                    $"ExamTools reports {remoteCount} applicant(s) on the {session.Date:yyyy-MM-dd} session; this app has {localSession.CandidateCount}."));
+                    $"ExamTools reports {remoteCount} applicant(s) on the {UlsSchedule.ToEasternDate(session.Date):yyyy-MM-dd} session; this app has {localSession.CandidateCount}."));
             }
         }
 
@@ -173,7 +178,66 @@ public class ReconciliationService(
             }
         }
 
+        await ResolveAgedOutMissingSessionsAsync(teamId, windowStart, now, cancellationToken);
+
         await dbContext.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Closes MissingSession findings whose session has aged past <see cref="Window"/> but has since
+    /// been imported.
+    ///
+    /// <para><b>Without this an aged-out finding is immortal.</b> The loop above only ever examines
+    /// findings inside the window, so once a finding's session date falls out of it, nothing looks at
+    /// the row again — it stays Open on the page and in the nav badge forever, and the "Re-import"
+    /// button appears to do nothing however many times it is pressed, because the import genuinely
+    /// works and the sweep simply never revisits the finding. Reported live 2026-08-15 on four April
+    /// sessions whose first-seen dates were exactly when they were last inside the window. The
+    /// mechanism was already written down in this file, as a consequence of a different bug
+    /// (see the #280 comment above) — it was just never treated as one in its own right.</para>
+    ///
+    /// <para>Verifying these costs no ExamTools call: the finding's claim is "this app never ingested
+    /// session X", and whether X is in the database now is a purely local question. That is what makes
+    /// it safe to do outside the window the remote feed defines.</para>
+    ///
+    /// <para><b>MissingSession only.</b> A CandidateCountMismatch says "ExamTools reported N, we have
+    /// M", and N cannot be re-checked without asking ExamTools for a session outside the window — so
+    /// an aged-out mismatch still cannot be auto-resolved, and is left alone rather than guessed at.
+    /// Absence from the remote feed means "not looked at" out here, never "fixed".</para>
+    /// </summary>
+    private async Task ResolveAgedOutMissingSessionsAsync(
+        int teamId, DateTime windowStart, DateTime now, CancellationToken cancellationToken)
+    {
+        var agedOut = await dbContext.ReconciliationFindings
+            .Where(f => f.TeamId == teamId
+                        && f.ResolvedUtc == null
+                        && f.SessionDateUtc < windowStart
+                        && f.Kind == ReconciliationFindingKind.MissingSession)
+            .ToListAsync(cancellationToken);
+
+        if (agedOut.Count == 0)
+        {
+            return;
+        }
+
+        var ids = agedOut.Select(f => f.ExamToolsSessionId).ToList();
+
+        // Scoped to this team: an ExamTools session id is unique within a team's feed, not across
+        // the deployment, so an unscoped lookup could clear one team's finding using another's data.
+        var imported = await dbContext.Sessions
+            .Where(s => s.TeamId == teamId && s.ExamToolsSessionId != null && ids.Contains(s.ExamToolsSessionId))
+            .Select(s => s.ExamToolsSessionId!)
+            .ToListAsync(cancellationToken);
+
+        var importedIds = imported.ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var finding in agedOut.Where(f => importedIds.Contains(f.ExamToolsSessionId)))
+        {
+            finding.ResolvedUtc = now;
+            logger.LogInformation(
+                "Reconciliation finding {FindingId} (team {TeamId}, ExamTools session {SessionId}) resolved — the session aged out of the check window but has since been imported",
+                finding.Id, teamId, finding.ExamToolsSessionId);
+        }
     }
 }
 

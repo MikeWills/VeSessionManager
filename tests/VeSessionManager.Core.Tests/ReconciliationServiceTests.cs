@@ -332,4 +332,140 @@ public class ReconciliationServiceTests
 
         Assert.Contains("missing 1", result.ToString());
     }
+
+    // ---- findings that age out of the window (2026-08-15) ----
+    //
+    // Reported live: four MissingSession findings for April 2026 sessions sat Open with a
+    // "Re-import Apr 2026" button that appeared to do nothing however many times it was pressed.
+    // The import was working. The sweep was not: RecordAsync loaded only findings with
+    // SessionDateUtc inside the 120-day window, so once a finding's session aged past it, it was
+    // never examined again and could never be resolved. It stayed on the page and in the nav badge
+    // permanently. The mechanism was already described in this service's own comment about #280,
+    // as a consequence of a different bug.
+
+    /// <summary>
+    /// A MissingSession finding whose session has since been imported must resolve <b>even after it
+    /// has aged out of the remote window</b>. Verifying it needs no ExamTools call at all: the
+    /// finding's claim is "this app never ingested session X", and whether X is in the database now
+    /// is a local question.
+    /// </summary>
+    [Fact]
+    public async Task AnAgedOutMissingSessionFinding_ResolvesOnceTheSessionHasBeenImported()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+
+        // 200 days ago — comfortably outside the 120-day window, like the April findings were.
+        var agedOut = Now.AddDays(-200);
+        dbContext.ReconciliationFindings.Add(new ReconciliationFinding
+        {
+            TeamId = team.Id,
+            Kind = ReconciliationFindingKind.MissingSession,
+            ExamToolsSessionId = "old-session",
+            SessionDateUtc = agedOut,
+            Detail = "ExamTools has a closed session that this app never ingested.",
+            FirstSeenUtc = agedOut.AddDays(1),
+            LastSeenUtc = agedOut.AddDays(1)
+        });
+        await dbContext.SaveChangesAsync();
+
+        // The re-import has since brought it in.
+        await SeedLocalSessionAsync(dbContext, team, "old-session", agedOut);
+
+        // The remote feed covers only the last 120 days and knows nothing about it.
+        await CreateService(dbContext, new FakeExamToolsClient(), new FixedTimeProvider(Now))
+            .RunAsync(team, CancellationToken.None);
+
+        var finding = dbContext.ReconciliationFindings.Single();
+        Assert.NotNull(finding.ResolvedUtc);
+    }
+
+    /// <summary>
+    /// The other half, and the one that stops the fix becoming "resolve everything old": an aged-out
+    /// finding whose session is still genuinely absent stays Open. Absence from the remote feed means
+    /// "not looked at" out here, never "fixed".
+    /// </summary>
+    [Fact]
+    public async Task AnAgedOutMissingSessionFinding_StaysOpenWhileTheSessionIsStillAbsent()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+
+        var agedOut = Now.AddDays(-200);
+        dbContext.ReconciliationFindings.Add(new ReconciliationFinding
+        {
+            TeamId = team.Id,
+            Kind = ReconciliationFindingKind.MissingSession,
+            ExamToolsSessionId = "still-missing",
+            SessionDateUtc = agedOut,
+            Detail = "ExamTools has a closed session that this app never ingested.",
+            FirstSeenUtc = agedOut.AddDays(1),
+            LastSeenUtc = agedOut.AddDays(1)
+        });
+        await dbContext.SaveChangesAsync();
+
+        await CreateService(dbContext, new FakeExamToolsClient(), new FixedTimeProvider(Now))
+            .RunAsync(team, CancellationToken.None);
+
+        Assert.Null(dbContext.ReconciliationFindings.Single().ResolvedUtc);
+    }
+
+    /// <summary>
+    /// An aged-out finding belonging to another team must not be touched, however tempting a
+    /// team-wide "resolve what is fixed" sweep looks — the id is ExamTools' and is only unique within
+    /// a team's feed.
+    /// </summary>
+    [Fact]
+    public async Task AnAgedOutFinding_IsNotResolvedByAnotherTeamsImport()
+    {
+        await using var dbContext = CreateContext();
+        var teamA = await SeedTeamAsync(dbContext);
+        var teamB = new Team { Name = "MARC", ExamToolsTeamCode = "MARC", ExamToolsUsername = "u", ExamToolsPassword = "p" };
+        dbContext.Teams.Add(teamB);
+        await dbContext.SaveChangesAsync();
+
+        var agedOut = Now.AddDays(-200);
+        dbContext.ReconciliationFindings.Add(new ReconciliationFinding
+        {
+            TeamId = teamB.Id,
+            Kind = ReconciliationFindingKind.MissingSession,
+            ExamToolsSessionId = "shared-id",
+            SessionDateUtc = agedOut,
+            Detail = "ExamTools has a closed session that this app never ingested.",
+            FirstSeenUtc = agedOut,
+            LastSeenUtc = agedOut
+        });
+        await dbContext.SaveChangesAsync();
+
+        // Team A imports a session that happens to carry the same ExamTools id.
+        await SeedLocalSessionAsync(dbContext, teamA, "shared-id", agedOut);
+
+        await CreateService(dbContext, new FakeExamToolsClient(), new FixedTimeProvider(Now))
+            .RunAsync(teamA, CancellationToken.None);
+
+        Assert.Null(dbContext.ReconciliationFindings.Single().ResolvedUtc);
+    }
+
+    /// <summary>
+    /// The detail sentence quotes a calendar date, and it must be the <b>Eastern</b> one — the same
+    /// date the page's own Session Date column renders, and the date a VE would recognise. ExamTools'
+    /// <c>Date</c> is a UTC instant, and 697 of 867 sessions here start between 23:00 and 04:00 UTC,
+    /// so formatting it raw names tomorrow for most of them. Live symptom: a card headed "Apr 15,
+    /// 2026 ET" whose own text said "a closed session on 2026-04-16".
+    /// </summary>
+    [Fact]
+    public async Task MissingSessionDetail_QuotesTheEasternDate_NotTheUtcOne()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        var client = new FakeExamToolsClient();
+        // 01:00 UTC on the 16th is 21:00 ET on the 15th — an ordinary evening session.
+        client.Add("evening", new DateTime(2026, 7, 16, 1, 0, 0, DateTimeKind.Utc));
+
+        await CreateService(dbContext, client, new FixedTimeProvider(Now)).RunAsync(team, CancellationToken.None);
+
+        var finding = dbContext.ReconciliationFindings.Single();
+        Assert.Contains("2026-07-15", finding.Detail);
+        Assert.DoesNotContain("2026-07-16", finding.Detail);
+    }
 }
