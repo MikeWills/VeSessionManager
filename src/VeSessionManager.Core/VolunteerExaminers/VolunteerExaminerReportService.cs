@@ -179,7 +179,7 @@ public class VolunteerExaminerReportService(AppDbContext dbContext)
 
     /// <summary>
     /// The same report, one page at a time (2026-08-15) — the page had grown to a row per VE per
-    /// team with no pager at all, which on this deployment is 176 people.
+    /// team with no pager at all, and 247 distinct VEs as of 2026-08-15.
     /// </summary>
     /// <remarks>
     /// <para><b>Paged in memory, not in the database, and deliberately.</b> The grouped counts are

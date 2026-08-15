@@ -111,6 +111,50 @@ public class CandidateActionServiceTests
         Assert.Single(dbContext.AuditLogs, a => a.Action == "CandidateMarkedFailed");
     }
 
+    /// <summary>
+    /// Failing an exam means having sat one, so the status and <c>Tested</c> must move together
+    /// (2026-08-15). They did not until then, and the mismatch was not cosmetic — see the next test.
+    /// </summary>
+    [Fact]
+    public async Task MarkFailed_AlsoMarksTheCandidateTested()
+    {
+        await using var dbContext = CreateContext();
+        var (team, user, vec) = await SeedTeamAsync(dbContext);
+        var session = await SeedSessionAsync(dbContext, team, vec, user);
+        var candidate = await SeedCandidateAsync(dbContext, session, CandidateApplicationStatus.Received);
+        Assert.False(candidate.Tested);
+
+        await CreateService(dbContext).MarkFailedAsync(candidate.Id, user.Id, CancellationToken.None);
+
+        Assert.True(dbContext.Candidates.Single().Tested);
+    }
+
+    /// <summary>
+    /// The consequence that made this worth fixing rather than noting: the no-show delete is gated
+    /// on <c>!Tested</c> and nulls PII immediately. While a manually-failed candidate stayed
+    /// <c>Tested = false</c>, that irreversible action stayed available on someone who had actually
+    /// sat the exam.
+    /// </summary>
+    [Fact]
+    public async Task MarkFailed_ThenDelete_IsRefused_BecauseTheyHaveNowTested()
+    {
+        await using var dbContext = CreateContext();
+        var (team, user, vec) = await SeedTeamAsync(dbContext);
+        var session = await SeedSessionAsync(dbContext, team, vec, user);
+        var candidate = await SeedCandidateAsync(dbContext, session, CandidateApplicationStatus.Received);
+        var service = CreateService(dbContext);
+
+        await service.MarkFailedAsync(candidate.Id, user.Id, CancellationToken.None);
+        var delete = await service.DeleteAsync(candidate.Id, user.Id, CancellationToken.None);
+
+        Assert.Equal(CandidateActionResult.AlreadyTested, delete);
+        var updated = dbContext.Candidates.Single();
+        Assert.Equal(CandidateApplicationStatus.Failed, updated.ApplicationStatus);
+        // PII intact — the delete path nulls it, and it must not have run.
+        Assert.NotNull(updated.Name);
+        Assert.Null(updated.PiiPurgedUtc);
+    }
+
     [Fact]
     public async Task MarkFailed_AlreadyGranted_ReturnsInvalidState_DoesNotChangeStatus()
     {
