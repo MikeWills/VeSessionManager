@@ -23,6 +23,7 @@ using VeSessionManager.Core.Jobs;
 using VeSessionManager.Core.Navigation;
 using VeSessionManager.Core.Notifications;
 using VeSessionManager.Core.Payments;
+using VeSessionManager.Core.Reporting;
 using VeSessionManager.Core.Scheduling;
 using VeSessionManager.Core.Sessions;
 using VeSessionManager.Core.Square;
@@ -95,6 +96,7 @@ builder.Services.AddScoped<CandidateNotificationService>();
 
 builder.Services.AddScoped<VecSubmissionService>();
 builder.Services.AddScoped<VolunteerExaminerReportService>();
+builder.Services.AddScoped<SessionStatsService>();
 builder.Services.AddScoped<VolunteerExaminerDirectoryService>();
 builder.Services.AddScoped<VolunteerExaminerManagementService>();
 builder.Services.AddScoped<VolunteerExaminerMergeService>();

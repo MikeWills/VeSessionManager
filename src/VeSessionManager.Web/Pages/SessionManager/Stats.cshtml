@@ -1,0 +1,138 @@
+@page
+@model VeSessionManager.Web.Pages.SessionManager.StatsModel
+@{
+    ViewData["Title"] = "Stats";
+    ViewData["ActiveNav"] = "Stats";
+    Layout = "_AppLayout";
+}
+
+<div class="page-head">
+    <div>
+        <p class="eyebrow">@Model.TeamSummaryLabel · @Model.DateRangeSummaryLabel</p>
+        <h1>Stats</h1>
+    </div>
+</div>
+
+@if (!Model.HasTeamContext)
+{
+    <p class="session-sub">This account belongs to no team yet, so there is nothing to report on.</p>
+}
+else
+{
+    @* GET, so a filtered view is a shareable URL and the back button works — same shape as the
+       session list and VE Session Counts. *@
+    <form method="get" class="filters" style="margin-bottom:20px; align-items:flex-start;">
+        @if (Model.AvailableTeams.Count > 1)
+        {
+            <partial name="_TeamPicker" model="new VeSessionManager.Web.TeamPicker(Model.TeamId, Model.AvailableTeams, Model.TeamSummaryLabel)" />
+        }
+
+        <div class="filter-dropdown">
+            <button type="button" class="kebab @(Model.DateRangeSummaryLabel != "Any time" ? "active" : "")">Date range: @Model.DateRangeSummaryLabel <i class="bi bi-caret-down-fill" aria-hidden="true"></i></button>
+            <div class="menu" style="width:240px;">
+                <label class="item" style="display:block;">
+                    <span style="display:block; margin-bottom:4px;">Preset</span>
+                    <select name="dateRange" class="menu-input">
+                        <option value="">Any time</option>
+                        @foreach (var preset in VeSessionManager.Web.Pages.SessionManager.IndexModel.DateRangePresets)
+                        {
+                            <option value="@preset.Key" selected="@(preset.Key == Model.DateRange)">@preset.Value.Label</option>
+                        }
+                    </select>
+                </label>
+                <hr />
+                <div class="item" style="cursor:default;">
+                    <span style="display:block; margin-bottom:4px;">Custom range (overrides preset)</span>
+                    <input type="date" name="dateFrom" value="@Model.DateFrom?.ToString("yyyy-MM-dd")" class="menu-input" />
+                    <input type="date" name="dateTo" value="@Model.DateTo?.ToString("yyyy-MM-dd")" class="menu-input" />
+                </div>
+                <hr />
+                <button type="submit" class="item">Apply</button>
+            </div>
+        </div>
+
+        <button type="submit" class="btn-secondary btn-sm">Apply</button>
+    </form>
+
+    @if (Model.Report.TotalSessions == 0)
+    {
+        <p class="session-sub">No completed sessions in this range. Sessions appear here once they have finished — a scheduled session is not counted until it has.</p>
+    }
+    else
+    {
+        <div class="meta-grid" style="margin-bottom:24px;">
+            <div class="session-panel" style="display:block;">
+                <p class="eyebrow">Sessions run</p>
+                <p class="count" style="font-size:28px;">@Model.Report.TotalSessions</p>
+            </div>
+            <div class="session-panel" style="display:block;">
+                <p class="eyebrow">Candidates tested</p>
+                <p class="count" style="font-size:28px;">@Model.Report.TotalCandidatesTested</p>
+            </div>
+            <div class="session-panel" style="display:block;">
+                <p class="eyebrow">Pass rate</p>
+                <p class="count" style="font-size:28px;">
+                    @(Model.Report.PassRate is { } rate ? rate.ToString("P0") : "—")
+                </p>
+                <p class="session-sub" style="margin:0;">@Model.Report.TotalPassed passed · @Model.Report.TotalFailed failed</p>
+            </div>
+            <div class="session-panel" style="display:block;">
+                <p class="eyebrow">VEs who worked</p>
+                <p class="count" style="font-size:28px;">@Model.Report.ActiveVolunteerExaminers</p>
+            </div>
+        </div>
+
+        @* The data reaches the charts through this attribute, not an inline <script>: the CSP is
+           script-src 'self', so an inline block renders and never runs. Same constraint that put
+           Chart.js in wwwroot/lib rather than on a CDN. *@
+        <div id="statsData" data-stats="@Model.ChartDataJson" hidden></div>
+
+        <div class="session-panel" style="display:block; margin-bottom:20px;">
+            <div class="section-head"><h2>Volume by month</h2></div>
+            <p class="session-sub">Months are Eastern calendar months — an evening session is stored on the following UTC date, so grouping by UTC would file most of them in the wrong month.</p>
+            <div style="position:relative; height:280px;"><canvas id="volumeChart"></canvas></div>
+        </div>
+
+        <div class="session-panel" style="display:block; margin-bottom:20px;">
+            <div class="section-head"><h2>Outcomes by month</h2></div>
+            <p class="session-sub">Only candidates whose result is known. Someone still awaiting an FCC grant is in neither bar — counting them as failures would make a recent session's rate climb by itself for a fortnight.</p>
+            <div style="position:relative; height:280px;"><canvas id="outcomeChart"></canvas></div>
+        </div>
+
+        <div class="session-panel" style="display:block; margin-bottom:20px;">
+            <div class="section-head"><h2>New licences and upgrades</h2></div>
+            <p class="session-sub">
+                @Model.Report.TotalNewLicences first licence(s) and @Model.Report.TotalUpgrades upgrade(s) in this range.
+                Walking in unlicensed makes it a first licence; walking in with a class makes it an upgrade.
+            </p>
+            <div style="position:relative; height:280px;"><canvas id="licenceChart"></canvas></div>
+        </div>
+
+        <div class="session-panel" style="display:block;">
+            <div class="section-head"><h2>VE testing activity</h2></div>
+            <p class="session-sub">Sessions worked in this range, counted from the rosters of sessions that actually finished.</p>
+            <div class="table-scroll">
+                <table class="cards">
+                    <thead>
+                        <tr><th>VE</th><th>Call sign</th><th>Sessions worked</th></tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var ve in Model.Report.VolunteerExaminers)
+                        {
+                            <tr>
+                                <td class="session-title">@ve.Name</td>
+                                <td class="mono">@(ve.CallSign ?? "—")</td>
+                                <td class="count">@ve.SessionsWorked</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    }
+}
+
+@section Scripts {
+    <script src="~/lib/chart.js/chart.umd.min.js" asp-append-version="true"></script>
+    <script src="~/js/stats.js" asp-append-version="true"></script>
+}

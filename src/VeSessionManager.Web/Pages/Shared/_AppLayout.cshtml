@@ -79,7 +79,7 @@
     // current page is one of its children (the individual links inside still get their own
     // .active state too, same as before).
     var applicantsGroupActive = activeNav is "ApplicantStatus" or "RenewalMonitor";
-    var vesGroupActive = activeNav is "VeRoster" or "VeDirectory" or "VeTags" or "VeImport" or "AuditioningReport";
+    var vesGroupActive = activeNav is "VeRoster" or "VeDirectory" or "VeTags" or "VeImport" or "AuditioningReport" or "Stats";
     var settingsGroupActive = activeNav is "AdminTeams" or "AdminTeamSettings" or "AdminUsers" or "AdminEmailTemplates"
         or "AdminFees" or "AdminVecs" or "AdminAuditLog" or "AdminJobHistory" or "AdminJobSchedule" or "Reconciliation" or "AdminSystemSettings";
 }
@@ -152,6 +152,9 @@
                         <a class="item @(activeNav == "VeDirectory" ? "active" : "")" asp-page="/SessionManager/VeDirectory">VE Directory</a>
                         <a class="item @(activeNav == "VeRoster" ? "active" : "")" asp-page="/SessionManager/VeRoster">VE Session Counts</a>
                         <a class="item @(activeNav == "AuditioningReport" ? "active" : "")" asp-page="/SessionManager/AuditioningReport">Auditioning Report</a>
+                        @* Same admin-only gate as the rest of this group, and for the same reason as
+                           VE Session Counts: it shows a per-VE count (#63). *@
+                        <a class="item @(activeNav == "Stats" ? "active" : "")" asp-page="/SessionManager/Stats">Stats</a>
                         <hr>
                         <a class="item @(activeNav == "VeTags" ? "active" : "")" asp-page="/SessionManager/VeTags">VE Tags</a>
                         <a class="item @(activeNav == "VeImport" ? "active" : "")" asp-page="/SessionManager/VeImport">Import VEs</a>
