@@ -78,6 +78,46 @@ public class VeRosterModel(AppDbContext dbContext, UserManager<User> userManager
     public IReadOnlyList<VeSessionCount> Counts { get; private set; } = [];
     public string DateRangeSummaryLabel { get; private set; } = "Any time";
 
+    internal static readonly int[] AllowedPageSizes = [25, 50, 100, 200];
+    private const int DefaultPageSize = 50;
+
+    /// <summary>
+    /// pageNumber, not page: <c>page</c> is a Razor Pages route-value key and the route value
+    /// provider runs before the query string one, so <c>?page=2</c> never binds and every page
+    /// renders as the first. See #368, where exactly that shipped on the session list and went
+    /// unnoticed for weeks — and <c>VeDirectory</c>, which carries the same note for the same reason.
+    /// </summary>
+    [BindProperty(SupportsGet = true, Name = "pageNumber")]
+    public int PageNumber { get; set; } = 1;
+
+    [BindProperty(SupportsGet = true, Name = "pageSize")]
+    public int PageSize { get; set; } = DefaultPageSize;
+
+    /// <summary>How many rows match the filters — not how many are on this page.</summary>
+    public int TotalCount { get; private set; }
+    public int TotalPages { get; private set; } = 1;
+
+    /// <summary>Every active filter as route values, so the pager and the page-size selector keep the current view.</summary>
+    public Dictionary<string, string?> FilterRoute()
+    {
+        var values = new Dictionary<string, string?>();
+        if (TeamId is { } team) values["teamId"] = team.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        if (!string.IsNullOrWhiteSpace(DateRange)) values["dateRange"] = DateRange;
+        if (DateFrom is { } from) values["dateFrom"] = from.ToString("yyyy-MM-dd");
+        if (DateTo is { } to) values["dateTo"] = to.ToString("yyyy-MM-dd");
+        if (!string.IsNullOrWhiteSpace(Search)) values["search"] = Search;
+        return values;
+    }
+
+    /// <summary>A pager link: every active filter, plus the page being moved to.</summary>
+    public Dictionary<string, string?> PageRoute(int pageNumber)
+    {
+        var values = FilterRoute();
+        values["pageNumber"] = pageNumber.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        values["pageSize"] = PageSize.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        return values;
+    }
+
     public async Task OnGetAsync()
     {
         // See IndexModel.OnGetAsync's identical guard — [BindProperty(SupportsGet = true)] can leave
@@ -108,10 +148,23 @@ public class VeRosterModel(AppDbContext dbContext, UserManager<User> userManager
 
         if (HasTeamContext)
         {
+            // An unrecognized pageSize comes from a hand-edited query string — fall back rather than
+            // honouring an arbitrary one, which is what stops ?pageSize=100000 being a free way to
+            // ask the server for everything.
+            PageSize = AllowedPageSizes.Contains(PageSize) ? PageSize : DefaultPageSize;
+
             // RequestAborted, not None (#299): this page is a read with no POST handler at all, so
             // there is no write for a disconnect to tear — only a report query left running against
             // the shared SQLite file for a reader who has already gone.
-            Counts = await reportService.GetSessionCountsAsync(teamIds, fromUtc, toUtc, Search, HttpContext.RequestAborted);
+            var page = await reportService.GetSessionCountsPageAsync(
+                teamIds, fromUtc, toUtc, Search, PageNumber, PageSize, HttpContext.RequestAborted);
+
+            Counts = page.Rows;
+            TotalCount = page.TotalCount;
+            TotalPages = page.TotalPages;
+            // Read back the clamped value, so a stale ?pageNumber=9 highlights the page actually
+            // shown rather than a number that no longer exists.
+            PageNumber = page.PageNumber;
         }
     }
 

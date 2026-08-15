@@ -98,4 +98,30 @@ else
         </tbody>
     </table>
     </div>
+
+    @* Paged 2026-08-15 — one row per VE per team, 176 people on this deployment. Same shape as
+       VE Directory's pager so the two report pages behave identically. *@
+    <div class="pagination">
+        @if (Model.TotalCount > 0)
+        {
+            <span class="pagination-summary">
+                Showing @(((Model.PageNumber - 1) * Model.PageSize) + 1)&ndash;@(Math.Min(Model.PageNumber * Model.PageSize, Model.TotalCount)) of @Model.TotalCount
+            </span>
+            <div class="pagination-controls filters">
+                @if (Model.PageNumber > 1)
+                {
+                    <a class="filter-pill" asp-page="./VeRoster" asp-all-route-data="Model.PageRoute(Model.PageNumber - 1)"><i class="bi bi-arrow-left" aria-hidden="true"></i> Prev</a>
+                }
+                <span class="pagination-page">Page @Model.PageNumber of @Model.TotalPages</span>
+                @if (Model.PageNumber < Model.TotalPages)
+                {
+                    <a class="filter-pill" asp-page="./VeRoster" asp-all-route-data="Model.PageRoute(Model.PageNumber + 1)">Next <i class="bi bi-arrow-right" aria-hidden="true"></i></a>
+                }
+            </div>
+        }
+        else
+        {
+            <span></span>
+        }
+    </div>
 }

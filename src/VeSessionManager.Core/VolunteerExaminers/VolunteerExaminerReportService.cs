@@ -176,7 +176,51 @@ public class VolunteerExaminerReportService(AppDbContext dbContext)
             .ThenBy(c => c.Name)
             .ToList();
     }
+
+    /// <summary>
+    /// The same report, one page at a time (2026-08-15) — the page had grown to a row per VE per
+    /// team with no pager at all, which on this deployment is 176 people.
+    /// </summary>
+    /// <remarks>
+    /// <para><b>Paged in memory, not in the database, and deliberately.</b> The grouped counts are
+    /// already materialized before ordering, because EF InMemory cannot translate an <c>OrderBy</c>
+    /// chained onto this <c>GroupBy(...).Select(...)</c> projection — the constraint CLAUDE.md
+    /// records against this very method. Ordering has to happen client-side, so <c>Skip</c>/
+    /// <c>Take</c> pushed into SQL would slice an unordered set and hand back arbitrary rows that
+    /// change between pages. Slicing after the sort is the only correct option available here.</para>
+    ///
+    /// <para>The cost is bounded and small: one row per VE per team after aggregation, a few hundred
+    /// on the largest deployment this serves, and every one of them was already being sent to the
+    /// browser before this existed. Stated because "paging that still loads everything" looks like
+    /// an oversight when it is a consequence — if the row count ever justifies real database paging,
+    /// the fix is to make the ordering translatable first, not to move Skip/Take.</para>
+    ///
+    /// <para><paramref name="pageNumber"/> is 1-based and clamped, so a stale link to page 9 of a
+    /// now-shorter report lands on the last page rather than rendering empty. Same contract as
+    /// <c>VolunteerExaminerDirectoryService</c>'s pager.</para>
+    /// </remarks>
+    public async Task<VeSessionCountPage> GetSessionCountsPageAsync(
+        IReadOnlyList<int>? teamIds, DateTime? fromUtc, DateTime? toUtc, string? search,
+        int pageNumber, int pageSize, CancellationToken cancellationToken)
+    {
+        var all = await GetSessionCountsAsync(teamIds, fromUtc, toUtc, search, cancellationToken);
+
+        var totalPages = Math.Max(1, (int)Math.Ceiling(all.Count / (double)pageSize));
+        var page = Math.Clamp(pageNumber, 1, totalPages);
+
+        var rows = all
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToList();
+
+        return new VeSessionCountPage(rows, all.Count, page, totalPages);
+    }
 }
+
+/// <param name="TotalCount">Rows matching the filters — not rows on this page.</param>
+/// <param name="PageNumber">The page actually returned, which may differ from the one asked for: it is clamped into range.</param>
+public record VeSessionCountPage(
+    IReadOnlyList<VeSessionCount> Rows, int TotalCount, int PageNumber, int TotalPages);
 
 public record VeSessionCount(int VolunteerExaminerId, string Name, string? CallSign, string TeamName, int SessionCount);
 

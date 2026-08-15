@@ -326,4 +326,147 @@ public class VolunteerExaminerReportServiceTests
 
         Assert.Empty(counts);
     }
+
+    // ---- Paging (2026-08-15) ----
+
+    /// <summary>
+    /// Seeds VEs with distinct session counts, 1 up to <paramref name="veCount"/>, so the ranking is
+    /// unambiguous and "page 2 continues where page 1 stopped" is checkable rather than a vibe.
+    ///
+    /// <para><b>Creation order is the inverse of rank, deliberately: the busiest VE is inserted
+    /// last.</b> The first version of this helper created them busiest-first, which made row id
+    /// order coincide exactly with session-count order — so a pager that sorted by id instead of by
+    /// count passed every test here. That mutation was run and did <i>not</i> fail, which is how the
+    /// flaw was found. Any correlation between insertion order and the property under test makes
+    /// these assertions decorative, so keep them opposed.</para>
+    ///
+    /// <para>Names carry the count (<c>VE 07</c> works 7 sessions) so a failure message says what
+    /// went wrong without needing the seed re-read.</para>
+    /// </summary>
+    private static async Task<Team> SeedRankedVesAsync(AppDbContext dbContext, int veCount)
+    {
+        var team = await SeedTeamAsync(dbContext);
+        var vec = await SeedVecAsync(dbContext);
+        var fee = await SeedFeeConfigurationAsync(dbContext, vec);
+
+        var sessions = new List<Session>();
+        for (var i = 0; i < veCount; i++)
+        {
+            sessions.Add(await SeedSessionAsync(
+                dbContext, team, vec, fee, new DateTime(2026, 6, 1, 0, 0, 0, DateTimeKind.Utc).AddDays(i)));
+        }
+
+        // Ascending: the first VE created works 1 session, the last works veCount.
+        for (var worked = 1; worked <= veCount; worked++)
+        {
+            var ve = await SeedVeAsync(dbContext, team, $"K0{worked:00}", $"VE {worked:00}");
+            for (var s = 0; s < worked; s++)
+            {
+                Link(dbContext, sessions[s], ve);
+            }
+        }
+
+        await dbContext.SaveChangesAsync();
+        return team;
+    }
+
+    [Fact]
+    public async Task Page_ReturnsOnlyThatPage_ButCountsEveryMatchingRow()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedRankedVesAsync(dbContext, veCount: 12);
+
+        var page = await new VolunteerExaminerReportService(dbContext).GetSessionCountsPageAsync(
+            [team.Id], null, null, null, pageNumber: 1, pageSize: 5, CancellationToken.None);
+
+        Assert.Equal(5, page.Rows.Count);
+        Assert.Equal(12, page.TotalCount);
+        Assert.Equal(3, page.TotalPages);
+        Assert.Equal(1, page.PageNumber);
+    }
+
+    /// <summary>
+    /// The property that catches slicing an unordered set: page 2 must continue the ranking, not
+    /// restart it or repeat page 1. Ordering happens client-side here (the InMemory GroupBy/OrderBy
+    /// constraint), so a Skip/Take pushed into the query would slice before the sort and hand back
+    /// arbitrary rows — which still looks like a working pager until you read the numbers.
+    /// </summary>
+    [Fact]
+    public async Task Page_ContinuesTheRanking_RatherThanRestartingIt()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedRankedVesAsync(dbContext, veCount: 12);
+        var service = new VolunteerExaminerReportService(dbContext);
+
+        var first = await service.GetSessionCountsPageAsync([team.Id], null, null, null, 1, 5, CancellationToken.None);
+        var second = await service.GetSessionCountsPageAsync([team.Id], null, null, null, 2, 5, CancellationToken.None);
+
+        // Busiest first, and strictly descending across the page boundary.
+        Assert.Equal(12, first.Rows[0].SessionCount);
+        Assert.Equal(8, first.Rows[4].SessionCount);
+        Assert.Equal(7, second.Rows[0].SessionCount);
+
+        // And no row appears on both pages.
+        Assert.Empty(first.Rows.Select(r => r.VolunteerExaminerId)
+            .Intersect(second.Rows.Select(r => r.VolunteerExaminerId)));
+    }
+
+    /// <summary>A stale link to a page that no longer exists lands on the last page, not on an empty one.</summary>
+    [Fact]
+    public async Task Page_PastTheEnd_ClampsToTheLastPage()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedRankedVesAsync(dbContext, veCount: 12);
+
+        var page = await new VolunteerExaminerReportService(dbContext).GetSessionCountsPageAsync(
+            [team.Id], null, null, null, pageNumber: 99, pageSize: 5, CancellationToken.None);
+
+        Assert.Equal(3, page.PageNumber);
+        Assert.Equal(2, page.Rows.Count);
+        Assert.NotEmpty(page.Rows);
+    }
+
+    [Fact]
+    public async Task Page_BelowOne_ClampsToTheFirstPage()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedRankedVesAsync(dbContext, veCount: 12);
+
+        var page = await new VolunteerExaminerReportService(dbContext).GetSessionCountsPageAsync(
+            [team.Id], null, null, null, pageNumber: 0, pageSize: 5, CancellationToken.None);
+
+        Assert.Equal(1, page.PageNumber);
+        Assert.Equal(12, page.Rows[0].SessionCount);
+        Assert.Equal("VE 12", page.Rows[0].Name);
+    }
+
+    /// <summary>Empty must still report one page — a "Page 1 of 0" is nonsense, and dividing by it downstream is worse.</summary>
+    [Fact]
+    public async Task Page_WithNoMatchingRows_ReportsOnePageAndNoRows()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+
+        var page = await new VolunteerExaminerReportService(dbContext).GetSessionCountsPageAsync(
+            [team.Id], null, null, null, pageNumber: 1, pageSize: 25, CancellationToken.None);
+
+        Assert.Empty(page.Rows);
+        Assert.Equal(0, page.TotalCount);
+        Assert.Equal(1, page.TotalPages);
+        Assert.Equal(1, page.PageNumber);
+    }
+
+    /// <summary>Paging must not quietly widen the filters — the count is of matching rows, not of everyone.</summary>
+    [Fact]
+    public async Task Page_AppliesTheSearchFilterBeforePaging()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedRankedVesAsync(dbContext, veCount: 12);
+
+        var page = await new VolunteerExaminerReportService(dbContext).GetSessionCountsPageAsync(
+            [team.Id], null, null, "VE 07", pageNumber: 1, pageSize: 25, CancellationToken.None);
+
+        Assert.Equal(1, page.TotalCount);
+        Assert.Equal("VE 07", Assert.Single(page.Rows).Name);
+    }
 }
