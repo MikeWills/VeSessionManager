@@ -24,7 +24,10 @@
     <div class="filter-dropdown">
         <button type="button" class="kebab @(Model.Status.Count > 0 ? "active" : "")">Status: @Model.StatusSummaryLabel <i class="bi bi-caret-down-fill" aria-hidden="true"></i></button>
         <div class="menu">
-            <label class="item"><input type="checkbox" name="status" value="Active" @(Model.Status.Contains("Active") ? "checked" : "") /> Active</label>
+            @* One filter value, two chips: the SQL rule is "not cancelled and not completed", which
+               renders as Active or Upcoming depending on whether the session has started. See
+               IndexModel.StatusLabel for why this is not two separate filters. *@
+            <label class="item"><input type="checkbox" name="status" value="Active" @(Model.Status.Contains("Active") ? "checked" : "") /> Active or upcoming</label>
             <label class="item"><input type="checkbox" name="status" value="RescheduleFlagged" @(Model.Status.Contains("RescheduleFlagged") ? "checked" : "") /> Reschedule flagged</label>
             <label class="item"><input type="checkbox" name="status" value="Completed" @(Model.Status.Contains("Completed") ? "checked" : "") /> Completed</label>
             <label class="item"><input type="checkbox" name="status" value="Cancelled" @(Model.Status.Contains("Cancelled") ? "checked" : "") /> Cancelled</label>
