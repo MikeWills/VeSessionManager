@@ -1,4 +1,4 @@
-# The audit log: what "append-only" actually means here
+﻿# The audit log: what "append-only" actually means here
 
 Written 2026-08-14, resolving the L-06 half of issue #313. The finding was not that something is
 broken — it is that a property everyone relies on had never been written down, so nobody could say
@@ -69,12 +69,18 @@ What exists now:
   daily, finds no window, logs one INFO line and deletes nothing. Same explicit-opt-in rule as
   `PiiRetentionWindowDays` and `VeContactRetentionYears`, and for the same reason: nothing in this
   table *has* to be deleted, so the default must be the one that loses nothing.
-- `RecordRetentionService` (`Core/Retention`) is the **only** place an audit row is deleted, and
-  `AuditLogAppendOnlyTests` exempts it **by filename** — not by relaxing the forbidden-operation
-  list. A second delete path anywhere else still fails the build, which is the property the guard
-  was protecting in the first place. Renaming or moving that file also fails, deliberately: it
-  forces whoever moves it to come back here and re-affirm the exemption rather than carry it along
-  silently. And the test asserts the exempted file still contains an `AuditLogs` delete, so the
+- **A second sanctioned path was added 2026-08-15** (#188): deleting a user account also deletes
+  *that account's own lifecycle rows* — the entries about the user — and writes a fresh entry naming
+  the removed email. It is narrow in the way that matters: an account that acted on anything *else*
+  is refused outright, with the blockers named, so this cannot erase a record of what somebody did.
+  Which of three options to take was an explicit decision, recorded on #188, exactly as this section
+  demands.
+- `RecordRetentionService` (`Core/Retention`) and `UserManagementService` (`Core/Admin`) are the
+  **only** places an audit row is deleted, and `AuditLogAppendOnlyTests` exempts them **by filename** — not by relaxing the forbidden-operation
+  list. A *third* delete path anywhere still fails the build, which is the property the guard was
+  protecting in the first place. Renaming or moving either file also fails, deliberately: it forces
+  whoever moves it to come back here and re-affirm the exemption rather than carry it along
+  silently. And the test asserts each exempted file still contains an `AuditLogs` delete, so an
   exemption cannot rot into an open door standing after the room behind it was demolished.
 - `RecordRetentionJob` runs it daily. It is **not** folded into `PiiPurgeJob` despite the identical
   cadence — neither table holds personal data, and a run filed under "PII purge" is a run nobody

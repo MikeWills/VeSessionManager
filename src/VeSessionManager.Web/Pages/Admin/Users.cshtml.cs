@@ -334,6 +334,33 @@ public class UsersModel(AppDbContext dbContext, UserManager<User> userManager, A
         return RedirectToPage(new { teamId = TeamId });
     }
 
+    /// <summary>
+    /// Permanent removal, for an account that has done nothing (#188). Deactivate remains the normal
+    /// action; this exists for the mistyped or throwaway row.
+    ///
+    /// <para>The refusal <b>names what is in the way</b> rather than just declining — an admin told
+    /// "cannot delete" has no next step, one told "1 session marked complete, 2 recorded actions" can
+    /// decide whether to reassign or simply deactivate instead.</para>
+    /// </summary>
+    public async Task<IActionResult> OnPostDeleteAsync(int targetUserId)
+    {
+        var auth = await AuthorizeManageAsync(targetUserId);
+        if (auth is null) return Forbid();
+
+        var result = await userManagementService.DeleteAsync(targetUserId, auth.Value.ActingUser.Id, CancellationToken.None);
+        TempData[result.Outcome == UserDeleteOutcome.Deleted ? "StatusMessage" : "ErrorMessage"] = result.Outcome switch
+        {
+            UserDeleteOutcome.Deleted => "User deleted.",
+            UserDeleteOutcome.CannotDeleteSelf => "You cannot delete your own account.",
+            UserDeleteOutcome.LastSignInCapableAccount =>
+                "That is the last account that can sign in — deleting it would lock everyone out of this deployment.",
+            UserDeleteOutcome.HasHistory =>
+                $"This account has history and cannot be deleted: {string.Join(", ", result.Blockers)}. Deactivate it instead.",
+            _ => "User not found."
+        };
+        return RedirectToPage(new { teamId = TeamId });
+    }
+
     public async Task<IActionResult> OnPostReactivateAsync(int targetUserId)
     {
         var auth = await AuthorizeManageAsync(targetUserId);
