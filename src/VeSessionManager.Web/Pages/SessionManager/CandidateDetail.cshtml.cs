@@ -10,6 +10,7 @@ using VeSessionManager.Core.CandidateActions;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Entities;
 using VeSessionManager.Core.Notifications;
+using VeSessionManager.Core.Payments;
 
 namespace VeSessionManager.Web.Pages.SessionManager;
 
@@ -29,7 +30,9 @@ public class CandidateDetailModel(
     UserManager<User> userManager,
     SessionAccessScope accessScope,
     CandidateActionService candidateActionService,
-    CandidateNotificationService candidateNotificationService) : PageModel
+    CandidateNotificationService candidateNotificationService,
+    RefundService refundService,
+    TimeProvider timeProvider) : PageModel
 {
     [BindProperty(SupportsGet = true)]
     public int Id { get; set; }
@@ -111,6 +114,33 @@ public class CandidateDetailModel(
         return RedirectToPage(new { id = Id });
     }
 
+    /// <summary>
+    /// Issue a real refund through Square (#375) — as opposed to <c>OnPostFlagRefundAsync</c> above,
+    /// which only writes a note. Both survive: the flag is still the right tool for money this API
+    /// cannot reach, which is any payment over a year old or taken outside Square.
+    ///
+    /// <para>The amount is parsed here rather than bound, so a typo is a message rather than a
+    /// silently-zeroed decimal — <c>Usd.TryParse</c> because a bare <c>decimal.TryParse</c> reads
+    /// "12.50" as 1250 under a comma-decimal culture (CLAUDE.md's Usd entry).</para>
+    /// </summary>
+    public async Task<IActionResult> OnPostRefundAsync(int paymentId, string? amount, string? reason)
+    {
+        var auth = await AuthorizeAsync();
+        if (auth is null) return Forbid();
+        if (!await PaymentBelongsToCandidateAsync(paymentId)) return Forbid();
+
+        if (!Usd.TryParse(amount, out var amountUsd))
+        {
+            Apply(new ActionOutcome(false, "Enter a refund amount, in dollars."));
+            return RedirectToPage(new { id = Id });
+        }
+
+        Apply(ActionOutcomes.IssueRefund(
+            await refundService.RefundPaymentAsync(paymentId, amountUsd, reason, auth.Value.User.Id, CancellationToken.None),
+            amountUsd));
+        return RedirectToPage(new { id = Id });
+    }
+
     public async Task<IActionResult> OnPostCreateRetestPaymentAsync()
     {
         var auth = await AuthorizeAsync();
@@ -182,7 +212,7 @@ public class CandidateDetailModel(
         var candidate = await dbContext.Candidates
             .Include(c => c.Session).ThenInclude(s => s.Vec)
             .Include(c => c.ResultMarkedByUser)
-            .Include(c => c.Payments)
+            .Include(c => c.Payments).ThenInclude(p => p.Refunds)
             .FirstOrDefaultAsync(c => c.Id == Id);
 
         if (candidate is null || !accessScope.CanView(user, candidate.Session))
@@ -249,7 +279,8 @@ public class CandidateDetailModel(
             ResultMarkedByName: candidate.ResultMarkedByUser?.Name,
             Tested: candidate.Tested,
             HasFelonyDisclosure: isWithdrawn ? null : candidate.HasFelonyDisclosure,
-            Payments: candidate.Payments.OrderByDescending(p => p.CreatedUtc).Select(ToPaymentRow).ToList(),
+            Payments: candidate.Payments.OrderByDescending(p => p.CreatedUtc)
+                .Select(p => ToPaymentRow(p, timeProvider.GetUtcNow().UtcDateTime)).ToList(),
             EmailHistory: CandidateEmailHistoryFormatter.Build(candidate),
             OtherAttempts: otherAttempts,
             CanResendConfirmation: can.CanResendConfirmation,
@@ -267,7 +298,7 @@ public class CandidateDetailModel(
     private static string? FormatUtcOrNull(DateTime? value) =>
         EasternTimeFormatter.Format(value, "M/d/yyyy h:mm tt");
 
-    private static PaymentRow ToPaymentRow(Payment payment)
+    private static PaymentRow ToPaymentRow(Payment payment, DateTime nowUtc)
     {
         var (chipClass, chipLabel) = payment.Status switch
         {
@@ -279,6 +310,12 @@ public class CandidateDetailModel(
         var amountMismatchLine = payment.AmountMismatchFlaggedUtc is not null
             ? $"Paid {Usd.Format(payment.SquareAmountPaidUsd!.Value)} against {Usd.Format(payment.Amount)} owed"
             : null;
+
+        // What Square took, which is the ceiling on a refund — not Amount, which is what was owed.
+        var collected = payment.SquareAmountPaidUsd ?? payment.Amount;
+        var eligibility = RefundEligibility.For(
+            payment.Status == PaymentStatus.Paid, payment.SquarePaymentId, collected,
+            payment.PaidDateUtc, payment.Refunds, nowUtc);
 
         return new PaymentRow(
             payment.Id,
@@ -294,7 +331,57 @@ public class CandidateDetailModel(
             amountMismatchLine,
             payment.ExpiredUnpaid,
             payment.SquareOrderCompletedUtc is not null,
-            payment.Status == PaymentStatus.Unpaid);
+            payment.Status == PaymentStatus.Unpaid,
+            eligibility.CanRefund,
+            // Only worth a sentence when there is something to explain. A payment that is simply
+            // unpaid needs no note — the Unpaid chip beside it already says why there is nothing to
+            // send back.
+            RefundBlockedReason(eligibility.Blocker),
+            eligibility.RemainingUsd,
+            Usd.Raw(eligibility.RemainingUsd),
+            [.. payment.Refunds.OrderByDescending(r => r.RequestedUtc).Select(ToRefundRow)]);
+    }
+
+    /// <summary>
+    /// Why the refund action is unavailable, in the user's words. Null where the reason is already
+    /// obvious from the row — an unpaid payment, or one with nothing left to refund, both of which
+    /// the table already shows.
+    /// </summary>
+    private static string? RefundBlockedReason(RefundBlocker blocker) => blocker switch
+    {
+        // The one that genuinely needs explaining: nothing about the row hints at it, and the answer
+        // ("do it in Square") is not guessable.
+        RefundBlocker.NoSquarePaymentId =>
+            "Recorded before the app stored Square's payment id — refund this one in the Square dashboard.",
+        RefundBlocker.TooOld => "Square will not refund a payment taken more than a year ago.",
+        RefundBlocker.RefundLimitReached => "Square allows at most 20 refunds against one payment.",
+        _ => null
+    };
+
+    private static RefundRow ToRefundRow(Refund refund)
+    {
+        var (chipClass, chipLabel) = refund.Status switch
+        {
+            RefundStatus.Completed => ("chip-green", "Refunded"),
+            RefundStatus.Rejected => ("chip-red", "Rejected by Square"),
+            RefundStatus.Failed => ("chip-red", "Failed"),
+            // Submitting and Pending read the same to a user — both mean "Square has it, wait" — and
+            // the difference between them (whether our call got an answer) is ours, not theirs.
+            _ => ("chip-amber", "Pending at Square")
+        };
+
+        return new RefundRow(
+            refund.Id,
+            Usd.Format(refund.AmountUsd),
+            chipClass,
+            chipLabel,
+            FormatUtcOrNull(refund.RequestedUtc),
+            refund.RequestedUtc.ToString("o", CultureInfo.InvariantCulture),
+            refund.Reason,
+            // Shown only on an outcome the user can act on. A FailureDetail on a still-pending refund
+            // is a transient network message from a call that is about to be retried; surfacing it
+            // would read as a failed refund.
+            refund.Status is RefundStatus.Rejected or RefundStatus.Failed ? refund.FailureDetail : null);
     }
 
     public record CandidateDetailView(
@@ -347,7 +434,26 @@ public class CandidateDetailModel(
         string? AmountMismatchLine,
         bool ExpiredUnpaid,
         bool SquareOrderCompleted,
-        bool CanMarkPaid);
+        bool CanMarkPaid,
+        /// <summary>Whether a refund can be issued from here at all (#375). Re-decided server-side by RefundService — this only governs whether the button is offered.</summary>
+        bool CanRefund,
+        /// <summary>Why not, where that is not obvious from the row. Null when there is nothing worth saying.</summary>
+        string? RefundBlockedReason,
+        decimal RemainingRefundableUsd,
+        /// <summary>The same number as a plain "12.50" for the amount input's value — Usd.Raw, never a bare :F2, which renders "12,50" under a comma-decimal culture and then fails to parse back.</summary>
+        string RemainingRefundableRaw,
+        IReadOnlyList<RefundRow> Refunds);
+
+    /// <param name="FailureDetail">Square's reason, shown only on a rejected or failed refund.</param>
+    public record RefundRow(
+        int Id,
+        string AmountLine,
+        string ChipClass,
+        string ChipLabel,
+        string? RequestedLine,
+        string RequestedSortValue,
+        string? Reason,
+        string? FailureDetail);
 
     /// <summary>SessionDateSortValue is the raw session start behind SessionDateLine, for the table's click-to-sort header (see app.js).</summary>
     public record OtherAttemptRow(int CandidateId, int SessionId, string Name, string SessionDateLine, string SessionDateSortValue, string StatusLabel);

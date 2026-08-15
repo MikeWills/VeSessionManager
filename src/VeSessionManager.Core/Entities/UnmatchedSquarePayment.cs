@@ -44,4 +44,14 @@ public class UnmatchedSquarePayment
     /// can show it without a join.</para>
     /// </summary>
     public string? ResolutionNote { get; set; }
+
+    /// <summary>
+    /// Refunds issued against this payment (#375). This is the one place in the app where Square's
+    /// payment id was already stored, which is why the unmatched side could be refunded without any
+    /// schema change at all while the candidate side needed a new column.
+    ///
+    /// <para>A refund does not resolve the row by itself — "Refund and dismiss" does both, and the
+    /// dismissal is still what clears it from the screen.</para>
+    /// </summary>
+    public ICollection<Refund> Refunds { get; set; } = [];
 }

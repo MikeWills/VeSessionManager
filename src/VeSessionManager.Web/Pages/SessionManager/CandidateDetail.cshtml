@@ -156,6 +156,28 @@
                     {
                         <span class="mono" style="font-size:.85em;color:var(--ink-soft)">Square order completed</span>
                     }
+                    @* Real refunds (#375), as opposed to the "refund requested" note above them.
+                       Listed rather than summarized because a payment can have several — a partial
+                       refund is the right remedy for an amount mismatch — and because a rejected one
+                       has to stay visible; a count would hide exactly the case somebody must act on. *@
+                    @foreach (var refund in payment.Refunds)
+                    {
+                        <div>
+                            <span class="chip @refund.ChipClass">@refund.ChipLabel @refund.AmountLine</span>
+                            @if (refund.Reason is not null)
+                            {
+                                <span class="mono" style="font-size:.85em;color:var(--ink-soft)">@refund.Reason</span>
+                            }
+                            @if (refund.FailureDetail is not null)
+                            {
+                                <div class="mismatch-tag">@refund.FailureDetail</div>
+                            }
+                        </div>
+                    }
+                    @if (payment.RefundBlockedReason is not null)
+                    {
+                        <span class="mono" style="font-size:.85em;color:var(--ink-soft)">@payment.RefundBlockedReason</span>
+                    }
                 </td>
                 <td class="mono" data-sort-value="@payment.PaidDateSortValue">@(payment.PaidDateLine ?? "—")</td>
                 <td>
@@ -178,6 +200,7 @@
                                 <button type="submit" class="item" disabled="@(!payment.CanMarkPaid)">Mark paid manually</button>
                             </form>
                             <button type="button" class="item" data-open-modal="refundModal-@payment.Id" disabled="@(!c.CanFlagRefund)">Flag refund requested</button>
+                            <button type="button" class="item" data-open-modal="issueRefundModal-@payment.Id" disabled="@(!payment.CanRefund)">Refund through Square…</button>
                         </div>
                     }
                 </td>
@@ -267,5 +290,45 @@ else
                 </form>
             </div>
         </div>
+
+        @* The real thing (#375). Rendered only where it can be used — unlike the flag modal above,
+           which is always present and relies on its trigger being disabled. The difference is worth
+           the inconsistency: this form moves money, and a modal that cannot be reached is a modal
+           whose form cannot be posted by hand either. *@
+        @if (payment.CanRefund)
+        {
+            <div class="modal-backdrop" id="issueRefundModal-@payment.Id">
+                <div class="modal">
+                    <h3>Refund through Square</h3>
+                    <p>
+                        This sends money back to the candidate through Square straight away. It cannot be
+                        undone from here. <strong>@payment.AmountLine</strong> was charged;
+                        <strong>@Usd.Format(payment.RemainingRefundableUsd)</strong> is still refundable.
+                    </p>
+                    <form method="post" asp-page-handler="Refund">
+                        <input type="hidden" name="paymentId" value="@payment.Id" />
+                        <div class="field">
+                            <label for="refund-amount-@payment.Id">Amount to refund</label>
+                            @* Defaults to the full remaining amount — the common case is a whole refund,
+                               and a partial one is a deliberate edit rather than something to assemble
+                               from an empty box. step/min are the browser's help only; RefundService
+                               re-checks the number against what Square will actually accept. *@
+                            <input id="refund-amount-@payment.Id" name="amount" type="number" step="0.01"
+                                   min="0.01" max="@payment.RemainingRefundableRaw"
+                                   value="@payment.RemainingRefundableRaw" required />
+                        </div>
+                        <div class="field">
+                            <label for="refund-reason-@payment.Id">Reason (optional)</label>
+                            <input id="refund-reason-@payment.Id" name="reason" maxlength="192" />
+                            <span class="mono" style="font-size:.85em;color:var(--ink-soft)">Shown in the Square dashboard as well as here.</span>
+                        </div>
+                        <div class="modal-actions">
+                            <button type="button" class="btn-secondary btn-sm" data-close-modal>Cancel</button>
+                            <button type="submit" class="btn-primary btn-sm">Refund through Square</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        }
     }
 }

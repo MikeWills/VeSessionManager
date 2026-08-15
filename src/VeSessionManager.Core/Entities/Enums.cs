@@ -121,6 +121,39 @@ public enum PaymentStatus
 }
 
 /// <summary>
+/// Where a <see cref="Refund"/> has got to. Mirrors Square's own refund states, with one addition
+/// this app needs and Square has no word for.
+///
+/// <para><b>A refund is not over when the API call returns.</b> Square answers immediately and then
+/// processes: a card or bank-transfer refund can sit <c>PENDING</c> for up to 14 days before it
+/// reaches <c>COMPLETED</c>, and it can still end at <c>REJECTED</c> or <c>FAILED</c>. Treating a
+/// successful call as a finished refund is the single easiest mistake to make here, and it is
+/// invisible — the screen says refunded and the buyer's card never sees it. Hence
+/// <see cref="RefundStatusService"/>, which polls until a terminal state is observed.</para>
+/// </summary>
+public enum RefundStatus
+{
+    /// <summary>
+    /// Recorded here but not yet accepted by Square — the row was written *before* the call, so this
+    /// is also what a crash mid-call leaves behind. Distinguished from Square's own PENDING by
+    /// <see cref="Refund.SquareRefundId"/> being null. Retried with the same idempotency key.
+    /// </summary>
+    Submitting = 0,
+
+    /// <summary>Square accepted it and is processing. Not money returned yet.</summary>
+    Pending = 1,
+
+    /// <summary>Terminal, and the only one that means the buyer got their money.</summary>
+    Completed = 2,
+
+    /// <summary>Terminal — Square declined it.</summary>
+    Rejected = 3,
+
+    /// <summary>Terminal — Square errored (e.g. insufficient balance in the merchant account).</summary>
+    Failed = 4
+}
+
+/// <summary>
 /// Which colour scheme a <see cref="User"/> sees, stored on the account so it follows them to every
 /// browser they sign in on rather than living only in that browser's localStorage.
 ///

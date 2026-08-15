@@ -1,4 +1,4 @@
-# CLAUDE.md
+﻿# CLAUDE.md
 
 This is a Visual Studio project that is designed to automate many of the mundane tasks that a Amateur Radio Volunteer Examiner (VE) Session Manager (SM) needs to do to run a session include creating a Zoom session, sending payment links and reminder emails. See docs/spec.md for details.
 
@@ -125,6 +125,24 @@ all — it's already one-line-summarized in "Current State" above, so a separate
 would be pure duplication — and goes straight to `CHANGELOG.md` instead. Non-phase entries (fixes,
 redesigns, hardening passes) start here and move to `CHANGELOG.md` once the section is at/over the
 cap and a newer entry needs to be added; oldest goes first.
+
+- **Refunds are issued from the app now, not the Square dashboard (2026-08-15).** Issue #375. See
+  `docs/square-refunds.md`. Full or partial, from a candidate's payment and from Unmatched Payments —
+  where the dismiss modal's bold "this does not refund the payment" finally has an alternative to
+  point at. **The blocker turned out to be half a blocker**: `RefundPayment` is keyed by Square's
+  *payment* id and only the order id was stored, but `SquareWebhookHandler` had been parsing the
+  payment id all along and discarding it on the matched branch — one assignment plus a nullable
+  column. It still only helps going forward; nothing backfills the old rows, and the UI says so.
+  **The thing most likely to be carried in by accident: a refund is not finished when the call
+  returns.** Square answers `PENDING` and takes up to 14 days for a card, and can still end
+  `REJECTED` — so there is an hourly `RefundStatusJob`, success says "submitted" rather than
+  "refunded", and a transport failure deliberately does *not* settle the row (settling is what makes
+  the job stop looking, which would strand a refund Square had accepted). Three more worth carrying:
+  refunding **must not** move a Payment off `Paid` (the "Unpaid and no link" scan would issue the
+  candidate a fresh checkout link), in-flight refunds count against the refundable balance even
+  though Square's own rule counts only completed ones, and the ceiling is `SquareAmountPaidUsd`, not
+  `Amount` — a $5 youth payment against a $15 row is routine here. Still unverified: whether each
+  team's existing token carries `PAYMENTS_WRITE`, which only a live Sandbox call settles.
 
 - **Two-factor authentication, opt-in and un-enforced on purpose (2026-08-14).** Issue #356. See
   `docs/two-factor.md`. TOTP with QR enrolment, recovery codes and an admin escape hatch. **Enforcement
@@ -273,19 +291,6 @@ cap and a newer entry needs to be added; oldest goes first.
   deleted**: seeding never removes rows, so `EmailTemplateTriggers.Retired` exists and the admin page
   labels it "No longer sent". **Still open: whether the 10-day pass means anything now** — it expires
   a Square payment, but if day 10 is FCC's dismissal deadline the meaningful event is a different one.
-
-- **A login and a VE record are the same person (2026-08-11).** Issues #224/#226. See
-  `docs/ve-self-service.md`. `User` and `VolunteerExaminer` had **no FK in either direction** — an
-  absence, not a decision: the *authentication* separation is deliberate and documented, and the
-  *identity* separation appears to have been assumed from it. `User.VolunteerExaminerId` links them
-  (identity only — it grants nothing, and a call-sign match is offered as a suggestion for a human to
-  confirm, never applied automatically, because the FCC reissues call signs). That unlocks
-  `/Account/MyVeDetails`: self-service is entered by clicking a link **mailed to the address on
-  file**, so it can only ever reach a VE who already has one, and **one VE of 176 does**. The loop
-  only opens from inside the app. The email field is the one divergence and only by necessity —
-  `VeEmailChangeService` confirms via the *old* address and so structurally cannot set a first one,
-  while `SetOwnEmailWhenUnsetAsync` refuses the moment an address exists, so there stays exactly one
-  way to change a credential field.
 
 Everything through Phase 0-10's initial build (ExamTools ingestion, Zoom/Discord, Square, email
 notifications, FCC ULS watcher, payment reminders, VE tracking, VEC submission tracker, admin
@@ -444,6 +449,14 @@ To pick up updates: `/plugin marketplace update claude-tools`
   sharing its scoped `DbContext` must not assume its entities survive a failed step.
 - **A job tick timed for "the evening" in US Eastern can land at/after UTC midnight** — EDT is UTC-4, EST is UTC-5, so anything from ~8pm ET onward is already tomorrow in raw UTC. `TimeProvider.GetUtcNow().UtcDateTime.DayOfWeek` (or any UTC-based "what day is it" check) is wrong for that window; convert through `TimeZoneInfo.ConvertTimeFromUtc(..., FccUlsSchedule.EasternTimeZone)` first (IANA id `"America/New_York"`, resolves cross-platform since .NET 6 — verified directly on this repo's target framework on both Windows and the Linux deploy target). Found live 2026-07-23 building `FccDailyWatcherJob`'s same-day retry; see `docs/fcc-uls-watcher.md`. Reuse `FccUlsSchedule.EasternTimeZone` for any future US-Eastern-anchored scheduling rather than re-resolving the id.
 - **Not every job here can safely reuse the "24h `PeriodicTimer` from Worker start, extra ticks are free" idiom** — that reasoning (used by `DayBeforeReminderJob`/`PaymentReminderJob`/`PiiPurgeJob`/`FccWeeklyCatchupJob`) assumes a missed tick is harmless because idempotent tracking catches it up next time. It breaks when the *data itself* — not just the job's own state — is only available in a narrow, non-retryable window, as with FCC's day-name files (see the same-day-retry entry above). Before adding a new job on this idiom, check whether the thing it polls has that same "one-shot window" property.
+- **A Square refund that returns successfully has not happened yet.** `RefundPaymentAsync` answers
+  immediately with a status, and for a card or bank transfer that status is `PENDING` for anything up
+  to **14 days** before reaching `COMPLETED` — or `REJECTED`/`FAILED`. Every other outbound Square
+  call in this app is done when it returns, so "the call succeeded, therefore the money went back" is
+  the natural and wrong reading. Anything new that reports on a refund must read `Refund.Status`, not
+  the fact that a call was made. Two hard limits worth knowing before writing a guard: Square refuses
+  a payment **more than a year old**, and allows at most **20 refunds** against one payment. See
+  `docs/square-refunds.md`.
 - **Square webhook subscriptions are separate per Sandbox/Production, each with its own signature key** — an existing subscription registered under one mode receives zero delivery attempts for events in the other (not a 401, no attempt at all), and reusing one mode's `WebhookSignatureKey` against the other mode's subscription makes every delivery fail signature verification (401) even though the URL/event config is otherwise correct. Found live 2026-07-25 testing Team 2 (MARC)'s payment flow — the "Ve Session Manager" subscription had been created under Production while all local testing used Sandbox credentials/payment links. Fix: add (or move) the subscription under the correct mode's tab in the Square dashboard, then set `Team.SquareWebhookSignatureKey` to *that* subscription's own signature key, not the other mode's. See `docs/square-payments.md`. **Which mode a team is in is now `Team.SquareEnvironment`, not a config value (2026-08-06)** — so this is per-team, and two teams on one deployment can legitimately be in different modes, each needing its own subscription. A team whose access token and environment disagree gets an auth failure from Square rather than a wrong-account charge.
 - **`Web` and `Worker` must register Data Protection with the exact same application name and key-ring path, or one process's writes silently become unreadable by the other.** `Team`'s credential columns (ExamTools/Zoom/Square/SMTP secrets) are encrypted at rest via `EncryptedStringConverter` (2026-07-30) — both `Program.cs` files call `AddDataProtection().SetApplicationName("VeSessionManager").PersistKeysToFileSystem(...)` with the same hardcoded app name and the same `DataProtection:KeyRingPath` config value. A drift here doesn't throw — `EncryptedStringConverter`'s legacy-plaintext fallback (needed for the migration path) means a value encrypted under a different key just looks like it was never migrated. See `docs/credential-encryption.md`. Also: **if the key-ring directory is ever lost, every encrypted credential becomes permanently unrecoverable** — it must be backed up with the same discipline as the DB file itself (see `docs/deployment.md`).
 - **A POST form on a filtered list page needs BOTH an explicit `action=` and `asp-antiforgery="true"` — each half fixes a bug the other half causes.** `asp-page-handler` builds the form action from the route only and **drops the query string**, so posting an action from a filtered/paged list silently redirects back to the unfiltered first page (found on the Sessions row-action menu, 2026-07-30). The fix is an explicit `action="@Model.BuildActionUrl("Handler")"`. But `FormTagHelper` only auto-emits the antiforgery token when *it* generated the action — with an explicit `action=` the token disappears, and every POST then 400s in the antiforgery middleware **before reaching the app, logging nothing server-side** (the symptom is a browser error page with a completely silent log, which reads like the request never happened). `asp-antiforgery="true"` restores it. Any future list page with row-level POST actions needs both, plus a `BuildActionUrl`-style helper so the redirect target keeps the same filter state.

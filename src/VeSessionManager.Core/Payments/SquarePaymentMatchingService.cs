@@ -68,7 +68,7 @@ public class SquarePaymentMatchingService(
                 var targetPayment = PrimaryUnpaidPayment(candidates[0]);
                 if (targetPayment is not null)
                 {
-                    await ApplyMatchAsync(targetPayment, squareOrderId, amountUsd, cancellationToken);
+                    await ApplyMatchAsync(targetPayment, squareOrderId, squarePaymentId, amountUsd, cancellationToken);
                     logger.LogInformation("Square order {SquareOrderId} (team {TeamId}) auto-matched to candidate {CandidateId} by buyer email", squareOrderId, teamId, candidates[0].Id);
                     return SquareUnmatchedPaymentOutcome.AutoMatched;
                 }
@@ -118,7 +118,7 @@ public class SquarePaymentMatchingService(
             return SquareManualMatchResult.NoOutstandingPayment;
         }
 
-        await ApplyMatchAsync(targetPayment, unmatched.SquareOrderId, unmatched.AmountUsd, cancellationToken);
+        await ApplyMatchAsync(targetPayment, unmatched.SquareOrderId, unmatched.SquarePaymentId, unmatched.AmountUsd, cancellationToken);
 
         var now = timeProvider.GetUtcNow().UtcDateTime;
         unmatched.ResolvedUtc = now;
@@ -213,11 +213,17 @@ public class SquarePaymentMatchingService(
     /// recorded as paid. A mismatch is flagged (AmountMismatchFlaggedUtc) for a Session Manager to
     /// follow up on instead.
     /// </summary>
-    private async Task ApplyMatchAsync(Payment payment, string squareOrderId, decimal amountPaidUsd, CancellationToken cancellationToken)
+    /// <param name="squarePaymentId">
+    /// Square's payment id, stored so the payment can later be refunded from inside the app (#375).
+    /// Both callers have it to hand — the webhook parsed it, and an UnmatchedSquarePayment row has
+    /// carried it since it was written — which is why this is a parameter rather than a lookup.
+    /// </param>
+    private async Task ApplyMatchAsync(Payment payment, string squareOrderId, string squarePaymentId, decimal amountPaidUsd, CancellationToken cancellationToken)
     {
         payment.Status = PaymentStatus.Paid;
         payment.PaidDateUtc = timeProvider.GetUtcNow().UtcDateTime;
         payment.SquarePaymentReferenceId = squareOrderId;
+        payment.SquarePaymentId = squarePaymentId;
         payment.SquareAmountPaidUsd = amountPaidUsd;
         if (amountPaidUsd != payment.Amount)
         {

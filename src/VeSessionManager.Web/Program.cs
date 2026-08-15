@@ -89,6 +89,9 @@ builder.Services.AddScoped<SquareWebhookHandler>();
 // Unmatched-order auto/manual matching + "complete the Square order once paid and the session's
 // done" — used by SquareWebhookHandler above and by SessionActionService below.
 builder.Services.AddScoped<SquarePaymentMatchingService>();
+// Refunds are issued from the Web side only (a Session Manager clicking); the Worker just follows
+// them to a conclusion, which is why RefundStatusService is registered there and this is not.
+builder.Services.AddScoped<RefundService>();
 
 builder.Services.AddScoped<IEmailSender, SmtpEmailSender>();
 builder.Services.AddScoped<EmailTemplateRenderer>();

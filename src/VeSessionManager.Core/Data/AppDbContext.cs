@@ -46,6 +46,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options, IDataProtectio
     public DbSet<JobRunHistory> JobRunHistories => Set<JobRunHistory>();
     public DbSet<SystemSettings> SystemSettings => Set<SystemSettings>();
     public DbSet<UnmatchedSquarePayment> UnmatchedSquarePayments => Set<UnmatchedSquarePayment>();
+    public DbSet<Refund> Refunds => Set<Refund>();
     public DbSet<UserTeam> UserTeams => Set<UserTeam>();
     public DbSet<HistoricalImportRequest> HistoricalImportRequests => Set<HistoricalImportRequest>();
     public DbSet<WatchedLicense> WatchedLicenses => Set<WatchedLicense>();

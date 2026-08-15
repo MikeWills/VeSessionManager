@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Entities;
@@ -20,6 +20,15 @@ public class SquarePaymentMatchingServiceTests
 
     private sealed class FakeSquareClient : ISquareClient
     {
+        // #375 added these to ISquareClient. Not exercised here — throwing rather than returning a
+        // stub keeps that true: if this test ever starts refunding, it says so instead of passing
+        // against a fake that quietly agrees.
+        public Task<SquareRefund> RefundPaymentAsync(SquareCredentials credentials, SquareRefundRequest request, CancellationToken cancellationToken) =>
+            throw new NotSupportedException("Refunds are not exercised by this test.");
+
+        public Task<SquareRefund> GetRefundAsync(SquareCredentials credentials, string squareRefundId, CancellationToken cancellationToken) =>
+            throw new NotSupportedException("Refunds are not exercised by this test.");
+
         public List<string> CompletedOrderIds { get; } = [];
         public Exception? ThrowOnCompleteOrder { get; set; }
 

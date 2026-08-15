@@ -99,6 +99,7 @@ builder.Services.AddSingleton<TeamIntegrationState>();
 
 builder.Services.AddScoped<PaymentGenerationService>();
 builder.Services.AddScoped<SquarePaymentLinkPurgeService>();
+builder.Services.AddScoped<RefundStatusService>();
 
 // No EmailOptions to Configure<> anymore — SmtpHost/Port/Username/Password/UseStartTls all live on
 // Team now (multi-team, see docs/multi-team.md).
@@ -143,6 +144,7 @@ builder.Services.AddHostedService<UlsWatcherJob>();
 builder.Services.AddHostedService<LicenseWatchJob>();
 builder.Services.AddHostedService<PaymentReminderJob>();
 builder.Services.AddHostedService<SquareLinkPurgeJob>();
+builder.Services.AddHostedService<RefundStatusJob>();
 builder.Services.AddHostedService<PiiPurgeJob>();
 builder.Services.AddHostedService<HistoricalImportJob>();
 builder.Services.AddHostedService<ReconciliationJob>();
