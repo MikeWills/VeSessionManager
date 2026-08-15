@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Authorization;
+﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
@@ -7,6 +7,7 @@ using VeSessionManager.Core.Authorization;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Entities;
 using VeSessionManager.Core.Ingestion;
+using VeSessionManager.Core.Uls;
 
 namespace VeSessionManager.Web.Pages.Admin;
 
@@ -130,12 +131,27 @@ public class ReconciliationModel(
 
         Findings = [.. findings.Select(f =>
         {
-            var date = DateOnly.FromDateTime(f.SessionDateUtc);
-            var monthStart = new DateOnly(date.Year, date.Month, 1);
-            var monthEnd = new DateOnly(date.Year, date.Month, DateTime.DaysInMonth(date.Year, date.Month));
+            var (monthStart, monthEnd) = ImportMonthFor(f.SessionDateUtc);
             return new FindingRow(f, f.Team.Name, monthStart, monthEnd);
         })];
 
         return null;
+    }
+
+    /// <summary>
+    /// The calendar month a "Re-import" button covers, for a finding's session.
+    ///
+    /// <para><b>The month is the Eastern one.</b> <c>SessionDateUtc</c> is a real instant and most
+    /// sessions here run in the evening ET, so a session on the last evening of a month is already
+    /// the 1st in UTC — a UTC-derived month would label the button with the following month, import
+    /// the wrong range, and leave the finding open no matter how many times it was pressed. Same
+    /// class as #248, and it matches the date the page displays beside it.</para>
+    /// </summary>
+    public static (DateOnly Start, DateOnly End) ImportMonthFor(DateTime sessionDateUtc)
+    {
+        var date = DateOnly.FromDateTime(UlsSchedule.ToEasternDate(sessionDateUtc));
+        return (
+            new DateOnly(date.Year, date.Month, 1),
+            new DateOnly(date.Year, date.Month, DateTime.DaysInMonth(date.Year, date.Month)));
     }
 }
