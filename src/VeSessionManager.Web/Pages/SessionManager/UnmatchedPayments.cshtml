@@ -1,4 +1,4 @@
-@page
+﻿@page
 @model VeSessionManager.Web.Pages.SessionManager.UnmatchedPaymentsModel
 @using VeSessionManager.Core.Navigation
 @{
@@ -18,24 +18,7 @@
 @if (Model.AvailableTeams.Count > 1)
 {
     <form method="get" id="unmatchedFilters" class="filters" style="margin-bottom:16px; align-items:flex-start;">
-        <div class="filter-dropdown">
-            <button type="button" class="kebab @(Model.TeamId is not null ? "active" : "")">Team: @Model.TeamSummaryLabel <i class="bi bi-caret-down-fill" aria-hidden="true"></i></button>
-            <div class="menu">
-                <label class="item">
-                    <input type="radio" name="teamId" value="" @(Model.TeamId is null ? "checked" : "") />
-                    All teams<span class="pill-count @(Model.UnmatchedCountsByTeam.Values.Sum() == 0 ? "zero" : "")">@Model.UnmatchedCountsByTeam.Values.Sum()</span>
-                </label>
-                @foreach (var team in Model.AvailableTeams)
-                {
-                    <label class="item">
-                        <input type="radio" name="teamId" value="@team.Id" @(team.Id == Model.TeamId ? "checked" : "") />
-                        @team.Name<span class="pill-count @(Model.UnmatchedCountsByTeam.CountFor(team.Id) == 0 ? "zero" : "")">@Model.UnmatchedCountsByTeam.CountFor(team.Id)</span>
-                    </label>
-                }
-                <hr />
-                <button type="submit" class="item">Apply</button>
-            </div>
-        </div>
+        <partial name="_TeamPicker" model="new VeSessionManager.Web.TeamPicker(Model.TeamId, Model.AvailableTeams, Model.TeamSummaryLabel, Counts: Model.UnmatchedCountsByTeam)" />
     </form>
 }
 

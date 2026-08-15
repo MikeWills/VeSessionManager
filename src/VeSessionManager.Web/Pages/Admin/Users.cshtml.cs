@@ -48,8 +48,7 @@ public class UsersModel(AppDbContext dbContext, UserManager<User> userManager, A
             ? [UserRole.SystemAdmin, UserRole.TeamAdmin, UserRole.SessionManager, UserRole.TeamLead]
             : [UserRole.SessionManager, UserRole.TeamLead];
 
-        AvailableTeams = await adminAccessScope.ScopeTeams(dbContext.Teams, user)
-            .OrderBy(t => t.Name).Select(t => new ValueTuple<int, string>(t.Id, t.Name)).ToListAsync(HttpContext.RequestAborted);
+        AvailableTeams = await adminAccessScope.GetAvailableTeamsAsync(dbContext, user, HttpContext.RequestAborted);
 
         var effectiveTeamId = adminAccessScope.TryResolveManageableTeamId(user, TeamId, AvailableTeams.Select(t => t.Id).ToList());
         TeamId = effectiveTeamId;
@@ -187,8 +186,7 @@ public class UsersModel(AppDbContext dbContext, UserManager<User> userManager, A
             // writes — CreateAsync has already committed, SetTeamsAsync has not run — so cancelling
             // it strands a brand-new account with no team, which is the dead end the whole block
             // exists to prevent.
-            var manageableTeams = await adminAccessScope.ScopeTeams(dbContext.Teams, user)
-                .Select(t => new ValueTuple<int, string>(t.Id, t.Name)).ToListAsync(CancellationToken.None);
+            var manageableTeams = await adminAccessScope.GetAvailableTeamsAsync(dbContext, user, CancellationToken.None);
 
             var teamId = adminAccessScope.TryResolveManageableTeamIdForWrite(user, TeamId, [.. manageableTeams.Select(t => t.Item1)]);
             if (teamId is { } resolved)

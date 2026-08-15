@@ -1,0 +1,42 @@
+@using VeSessionManager.Core.Navigation
+@model VeSessionManager.Web.TeamPicker
+
+@* One home for the team filter (#306) — see TeamPicker for what varies and what does not.
+   Rendered unconditionally: the decision to show a picker at all belongs to the page, whose
+   condition differs (AvailableTeams.Count > 1 on the lists, IsSystemAdmin on the admin pages). *@
+<div class="filter-dropdown">
+    <button type="button" class="kebab @(Model.SelectedTeamId is not null ? "active" : "")">Team: @Model.Label <i class="bi bi-caret-down-fill" aria-hidden="true"></i></button>
+    <div class="menu">
+        @if (Model.IncludeAllTeams)
+        {
+            @if (Model.Counts is null)
+            {
+                <label class="item"><input type="radio" name="teamId" value="" @(Model.SelectedTeamId is null ? "checked" : "") /> All teams</label>
+            }
+            else
+            {
+                var total = Model.Counts.Values.Sum();
+                <label class="item">
+                    <input type="radio" name="teamId" value="" @(Model.SelectedTeamId is null ? "checked" : "") />
+                    All teams<span class="pill-count @(total == 0 ? "zero" : "")">@total</span>
+                </label>
+            }
+        }
+        @foreach (var team in Model.Teams)
+        {
+            @if (Model.Counts is null)
+            {
+                <label class="item"><input type="radio" name="teamId" value="@team.Id" @(team.Id == Model.SelectedTeamId ? "checked" : "") /> @team.Name</label>
+            }
+            else
+            {
+                <label class="item">
+                    <input type="radio" name="teamId" value="@team.Id" @(team.Id == Model.SelectedTeamId ? "checked" : "") />
+                    @team.Name<span class="pill-count @(Model.Counts.CountFor(team.Id) == 0 ? "zero" : "")">@Model.Counts.CountFor(team.Id)</span>
+            </label>
+            }
+        }
+        <hr />
+        <button type="submit" class="item">Apply</button>
+    </div>
+</div>

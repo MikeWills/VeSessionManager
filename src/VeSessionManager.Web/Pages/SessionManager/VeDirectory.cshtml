@@ -30,6 +30,11 @@
 </div>
 
 <form method="get" class="filters" style="margin-bottom:20px; align-items:flex-start;">
+    @* The one team picker still written out here rather than using _TeamPicker (#306), because of
+       the extra menu item below. Supporting it would mean a knob on the shared partial used by
+       exactly one page — trading a real duplication for a fake abstraction, which is the same call
+       made about the per-page action handlers in docs/action-outcomes.md. Twelve of thirteen share
+       the partial; this one keeps its copy and this comment. *@
     @if (Model.AvailableTeams.Count > 1)
     {
         <div class="filter-dropdown">

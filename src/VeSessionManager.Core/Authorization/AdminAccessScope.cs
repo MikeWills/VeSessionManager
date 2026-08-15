@@ -1,3 +1,5 @@
+﻿using Microsoft.EntityFrameworkCore;
+using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Entities;
 
 namespace VeSessionManager.Core.Authorization;
@@ -145,6 +147,28 @@ public class AdminAccessScope(SessionAccessScope sessionAccessScope)
         var effectiveTeamIds = GetEffectiveTeamIds(user) ?? [];
         return teams.Where(t => effectiveTeamIds.Contains(t.Id));
     }
+
+    /// <summary>
+    /// The teams this admin may pick from, as (id, name) — what every team picker on the admin side
+    /// actually wants (#306, DUP-05).
+    ///
+    /// <para>Six call sites re-typed <c>ScopeTeams(...).OrderBy(t =&gt; t.Name).Select(...)</c>, and
+    /// <see cref="ScopeTeams"/>'s own doc already said it existed to stop that. Mirrors
+    /// <c>SessionAccessScope.GetAvailableTeamsAsync</c>, which is the same method on the other scope
+    /// class — a page using the wrong one now gets a compile error rather than a subtly different
+    /// team list.</para>
+    ///
+    /// <para><b>Projects in SQL, deliberately.</b> Materialising whole Team entities here would run
+    /// every row through <c>EncryptedStringConverter</c>, decrypting each team's ExamTools/Zoom/
+    /// Square/SMTP secrets on every render that shows a picker, to read two columns. That was a real
+    /// fix on the sibling method; keeping the shape identical is the point of sharing.</para>
+    /// </summary>
+    public async Task<IReadOnlyList<(int Id, string Name)>> GetAvailableTeamsAsync(
+        AppDbContext dbContext, User user, CancellationToken cancellationToken = default) =>
+        await ScopeTeams(dbContext.Teams, user)
+            .OrderBy(t => t.Name)
+            .Select(t => new ValueTuple<int, string>(t.Id, t.Name))
+            .ToListAsync(cancellationToken);
 
     /// <summary>
     /// AuditLog has no TeamId column (only UserId), so TeamAdmin's view resolves via "actions
