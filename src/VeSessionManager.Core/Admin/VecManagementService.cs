@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Entities;
 
@@ -85,7 +85,7 @@ public class VecManagementService(AppDbContext dbContext, TimeProvider timeProvi
 
     /// <summary>
     /// Blank means "same as the name" and is stored as null, so an admin who leaves the field empty
-    /// gets the pre-ExamToolsCode behaviour. A code typed to exactly match the name is also stored
+    /// gets the pre-ExamToolsCode behavior. A code typed to exactly match the name is also stored
     /// as null rather than duplicating it — otherwise a later rename would silently strand the code
     /// on the old spelling.
     /// </summary>

@@ -1,4 +1,4 @@
-using Microsoft.Data.Sqlite;
+﻿using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Entities;
@@ -90,7 +90,7 @@ public class ActiveCandidateCountSqliteTests
             CandidateApplicationStatus.NotTested,   // withdrawn / moved away
             CandidateApplicationStatus.NotTested);
 
-        // Projected, not materialised first: this is the shape the paged Sessions query uses, so if
+        // Projected, not materialized first: this is the shape the paged Sessions query uses, so if
         // it can't translate, this is where it throws.
         var counts = await dbContext.Sessions
             .Select(s => s.Candidates.Count(c => c.ApplicationStatus != CandidateApplicationStatus.NotTested))

@@ -1,4 +1,4 @@
-using Microsoft.Data.Sqlite;
+﻿using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using VeSessionManager.Core.Admin;
@@ -11,7 +11,7 @@ namespace VeSessionManager.Core.Tests;
 /// <summary>
 /// Run against real SQLite rather than the InMemory provider the rest of the suite uses: the whole
 /// point of the seeder's skip logic is to avoid tripping <c>IX_Vecs_Name</c> and
-/// <c>IX_Vecs_ExamToolsCode</c>, and a unique index is provider behaviour InMemory does not enforce.
+/// <c>IX_Vecs_ExamToolsCode</c>, and a unique index is provider behavior InMemory does not enforce.
 /// A test that passed on InMemory would prove nothing about the case that actually throws.
 /// </summary>
 public class VecDefaultsSeederTests

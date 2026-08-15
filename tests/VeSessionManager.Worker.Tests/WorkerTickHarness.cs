@@ -1,4 +1,4 @@
-using Microsoft.Data.Sqlite;
+﻿using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -16,7 +16,7 @@ namespace VeSessionManager.Worker.Tests;
 /// <para><b>Real SQLite, not EF InMemory</b>, for three reasons that all apply here:
 /// <c>ExecuteUpdateAsync</c> — which the ingestion stamp now uses — is unsupported on InMemory
 /// entirely; InMemory ignores transactions; and the whole point of these tests is scope and
-/// change-tracker behaviour, where a provider that fakes persistence proves nothing. Same reasoning
+/// change-tracker behavior, where a provider that fakes persistence proves nothing. Same reasoning
 /// as <c>VolunteerExaminerMergeSqliteTests</c>.</para>
 ///
 /// <para><b>One connection, many scopes.</b> `DataSource=:memory:` lives exactly as long as its

@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Entities;
 
@@ -22,7 +22,7 @@ public class VolunteerExaminerManagementService(AppDbContext dbContext, TimeProv
 {
     /// <summary>
     /// Contact details live on the person and are shared by every team they serve — this deployment
-    /// hosts cooperating teams, not unrelated organisations.
+    /// hosts cooperating teams, not unrelated organizations.
     ///
     /// <para><b>An admin CAN set the email here (corrected 2026-08-07).</b> It was originally locked
     /// on the grounds that it is the self-service sign-in credential — but an admin already has full

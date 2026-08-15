@@ -1,4 +1,4 @@
-using Microsoft.Data.Sqlite;
+﻿using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Entities;
@@ -11,7 +11,7 @@ namespace VeSessionManager.Core.Tests;
 /// and so cannot tell whether a query actually translates to SQL. Vec matching is a case where that
 /// gap matters: <see cref="Ingestion.SessionIngestionService"/> resolves a session's VEC with a
 /// <c>(ExamToolsCode ?? Name)</c> coalesce, and the ExamToolsCode unique index relies on SQLite
-/// treating NULLs as distinct. Both are provider behaviour, so both are pinned here against real
+/// treating NULLs as distinct. Both are provider behavior, so both are pinned here against real
 /// SQLite — the same provider production runs on.
 /// </summary>
 public class VecExamToolsCodeSqliteTests

@@ -1,4 +1,4 @@
-using System.Linq.Expressions;
+﻿using System.Linq.Expressions;
 using Microsoft.EntityFrameworkCore;
 using VeSessionManager.Core.Entities;
 using VeSessionManager.Core.Uls;
@@ -7,8 +7,8 @@ namespace VeSessionManager.Core.VolunteerExaminers;
 
 /// <summary>
 /// <see cref="WatchedLicenseStatusExtensions.DeriveSnapshotStatus"/> as something the database can
-/// evaluate, so the VE Directory can filter by licence status in SQL instead of materialising the
-/// whole roster and filtering in C# (#298). That materialisation is why the directory had no paging
+/// evaluate, so the VE Directory can filter by license status in SQL instead of materializing the
+/// whole roster and filtering in C# (#298). That materialization is why the directory had no paging
 /// path at all — you cannot <c>Skip</c>/<c>Take</c> a filter that has not been applied yet.
 ///
 /// <para><b>The split is deliberate: classification in SQL, dates in code.</b> Everything the
@@ -33,13 +33,13 @@ namespace VeSessionManager.Core.VolunteerExaminers;
 public static class VeLicenseStatusFilter
 {
     /// <summary>
-    /// A predicate selecting the VEs whose derived licence status is <paramref name="status"/>.
+    /// A predicate selecting the VEs whose derived license status is <paramref name="status"/>.
     ///
     /// <para>Written as one expression that computes the status and compares it, rather than a
     /// per-status predicate, so the cascade below stays visibly in the same order as
     /// <c>DeriveSnapshotStatus</c>'s. Order is load-bearing: cancellation outranks the date tests,
-    /// because a cancelled licence keeps whatever expiry it had and testing dates first would report
-    /// a revoked licence as comfortably Active. EF renders the whole thing as one <c>CASE</c>.</para>
+    /// because a cancelled license keeps whatever expiry it had and testing dates first would report
+    /// a revoked license as comfortably Active. EF renders the whole thing as one <c>CASE</c>.</para>
     /// </summary>
     public static Expression<Func<VolunteerExaminer, bool>> For(WatchedLicenseStatus status, DateTime nowUtc)
     {

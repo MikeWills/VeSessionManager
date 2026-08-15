@@ -1,4 +1,4 @@
-using System.ComponentModel.DataAnnotations;
+﻿using System.ComponentModel.DataAnnotations;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
@@ -18,7 +18,7 @@ namespace VeSessionManager.Web.Pages.Account;
 /// the one that would be locked. The nudge is loud; the door stays open.</para>
 ///
 /// <para>Enabling and disabling both rewrite the security stamp, which signs out every other device.
-/// That is the correct behaviour rather than a side effect: changing whether an account needs a
+/// That is the correct behavior rather than a side effect: changing whether an account needs a
 /// second factor is exactly when sessions issued under the old rule should stop counting.</para>
 /// </summary>
 public class TwoFactorModel(

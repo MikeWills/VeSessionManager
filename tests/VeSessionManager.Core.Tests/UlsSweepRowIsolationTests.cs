@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Entities;
@@ -19,7 +19,7 @@ namespace VeSessionManager.Core.Tests;
 ///   <c>Checked++</c> still ran.</item>
 ///   <item><b>#249</b> — <c>LicenseWatchService</c> had no catch at all, on a loop whose own comment
 ///   says a vanity rename colliding with the unique index <i>will</i> throw. One collision abandoned
-///   every remaining licence in the run.</item>
+///   every remaining license in the run.</item>
 ///   <item><b>#247</b> — <c>UlsWatcherService</c> never stamped an attempt, so with the new cap a
 ///   permanently-failing row would sort first (null leads) and starve everyone behind it forever.
 ///   </item>

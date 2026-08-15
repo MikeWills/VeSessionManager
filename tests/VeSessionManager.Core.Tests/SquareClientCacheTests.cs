@@ -1,4 +1,4 @@
-using Microsoft.Extensions.Logging.Abstractions;
+﻿using Microsoft.Extensions.Logging.Abstractions;
 using VeSessionManager.Core.Entities;
 using VeSessionManager.Core.Square;
 using Xunit;
@@ -14,7 +14,7 @@ namespace VeSessionManager.Core.Tests;
 /// Settings" — that did nothing. Rotating an access token was worse: every payment link kept failing
 /// against the revoked token with nothing to indicate why.</para>
 ///
-/// <para>Asserting on <b>reference identity</b> because that is the whole behaviour: the same client
+/// <para>Asserting on <b>reference identity</b> because that is the whole behavior: the same client
 /// reused, or a new one built. Anything further would need a live Square account.</para>
 /// </summary>
 public class SquareClientCacheTests

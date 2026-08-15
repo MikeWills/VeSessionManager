@@ -1,4 +1,4 @@
-using System.Reflection;
+﻿using System.Reflection;
 using VeSessionManager.Core.Email;
 using Xunit;
 
@@ -51,7 +51,7 @@ public class CandidateEmailBccTests
     /// shared inbox is an account-takeover path, not a monitoring convenience.
     ///
     /// <para>Enforced by *which call sites set BccAddress*, so this test reads the source rather than
-    /// the behaviour: a behavioural test would need each service stood up with a live sender, and
+    /// the behavior: a behavioral test would need each service stood up with a live sender, and
     /// would still pass if someone added a fourth token-bearing sender tomorrow. Source inspection
     /// catches the case this is actually guarding against — someone "finishing the job" by wiring
     /// BccAddress into the remaining senders.</para>

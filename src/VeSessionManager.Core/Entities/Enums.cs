@@ -1,4 +1,4 @@
-using System.Linq;
+﻿using System.Linq;
 
 namespace VeSessionManager.Core.Entities;
 
@@ -126,12 +126,12 @@ public enum PaymentStatus
 ///
 /// <para><see cref="System"/> is the default and the only value nothing has to write: it means "no
 /// explicit choice yet", and the browser's own <c>prefers-color-scheme</c> answers instead. Every
-/// account created before this field existed lands here, which is the intended behaviour rather than
+/// account created before this field existed lands here, which is the intended behavior rather than
 /// a migration gap.</para>
 ///
 /// <para>The toggle in the chassis only ever writes <see cref="Light"/> or <see cref="Dark"/> — once
 /// someone has clicked it they have made a choice, and silently reverting to the OS on their next OS
-/// theme change is the behaviour the choice was expressing a preference against. There is
+/// theme change is the behavior the choice was expressing a preference against. There is
 /// deliberately no way back to <see cref="System"/> from the toggle; a three-state control whose
 /// current state is invisible ("is this dark because I picked dark, or because it is 9pm?") costs
 /// more than it buys here.</para>

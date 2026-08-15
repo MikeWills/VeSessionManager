@@ -1,4 +1,4 @@
-using System.Net.Http.Headers;
+﻿using System.Net.Http.Headers;
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.DependencyInjection;
@@ -66,7 +66,7 @@ public class RememberMeLoginTests : IClassFixture<WebAppFactory>
     /// <summary>
     /// The Set-Cookie line for the Identity cookie, or null if it was never issued. Takes the
     /// <i>last</i> match deliberately: if a response ever writes the same cookie twice, the browser
-    /// keeps the last one, so that is the value whose behaviour is worth asserting.
+    /// keeps the last one, so that is the value whose behavior is worth asserting.
     /// </summary>
     private static string? IdentityCookie(HttpResponseHeaders headers) =>
         headers.TryGetValues("Set-Cookie", out var values)
@@ -133,7 +133,7 @@ public class RememberMeLoginTests : IClassFixture<WebAppFactory>
 
     /// <summary>
     /// The other half, and the one that stops this becoming "always remember me". An unticked
-    /// sign-in must still be a session cookie — that behaviour was deliberate for a shared machine,
+    /// sign-in must still be a session cookie — that behavior was deliberate for a shared machine,
     /// and #340 only ever asked for an opt-out from it.
     /// </summary>
     [Fact]
@@ -149,7 +149,7 @@ public class RememberMeLoginTests : IClassFixture<WebAppFactory>
 
     /// <summary>
     /// The control has to be on the page and inside the form that posts the credentials, or the
-    /// server-side behaviour above is unreachable from a browser.
+    /// server-side behavior above is unreachable from a browser.
     /// </summary>
     [Fact]
     public async Task TheLoginPageOffersTheCheckbox()

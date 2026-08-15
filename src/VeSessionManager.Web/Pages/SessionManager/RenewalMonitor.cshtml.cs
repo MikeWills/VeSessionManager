@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Authorization;
+﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
@@ -82,7 +82,7 @@ public class RenewalMonitorModel(
     /// merely stored would sit in the list forever showing "not checked yet", and the person who
     /// typed it would be long gone. Resolving now means the error lands while they can still fix it,
     /// and it is also what lets a row entered as an FRN be stored under its call sign — which is what
-    /// the list is keyed on and what a human recognises.</para>
+    /// the list is keyed on and what a human recognizes.</para>
     /// </summary>
     public async Task<IActionResult> OnPostAddAsync()
     {

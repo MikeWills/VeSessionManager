@@ -94,7 +94,7 @@ builder.Services.AddScoped<SessionEventSchedulingService>();
 builder.Services.AddSingleton<ISquareClient, SquareClient>();
 // Singleton on purpose: the whole value of TeamIntegrationState is remembering which mute states it
 // has already logged, across the scoped lifetimes background jobs create per tick. Scoped would make
-// it log every tick, which is the behaviour it exists to prevent (#64).
+// it log every tick, which is the behavior it exists to prevent (#64).
 builder.Services.AddSingleton<TeamIntegrationState>();
 
 builder.Services.AddScoped<PaymentGenerationService>();

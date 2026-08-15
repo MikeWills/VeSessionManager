@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using VeSessionManager.Core.Admin;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Entities;
@@ -8,7 +8,7 @@ using Xunit;
 namespace VeSessionManager.Core.Tests;
 
 /// <summary>
-/// Issue #73. The behaviour that matters here is mostly about *not* crying wolf: a fresh deployment
+/// Issue #73. The behavior that matters here is mostly about *not* crying wolf: a fresh deployment
 /// and a dead Worker look superficially similar (nothing has been polled) but warrant completely
 /// different messages, and a TeamAdmin looking at a brand-new team must not be told the Worker is
 /// down because that one team has never run.

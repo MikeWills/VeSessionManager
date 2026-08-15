@@ -1,4 +1,4 @@
-namespace VeSessionManager.Web;
+﻿namespace VeSessionManager.Web;
 
 /// <summary>
 /// The team-filter dropdown, as data (#306). Thirteen pages rendered this markup, in five variants
@@ -17,7 +17,7 @@ namespace VeSessionManager.Web;
 /// <param name="Label">The trigger text — "All teams", a team name, or a prompt like "Select a team…".</param>
 /// <param name="IncludeAllTeams">
 /// False on pages that edit or act on exactly one team, where a merged view has no meaning. That is
-/// a real difference in behaviour, not styling: without it there is no way to express "no filter".
+/// a real difference in behavior, not styling: without it there is no way to express "no filter".
 /// </param>
 /// <param name="Counts">
 /// Optional per-team badge, used by the two worklists (Applicant Status, Unmatched Payments) that

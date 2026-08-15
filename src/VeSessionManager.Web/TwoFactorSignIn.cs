@@ -1,4 +1,4 @@
-using System.Security.Claims;
+﻿using System.Security.Claims;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Identity;
 using VeSessionManager.Core.Entities;
@@ -18,7 +18,7 @@ namespace VeSessionManager.Web;
 /// <para><b>The shape is Identity's, and that is a contract worth pinning.</b>
 /// <c>SignInManager.GetTwoFactorAuthenticationUserAsync</c> reads the
 /// <c>TwoFactorUserIdScheme</c> cookie and expects the user id in a <see cref="ClaimTypes.Name"/>
-/// claim — the same thing Identity's internal <c>StoreTwoFactorInfo</c> writes. That is behaviour,
+/// claim — the same thing Identity's internal <c>StoreTwoFactorInfo</c> writes. That is behavior,
 /// not documentation, so <c>TwoFactorSignInTests</c> asserts the round trip rather than trusting it:
 /// exactly the standard applied to MimeKit's header handling in #261.</para>
 ///

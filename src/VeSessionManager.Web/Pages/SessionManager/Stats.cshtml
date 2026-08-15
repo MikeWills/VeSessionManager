@@ -1,4 +1,4 @@
-@page
+﻿@page
 @model VeSessionManager.Web.Pages.SessionManager.StatsModel
 @{
     ViewData["Title"] = "Stats";
@@ -100,12 +100,12 @@ else
         </div>
 
         <div class="session-panel" style="display:block; margin-bottom:20px;">
-            <div class="section-head"><h2>New licences and upgrades</h2></div>
+            <div class="section-head"><h2>New licenses and upgrades</h2></div>
             <p class="session-sub">
-                @Model.Report.TotalNewLicences first licence(s) and @Model.Report.TotalUpgrades upgrade(s) in this range.
-                Walking in unlicensed makes it a first licence; walking in with a class makes it an upgrade.
+                @Model.Report.TotalNewLicenses first license(s) and @Model.Report.TotalUpgrades upgrade(s) in this range.
+                Walking in unlicensed makes it a first license; walking in with a class makes it an upgrade.
             </p>
-            <div style="position:relative; height:280px;"><canvas id="licenceChart"></canvas></div>
+            <div style="position:relative; height:280px;"><canvas id="licenseChart"></canvas></div>
         </div>
 
         <div class="session-panel" style="display:block;">

@@ -58,7 +58,7 @@ public class TeamsModel(
         // user see" (SystemAdmin: all; everyone else: their own) and is already covered by
         // AdminAccessScopeTests. Re-deriving the same predicate here is how two answers to one
         // question start drifting.
-        // Projected to the raw flags rather than materialising Team entities — each of those costs
+        // Projected to the raw flags rather than materializing Team entities — each of those costs
         // five EncryptedStringConverter decryptions, and this page only needs a name and a date.
         var rows = await adminAccessScope.ScopeTeams(dbContext.Teams, user)
             .OrderBy(t => t.Name)
@@ -120,7 +120,7 @@ public class TeamsModel(
 
     /// <param name="MutedIntegrations">
     /// Which outbound systems are switched off for this team (#64) — empty for an ordinary team.
-    /// Surfaced here so a muted team is recognisable at a glance: its data looks exactly like real
+    /// Surfaced here so a muted team is recognizable at a glance: its data looks exactly like real
     /// data, and the whole risk of the feature is mistaking one for the other.
     /// </param>
     public record TeamRow(int Id, string Name, DateTime CreatedUtc, IReadOnlyList<TeamIntegration> MutedIntegrations);

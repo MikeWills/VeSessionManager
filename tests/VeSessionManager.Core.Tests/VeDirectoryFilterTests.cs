@@ -12,10 +12,10 @@ namespace VeSessionManager.Core.Tests;
 ///
 /// <para>Last-worked is a property of the finished <i>row</i> — the maximum across the teams in
 /// scope — so it is applied after the grouping, next to the guest filter and for the same reason.
-/// Licence status is not: it is a property of the person, identical across their memberships, and
+/// License status is not: it is a property of the person, identical across their memberships, and
 /// since #298 it is filtered in SQL so the directory can page.</para>
 ///
-/// <para><b>Real SQLite, not InMemory, since #298.</b> The licence filter uses <c>GLOB</c> for the
+/// <para><b>Real SQLite, not InMemory, since #298.</b> The license filter uses <c>GLOB</c> for the
 /// call-sign shape test, which InMemory cannot run — it fails with "the query has switched to
 /// client-evaluation". That is the provider-dependence CLAUDE.md warns about, arriving on schedule:
 /// a query written to be translated has to be tested against something that translates it.</para>

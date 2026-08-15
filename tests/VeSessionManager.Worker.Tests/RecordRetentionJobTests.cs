@@ -14,7 +14,7 @@ namespace VeSessionManager.Worker.Tests;
 /// <c>ExecuteDeleteAsync</c> is the whole mechanism and InMemory does not support it at all.</para>
 ///
 /// <para>The case that matters most is the <b>off</b> one. Both windows ship null, so on every
-/// existing deployment this job's correct behaviour is to delete nothing at all — a bug that made
+/// existing deployment this job's correct behavior is to delete nothing at all — a bug that made
 /// an unset window mean "zero days" would silently erase every audit entry the first night it ran.</para>
 /// </summary>
 public class RecordRetentionJobTests

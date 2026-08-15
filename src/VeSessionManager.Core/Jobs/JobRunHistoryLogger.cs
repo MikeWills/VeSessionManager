@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using VeSessionManager.Core.Data;
@@ -38,7 +38,7 @@ public class JobRunHistoryLogger(AppDbContext dbContext, ILogger<JobRunHistoryLo
     /// a total failure: a pipeline whose every step threw returned zero counts, and the manual
     /// refresh rendered "Refreshed HRCC — 0 new candidate(s)" in green. Reporting the outcome here
     /// is what lets a caller say something truthful; nothing about the swallow-and-continue
-    /// behaviour changes.</para>
+    /// behavior changes.</para>
     ///
     /// <para>Existing callers that ignore the value are unaffected — including the ones that pass
     /// this straight through as a <c>Task</c>, since <c>Task&lt;bool&gt;</c> is one.</para>

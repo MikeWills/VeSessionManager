@@ -306,7 +306,7 @@ public class TeamPipelineTests
     }
 
     /// <summary>
-    /// And the pipeline still completes rather than propagating: the swallow-and-continue behaviour
+    /// And the pipeline still completes rather than propagating: the swallow-and-continue behavior
     /// is deliberate and must survive this change. A later step failing must not stop earlier ones
     /// from having run, and the run must still be recorded.
     /// </summary>

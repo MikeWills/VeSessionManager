@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Entities;
@@ -134,7 +134,7 @@ public class UlsWatcherEasternDateTests
         Assert.Null(updated.UlsApplicationFileNumber);
     }
 
-    /// <summary>A licence granted on the session's Eastern day is a grant from that session.</summary>
+    /// <summary>A license granted on the session's Eastern day is a grant from that session.</summary>
     [Fact]
     public async Task LicenseGrantedOnTheSessionsEasternDay_MarksGranted()
     {
@@ -156,7 +156,7 @@ public class UlsWatcherEasternDateTests
 
     /// <summary>
     /// The upgrade path, which the class remarks call out as the case that left 20 real candidates
-    /// stuck: grant date is pinned to the original licence and never advances, so only the effective
+    /// stuck: grant date is pinned to the original license and never advances, so only the effective
     /// date can confirm an upgrade — and it lands on the session's Eastern day.
     /// </summary>
     [Fact]

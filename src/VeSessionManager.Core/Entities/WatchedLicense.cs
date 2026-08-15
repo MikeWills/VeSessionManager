@@ -1,4 +1,4 @@
-namespace VeSessionManager.Core.Entities;
+﻿namespace VeSessionManager.Core.Entities;
 
 /// <summary>
 /// A license a team has asked the app to keep an eye on — club members, family, anyone at all. It is
@@ -41,7 +41,7 @@ public class WatchedLicense : ILicenseSnapshot
     /// the (TeamId, CallSign) uniqueness is enforced on.
     /// <para>Non-null even when the row was added by FRN: the add flow resolves the entry against
     /// ULS before saving, so the call sign is always known by the time a row exists. That is what
-    /// lets the list be keyed on something a human recognises.</para>
+    /// lets the list be keyed on something a human recognizes.</para>
     /// </summary>
     public required string CallSign { get; set; }
 

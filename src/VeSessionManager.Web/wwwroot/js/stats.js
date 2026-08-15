@@ -1,4 +1,4 @@
-// Charts for the stats page (#63).
+﻿// Charts for the stats page (#63).
 //
 // The data arrives on a data- attribute rather than in an inline <script>, because this app's CSP is
 // script-src 'self': an inline block renders and silently never runs. Same constraint that put
@@ -39,7 +39,7 @@
     candidates: "#3d6f9e",
     passed: "#2f6f4e",
     failed: "#c0392b",
-    newLicence: "#3d6f9e",
+    newLicense: "#3d6f9e",
     upgrade: "#8e6cae"
   };
 
@@ -73,8 +73,8 @@
     { label: "Failed", data: data.failed, backgroundColor: palette.failed }
   ], true);
 
-  bar("licenceChart", [
-    { label: "New licences", data: data.newLicences, backgroundColor: palette.newLicence },
+  bar("licenseChart", [
+    { label: "New licenses", data: data.newLicenses, backgroundColor: palette.newLicense },
     { label: "Upgrades", data: data.upgrades, backgroundColor: palette.upgrade }
   ], true);
 })();

@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Authentication;
+﻿using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
@@ -25,7 +25,7 @@ namespace VeSessionManager.Web;
 /// <para><b>Why a filter rather than nineteen edits.</b> Those nineteen sit in three different method
 /// shapes, including inside a <c>ContinueWith</c>, so editing them individually is both more churn
 /// and easy to leave half-done. Resolving it once, before any handler runs, makes every one of those
-/// throws unreachable — they stay as assertions rather than becoming user-visible behaviour, and a
+/// throws unreachable — they stay as assertions rather than becoming user-visible behavior, and a
 /// twentieth added tomorrow is covered without anyone remembering to.</para>
 ///
 /// <para><b>It costs no extra query.</b> The lookup goes through

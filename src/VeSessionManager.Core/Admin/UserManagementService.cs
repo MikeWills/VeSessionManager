@@ -585,7 +585,7 @@ public class UserManagementService(UserManager<User> userManager, AppDbContext d
         await CheckAsync("team email setting edited", dbContext.EmailSettings.Where(e => e.UpdatedByUserId == userId).Select(e => e.Id));
         await CheckAsync("system setting edited", dbContext.SystemSettings.Where(x => x.UpdatedByUserId == userId).Select(x => x.Id));
         await CheckAsync("unmatched payment resolved", dbContext.UnmatchedSquarePayments.Where(u => u.ResolvedByUserId == userId).Select(u => u.Id));
-        await CheckAsync("watched licence added", dbContext.WatchedLicenses.Where(w => w.AddedByUserId == userId).Select(w => w.Id));
+        await CheckAsync("watched license added", dbContext.WatchedLicenses.Where(w => w.AddedByUserId == userId).Select(w => w.Id));
 
         // Refused rather than nulled, which #188 left open. Nulling would quietly restructure other
         // people's accounts as a side effect of deleting this one; refusing makes the admin reassign

@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Entities;
@@ -37,7 +37,7 @@ public class JobRunHistoryLoggerTrackerTests
         });
 
     /// <summary>
-    /// The accident, pinned. Not a behaviour to rely on — a behaviour to know about, because it is
+    /// The accident, pinned. Not a behavior to rely on — a behavior to know about, because it is
     /// the difference between #232 reproducing and not.
     /// </summary>
     [Fact]

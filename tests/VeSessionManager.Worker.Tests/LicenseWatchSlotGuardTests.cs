@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using VeSessionManager.Core.Admin;
 using VeSessionManager.Core.Data;
@@ -15,7 +15,7 @@ namespace VeSessionManager.Worker.Tests;
 ///
 /// <para>So if <c>LicenseWatch</c> succeeded and <c>VeLicenseWatch</c> threw (an FRN collision, say),
 /// the next hourly tick saw a successful <c>LicenseWatch</c> since the slot and returned early. VE
-/// licence refresh then <b>never retried for the rest of the day</b> — one green row beside one red
+/// license refresh then <b>never retried for the rest of the day</b> — one green row beside one red
 /// one, with no retry — while the code comment beside it claimed separate rows were precisely what
 /// prevented that.</para>
 ///
@@ -107,7 +107,7 @@ public class LicenseWatchSlotGuardTests
         Assert.Contains(written, h => h.JobName == JobSchedules.VeLicenseWatch);
     }
 
-    // ---- The behaviour the guard exists for -------------------------------------------------
+    // ---- The behavior the guard exists for -------------------------------------------------
 
     [Fact]
     public async Task BothSweepsSucceededThisSlot_TheTickSkips()

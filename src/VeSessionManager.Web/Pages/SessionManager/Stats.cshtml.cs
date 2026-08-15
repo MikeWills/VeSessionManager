@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Authorization;
+﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
@@ -59,7 +59,7 @@ public class StatsModel(
     /// <summary>
     /// The monthly series as JSON for the charts.
     ///
-    /// <para>Serialised here rather than written into the markup by a Razor loop because the CSP is
+    /// <para>Serialized here rather than written into the markup by a Razor loop because the CSP is
     /// <c>script-src 'self'</c>: no inline script can run, so the data has to reach the chart through
     /// an attribute the page's own JS file reads. Same constraint that put Chart.js in
     /// <c>wwwroot/lib</c> instead of a CDN reference.</para>
@@ -111,7 +111,7 @@ public class StatsModel(
             candidates = Report.Periods.Select(p => p.CandidatesTested).ToList(),
             passed = Report.Periods.Select(p => p.Passed).ToList(),
             failed = Report.Periods.Select(p => p.Failed).ToList(),
-            newLicences = Report.Periods.Select(p => p.NewLicences).ToList(),
+            newLicenses = Report.Periods.Select(p => p.NewLicenses).ToList(),
             upgrades = Report.Periods.Select(p => p.Upgrades).ToList()
         });
     }

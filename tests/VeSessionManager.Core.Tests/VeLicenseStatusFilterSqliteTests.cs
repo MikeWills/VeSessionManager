@@ -1,4 +1,4 @@
-using Microsoft.Data.Sqlite;
+﻿using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Entities;
@@ -74,7 +74,7 @@ public class VeLicenseStatusFilterSqliteTests
             Ve("cancelled", "K0CCC", checkedUtc: checkedNow, cancelled: today.AddDays(-30), expires: today.AddYears(5)),
 
             // Cancellation outranks a comfortable future expiry — the ordering that would silently
-            // report a revoked licence as Active if the date tests came first.
+            // report a revoked license as Active if the date tests came first.
             Ve("cancelled but not yet expired", "K0DDD", checkedUtc: checkedNow, cancelled: today.AddDays(-1), expires: today.AddYears(9)),
 
             Ve("no expiry recorded", "K0EEE", checkedUtc: checkedNow),

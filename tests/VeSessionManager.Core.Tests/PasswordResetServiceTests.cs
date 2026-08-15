@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Identity;
+﻿using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -13,7 +13,7 @@ using Xunit;
 namespace VeSessionManager.Core.Tests;
 
 /// <summary>
-/// Most of these assert a *non-*behaviour: that the forgot-password endpoint reveals nothing about
+/// Most of these assert a *non-*behavior: that the forgot-password endpoint reveals nothing about
 /// which addresses have accounts. That property is easy to break with a well-meaning "helpful" error
 /// message, so it is pinned test-by-test rather than left to code review.
 /// </summary>
@@ -103,7 +103,7 @@ public class PasswordResetServiceTests
 
     /// <param name="lockedOut">Deactivated by an admin — LockoutEnd = MaxValue, the sentinel.</param>
     /// <param name="temporarilyLockedOut">
-    /// Locked out by failed sign-ins, which is Identity's ordinary behaviour and a completely
+    /// Locked out by failed sign-ins, which is Identity's ordinary behavior and a completely
     /// different thing (#262). Both set the same column, which is the whole trap.
     /// </param>
     private static async Task<User> SeedUserAsync(

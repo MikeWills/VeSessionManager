@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Entities;
@@ -331,7 +331,7 @@ public class LicenseWatchServiceTests
         Assert.Null(license.RenewalPendingSinceUtc);
     }
 
-    /// <summary>An unrecognised purpose code degrades to "not a renewal" rather than throwing — the code list is FCC's documented one but has not been seen live.</summary>
+    /// <summary>An unrecognized purpose code degrades to "not a renewal" rather than throwing — the code list is FCC's documented one but has not been seen live.</summary>
     [Theory]
     // Codes, kept for other endpoints / future shape changes.
     [InlineData("RO", true)]

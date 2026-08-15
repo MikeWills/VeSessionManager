@@ -31,7 +31,7 @@ public class SessionConfiguration : IEntityTypeConfiguration<Session>
         //   * It guards against a user being deleted — and there is no delete path in this app at
         //     all. UserManagementService only deactivates; see #188, which is still open.
         //
-        // So the risk is real today and the benefit is not. #188 has to decide FK behaviour across
+        // So the risk is real today and the benefit is not. #188 has to decide FK behavior across
         // thirteen Restrict relationships anyway; this one belongs in that migration, alone, where
         // the rebuild can be planned rather than ridden along with an index change.
         // Money, so two decimal places rather than the provider's default. Matches

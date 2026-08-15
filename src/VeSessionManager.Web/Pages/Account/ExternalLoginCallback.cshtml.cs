@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Authorization;
+﻿using Microsoft.AspNetCore.Authorization;
 using System.Security.Claims;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -46,7 +46,7 @@ public class ExternalLoginCallbackModel(SignInManager<User> signInManager, UserM
 
         // The login page's checkbox, carried across the provider round trip in the external
         // scheme's own properties. Absent (an older in-flight sign-in, or a provider that dropped
-        // it) reads as false — the pre-#340 behaviour, which is the safe direction to fail.
+        // it) reads as false — the pre-#340 behavior, which is the safe direction to fail.
         var rememberMe = info.AuthenticationProperties?.Items.TryGetValue(RememberMe.ExternalPropertyKey, out var flag) == true
             && flag == "true";
 
@@ -57,7 +57,7 @@ public class ExternalLoginCallbackModel(SignInManager<User> signInManager, UserM
         // thin, against real friction on every sign-in.
         //
         // Worth knowing if this is ever revisited: SSO is not configured on this deployment yet
-        // (#185), so neither behaviour can be exercised live today. Flipping this to false would
+        // (#185), so neither behavior can be exercised live today. Flipping this to false would
         // ship an untestable change to the one sign-in path nobody can currently try.
         var signInResult = await signInManager.ExternalLoginSignInAsync(info.LoginProvider, info.ProviderKey, isPersistent: false, bypassTwoFactor: true);
         if (signInResult.Succeeded)

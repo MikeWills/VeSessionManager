@@ -1,4 +1,4 @@
-using Microsoft.Data.Sqlite;
+﻿using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
@@ -10,7 +10,7 @@ namespace VeSessionManager.Core.Tests;
 
 /// <summary>
 /// The unique index on Payments (CandidateId, Reason) filtered to <c>"Reason" = 0</c> (InitialExam)
-/// is pure provider behaviour: EF InMemory enforces neither unique indexes nor index filters, so an
+/// is pure provider behavior: EF InMemory enforces neither unique indexes nor index filters, so an
 /// InMemory test here would pass whether or not the index existed at all. Everything in this file
 /// therefore runs against real SQLite — the same provider production runs on — following the
 /// <see cref="VecExamToolsCodeSqliteTests"/> pattern.

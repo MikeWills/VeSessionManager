@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using VeSessionManager.Core.Data;
@@ -275,7 +275,7 @@ public class VolunteerExaminerSyncService(
         //   throws on save, and until #233 below the throw also poisoned every later session in the
         //   team's run.
         //
-        //   Perpetual churn. After the licence sweep follows FCC onto a new call sign, a roster
+        //   Perpetual churn. After the license sweep follows FCC onto a new call sign, a roster
         //   still reporting the old one no longer matches the stored VE's CallSign, so the link was
         //   dropped and re-added on every single tick — LinksRemoved and LinksAdded both ticking up
         //   forever for a roster that had not changed.

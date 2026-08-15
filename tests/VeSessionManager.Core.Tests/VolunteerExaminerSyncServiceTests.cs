@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using VeSessionManager.Core.Data;
@@ -481,7 +481,7 @@ public class VolunteerExaminerSyncServiceTests
     /// <summary>
     /// The other half: a recently-finished session with no roster must still be retried, or a
     /// session that appeared and closed inside one polling interval loses its roster permanently.
-    /// That is the behaviour the 2026-07-31 fix deliberately preserved.
+    /// That is the behavior the 2026-07-31 fix deliberately preserved.
     /// </summary>
     [Fact]
     public async Task FinishedSessionInsideTheRetryWindow_WithNoRoster_IsStillRePolled()

@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using VeSessionManager.Core.Data;
@@ -12,7 +12,7 @@ using Xunit;
 namespace VeSessionManager.Core.Tests;
 
 /// <summary>
-/// Issue #67 part 2. The interesting behaviour is mostly about restraint: a year of backdated data
+/// Issue #67 part 2. The interesting behavior is mostly about restraint: a year of backdated data
 /// must not trigger the live-session side effects, must not be mistaken for a cancellation sweep,
 /// and must be safe to re-run.
 /// </summary>
