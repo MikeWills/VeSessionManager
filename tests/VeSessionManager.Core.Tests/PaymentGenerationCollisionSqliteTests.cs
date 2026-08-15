@@ -1,4 +1,4 @@
-using Microsoft.Data.Sqlite;
+﻿using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -6,6 +6,7 @@ using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Entities;
 using VeSessionManager.Core.Payments;
 using VeSessionManager.Core.Square;
+using VeSessionManager.Core.Integrations;
 using Xunit;
 
 namespace VeSessionManager.Core.Tests;
@@ -120,7 +121,7 @@ public class PaymentGenerationCollisionSqliteTests
             .UseSqlite(connection).AddInterceptors(interceptor).Options);
         var teamForRun = await dbContext.Teams.SingleAsync();
         var square = new FakeSquareClient();
-        var service = new PaymentGenerationService(dbContext, square, new FixedTimeProvider(Now), NullLogger<PaymentGenerationService>.Instance);
+        var service = new PaymentGenerationService(dbContext, square, new FixedTimeProvider(Now), new TeamIntegrationState(NullLogger<TeamIntegrationState>.Instance), NullLogger<PaymentGenerationService>.Instance);
 
         // Act — the rival insert lands on the run's first save, i.e. after its candidate query.
         interceptor.Armed = true;

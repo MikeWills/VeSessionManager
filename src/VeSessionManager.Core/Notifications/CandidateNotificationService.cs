@@ -1,10 +1,11 @@
-using System.Globalization;
+﻿using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Email;
 using VeSessionManager.Core.Entities;
+using VeSessionManager.Core.Integrations;
 
 namespace VeSessionManager.Core.Notifications;
 
@@ -27,6 +28,7 @@ public class CandidateNotificationService(
     AppDbContext dbContext,
     EmailTemplateRenderer templateRenderer,
     IEmailSender emailSender,
+    TeamIntegrationState integrationState,
     TimeProvider timeProvider,
     IOptions<AppOptions> appOptions,
     ILogger<CandidateNotificationService> logger)
@@ -112,7 +114,8 @@ public class CandidateNotificationService(
                     ["PrivacyPolicyUrl"] = emailSettings.PrivacyPolicyUrl
                 };
 
-                if (!await TrySendAsync(team.Id, credentials, RegistrationConfirmationKey, candidate, emailSettings, placeholders, cancellationToken))
+                if (!await TrySendAsync(
+            team, credentials, RegistrationConfirmationKey, candidate, emailSettings, placeholders, cancellationToken))
                 {
                     result.Failed++;
                     await dbContext.SaveChangesAsync(cancellationToken);
@@ -214,7 +217,8 @@ public class CandidateNotificationService(
                     ["OutstandingPaymentLinkUrl"] = outstandingPaymentLinkUrl
                 };
 
-                if (!await TrySendAsync(team.Id, credentials, DayBeforeReminderKey, candidate, emailSettings, placeholders, cancellationToken))
+                if (!await TrySendAsync(
+            team, credentials, DayBeforeReminderKey, candidate, emailSettings, placeholders, cancellationToken))
                 {
                     result.Failed++;
                     await dbContext.SaveChangesAsync(cancellationToken);
@@ -289,7 +293,8 @@ public class CandidateNotificationService(
         };
 
         var credentials = team.ToEmailCredentials();
-        if (!await TrySendAsync(team.Id, credentials, RegistrationConfirmationKey, candidate, emailSettings, placeholders, cancellationToken))
+        if (!await TrySendAsync(
+            team, credentials, RegistrationConfirmationKey, candidate, emailSettings, placeholders, cancellationToken))
         {
             return CandidateEmailSendResult.TemplateMissing;
         }
@@ -346,7 +351,8 @@ public class CandidateNotificationService(
         };
 
         var credentials = team.ToEmailCredentials();
-        if (!await TrySendAsync(team.Id, credentials, YouthProgramInstructionsKey, candidate, emailSettings, placeholders, cancellationToken))
+        if (!await TrySendAsync(
+            team, credentials, YouthProgramInstructionsKey, candidate, emailSettings, placeholders, cancellationToken))
         {
             return CandidateEmailSendResult.TemplateMissing;
         }
@@ -412,7 +418,8 @@ public class CandidateNotificationService(
         };
 
         var credentials = team.ToEmailCredentials();
-        if (!await TrySendAsync(team.Id, credentials, FelonyDisclosureInstructionsKey, candidate, emailSettings, placeholders, cancellationToken))
+        if (!await TrySendAsync(
+            team, credentials, FelonyDisclosureInstructionsKey, candidate, emailSettings, placeholders, cancellationToken))
         {
             return CandidateEmailSendResult.TemplateMissing;
         }
@@ -423,11 +430,26 @@ public class CandidateNotificationService(
         return CandidateEmailSendResult.Sent;
     }
 
+    /// <summary>
+    /// Every candidate-facing email this service sends funnels through here, which is why the mute
+    /// switch is checked here and not at five call sites (#64). Takes the Team rather than its id for
+    /// exactly that reason.
+    /// </summary>
     private async Task<bool> TrySendAsync(
-        int teamId, EmailCredentials credentials, string templateKey, Candidate candidate, EmailSettings emailSettings,
+        Team team, EmailCredentials credentials, string templateKey, Candidate candidate, EmailSettings emailSettings,
         Dictionary<string, string> placeholders, CancellationToken cancellationToken)
     {
-        var rendered = await templateRenderer.RenderAsync(teamId, templateKey, placeholders, cancellationToken);
+        // Reported as "template missing" is wrong here, so callers get false only after a real
+        // failure — a muted send returns true, meaning "nothing more to do", and the caller stamps
+        // its ...SentUtc. That is the settle-without-doing-it rule: no retry, no backlog on
+        // re-enable. It is safe precisely because it is deliberate and indefinite, unlike an
+        // unconfigured integration, which must stay pending so it backfills.
+        if (!integrationState.ShouldCall(team, TeamIntegration.Email, $"sending {templateKey}"))
+        {
+            return true;
+        }
+
+        var rendered = await templateRenderer.RenderAsync(team.Id, templateKey, placeholders, cancellationToken);
         if (rendered is null)
         {
             return false;

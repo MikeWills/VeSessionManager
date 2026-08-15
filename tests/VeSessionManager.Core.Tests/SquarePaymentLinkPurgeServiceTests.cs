@@ -1,9 +1,10 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Entities;
 using VeSessionManager.Core.Payments;
 using VeSessionManager.Core.Square;
+using VeSessionManager.Core.Integrations;
 using Xunit;
 
 namespace VeSessionManager.Core.Tests;
@@ -48,7 +49,7 @@ public class SquarePaymentLinkPurgeServiceTests
     }
 
     private static SquarePaymentLinkPurgeService CreateService(AppDbContext dbContext, ISquareClient square) =>
-        new(dbContext, square, new FixedTimeProvider(Now), NullLogger<SquarePaymentLinkPurgeService>.Instance);
+        new(dbContext, square, new FixedTimeProvider(Now), new TeamIntegrationState(NullLogger<TeamIntegrationState>.Instance), NullLogger<SquarePaymentLinkPurgeService>.Instance);
 
     /// <summary>Seeds a Team. squareConfigured=true (default) sets AccessToken so Team.IsSquareConfigured is true. purgeDays defaults to 30 (the entity's own default).</summary>
     private static async Task<Team> SeedTeamAsync(AppDbContext dbContext, bool squareConfigured = true, int purgeDays = 30)

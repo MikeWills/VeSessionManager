@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.DataProtection;
+﻿using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
@@ -11,6 +11,7 @@ using VeSessionManager.Core.Entities;
 using VeSessionManager.Core.ExamResults;
 using VeSessionManager.Core.ExamTools;
 using VeSessionManager.Core.Ingestion;
+using VeSessionManager.Core.Integrations;
 using VeSessionManager.Core.Jobs;
 using VeSessionManager.Core.Notifications;
 using VeSessionManager.Core.Payments;
@@ -140,6 +141,10 @@ public class IngestionStampTests
             services.AddScoped<SessionIngestionService>();
             services.AddScoped<VolunteerExaminerSyncService>();
             services.AddScoped<ExamResultSyncService>();
+            // Singleton, matching both hosts: TeamIntegrationState's whole job is remembering
+            // across the per-tick scopes, so a scoped registration here would quietly diverge from
+            // production (#64).
+            services.AddSingleton<TeamIntegrationState>();
             services.AddScoped<SessionEventSchedulingService>();
             services.AddScoped<PaymentGenerationService>();
             services.AddScoped<EmailTemplateRenderer>();

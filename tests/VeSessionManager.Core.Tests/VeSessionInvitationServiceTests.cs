@@ -4,6 +4,7 @@ using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Email;
 using VeSessionManager.Core.Entities;
 using VeSessionManager.Core.VolunteerExaminers;
+using VeSessionManager.Core.Integrations;
 using Xunit;
 
 namespace VeSessionManager.Core.Tests;
@@ -77,7 +78,7 @@ public class VeSessionInvitationServiceTests
     private static (VeSessionInvitationService Service, FakeEmailSender Email) Create(AppDbContext dbContext)
     {
         var email = new FakeEmailSender();
-        return (new VeSessionInvitationService(dbContext, email, new FixedTimeProvider(Now),
+        return (new VeSessionInvitationService(dbContext, email, new TeamIntegrationState(NullLogger<TeamIntegrationState>.Instance), new FixedTimeProvider(Now),
             NullLogger<VeSessionInvitationService>.Instance), email);
     }
 

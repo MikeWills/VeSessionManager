@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using VeSessionManager.Core;
@@ -9,6 +9,7 @@ using VeSessionManager.Core.Notifications;
 using VeSessionManager.Core.Payments;
 using VeSessionManager.Core.Sessions;
 using VeSessionManager.Core.Square;
+using VeSessionManager.Core.Integrations;
 using Xunit;
 
 namespace VeSessionManager.Core.Tests;
@@ -69,7 +70,7 @@ public class SessionActionServiceTests
     // sender to observe.
     private static SessionActionService CreateService(AppDbContext dbContext, IEmailSender emailSender, ISquareClient? squareClient = null) => new(
         dbContext,
-        new SquarePaymentMatchingService(dbContext, squareClient ?? new FakeSquareClient(), new FixedTimeProvider(Now), NullLogger<SquarePaymentMatchingService>.Instance),
+        new SquarePaymentMatchingService(dbContext, squareClient ?? new FakeSquareClient(), new FixedTimeProvider(Now), new TeamIntegrationState(NullLogger<TeamIntegrationState>.Instance), NullLogger<SquarePaymentMatchingService>.Instance),
         new FixedTimeProvider(Now),
         NullLogger<SessionActionService>.Instance);
 

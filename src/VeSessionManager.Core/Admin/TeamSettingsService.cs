@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Email;
@@ -90,6 +90,39 @@ public class TeamSettingsService(AppDbContext dbContext, TimeProvider timeProvid
         }
 
         return await SaveTeamUpdateAsync(team, "TeamExamToolsCredentialsUpdated", userId, cancellationToken);
+    }
+
+    /// <summary>
+    /// The per-integration mute switches (#64). One save for the whole group, because they are set
+    /// together on one panel and a half-applied state is meaningless.
+    /// </summary>
+    public async Task<TeamActionResult> UpdateIntegrationSwitchesAsync(
+        int teamId, bool overridesEnabled, bool zoom, bool discord, bool square, bool email, int userId, CancellationToken cancellationToken)
+    {
+        var team = await dbContext.Teams.FirstOrDefaultAsync(t => t.Id == teamId, cancellationToken);
+        if (team is null)
+        {
+            return TeamActionResult.NotFound;
+        }
+
+        team.IntegrationOverridesEnabled = overridesEnabled;
+        team.ZoomEnabled = zoom;
+        team.DiscordEnabled = discord;
+        team.SquareEnabled = square;
+        team.EmailEnabled = email;
+
+        // Audited with the resulting muted set spelled out, not the raw flags: "muted Discord, Email"
+        // is what someone reading this later needs, and it is also what the master switch makes
+        // ambiguous — with it off, four falses still mean nothing is muted.
+        var muted = team.MutedIntegrations;
+        dbContext.AddAuditLog(userId, "TeamIntegrationSwitchesUpdated", nameof(Team), team.Id,
+            muted.Count == 0
+                ? "All integrations enabled."
+                : $"Muted: {string.Join(", ", muted)}.",
+            timeProvider.GetUtcNow().UtcDateTime);
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return TeamActionResult.Success;
     }
 
     public async Task<TeamActionResult> UpdateZoomAsync(int teamId, string? accountId, string? clientId, string? clientSecret, string? zoomUserId, int breakoutRoomCount, int userId, CancellationToken cancellationToken)

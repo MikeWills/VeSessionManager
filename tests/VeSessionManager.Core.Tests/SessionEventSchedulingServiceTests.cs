@@ -1,10 +1,11 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Discord;
 using VeSessionManager.Core.Entities;
 using VeSessionManager.Core.Scheduling;
 using VeSessionManager.Core.Zoom;
+using VeSessionManager.Core.Integrations;
 using Xunit;
 
 namespace VeSessionManager.Core.Tests;
@@ -122,7 +123,7 @@ public class SessionEventSchedulingServiceTests
 
     private static SessionEventSchedulingService CreateService(
         AppDbContext dbContext, IZoomClient zoom, IDiscordEventClient discord) =>
-        new(dbContext, zoom, discord, new FixedTimeProvider(Now), NullLogger<SessionEventSchedulingService>.Instance);
+        new(dbContext, zoom, discord, new FixedTimeProvider(Now), new TeamIntegrationState(NullLogger<TeamIntegrationState>.Instance), NullLogger<SessionEventSchedulingService>.Instance);
 
     /// <summary>Seeds a Team. zoomConfigured=true (default) sets AccountId/ClientId/ClientSecret so Team.IsZoomConfigured is true; discordConfigured=true (default) sets DiscordGuildId so Team.IsDiscordConfigured is true (the shared bot's own readiness is controlled separately via FakeDiscordEventClient.IsConfigured).</summary>
     private static async Task<Team> SeedTeamAsync(AppDbContext dbContext, bool zoomConfigured = true, bool discordConfigured = true)
@@ -171,6 +172,111 @@ public class SessionEventSchedulingServiceTests
         FeeConfigurationId = feeConfiguration.Id,
         CreatedUtc = Now
     };
+
+    // ---- Per-team integration switches (#64), and the #289 fix that falls out of them ----
+
+    /// <summary>
+    /// The three halves the issue asks to be pinned together: <b>no calls made</b>, <b>no re-attempt
+    /// next tick</b>, and the work <b>settled</b> rather than left pending forever.
+    ///
+    /// <para>Settling is the half that is easy to get wrong. An unconfigured integration must stay
+    /// pending so it backfills the moment credentials arrive; a deliberately switched-off one must
+    /// not, or it re-attempts and re-logs forever. Same code, opposite requirement.</para>
+    /// </summary>
+    [Fact]
+    public async Task ZoomSwitchedOff_MakesNoCalls_AndDoesNotRetryNextTick()
+    {
+        await using var dbContext = CreateContext();
+        var (vec, feeConfig) = await SeedRefsAsync(dbContext);
+        var team = await SeedTeamAsync(dbContext);
+        team.IntegrationOverridesEnabled = true;
+        team.ZoomEnabled = false;
+        team.DiscordEnabled = false;
+        var session = NewSession(vec, feeConfig, team);
+        dbContext.Sessions.Add(session);
+        await dbContext.SaveChangesAsync();
+
+        var zoom = new FakeZoomClient();
+        var discord = new FakeDiscordEventClient();
+        var service = CreateService(dbContext, zoom, discord);
+
+        await service.RunAsync(team, CancellationToken.None);
+
+        Assert.Empty(zoom.CreateCalls);
+        Assert.Empty(zoom.UpdateCalls);
+        Assert.Empty(discord.CreateCalls);
+
+        // Settled: nothing left pending, so the next tick has nothing to pick up.
+        Assert.Equal(session.ScheduledStartUtc, session.ZoomDiscordSyncedStartUtc);
+
+        var second = await service.RunAsync(team, CancellationToken.None);
+        Assert.Equal(0, second.SessionsSynced);
+        Assert.Empty(zoom.CreateCalls);
+        Assert.Empty(zoom.UpdateCalls);
+    }
+
+    /// <summary>
+    /// <b>This is #289.</b> A team using Zoom but deliberately not Discord could never settle — the
+    /// old rule required both ids to be non-null — so the else-branch re-PATCHed every future session
+    /// on every poll. Roughly 2,880 Zoom calls a day for ten sessions, forever, for data that had not
+    /// changed.
+    ///
+    /// <para>Switching Discord off makes "deliberately not Discord" expressible, which is what the
+    /// settle rule needed. Zoom is created once and then left alone.</para>
+    /// </summary>
+    [Fact]
+    public async Task ZoomOnlyTeam_SettlesAfterCreating_AndStopsRePatchingEveryPoll()
+    {
+        await using var dbContext = CreateContext();
+        var (vec, feeConfig) = await SeedRefsAsync(dbContext);
+        var team = await SeedTeamAsync(dbContext);
+        team.IntegrationOverridesEnabled = true;
+        team.DiscordEnabled = false;
+        var session = NewSession(vec, feeConfig, team);
+        dbContext.Sessions.Add(session);
+        await dbContext.SaveChangesAsync();
+
+        var zoom = new FakeZoomClient();
+        var discord = new FakeDiscordEventClient();
+        var service = CreateService(dbContext, zoom, discord);
+
+        await service.RunAsync(team, CancellationToken.None);
+        Assert.Single(zoom.CreateCalls);
+        Assert.Empty(discord.CreateCalls);
+        Assert.Equal(session.ScheduledStartUtc, session.ZoomDiscordSyncedStartUtc);
+
+        // The regression itself: four more polls, and Zoom is never touched again.
+        for (var poll = 0; poll < 4; poll++)
+        {
+            await service.RunAsync(team, CancellationToken.None);
+        }
+
+        Assert.Single(zoom.CreateCalls);
+        Assert.Empty(zoom.UpdateCalls);
+    }
+
+    /// <summary>
+    /// The mirror image, and the reason the settle rule cannot simply be "or not configured":
+    /// an <i>unconfigured</i> Discord must keep the session pending so it backfills automatically the
+    /// moment a Guild is picked. Only a deliberate switch settles.
+    /// </summary>
+    [Fact]
+    public async Task UnconfiguredDiscord_StillLeavesTheSessionPending()
+    {
+        await using var dbContext = CreateContext();
+        var (vec, feeConfig) = await SeedRefsAsync(dbContext);
+        var team = await SeedTeamAsync(dbContext, discordConfigured: false);
+        var session = NewSession(vec, feeConfig, team);
+        dbContext.Sessions.Add(session);
+        await dbContext.SaveChangesAsync();
+
+        var zoom = new FakeZoomClient();
+        var discord = new FakeDiscordEventClient();
+        await CreateService(dbContext, zoom, discord).RunAsync(team, CancellationToken.None);
+
+        Assert.Single(zoom.CreateCalls);
+        Assert.Null(session.ZoomDiscordSyncedStartUtc);
+    }
 
     [Fact]
     public async Task NewSession_CreatesZoomMeetingAndDiscordEvent_AndMarksSynced()

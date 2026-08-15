@@ -1,7 +1,8 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Entities;
+using VeSessionManager.Core.Integrations;
 using VeSessionManager.Core.Square;
 
 namespace VeSessionManager.Core.Payments;
@@ -33,6 +34,7 @@ public class PaymentGenerationService(
     AppDbContext dbContext,
     ISquareClient squareClient,
     TimeProvider timeProvider,
+    TeamIntegrationState integrationState,
     ILogger<PaymentGenerationService> logger)
 {
     /// <param name="onlySessionId">Restrict the run to one session's candidates (the Detail page's
@@ -154,6 +156,14 @@ public class PaymentGenerationService(
             paymentsNeedingLink.Clear();
         }
 
+        // Switched off (#64). Unlike the unconfigured branch above, nothing is queued and nothing
+        // says "will generate automatically once...": re-enabling starts fresh from that moment, so
+        // a week of muted links cannot suddenly appear against a real merchant account.
+        if (!integrationState.ShouldCall(team, TeamIntegration.Square, "creating Square payment links"))
+        {
+            paymentsNeedingLink.Clear();
+        }
+
         var credentials = team.IsSquareConfigured
             ? team.ToSquareCredentials()
             : null;
@@ -207,7 +217,9 @@ public class PaymentGenerationService(
         logger.LogInformation("Created Retest Payment for candidate {CandidateId}", candidate.Id);
 
         var team = candidate.Session.Team;
-        if (feeConfiguration.FeeCollectionEnabled && team.IsSquareConfigured)
+        if (feeConfiguration.FeeCollectionEnabled
+            && integrationState.ShouldCall(team, TeamIntegration.Square, "creating a Square payment link")
+            && team.IsSquareConfigured)
         {
             try
             {

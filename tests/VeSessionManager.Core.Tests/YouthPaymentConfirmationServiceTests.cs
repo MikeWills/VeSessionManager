@@ -1,9 +1,10 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Entities;
 using VeSessionManager.Core.Payments;
 using VeSessionManager.Core.Square;
+using VeSessionManager.Core.Integrations;
 using Xunit;
 
 namespace VeSessionManager.Core.Tests;
@@ -64,7 +65,7 @@ public class YouthPaymentConfirmationServiceTests
     }
 
     private static YouthPaymentConfirmationService CreateService(AppDbContext dbContext, ISquareClient square) =>
-        new(dbContext, square, new FixedTimeProvider(Now), NullLogger<YouthPaymentConfirmationService>.Instance);
+        new(dbContext, square, new FixedTimeProvider(Now), new TeamIntegrationState(NullLogger<TeamIntegrationState>.Instance), NullLogger<YouthPaymentConfirmationService>.Instance);
 
     /// <summary>Seeds a Team with Square configured, a youth-program Vec, a FeeConfiguration with a
     /// $5 youth rate (unless overridden), and an Unpaid InitialExam Payment with a standard $15

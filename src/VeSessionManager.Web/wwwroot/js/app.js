@@ -1,4 +1,4 @@
-// Plain vanilla JS, no framework — matches CLAUDE.md's "minimal JS" stack preference. Handles the
+﻿// Plain vanilla JS, no framework — matches CLAUDE.md's "minimal JS" stack preference. Handles the
 // three interactive-but-static-in-the-mockup behaviors the design handoff calls out: theme toggle
 // (persisted to localStorage, same key/behavior as the mockup), per-row kebab dropdown menus
 // (click to open, click-outside to close — the mockup notes this wasn't wired in the static HTML),
@@ -564,5 +564,22 @@
 
     updateCount();
   }
+
+
+  // A checkbox that shows or hides a panel by id (#64: the per-integration switches sit behind the
+  // master toggle, so an ordinary team's settings page does not grow controls nobody touches).
+  //
+  // Progressive enhancement only. The panel is rendered expanded or collapsed server-side from the
+  // saved state, so with JavaScript unavailable the controls are simply always visible and still
+  // submit correctly — hiding is never the enforcement, which is read from the master switch on the
+  // server every time.
+  document.querySelectorAll("[data-toggle-panel]").forEach(function (toggle) {
+    var panel = document.getElementById(toggle.getAttribute("data-toggle-panel"));
+    if (!panel) return;
+
+    toggle.addEventListener("change", function () {
+      panel.style.display = toggle.checked ? "" : "none";
+    });
+  });
 
 })();

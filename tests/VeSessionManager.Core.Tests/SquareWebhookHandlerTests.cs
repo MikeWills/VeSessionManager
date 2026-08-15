@@ -1,4 +1,4 @@
-using System.Security.Cryptography;
+﻿using System.Security.Cryptography;
 using System.Text;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -6,6 +6,7 @@ using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Entities;
 using VeSessionManager.Core.Payments;
 using VeSessionManager.Core.Square;
+using VeSessionManager.Core.Integrations;
 using Xunit;
 
 namespace VeSessionManager.Core.Tests;
@@ -42,7 +43,7 @@ public class SquareWebhookHandlerTests
 
     private static SquareWebhookHandler CreateHandler(AppDbContext dbContext) => new(
         dbContext,
-        new SquarePaymentMatchingService(dbContext, new FakeSquareClient(), new FixedTimeProvider(Now), NullLogger<SquarePaymentMatchingService>.Instance),
+        new SquarePaymentMatchingService(dbContext, new FakeSquareClient(), new FixedTimeProvider(Now), new TeamIntegrationState(NullLogger<TeamIntegrationState>.Instance), NullLogger<SquarePaymentMatchingService>.Instance),
         new FixedTimeProvider(Now),
         NullLogger<SquareWebhookHandler>.Instance);
 

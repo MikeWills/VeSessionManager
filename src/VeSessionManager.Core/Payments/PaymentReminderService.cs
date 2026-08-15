@@ -1,10 +1,11 @@
-using System.Globalization;
+﻿using System.Globalization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Email;
 using VeSessionManager.Core.Entities;
+using VeSessionManager.Core.Integrations;
 using VeSessionManager.Core.Notifications;
 
 namespace VeSessionManager.Core.Payments;
@@ -76,6 +77,7 @@ public class PaymentReminderService(
     AppDbContext dbContext,
     EmailTemplateRenderer templateRenderer,
     IEmailSender emailSender,
+    TeamIntegrationState integrationState,
     TimeProvider timeProvider,
     IOptions<PaymentReminderOptions> options,
     ILogger<PaymentReminderService> logger)
@@ -107,7 +109,21 @@ public class PaymentReminderService(
         }
         else
         {
-            await SendFccFeeRemindersAsync(team, now, emailSettings, result, cancellationToken);
+            // Email switched off suppresses the mail, not the local bookkeeping (#64). The FCC-fee
+            // reminder pass is nothing but mail, so it is skipped whole; expiring a stale payment is
+            // a database write that should keep happening, so that pass still runs and only its
+            // admin notice is suppressed, inside.
+            //
+            // Deliberately does NOT stamp FccFeeReminderSentUtc for the skipped candidates. Writing
+            // it would claim an email was sent that was not, and those timestamps are rendered to a
+            // Session Manager in the candidate's email history. The trade is stated in
+            // docs/team-integration-switches.md: a candidate still inside the reminder window when
+            // the switch goes back on will be reminded then, rather than never.
+            if (integrationState.ShouldCall(team, TeamIntegration.Email, "sending FCC fee reminders"))
+            {
+                await SendFccFeeRemindersAsync(team, now, emailSettings, result, cancellationToken);
+            }
+
             await ProcessExpirationsAsync(team, now, emailSettings, result, cancellationToken);
         }
 
@@ -262,14 +278,20 @@ public class PaymentReminderService(
                     continue;
                 }
 
-                await emailSender.SendAsync(
-                    credentials,
-                    // Deliberately no BccAddress: this notice already goes to the team's own
-                    // AdminNotificationEmail. Copying a team's internal mail to the same team's
-                    // monitoring inbox is noise, and the BCC exists to watch what *candidates*
-                    // receive.
-                    new EmailMessage(emailSettings.AdminNotificationEmail, emailSettings.FromAddress, emailSettings.FromDisplayName, emailSettings.ReplyToAddress, rendered.Subject, rendered.Body, rendered.InlineLogo),
-                    cancellationToken);
+                // The expiry itself is a local write and happens either way; only the notice is
+                // muted (#64). Suppressing the expiry too would let a muted team accumulate live
+                // payment links that should have gone stale.
+                if (integrationState.ShouldCall(team, TeamIntegration.Email, "sending a payment expiration notice"))
+                {
+                    await emailSender.SendAsync(
+                        credentials,
+                        // Deliberately no BccAddress: this notice already goes to the team's own
+                        // AdminNotificationEmail. Copying a team's internal mail to the same team's
+                        // monitoring inbox is noise, and the BCC exists to watch what *candidates*
+                        // receive.
+                        new EmailMessage(emailSettings.AdminNotificationEmail, emailSettings.FromAddress, emailSettings.FromDisplayName, emailSettings.ReplyToAddress, rendered.Subject, rendered.Body, rendered.InlineLogo),
+                        cancellationToken);
+                }
 
                 // "Stop further reminders for that payment" (spec) — ExpiredUnpaid = true removes
                 // it from this same query on every future run, and it was never eligible for the

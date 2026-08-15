@@ -1,10 +1,11 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using VeSessionManager.Core.CandidateActions;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Entities;
 using VeSessionManager.Core.Payments;
 using VeSessionManager.Core.Square;
+using VeSessionManager.Core.Integrations;
 using Xunit;
 
 namespace VeSessionManager.Core.Tests;
@@ -44,7 +45,7 @@ public class CandidateActionServiceTests
 
     private static CandidateActionService CreateService(AppDbContext dbContext) => new(
         dbContext,
-        new PaymentGenerationService(dbContext, new FakeSquareClient(), new FixedTimeProvider(Now), NullLogger<PaymentGenerationService>.Instance),
+        new PaymentGenerationService(dbContext, new FakeSquareClient(), new FixedTimeProvider(Now), new TeamIntegrationState(NullLogger<TeamIntegrationState>.Instance), NullLogger<PaymentGenerationService>.Instance),
         new FixedTimeProvider(Now),
         NullLogger<CandidateActionService>.Instance);
 

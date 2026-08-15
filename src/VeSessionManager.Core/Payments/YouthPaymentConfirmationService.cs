@@ -1,7 +1,8 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Entities;
+using VeSessionManager.Core.Integrations;
 using VeSessionManager.Core.Square;
 
 namespace VeSessionManager.Core.Payments;
@@ -41,6 +42,7 @@ public class YouthPaymentConfirmationService(
     AppDbContext dbContext,
     ISquareClient squareClient,
     TimeProvider timeProvider,
+    TeamIntegrationState integrationState,
     ILogger<YouthPaymentConfirmationService> logger)
 {
     /// <summary>Read-only eligibility check for the page's GET (decide whether to render the form or
@@ -93,7 +95,13 @@ public class YouthPaymentConfirmationService(
         }
 
         var team = payment.Candidate.Session.Team;
-        if (!team.IsSquareConfigured)
+
+        // Switched off suppresses the outbound Square calls below (#64). Reported as
+        // SquareNotConfigured because that is what the caller can already render, and the log line
+        // from ShouldCall says which of the two it actually was — a muted team is a deliberate,
+        // temporary state that the person who muted it knows about.
+        if (!integrationState.ShouldCall(team, TeamIntegration.Square, "replacing a payment link with the youth rate")
+            || !team.IsSquareConfigured)
         {
             return new YouthConfirmationResult(YouthConfirmationOutcome.SquareNotConfigured);
         }

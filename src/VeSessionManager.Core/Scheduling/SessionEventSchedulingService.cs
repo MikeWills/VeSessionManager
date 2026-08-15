@@ -1,8 +1,9 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Discord;
 using VeSessionManager.Core.Entities;
+using VeSessionManager.Core.Integrations;
 using VeSessionManager.Core.Zoom;
 
 namespace VeSessionManager.Core.Scheduling;
@@ -48,6 +49,7 @@ public class SessionEventSchedulingService(
     IZoomClient zoomClient,
     IDiscordEventClient discordEventClient,
     TimeProvider timeProvider,
+    TeamIntegrationState integrationState,
     ILogger<SessionEventSchedulingService> logger)
 {
     /// <param name="onlySessionId">Restrict the run to one session (the Detail page's
@@ -211,7 +213,13 @@ public class SessionEventSchedulingService(
 
     private async Task SyncZoomAndDiscordAsync(Team team, Session session, CancellationToken cancellationToken)
     {
-        if (team.IsZoomConfigured)
+        // Mute switches first, and before the IsConfigured checks (#64): a team that has deliberately
+        // switched Zoom off should not also be told it has not finished configuring Zoom. Both are
+        // true and only one is useful.
+        var zoomEnabled = integrationState.ShouldCall(team, TeamIntegration.Zoom, "creating or updating a Zoom meeting");
+        var discordEnabled = integrationState.ShouldCall(team, TeamIntegration.Discord, "creating or updating a Discord event");
+
+        if (zoomEnabled && team.IsZoomConfigured)
         {
             var zoomCredentials = team.ToZoomCredentials();
             var zoomRequest = new ZoomMeetingRequest(session.Title, session.ScheduledStartUtc, session.DurationMinutes, team.ZoomBreakoutRoomCount);
@@ -252,7 +260,7 @@ public class SessionEventSchedulingService(
         // Discord's location/description needs the Zoom join link, so it can't do anything
         // meaningful until Zoom has actually produced one, regardless of Discord's own config.
         // Both gates must be true: the shared bot ready, and this team has picked a Guild.
-        if (discordEventClient.IsConfigured && team.IsDiscordConfigured && session.ZoomJoinUrl is not null)
+        if (discordEnabled && discordEventClient.IsConfigured && team.IsDiscordConfigured && session.ZoomJoinUrl is not null)
         {
             var guildId = team.DiscordGuildId!.Value;
             var endTimeUtc = session.ScheduledStartUtc.AddMinutes(session.DurationMinutes);
@@ -294,12 +302,23 @@ public class SessionEventSchedulingService(
             }
         }
 
-        // Deliberately *not* "OR not configured" — an unconfigured integration must stay pending
-        // forever (re-checked every poll, one quiet aggregate log line via
-        // LogUnconfiguredIntegrations) so it backfills automatically the moment it's configured,
-        // exactly like Phase 3/4's optional integrations. Only an integration that has actually
-        // produced its id counts as settled.
-        if (session.ZoomMeetingId is not null && session.DiscordEventId is not null)
+        // Still deliberately *not* "OR not configured" — an unconfigured integration must stay
+        // pending forever (re-checked every poll, one quiet aggregate line via
+        // LogUnconfiguredIntegrations) so it backfills automatically the moment it is configured,
+        // exactly like Phase 3/4's optional integrations.
+        //
+        // "OR switched off" is the opposite case and IS correct here (#64), which is worth stating
+        // because it looks like the antipattern CLAUDE.md warns about and is its mirror image. That
+        // warning is about *unconfigured*, where the whole point is to keep retrying. A deliberate,
+        // indefinite switch must settle instead: never retried, nothing queued for re-enabling.
+        //
+        // This is also what closes #289. A team using Zoom but deliberately not Discord could never
+        // settle, so the else-branch re-PATCHed every future session on every poll — roughly 2,880
+        // Zoom calls a day for ten sessions, forever, for data that had not changed. Switching
+        // Discord off now makes "deliberately not Discord" expressible, and the session settles.
+        var zoomSettled = !zoomEnabled || session.ZoomMeetingId is not null;
+        var discordSettled = !discordEnabled || session.DiscordEventId is not null;
+        if (zoomSettled && discordSettled)
         {
             session.ZoomDiscordSyncedStartUtc = session.ScheduledStartUtc;
         }
@@ -332,7 +351,17 @@ public class SessionEventSchedulingService(
 
         if (session.ZoomMeetingId is not null)
         {
-            if (!team.IsZoomConfigured)
+            // Switched off deletes nothing, and settles rather than retrying (#64). The meeting is
+            // left in the real Zoom account permanently — an accepted consequence, stated in the
+            // issue: a muted team must not reach into a real account for ANY reason, teardown
+            // included. ZoomMeetingId is deliberately left set, so the orphan is still visible here
+            // rather than being forgotten locally too. Safe order when muting a team with live
+            // resources is therefore: clean up first, switch off second.
+            if (!integrationState.ShouldCall(team, TeamIntegration.Zoom, "deleting a Zoom meeting"))
+            {
+                // fullyCleanedUp stays true: settled without doing it, never re-attempted.
+            }
+            else if (!team.IsZoomConfigured)
             {
                 // An existing meeting still needs tearing down even if the team's Zoom setup
                 // changed (or was never finished) since it was created, but there's no way to call
@@ -356,7 +385,12 @@ public class SessionEventSchedulingService(
 
         if (session.DiscordEventId is not null)
         {
-            if (!discordEventClient.IsConfigured || team.DiscordGuildId is null)
+            // Same as Zoom above — suppressed, settled, and the event left in the real guild.
+            if (!integrationState.ShouldCall(team, TeamIntegration.Discord, "deleting a Discord event"))
+            {
+                // fullyCleanedUp stays true.
+            }
+            else if (!discordEventClient.IsConfigured || team.DiscordGuildId is null)
             {
                 // Same reasoning as Zoom's guard above.
                 fullyCleanedUp = false;

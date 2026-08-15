@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using VeSessionManager.Core;
@@ -6,6 +6,7 @@ using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Email;
 using VeSessionManager.Core.Entities;
 using VeSessionManager.Core.Notifications;
+using VeSessionManager.Core.Integrations;
 using Xunit;
 
 namespace VeSessionManager.Core.Tests;
@@ -51,7 +52,7 @@ public class CandidateNotificationServiceTests
     private static CandidateNotificationService CreateService(AppDbContext dbContext, IEmailSender emailSender) => new(
         dbContext,
         new EmailTemplateRenderer(dbContext, NullLogger<EmailTemplateRenderer>.Instance),
-        emailSender,
+        emailSender, new TeamIntegrationState(NullLogger<TeamIntegrationState>.Instance),
         new FixedTimeProvider(Now),
         Options.Create(new AppOptions { PublicBaseUrl = TestPublicBaseUrl }),
         NullLogger<CandidateNotificationService>.Instance);

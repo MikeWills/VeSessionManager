@@ -96,6 +96,26 @@ public class TeamSettingsModel(AppDbContext dbContext, UserManager<User> userMan
         return RedirectToPage(new { teamId = auth.Value.Team.Id });
     }
 
+    /// <summary>
+    /// TeamAdmin/SystemAdmin only, like every other handler here — AuthorizeAsync re-resolves the
+    /// user and re-checks CanManageTeam server-side, so hiding the panel is presentation, never the
+    /// authorization (#64).
+    /// </summary>
+    public async Task<IActionResult> OnPostUpdateIntegrationSwitchesAsync(
+        bool integrationOverridesEnabled, bool zoomEnabled, bool discordEnabled, bool squareEnabled, bool emailEnabled)
+    {
+        var auth = await AuthorizeAsync();
+        if (auth is null) return Forbid();
+
+        var result = await teamSettingsService.UpdateIntegrationSwitchesAsync(
+            auth.Value.Team.Id, integrationOverridesEnabled, zoomEnabled, discordEnabled, squareEnabled, emailEnabled,
+            auth.Value.User.Id, CancellationToken.None);
+        SetStatus(result, integrationOverridesEnabled
+            ? "Integration switches updated."
+            : "Integration overrides turned off — this team is fully live again.");
+        return RedirectToPage(new { teamId = auth.Value.Team.Id });
+    }
+
     public async Task<IActionResult> OnPostUpdateDiscordAsync(ulong? guildId)
     {
         var auth = await AuthorizeAsync();
