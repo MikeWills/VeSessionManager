@@ -1,6 +1,7 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Entities;
+using VeSessionManager.Core.Sessions;
 
 namespace VeSessionManager.Core.VolunteerExaminers;
 
@@ -257,8 +258,8 @@ public class VolunteerExaminerDirectoryService(AppDbContext dbContext)
         // and only a per-team figure can narrow like that. A single global MAX would silently answer a
         // different question the moment someone filtered.
         var lastWorked = await dbContext.SessionVolunteerExaminers
-            .Where(sve => personIds.Contains(sve.VolunteerExaminerId)
-                          && (sve.Session.TestingCompletedUtc != null || sve.Session.ExamToolsClosedUtc != null))
+            .Where(SessionCompletion.RosterLinkIsCompleted)
+            .Where(sve => personIds.Contains(sve.VolunteerExaminerId))
             .GroupBy(sve => new { sve.VolunteerExaminerId, sve.Session.TeamId })
             .Select(g => new
             {

@@ -1,3 +1,5 @@
+﻿using VeSessionManager.Core.Sessions;
+
 namespace VeSessionManager.Core.Entities;
 
 public class Session
@@ -168,11 +170,11 @@ public class Session
     /// translate it. SessionCompletionRuleTests pins those two spellings together, since the
     /// language cannot.</para>
     /// </summary>
-    public DateTime? CompletedUtc => TestingCompletedUtc ?? ExamToolsClosedUtc;
+    public DateTime? CompletedUtc => SessionCompletion.CompletedUtc(TestingCompletedUtc, ExamToolsClosedUtc);
 
     /// <summary>Whether the session is finished — see <see cref="CompletedUtc"/> for the rule and
     /// for why this is not <c>Status</c>. Not EF-mapped.</summary>
-    public bool IsCompleted => CompletedUtc is not null;
+    public bool IsCompleted => SessionCompletion.IsCompleted(TestingCompletedUtc, ExamToolsClosedUtc);
 
     /// <summary>True once the session's scheduled window has fully elapsed — used to keep
     /// backfilled/late-ingested past sessions (see SessionIngestionService's completed-session

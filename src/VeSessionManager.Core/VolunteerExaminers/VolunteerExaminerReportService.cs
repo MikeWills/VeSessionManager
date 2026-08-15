@@ -1,6 +1,7 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Entities;
+using VeSessionManager.Core.Sessions;
 using VeSessionManager.Core.Uls;
 
 namespace VeSessionManager.Core.VolunteerExaminers;
@@ -74,10 +75,10 @@ public class VolunteerExaminerReportService(AppDbContext dbContext)
         int volunteerExaminerId, IReadOnlyList<int>? teamIds, DateTime nowUtc, int recentCount, CancellationToken cancellationToken)
     {
         var worked = dbContext.SessionVolunteerExaminers
+            .Where(SessionCompletion.RosterLinkIsCompleted)
             .Where(sve => sve.VolunteerExaminerId == volunteerExaminerId
                 && (teamIds == null || teamIds.Contains(sve.Session.TeamId))
-                && sve.Session.Status == SessionStatus.Active
-                && (sve.Session.TestingCompletedUtc != null || sve.Session.ExamToolsClosedUtc != null));
+                && sve.Session.Status == SessionStatus.Active);
 
         var yearStartUtc = EasternYearStartUtc(nowUtc);
 
@@ -134,11 +135,12 @@ public class VolunteerExaminerReportService(AppDbContext dbContext)
         var query = dbContext.SessionVolunteerExaminers
             .Where(sve => (teamIds == null || teamIds.Contains(sve.Session.TeamId))
                 // Not cancelled...
-                && sve.Session.Status == SessionStatus.Active
-                // ...and actually finished. Both halves are needed: Status rules out cancellations,
-                // and only these two fields distinguish a session that happened from one that is
-                // merely scheduled. See the remarks above before changing either.
-                && (sve.Session.TestingCompletedUtc != null || sve.Session.ExamToolsClosedUtc != null));
+                && sve.Session.Status == SessionStatus.Active);
+
+        // ...and actually finished. Both halves are needed: Status rules out cancellations, and only
+        // the completion timestamps distinguish a session that happened from one merely scheduled.
+        // Chained rather than inlined so the rule keeps one home — see SessionCompletion.
+        query = query.Where(SessionCompletion.RosterLinkIsCompleted);
 
         if (fromUtc is not null)
         {
