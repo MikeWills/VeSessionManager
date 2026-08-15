@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using System.Text;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
@@ -98,6 +98,35 @@ public class VeDirectoryModel(
     public string TeamSummaryLabel { get; private set; } = "All teams";
     public IReadOnlyList<(int Id, string Name)> AvailableTeams { get; private set; } = [];
     public IReadOnlyList<VeDirectoryRow> Rows { get; private set; } = [];
+
+    internal static readonly int[] AllowedPageSizes = [25, 50, 100, 200];
+    private const int DefaultPageSize = 50;
+
+    /// <summary>
+    /// pageNumber, not page: `page` is a Razor Pages route-value key, and the route value provider
+    /// runs before the query string one — so `?page=2` never binds and every page renders as the
+    /// first. See #368, where exactly that shipped on the session list and went unnoticed for weeks.
+    /// </summary>
+    [BindProperty(SupportsGet = true, Name = "pageNumber")]
+    public int PageNumber { get; set; } = 1;
+
+    [BindProperty(SupportsGet = true, Name = "pageSize")]
+    public int PageSize { get; set; } = DefaultPageSize;
+
+    /// <summary>How many people match the filters — not how many are on this page.</summary>
+    public int TotalCount { get; private set; }
+    public int TotalPages { get; private set; } = 1;
+
+    /// <summary>A pager link: every active filter, plus the page being moved to.</summary>
+    public Dictionary<string, string?> PageRoute(int pageNumber)
+    {
+        var values = new Dictionary<string, string?>(FilterRoute)
+        {
+            ["pageNumber"] = pageNumber.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            ["pageSize"] = PageSize.ToString(System.Globalization.CultureInfo.InvariantCulture)
+        };
+        return values;
+    }
     /// <summary>
     /// The tag filter's options, <b>one per distinct name</b>.
     ///
@@ -135,7 +164,13 @@ public class VeDirectoryModel(
     /// POST carries the antiforgery token, so the entry can only be written by a real click here.</para>
     public async Task<IActionResult> OnPostExportAsync()
     {
-        await OnGetAsync();
+        var (teamIds, filter) = await LoadFiltersAsync();
+
+        // GetDirectoryAsync, not GetDirectoryPageAsync: the export is "everything matching these
+        // filters", and reusing the page render here would have silently shipped a CSV containing
+        // only whatever page the admin happened to be looking at — the audit row would still attest
+        // that a full copy of the contact details left the building.
+        Rows = await directoryService.GetDirectoryAsync(teamIds, filter, UtcNow, HttpContext.RequestAborted);
 
         var csv = new StringBuilder();
         csv.AppendLine("CallSign,Name,Teams,Tags,Status,Email,Phone,AddressLine1,AddressLine2,City,State,PostalCode,Discord,ContactPreference,LicenseClass,LicenseExpires,Frn,LastWorked");
@@ -214,7 +249,33 @@ public class VeDirectoryModel(
         return RedirectToPage(FilterRoute);
     }
 
+    /// <summary>
+    /// The page render: one page of the directory (#298).
+    ///
+    /// <para><b>Not what the CSV export uses.</b> The export deliberately loads every matching row —
+    /// see OnPostExportAsync, which is why the shared work below is separated from the fetch.</para>
+    /// </summary>
     public async Task OnGetAsync()
+    {
+        var (teamIds, filter) = await LoadFiltersAsync();
+
+        PageSize = AllowedPageSizes.Contains(PageSize) ? PageSize : DefaultPageSize;
+
+        var page = await directoryService.GetDirectoryPageAsync(
+            teamIds, filter, UtcNow, PageNumber, PageSize, HttpContext.RequestAborted);
+
+        Rows = page.Rows;
+        TotalCount = page.TotalCount;
+        TotalPages = page.TotalPages;
+        PageNumber = page.PageNumber;
+    }
+
+    /// <summary>
+    /// Everything the page needs before it can fetch rows — the team scope, the pickers, and the
+    /// resolved filter. Shared by the paged render and the unpaged export so the two can never
+    /// disagree about what is being filtered.
+    /// </summary>
+    private async Task<(IReadOnlyList<int>? TeamIds, VeDirectoryFilter Filter)> LoadFiltersAsync()
     {
         UtcNow = timeProvider.GetUtcNow().UtcDateTime;
 
@@ -247,18 +308,14 @@ public class VeDirectoryModel(
 
         var (workedFromUtc, workedToUtc) = VeDirectoryFilterRoute.Resolve(Worked, WorkedFrom, WorkedTo, UtcNow);
 
-        Rows = await directoryService.GetDirectoryAsync(
-            teamIds,
-            new VeDirectoryFilter
-            {
-                Search = Search,
-                TagName = TagName,
-                IncludeInactive = IncludeInactive,
-                LicenseStatus = LicenseStatus,
-                WorkedFromUtc = workedFromUtc,
-                WorkedToUtc = workedToUtc
-            },
-            UtcNow,
-            HttpContext.RequestAborted);
+        return (teamIds, new VeDirectoryFilter
+        {
+            Search = Search,
+            TagName = TagName,
+            IncludeInactive = IncludeInactive,
+            LicenseStatus = LicenseStatus,
+            WorkedFromUtc = workedFromUtc,
+            WorkedToUtc = workedToUtc
+        });
     }
 }

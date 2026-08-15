@@ -60,75 +60,193 @@ public class VolunteerExaminerDirectoryService(AppDbContext dbContext)
     public async Task<IReadOnlyList<VeDirectoryRow>> GetDirectoryAsync(
         IReadOnlyList<int>? teamIds, VeDirectoryFilter filter, DateTime nowUtc, CancellationToken cancellationToken)
     {
-        var search = filter.Search;
-        var tagName = filter.TagName;
+        var ids = await OrderedPeopleQuery(teamIds, filter, nowUtc)
+            .Select(v => v.Id)
+            .ToListAsync(cancellationToken);
+
+        return await BuildRowsAsync(ids, teamIds, filter, cancellationToken);
+    }
+
+    /// <summary>
+    /// One page of the directory, plus how many people match in total (#298).
+    ///
+    /// <para><b>Every filter is applied in SQL before the page is taken</b>, which is the whole point
+    /// — and is why the licence-status, guest and last-worked filters all had to become translatable
+    /// first. Paging on some filters and applying the rest to the page afterwards would produce pages
+    /// that render empty while the pager cheerfully claims "showing 1–25 of 176", which is worse than
+    /// the unpaged list it replaced.</para>
+    ///
+    /// <para><paramref name="pageNumber"/> is 1-based and clamped: a page past the end returns the
+    /// last one rather than nothing, so a stale link or a shrinking roster lands somewhere real.</para>
+    /// </summary>
+    public async Task<VeDirectoryPage> GetDirectoryPageAsync(
+        IReadOnlyList<int>? teamIds, VeDirectoryFilter filter, DateTime nowUtc,
+        int pageNumber, int pageSize, CancellationToken cancellationToken)
+    {
+        var query = OrderedPeopleQuery(teamIds, filter, nowUtc);
+
+        var totalCount = await query.CountAsync(cancellationToken);
+        var totalPages = Math.Max(1, (int)Math.Ceiling(totalCount / (double)pageSize));
+        var page = Math.Clamp(pageNumber, 1, totalPages);
+
+        var ids = await query
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select(v => v.Id)
+            .ToListAsync(cancellationToken);
+
+        var rows = await BuildRowsAsync(ids, teamIds, filter, cancellationToken);
+        return new VeDirectoryPage(rows, totalCount, page, totalPages);
+    }
+
+    /// <summary>
+    /// The people matching every filter, in display order.
+    ///
+    /// <para><b>Ordered by name then id.</b> The id is not decoration: two VEs can share a name, and
+    /// paging over an order that does not fully determine position drops and repeats rows across page
+    /// boundaries.</para>
+    /// </summary>
+    private IQueryable<VolunteerExaminer> OrderedPeopleQuery(
+        IReadOnlyList<int>? teamIds, VeDirectoryFilter filter, DateTime nowUtc) =>
+        BuildPeopleQuery(teamIds, filter, nowUtc).OrderBy(v => v.Name).ThenBy(v => v.Id);
+
+    /// <summary>
+    /// Every filter the directory offers, as one translatable query over <b>people</b> rather than
+    /// memberships (#298).
+    ///
+    /// <para>This used to be a per-membership query that materialised the whole roster and then
+    /// applied three of the filters in C# after grouping. Two of those genuinely are properties of the
+    /// grouped row rather than of a membership — "guest" means no tag on <i>any</i> team in scope, and
+    /// last-worked is a maximum across the teams in scope — which is why they were there. Both are
+    /// expressible as subqueries against the person, which is what this is.</para>
+    /// </summary>
+    private IQueryable<VolunteerExaminer> BuildPeopleQuery(
+        IReadOnlyList<int>? teamIds, VeDirectoryFilter filter, DateTime nowUtc)
+    {
         var includeInactive = filter.IncludeInactive;
+        var guestsOnly = string.Equals(filter.TagName, GuestTagFilter, StringComparison.Ordinal);
 
-        var query = dbContext.VeTeamMemberships
-            .Include(m => m.VolunteerExaminer)
-            .Include(m => m.Team)
-            .Include(m => m.TagAssignments).ThenInclude(a => a.VeTag)
-            .AsQueryable();
+        var people = dbContext.VolunteerExaminers.AsQueryable();
 
-        if (teamIds is not null)
-        {
-            query = query.Where(m => teamIds.Contains(m.TeamId));
-        }
+        // The base scope, and the reason this is a query over people at all: someone with no
+        // membership on a team in view is not in this directory.
+        people = people.Where(v => dbContext.VeTeamMemberships.Any(m =>
+            m.VolunteerExaminerId == v.Id
+            && (teamIds == null || teamIds.Contains(m.TeamId))
+            && (includeInactive || m.IsActive)));
 
-        if (!includeInactive)
-        {
-            query = query.Where(m => m.IsActive);
-        }
-
-        // The guest filter is deliberately NOT applied here. "Guest" is a property of the whole
-        // row — no tags on ANY team in scope — and this query is still per-membership. Filtering
-        // memberships would match the untagged half of someone who IS tagged on another team, and
-        // that row then renders with tags and no Guest chip: a result that contradicts itself.
-        // Applied after the grouping instead, where IsGuest actually exists.
-        var guestsOnly = string.Equals(tagName, GuestTagFilter, StringComparison.Ordinal);
-
-        if (!guestsOnly && !string.IsNullOrWhiteSpace(tagName))
+        if (!guestsOnly && !string.IsNullOrWhiteSpace(filter.TagName))
         {
             // Lower-cased on both sides rather than StringComparison, which EF cannot translate, and
             // matching the OrdinalIgnoreCase grouping the rows use — SQLite's `=` on TEXT is
             // case-sensitive, so "Member" and "member" would otherwise be different filters.
-            var tag = tagName.Trim().ToLower();
-            query = query.Where(m => m.TagAssignments.Any(a => a.VeTag.Name.ToLower() == tag));
+            var tag = filter.TagName.Trim().ToLower();
+            people = people.Where(v => dbContext.VeTeamMemberships.Any(m =>
+                m.VolunteerExaminerId == v.Id
+                && (teamIds == null || teamIds.Contains(m.TeamId))
+                && (includeInactive || m.IsActive)
+                && m.TagAssignments.Any(a => a.VeTag.Name.ToLower() == tag)));
         }
 
-        // Licence status is a property of the PERSON, not of one membership, so filtering memberships
-        // by it is exact — every membership of a given VE agrees. That is what lets it move into SQL
-        // (#298), where it belongs: previously the entire roster was materialised and this ran in C#,
-        // which is the reason this method had no paging path at all.
-        //
-        // The dates inside that predicate are resolved in C# from nowUtc before the query is built —
-        // see VeLicenseStatusFilter. Nothing here asks the database what day it is.
+        if (guestsOnly)
+        {
+            // "Guest" is no tag on ANY team in scope, which is why it could never be a per-membership
+            // filter: matching untagged memberships would also match the untagged half of someone who
+            // IS tagged elsewhere, and that row then renders with tags and no Guest chip — a result
+            // contradicting itself. As a NOT EXISTS over the person it says exactly what it means.
+            people = people.Where(v => !dbContext.VeTeamMemberships.Any(m =>
+                m.VolunteerExaminerId == v.Id
+                && (teamIds == null || teamIds.Contains(m.TeamId))
+                && (includeInactive || m.IsActive)
+                && m.TagAssignments.Any()));
+        }
+
+        // Dates resolved in C#, classification in SQL — see VeLicenseStatusFilter.
         if (filter.LicenseStatus is { } licenseStatus)
         {
-            // Applied as an EXISTS over VolunteerExaminers rather than inlined onto m.VolunteerExaminer,
-            // because composing one expression into another needs Invoke, which EF cannot translate
-            // (and LINQKit is not a dependency here). This stays a single statement — the subquery
-            // matches on the primary key.
-            var matchesStatus = VeLicenseStatusFilter.For(licenseStatus, nowUtc);
-            query = query.Where(m => dbContext.VolunteerExaminers
-                .Where(matchesStatus)
-                .Any(v => v.Id == m.VolunteerExaminerId));
+            people = people.Where(VeLicenseStatusFilter.For(licenseStatus, nowUtc));
         }
 
-        if (!string.IsNullOrWhiteSpace(search))
+        if (!string.IsNullOrWhiteSpace(filter.Search))
         {
-            var term = search.Trim().ToLower();
-            query = query.Where(m =>
-                m.VolunteerExaminer.Name.ToLower().Contains(term)
-                || (m.VolunteerExaminer.CallSign ?? "").ToLower().Contains(term)
-                || (m.VolunteerExaminer.Email ?? "").ToLower().Contains(term));
+            var term = filter.Search.Trim().ToLower();
+            people = people.Where(v =>
+                v.Name.ToLower().Contains(term)
+                || (v.CallSign ?? "").ToLower().Contains(term)
+                || (v.Email ?? "").ToLower().Contains(term));
         }
 
-        var memberships = await query.ToListAsync(cancellationToken);
-        if (memberships.Count == 0)
+        // "Worked since X" is MAX(start) >= X, which is the same question as "worked at least once at
+        // or after X" — an EXISTS, no aggregate needed. "Not worked since X" is the mirror: they must
+        // have worked at all, and never after X.
+        //
+        // A row with no last-worked date therefore satisfies NEITHER, unchanged from before: both are
+        // claims about a date that does not exist, so a hand-added prospect appears only in the
+        // unfiltered list, which is the honest answer.
+        if (filter.WorkedFromUtc is { } from)
+        {
+            people = people.Where(v => dbContext.SessionVolunteerExaminers.Any(sve =>
+                sve.VolunteerExaminerId == v.Id
+                && (sve.Session.TestingCompletedUtc != null || sve.Session.ExamToolsClosedUtc != null)
+                && (teamIds == null || teamIds.Contains(sve.Session.TeamId))
+                && dbContext.VeTeamMemberships.Any(m =>
+                    m.VolunteerExaminerId == v.Id
+                    && m.TeamId == sve.Session.TeamId
+                    && (includeInactive || m.IsActive))
+                && sve.Session.ScheduledStartUtc >= from));
+        }
+
+        if (filter.WorkedToUtc is { } to)
+        {
+            people = people
+                .Where(v => dbContext.SessionVolunteerExaminers.Any(sve =>
+                    sve.VolunteerExaminerId == v.Id
+                    && (sve.Session.TestingCompletedUtc != null || sve.Session.ExamToolsClosedUtc != null)
+                    && (teamIds == null || teamIds.Contains(sve.Session.TeamId))
+                    && dbContext.VeTeamMemberships.Any(m =>
+                        m.VolunteerExaminerId == v.Id
+                        && m.TeamId == sve.Session.TeamId
+                        && (includeInactive || m.IsActive))))
+                .Where(v => !dbContext.SessionVolunteerExaminers.Any(sve =>
+                    sve.VolunteerExaminerId == v.Id
+                    && (sve.Session.TestingCompletedUtc != null || sve.Session.ExamToolsClosedUtc != null)
+                    && (teamIds == null || teamIds.Contains(sve.Session.TeamId))
+                    && dbContext.VeTeamMemberships.Any(m =>
+                        m.VolunteerExaminerId == v.Id
+                        && m.TeamId == sve.Session.TeamId
+                        && (includeInactive || m.IsActive))
+                    && sve.Session.ScheduledStartUtc > to));
+        }
+
+        return people;
+    }
+
+    /// <summary>
+    /// Turns a chosen set of people into finished rows: their in-scope memberships, tags, per-team
+    /// session figures and duplicate-call-sign marker.
+    ///
+    /// <para>Takes ids rather than a query because the caller has already decided <i>which</i> people
+    /// — either all of them or one page — and everything here is per-person detail for that set.</para>
+    /// </summary>
+    private async Task<IReadOnlyList<VeDirectoryRow>> BuildRowsAsync(
+        IReadOnlyList<int> personIds, IReadOnlyList<int>? teamIds, VeDirectoryFilter filter, CancellationToken cancellationToken)
+    {
+        if (personIds.Count == 0)
         {
             return [];
         }
+
+        var includeInactive = filter.IncludeInactive;
+
+        var memberships = await dbContext.VeTeamMemberships
+            .Include(m => m.VolunteerExaminer)
+            .Include(m => m.Team)
+            .Include(m => m.TagAssignments).ThenInclude(a => a.VeTag)
+            .Where(m => personIds.Contains(m.VolunteerExaminerId)
+                && (teamIds == null || teamIds.Contains(m.TeamId))
+                && (includeInactive || m.IsActive))
+            .AsSplitQuery()
+            .ToListAsync(cancellationToken);
 
         // "Last worked" is a MAX over the session links, and "sessions worked" a COUNT over the
         // same ones — both from a single grouped query rather than per row, so adding the count costs
@@ -138,13 +256,8 @@ public class VolunteerExaminerDirectoryService(AppDbContext dbContext)
         // the teams in scope: filtered to one team it must answer "when did they last work for you",
         // and only a per-team figure can narrow like that. A single global MAX would silently answer a
         // different question the moment someone filtered.
-        //
-        // Only sessions that actually happened count. Session.Status is not that signal — it only
-        // ever means "not cancelled", so filtering on it would count a session scheduled for next
-        // month as worked (the trap documented in CLAUDE.md, and found twice before).
-        var veIds = memberships.Select(m => m.VolunteerExaminerId).Distinct().ToList();
         var lastWorked = await dbContext.SessionVolunteerExaminers
-            .Where(sve => veIds.Contains(sve.VolunteerExaminerId)
+            .Where(sve => personIds.Contains(sve.VolunteerExaminerId)
                           && (sve.Session.TestingCompletedUtc != null || sve.Session.ExamToolsClosedUtc != null))
             .GroupBy(sve => new { sve.VolunteerExaminerId, sve.Session.TeamId })
             .Select(g => new
@@ -162,8 +275,18 @@ public class VolunteerExaminerDirectoryService(AppDbContext dbContext)
         // Possible duplicates from the phase 1 merge: rows sharing a call sign that were left
         // separate because their names disagreed. Surfaced rather than resolved automatically —
         // merging two people is not reversible, so a human decides.
+        //
+        // Scoped to the call signs actually on this page, rather than every shared call sign on the
+        // deployment: on a paged list the unscoped version was a whole-table group-by run to answer a
+        // question about at most a screenful of people.
+        var callSignsInPlay = memberships
+            .Select(m => m.VolunteerExaminer.CallSign)
+            .Where(c => c != null)
+            .Distinct()
+            .ToList();
+
         var sharedCallSigns = await dbContext.VolunteerExaminers
-            .Where(v => v.CallSign != null)
+            .Where(v => v.CallSign != null && callSignsInPlay.Contains(v.CallSign))
             .GroupBy(v => v.CallSign!)
             .Where(g => g.Count() > 1)
             .Select(g => g.Key)
@@ -172,8 +295,7 @@ public class VolunteerExaminerDirectoryService(AppDbContext dbContext)
         // Placeholders excluded. ExamTools' "<UNKNOWN>" is shared by every VE it has no call sign
         // for, so those rows always collide — but they are *known* to be different people, not
         // suspected duplicates, and flagging them is noise that trains people to ignore the marker
-        // on the rows where it means something. Seen immediately after the split repair, which
-        // correctly produced two unidentified people who then both lit up as possible duplicates.
+        // on the rows where it means something.
         var duplicateCallSigns = sharedCallSigns
             .Where(CallSign.IsUsable)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -214,18 +336,11 @@ public class VolunteerExaminerDirectoryService(AppDbContext dbContext)
                     sessionsWorked,
                     person.CallSign is { } call && duplicateCallSigns.Contains(call));
             })
+            // Re-sorted here because the grouping above is over a set loaded by id, which carries no
+            // order of its own. Same key as the query that chose the page, so a page's rows appear in
+            // the position the pager promised.
             .OrderBy(r => r.VolunteerExaminer.Name)
-            .Where(r => !guestsOnly || r.IsGuest)
-            // Licence status is NOT filtered here any more — it moved into SQL above (#298), which is
-            // where it belongs: it is a property of the person, identical across their memberships,
-            // so filtering memberships by it is exact. Last-worked stays on this side because it
-            // genuinely is a property of the finished ROW: the max across the teams in scope, which
-            // does not exist until the grouping has happened.
-            // A row with no last-worked date satisfies NEITHER "worked since X" nor "not worked
-            // since X": both are claims about a date that does not exist. A hand-added prospect is
-            // therefore only ever in the unfiltered list, which is the honest answer.
-            .Where(r => filter.WorkedFromUtc is not { } from || (r.LastWorkedUtc is { } d && d >= from))
-            .Where(r => filter.WorkedToUtc is not { } to || (r.LastWorkedUtc is { } d && d <= to))];
+            .ThenBy(r => r.VolunteerExaminer.Id)];
     }
 
     /// <summary>
@@ -304,3 +419,12 @@ public record VeDirectoryFilter
     /// <summary>Last worked on or before this instant — how "hasn't worked in over a year" is expressed.</summary>
     public DateTime? WorkedToUtc { get; init; }
 }
+
+/// <summary>
+/// One page of the VE directory (#298). <see cref="TotalCount"/> is how many people match the
+/// filters, not how many are on this page — it is what the pager reports and what makes "showing
+/// 1–25 of 176" true rather than decorative.
+/// </summary>
+/// <param name="PageNumber">1-based, and already clamped into range by the service.</param>
+public record VeDirectoryPage(
+    IReadOnlyList<VeDirectoryRow> Rows, int TotalCount, int PageNumber, int TotalPages);
