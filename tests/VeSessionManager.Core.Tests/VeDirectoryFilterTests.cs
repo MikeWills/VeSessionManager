@@ -1,3 +1,4 @@
+﻿using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Entities;
@@ -9,17 +10,43 @@ namespace VeSessionManager.Core.Tests;
 /// <summary>
 /// The license-status and last-worked filters on the VE Directory (requested 2026-08-10).
 ///
-/// <para>Both are properties of the finished <i>row</i> rather than of a membership — the license
-/// status is derived in C# from the cached snapshot, and last-worked is the maximum across the teams
-/// in scope — so both are applied after the grouping, next to the guest filter and for the same
-/// reason.</para>
+/// <para>Last-worked is a property of the finished <i>row</i> — the maximum across the teams in
+/// scope — so it is applied after the grouping, next to the guest filter and for the same reason.
+/// Licence status is not: it is a property of the person, identical across their memberships, and
+/// since #298 it is filtered in SQL so the directory can page.</para>
+///
+/// <para><b>Real SQLite, not InMemory, since #298.</b> The licence filter uses <c>GLOB</c> for the
+/// call-sign shape test, which InMemory cannot run — it fails with "the query has switched to
+/// client-evaluation". That is the provider-dependence CLAUDE.md warns about, arriving on schedule:
+/// a query written to be translated has to be tested against something that translates it.</para>
 /// </summary>
-public class VeDirectoryFilterTests
+public class VeDirectoryFilterTests : IDisposable
 {
     private static readonly DateTime Now = new(2026, 8, 10, 12, 0, 0, DateTimeKind.Utc);
 
-    private static AppDbContext CreateContext() =>
-        new(new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
+    /// <summary>A `:memory:` database lives exactly as long as its connection, so each test's is held
+    /// open here and closed when the class is disposed.</summary>
+    private readonly List<SqliteConnection> connections = [];
+
+    public void Dispose()
+    {
+        foreach (var connection in connections)
+        {
+            connection.Dispose();
+        }
+    }
+
+    private AppDbContext CreateContext()
+    {
+        var connection = new SqliteConnection("DataSource=:memory:");
+        connection.Open();
+        connections.Add(connection);
+
+        var dbContext = new AppDbContext(
+            new DbContextOptionsBuilder<AppDbContext>().UseSqlite(connection).Options);
+        dbContext.Database.EnsureCreated();
+        return dbContext;
+    }
 
     private static async Task<Team> SeedTeamAsync(AppDbContext dbContext, string name = "HRCC")
     {
@@ -47,11 +74,42 @@ public class VeDirectoryFilterTests
         return person;
     }
 
+    /// <summary>
+    /// A Session needs a Vec and a FeeConfiguration, and real SQLite enforces both — InMemory did not,
+    /// which is why these rows were absent until #298 moved this file onto a real provider. Created
+    /// once and reused.
+    /// </summary>
+    private static async Task<(int VecId, int FeeConfigurationId)> EnsureSessionPrerequisitesAsync(AppDbContext dbContext)
+    {
+        var existing = await dbContext.FeeConfigurations.FirstOrDefaultAsync();
+        if (existing is not null)
+        {
+            return (existing.VecId, existing.Id);
+        }
+
+        var vec = new Vec { Name = "ARRL" };
+        var user = new User { Name = "System", Email = "system@localhost", Role = UserRole.SystemAdmin };
+        var feeConfiguration = new FeeConfiguration
+        {
+            Vec = vec,
+            EffectiveDate = new DateTime(2020, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+            FeeCollectionEnabled = false,
+            CreatedByUser = user,
+            CreatedUtc = Now
+        };
+        dbContext.FeeConfigurations.Add(feeConfiguration);
+        await dbContext.SaveChangesAsync();
+        return (vec.Id, feeConfiguration.Id);
+    }
+
     private static async Task SeedWorkedSessionAsync(AppDbContext dbContext, Team team, VolunteerExaminer person, DateTime startUtc)
     {
+        var (vecId, feeConfigurationId) = await EnsureSessionPrerequisitesAsync(dbContext);
         var session = new Session
         {
             TeamId = team.Id,
+            VecId = vecId,
+            FeeConfigurationId = feeConfigurationId,
             ExamToolsSessionId = Guid.NewGuid().ToString(),
             Title = "Session",
             ScheduledStartUtc = startUtc,

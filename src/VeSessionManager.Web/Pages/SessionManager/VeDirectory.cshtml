@@ -1,4 +1,4 @@
-@page
+﻿@page
 @using VeSessionManager.Core.Entities
 @model VeSessionManager.Web.Pages.SessionManager.VeDirectoryModel
 @using VeSessionManager.Core.VolunteerExaminers
@@ -275,6 +275,33 @@ else
             }
         </tbody>
     </table>
+    </div>
+
+    @* Paged server-side since #298. The list has no client-side sorter for the same reason the audit
+       log lost its one: reordering the rows on screen would present itself as having sorted the whole
+       roster. *@
+    <div class="pagination">
+        @if (Model.TotalCount > 0)
+        {
+            <span class="pagination-summary">
+                Showing @(((Model.PageNumber - 1) * Model.PageSize) + 1)&ndash;@(Math.Min(Model.PageNumber * Model.PageSize, Model.TotalCount)) of @Model.TotalCount
+            </span>
+            <div class="pagination-controls filters">
+                @if (Model.PageNumber > 1)
+                {
+                    <a class="filter-pill" asp-page="./VeDirectory" asp-all-route-data="Model.PageRoute(Model.PageNumber - 1)"><i class="bi bi-arrow-left" aria-hidden="true"></i> Prev</a>
+                }
+                <span class="pagination-page">Page @Model.PageNumber of @Model.TotalPages</span>
+                @if (Model.PageNumber < Model.TotalPages)
+                {
+                    <a class="filter-pill" asp-page="./VeDirectory" asp-all-route-data="Model.PageRoute(Model.PageNumber + 1)">Next <i class="bi bi-arrow-right" aria-hidden="true"></i></a>
+                }
+            </div>
+        }
+        else
+        {
+            <span></span>
+        }
     </div>
 
     <p class="session-sub" style="margin-top:12px;">

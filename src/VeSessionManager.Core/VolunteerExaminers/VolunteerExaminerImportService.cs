@@ -183,9 +183,33 @@ public class VolunteerExaminerImportService(AppDbContext dbContext, TimeProvider
         var updated = 0;
         var addedToTeam = 0;
 
-        foreach (var row in preview.Rows.Where(r => r.IsValid))
+        var validRows = preview.Rows.Where(r => r.IsValid).ToList();
+
+        // One query for every matched person, instead of one per row (#294). ApplyRow used to
+        // re-fetch each match with FirstAsync — which always round-trips, unlike FindAsync — and save
+        // twice per row, so a 176-row import was roughly 500 round trips.
+        //
+        // Per-item durability is deliberately not the point here, so this is not the scan-job pattern
+        // CLAUDE.md protects: the audit row was always written once at the end, so the operation was
+        // never per-item atomic to begin with.
+        var matchedIds = validRows
+            .Where(r => r.MatchedVolunteerExaminerId is not null)
+            .Select(r => r.MatchedVolunteerExaminerId!.Value)
+            .Distinct()
+            .ToList();
+
+        var matchedPeople = matchedIds.Count == 0
+            ? []
+            : await dbContext.VolunteerExaminers
+                .Include(v => v.TeamMemberships)
+                .Where(v => matchedIds.Contains(v.Id))
+                .ToDictionaryAsync(v => v.Id, cancellationToken);
+
+        var applied = new List<(VeImportRow Row, VolunteerExaminer Person)>(validRows.Count);
+        foreach (var row in validRows)
         {
-            var action = await ApplyRowAsync(row, teamId, now, cancellationToken);
+            var (action, person) = ApplyRow(row, teamId, now, matchedPeople);
+            applied.Add((row, person));
             if (action == VeImportAction.Create) created++;
             else if (action == VeImportAction.AddToTeam) addedToTeam++;
             else updated++;
@@ -194,6 +218,12 @@ public class VolunteerExaminerImportService(AppDbContext dbContext, TimeProvider
         dbContext.AddAuditLog(userId, "VeDirectoryImported", nameof(VolunteerExaminer), 0,
             $"Imported {created} new VE(s), updated {updated}, added {addedToTeam} existing VE(s) to the team.", now);
         await dbContext.SaveChangesAsync(cancellationToken);
+
+        // After the save, not inside the loop: a newly created person has Id 0 until then.
+        foreach (var (row, person) in applied)
+        {
+            row.AppliedVolunteerExaminerId = person.Id;
+        }
 
         return new VeImportResult(created, updated, addedToTeam, preview.Rows.Count(r => !r.IsValid), null);
     }
@@ -207,12 +237,17 @@ public class VolunteerExaminerImportService(AppDbContext dbContext, TimeProvider
     /// "match, then create-or-fill, then ensure membership" the copies drift — which is exactly how
     /// the per-team refresh pipeline went wrong before <c>TeamPipeline</c> existed.</para>
     /// </summary>
-    private async Task<VeImportAction> ApplyRowAsync(VeImportRow row, int teamId, DateTime now, CancellationToken cancellationToken)
+    /// <param name="matchedPeople">
+    /// Every person this call might match, loaded once by the caller <b>with TeamMemberships</b>.
+    /// The include is not optional: the membership guard below reads that collection, and a person
+    /// loaded without it looks like they hold no memberships at all, so the import would hand them a
+    /// duplicate membership on a team they are already on.
+    /// </param>
+    private (VeImportAction Action, VolunteerExaminer Person) ApplyRow(
+        VeImportRow row, int teamId, DateTime now, IReadOnlyDictionary<int, VolunteerExaminer> matchedPeople)
     {
         var person = row.MatchedVolunteerExaminerId is { } matchedId
-            ? await dbContext.VolunteerExaminers
-                .Include(v => v.TeamMemberships)
-                .FirstAsync(v => v.Id == matchedId, cancellationToken)
+            ? matchedPeople[matchedId]
             : null;
 
         var action = person is null ? VeImportAction.Create : row.Action;
@@ -240,24 +275,29 @@ public class VolunteerExaminerImportService(AppDbContext dbContext, TimeProvider
         // the ULS sweep already fills it from FCC — accepting a typo here would either collide with
         // a real person's record or quietly attach the wrong identity to this one.
 
-        await dbContext.SaveChangesAsync(cancellationToken);
-
+        // No save here — the caller saves once for the whole batch. The membership is attached
+        // through the navigation rather than by setting VolunteerExaminerId, because a person created
+        // moments ago still has Id 0; EF fills the foreign key in from the relationship on save.
+        //
+        // Adding to the tracked collection is also what keeps the guard correct without the
+        // save-per-row it replaced. ParseAsync rejects rows sharing a call sign or name outright
+        // ("Appears more than once in this file"), but two *different* keys can still resolve to one
+        // person — one row matched on FRN, another on call sign. Both then hold the same instance
+        // out of matchedPeople, so the second sees the membership the first added rather than
+        // needing a database round trip to find out.
         if (!person.TeamMemberships.Any(m => m.TeamId == teamId))
         {
-            var membership = new VeTeamMembership
+            person.TeamMemberships.Add(new VeTeamMembership
             {
-                VolunteerExaminerId = person.Id,
+                Team = null!,
+                VolunteerExaminer = person,
                 TeamId = teamId,
                 IsActive = true,
                 CreatedUtc = now
-            };
-            person.TeamMemberships.Add(membership);
-            dbContext.VeTeamMemberships.Add(membership);
-            await dbContext.SaveChangesAsync(cancellationToken);
+            });
         }
 
-        row.AppliedVolunteerExaminerId = person.Id;
-        return action;
+        return (action, person);
     }
 
     /// <summary>
@@ -311,7 +351,16 @@ public class VolunteerExaminerImportService(AppDbContext dbContext, TimeProvider
             null);
 
         var now = timeProvider.GetUtcNow().UtcDateTime;
-        var action = await ApplyRowAsync(row, teamId, now, cancellationToken);
+
+        // The match is already loaded here, with TeamMemberships, so it is handed straight to
+        // ApplyRow rather than re-fetched. One row, so the dictionary holds at most one entry.
+        var matchedPeople = match is null
+            ? new Dictionary<int, VolunteerExaminer>()
+            : new Dictionary<int, VolunteerExaminer> { [match.Id] = match };
+
+        var (action, person) = ApplyRow(row, teamId, now, matchedPeople);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        row.AppliedVolunteerExaminerId = person.Id;
 
         var who = normalized ?? row.Name;
         dbContext.AddAuditLog(userId, "VeAddedByHand", nameof(VolunteerExaminer), row.AppliedVolunteerExaminerId ?? 0,
