@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using VeSessionManager.Core.Data;
@@ -92,6 +92,45 @@ public class ReconciliationServiceTests
             dbContext.Candidates.Add(new Candidate { SessionId = session.Id, Name = $"C{i}", DateRegisteredUtc = startUtc });
         }
         await dbContext.SaveChangesAsync();
+    }
+
+    // ---- the two windows agree (#280) ----
+
+    /// <summary>
+    /// The remote feed is asked for whole days; the local query must use the same boundary.
+    ///
+    /// <para>It used to be <c>now - Window</c>, carrying the run's time-of-day, while the remote
+    /// start is midnight-aligned — so a session near the far edge could be <b>returned by ExamTools
+    /// and excluded from the local set</b>, producing a MissingSession finding for a session we
+    /// plainly have.</para>
+    ///
+    /// <para>The job's cadence is IntervalFromWorkerStart, so its run time-of-day is arbitrary; this
+    /// test pins a run at midday and a session at 02:00 on the very first day of the window, which is
+    /// the combination that used to fail. It never self-corrected, either — by the next night the
+    /// session had aged out of both windows and RecordAsync stops re-examining findings that leave
+    /// the window.</para>
+    /// </summary>
+    [Fact]
+    public async Task ASessionOnTheFirstDayOfTheWindowIsNotReportedMissing()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+
+        // Midnight-aligned start of the remote window, then early morning on that same day — inside
+        // the day ExamTools was asked about, but earlier than the run's own time-of-day.
+        var windowStartDate = DateOnly.FromDateTime(Now - ReconciliationService.Window);
+        var edgeSessionUtc = windowStartDate.ToDateTime(new TimeOnly(2, 0), DateTimeKind.Utc);
+
+        var client = new FakeExamToolsClient();
+        client.Add("et-edge", edgeSessionUtc);
+        await SeedLocalSessionAsync(dbContext, team, "et-edge", edgeSessionUtc);
+
+        var time = new FixedTimeProvider(Now);
+        var result = await CreateService(dbContext, client, time).RunAsync(team, CancellationToken.None);
+
+        // We have it, so it is not missing — and the local count must have seen it at all.
+        Assert.Equal(1, result.LocalSessions);
+        Assert.Empty(await dbContext.ReconciliationFindings.ToListAsync());
     }
 
     // ---- the finding the whole feature exists for ----

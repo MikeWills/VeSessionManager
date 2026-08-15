@@ -62,7 +62,19 @@ public class ReconciliationService(
         var remote = await examToolsClient.GetTeamClosedSessionsAsync(credentials, start, end, cancellationToken);
         result.RemoteSessions = remote.Count;
 
-        var windowStartUtc = now - Window;
+        // Anchored on the SAME boundary the remote feed was asked for (#280). This used to be
+        // `now - Window`, which carries the run's time-of-day, while `start` above is midnight-
+        // aligned — so the two windows disagreed by up to 24 hours at the far edge.
+        //
+        // The job's cadence is IntervalFromWorkerStart, so its run time-of-day is arbitrary. Run at
+        // 14:00 UTC, a session at exactly day-120 02:00 UTC came back from the remote feed and was
+        // excluded from `local` — a false MissingSession finding, on the standing table and in the
+        // nav badge. It never resolved either: by the next night the session had aged out of both
+        // windows, and RecordAsync only re-examines findings still inside the window.
+        //
+        // False alarms are particularly expensive here, on the one job whose entire purpose is to be
+        // believed when it disagrees with the database.
+        var windowStartUtc = start.ToDateTime(TimeOnly.MinValue, DateTimeKind.Utc);
         var local = await dbContext.Sessions
             .Where(s => s.TeamId == team.Id && s.ScheduledStartUtc >= windowStartUtc)
             .Select(s => new { s.Id, s.ExamToolsSessionId, CandidateCount = s.Candidates.Count })
