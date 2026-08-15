@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Identity;
+﻿using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Entities;
@@ -464,6 +464,141 @@ public class UserManagementService(UserManager<User> userManager, AppDbContext d
         await dbContext.SaveChangesAsync(cancellationToken);
 
         return UserActionResult.Success;
+    }
+
+    /// <summary>
+    /// Permanently removes an account that has no history (#188). Deactivation remains the normal
+    /// path; this exists for the mistyped or throwaway account that would otherwise be a dead row
+    /// forever.
+    ///
+    /// <para><b>"No history" needed defining before this could be built, and the obvious reading does
+    /// not work.</b> Fourteen foreign keys reference User, every one <c>Restrict</c> — and one of
+    /// them is <c>AuditLog.UserId</c>, which every account carries from creation onwards
+    /// (<c>BootstrapAdminCommand</c> self-attributes its own <c>UserCreated</c> entry). A literal
+    /// "nothing references this user" test is never true, so the button would have silently never
+    /// fired.</para>
+    ///
+    /// <para><b>The decision (option 1 of the three in #188, 2026-08-15):</b> the account's own
+    /// lifecycle rows — the audit entries <i>about</i> this user — are deleted with it, and a fresh
+    /// entry naming the removed email records that it happened. Its existence and its removal stay on
+    /// the record; the dead row goes. Audit rows where this user <i>acted on something else</i> are
+    /// history and block the delete, which is what stops this becoming a way to erase what somebody
+    /// did.</para>
+    ///
+    /// <para><b>This is the second sanctioned delete path against AuditLogs</b>, after retention
+    /// (#86). See docs/audit-log.md — append-only here is a convention enforced by the absence of
+    /// such paths, and <c>AuditLogAppendOnlyTests</c> names each exemption by file. A third needs the
+    /// same kind of decision this one got.</para>
+    /// </summary>
+    public async Task<UserDeleteResult> DeleteAsync(int targetUserId, int actingUserId, CancellationToken cancellationToken)
+    {
+        if (targetUserId == actingUserId)
+        {
+            return UserDeleteResult.Refused(UserDeleteOutcome.CannotDeleteSelf);
+        }
+
+        var user = await userManager.FindByIdAsync(targetUserId.ToString());
+        if (user is null)
+        {
+            return UserDeleteResult.Refused(UserDeleteOutcome.NotFound);
+        }
+
+        // Mirrors Web's startup guard exactly: "can anyone sign in", not "does a user exist".
+        if (user.PasswordHash is not null
+            && !await dbContext.Users.AnyAsync(u => u.Id != targetUserId && u.PasswordHash != null, cancellationToken))
+        {
+            return UserDeleteResult.Refused(UserDeleteOutcome.LastSignInCapableAccount);
+        }
+
+        var blockers = await FindDeleteBlockersAsync(targetUserId, cancellationToken);
+        if (blockers.Count > 0)
+        {
+            return new UserDeleteResult(UserDeleteOutcome.HasHistory, blockers);
+        }
+
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+        var removedEmail = user.Email ?? "(no email)";
+
+        // Memberships go first: UserTeam's FK is Restrict too, and it is not history — it is the
+        // account's own configuration, meaningless once the account is gone.
+        var memberships = await dbContext.UserTeams.Where(ut => ut.UserId == targetUserId).ToListAsync(cancellationToken);
+        dbContext.UserTeams.RemoveRange(memberships);
+
+        // The account's own lifecycle entries — rows ABOUT this user, whoever wrote them. Rows where
+        // this user acted on anything else were already refused above, so nothing here erases a
+        // record of what somebody did.
+        var lifecycle = await dbContext.AuditLogs
+            .Where(a => a.EntityType == nameof(User) && a.EntityId == targetUserId)
+            .ToListAsync(cancellationToken);
+        dbContext.AuditLogs.RemoveRange(lifecycle);
+
+        // Written before the Identity delete so it shares the unit of work, and naming the email
+        // because the id is about to stop resolving to anything.
+        AddAudit(actingUserId, "UserDeleted", targetUserId,
+            $"User {targetUserId} ({removedEmail}) permanently deleted; {lifecycle.Count} lifecycle audit entries removed with it.", now);
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        // Identity's own side — roles, logins, claims, tokens.
+        var identityResult = await userManager.DeleteAsync(user);
+        if (!identityResult.Succeeded)
+        {
+            return new UserDeleteResult(
+                UserDeleteOutcome.HasHistory,
+                [.. identityResult.Errors.Select(e => e.Description)]);
+        }
+
+        return UserDeleteResult.Deleted();
+    }
+
+    /// <summary>
+    /// Every reference that makes an account history rather than a dead row, phrased for an admin.
+    ///
+    /// <para>Deliberately reports <b>all</b> of them rather than stopping at the first: an admin who
+    /// clears one blocker only to be told about the next has learned nothing about whether the
+    /// account is deletable at all.</para>
+    ///
+    /// <para><c>UserDeleteCoverageTests</c> fails the build if a foreign key to User is added without
+    /// being accounted for here — the alternative being a delete that throws a <c>Restrict</c>
+    /// violation at an admin instead of refusing politely.</para>
+    /// </summary>
+    private async Task<IReadOnlyList<string>> FindDeleteBlockersAsync(int userId, CancellationToken cancellationToken)
+    {
+        var blockers = new List<string>();
+
+        async Task CheckAsync(string noun, IQueryable<int> matching)
+        {
+            var count = await matching.CountAsync(cancellationToken);
+            if (count > 0)
+            {
+                blockers.Add($"{count} {noun}{(count == 1 ? "" : "s")}");
+            }
+        }
+
+        await CheckAsync("fee configuration created", dbContext.FeeConfigurations.Where(f => f.CreatedByUserId == userId).Select(f => f.Id));
+        await CheckAsync("session marked complete", dbContext.Sessions.Where(s => s.TestingCompletedByUserId == userId).Select(s => s.Id));
+        await CheckAsync("session submitted to a VEC", dbContext.Sessions.Where(s => s.VecSubmittedByUserId == userId).Select(s => s.Id));
+        await CheckAsync("session fee override", dbContext.Sessions.Where(s => s.RetainedAmountOverrideByUserId == userId).Select(s => s.Id));
+        await CheckAsync("candidate result recorded", dbContext.Candidates.Where(c => c.ResultMarkedByUserId == userId).Select(c => c.Id));
+        await CheckAsync("payment refund flagged", dbContext.Payments.Where(p => p.RefundRequestedByUserId == userId).Select(p => p.Id));
+        await CheckAsync("historical import requested", dbContext.HistoricalImportRequests.Where(h => h.RequestedByUserId == userId).Select(h => h.Id));
+        await CheckAsync("email template edited", dbContext.EmailTemplates.Where(t => t.UpdatedByUserId == userId).Select(t => t.Id));
+        await CheckAsync("team email setting edited", dbContext.EmailSettings.Where(e => e.UpdatedByUserId == userId).Select(e => e.Id));
+        await CheckAsync("system setting edited", dbContext.SystemSettings.Where(x => x.UpdatedByUserId == userId).Select(x => x.Id));
+        await CheckAsync("unmatched payment resolved", dbContext.UnmatchedSquarePayments.Where(u => u.ResolvedByUserId == userId).Select(u => u.Id));
+        await CheckAsync("watched licence added", dbContext.WatchedLicenses.Where(w => w.AddedByUserId == userId).Select(w => w.Id));
+
+        // Refused rather than nulled, which #188 left open. Nulling would quietly restructure other
+        // people's accounts as a side effect of deleting this one; refusing makes the admin reassign
+        // them deliberately, and the message says how many.
+        await CheckAsync("user managed by this account", dbContext.Users.Where(u => u.ManagedByUserId == userId).Select(u => u.Id));
+
+        // Actions this account took on ANYTHING ELSE. Its own lifecycle rows are excluded, because
+        // those are what the delete removes; everything else records what somebody did.
+        await CheckAsync("recorded action", dbContext.AuditLogs
+            .Where(a => a.UserId == userId && !(a.EntityType == nameof(User) && a.EntityId == userId))
+            .Select(a => a.Id));
+
+        return blockers;
     }
 
     public async Task<UserActionResult> ReactivateAsync(int targetUserId, int actingUserId, CancellationToken cancellationToken)

@@ -137,6 +137,16 @@ else
                                     <button type="submit" class="item">Reactivate</button>
                                 </form>
                             }
+
+                            @* Permanent, and only ever succeeds for an account that has done nothing —
+                               the service refuses with a reason otherwise (#188). Offered beside
+                               Deactivate rather than instead of it: deactivation is still the right
+                               answer for anyone who has actually used the app. *@
+                            <form method="post" asp-page-handler="Delete">
+                                <input type="hidden" name="teamId" value="@Model.TeamId" />
+                                <input type="hidden" name="targetUserId" value="@u.Id" />
+                                <button type="submit" class="item danger" disabled="@(u.Id == Model.CurrentUserId)">Delete permanently</button>
+                            </form>
                         </div>
                     </td>
                 </tr>
