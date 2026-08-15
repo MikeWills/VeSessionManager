@@ -60,6 +60,27 @@ public class ExamResultSyncService(
     /// than this can still be pulled in on demand, because ManualCandidateRefreshService runs this
     /// service and the "Refresh now" button on Admin → Team Maintenance runs that.
     /// </summary>
+    /// <remarks>
+    /// <b>Do not replace this window with the VE roster's final-poll marker.</b> That was asked in
+    /// #186 and the answer, confirmed with Mike on 2026-08-15, is no.
+    ///
+    /// <para><c>VolunteerExaminerSyncService</c> can stamp <c>VeRosterFinalSyncedUtc</c> and stop
+    /// forever after one poll following the close, because a closed session's roster is
+    /// <i>immutable</i>. Exam results are not: they are normally settled at close, but a VE team
+    /// <i>can</i> amend paperwork afterwards. Rarely — which is exactly what makes a final-poll
+    /// marker dangerous rather than merely imprecise. It would stop polling permanently, so the rare
+    /// amendment would be lost in silence, and the thing lost is a candidate's licence class.</para>
+    ///
+    /// <para>The apparent cost of the window is also mostly illusory, which was the other half of
+    /// what #186 asked. The per-candidate gate in ApplyResultsAsync excludes anyone already
+    /// <c>Tested</c> with a <c>NewLicenseClass</c>, so a session that settled at close costs
+    /// <b>zero</b> applicant-detail calls for as long as it stays in the window — only the session
+    /// query. Tightening the window would save nothing worth having.</para>
+    ///
+    /// <para>So the shape is deliberate and complete: the window bounds the routine sweep, the
+    /// per-candidate gate makes settled sessions free, and <c>RunForSessionAsync</c> is the
+    /// unbounded escape hatch for a session graded later than this.</para>
+    /// </remarks>
     public static readonly TimeSpan ResultSyncWindow = TimeSpan.FromDays(14);
 
     public async Task<ExamResultSyncResult> RunAsync(Team team, CancellationToken cancellationToken)
