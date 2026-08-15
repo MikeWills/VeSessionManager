@@ -163,9 +163,18 @@ public class DetailModel(
     // links for every other session the team had) — the rest of the team catches up on the Worker's
     // next scheduled tick, and Team Maintenance's "Refresh now" remains the team-wide button.
     //
-    // TODO: refine the confirmation-email flow this (and the background job) triggers — audit how
-    // many emails a candidate actually receives and when, across registration/reminder/reschedule
-    // paths, before this button trains Session Managers to expect "one click, one email."
+    // Audited for #193, since the question was whether this button trains Session Managers to expect
+    // "one click, one email". It does not, and the answer is worth stating where the button lives:
+    //
+    //   * At most ONE registration confirmation per candidate, ever — the scan filters on
+    //     RegistrationConfirmationSentUtc == null and stamps it, so a second click sends nothing.
+    //   * Only for candidates on a session that has not already ended, in THIS session alone.
+    //   * Nothing else in the pipeline emails a candidate. Reminders are separate daily jobs; the
+    //     felony-disclosure and youth-program emails are per-candidate buttons.
+    //   * A reschedule re-sends nothing: no code path anywhere clears that stamp. Safe rather than a
+    //     gap only because ApplyRescheduleRules refuses to move a session that has candidates.
+    //
+    // Full table, and the two things this audit found stale in it, in docs/email-reference.md.
     public async Task<IActionResult> OnPostRefreshCandidatesAsync()
     {
         var auth = await AuthorizeAsync();

@@ -1,4 +1,4 @@
-# Candidate & Admin Email Reference
+﻿# Candidate & Admin Email Reference
 
 Single reference for every outbound email this app sends: what triggers each one, who receives it,
 every `{{Tag}}` available to its template, and the gotchas worth knowing before editing content or
@@ -112,8 +112,12 @@ HTML a recipient's mail client renders.
 payment links have their best chance of already existing by the time it renders:
 
 ```
-Ingestion → VE roster sync → Zoom/Discord scheduling → Square payment link generation → Registration confirmation
+Ingestion → VE roster sync → Exam result sync → Zoom/Discord scheduling → Square payment link generation → Registration confirmation
 ```
+
+The authoritative list is `TeamPipeline` (`Core/Ingestion`), which exists because this order was
+written out three times and drifted — exam-result sync was missing from the manual path for weeks.
+**Exam result sync was missing from the diagram above for the same reason**, found auditing #193.
 
 This runs two ways, both executing the identical sequence for a given `Team`:
 
@@ -124,9 +128,12 @@ This runs two ways, both executing the identical sequence for a given `Team`:
    (`Pages/SessionManager/Detail.cshtml`, `OnPostRefreshCandidatesAsync`, wired to
    `ManualCandidateRefreshService`). A Session Manager who sees a new registrant in ExamTools can
    pull them in — and trigger their confirmation email — immediately instead of waiting for the
-   next poll. Runs for every session under that candidate's team, not just the one being viewed,
-   same scope as the background job. Job names in `JobRunHistory` are prefixed `Manual*` so this
-   run is distinguishable from a scheduled tick on the ops dashboard.
+   next poll. **Scoped to the session being viewed** — changed 2026-08-03, and this document said
+   the opposite until #193 checked it: it previously ran the team's whole pipeline, so one click
+   could mint payment links and email candidates for every *other* session the team had. The rest of
+   the team catches up on the next scheduled tick; Team Maintenance's "Refresh now" is the
+   deliberately team-wide button. Job names in `JobRunHistory` are prefixed `Manual*` so this run is
+   distinguishable from a scheduled tick on the ops dashboard.
 
 `DayBeforeReminder` and the two payment-reminder passes are **not** part of this pipeline — they're
 separate daily jobs (`DayBeforeReminderJob`, `PaymentReminderJob`, both 24-hour `PeriodicTimer`s
@@ -153,6 +160,40 @@ Two consequences of removing an automatic send, both deliberate:
   "declared a disclosure, instructions not sent" is shown on the session's candidate row and on the
   candidate page, and `MarkCompletedAsync` returns how many are still waiting so its status message
   can say so. A number in a one-off message is gone on the next click; the row marker is not.
+
+### What one click of "Refresh candidates" actually sends
+
+Audited for #193, because the button's own `TODO` worried it would train Session Managers to expect
+"one click, one email". The answer is narrower and safer than that:
+
+**At most one registration confirmation per candidate, ever** — and only for candidates who have
+never been confirmed, on a session that has not already ended, in the one session being viewed.
+Clicking it a second time sends nothing, because the guard field is already stamped. A Session
+Manager who presses it after every ExamTools change is not generating mail.
+
+Nothing else in the pipeline emails a candidate at all. The reminders and the payment passes are
+separate daily jobs, and the three per-candidate emails are buttons.
+
+| Email | Trigger | Guard | Sent by "Refresh candidates"? |
+|---|---|---|---|
+| Registration confirmation | pipeline (scheduled + manual) | `RegistrationConfirmationSentUtc` null, and session not ended | **Yes**, once per candidate |
+| Registration confirmation (resend) | per-candidate button | none — deliberate, and re-stamps | No |
+| Day-before reminder | `DayBeforeReminderJob` | `DayBeforeReminderSentUtc` null | No |
+| FCC fee reminder | `PaymentReminderJob` | `Candidate.FccFeeReminderSentUtc` | No |
+| Payment expiration notice | `PaymentReminderJob` | admin-facing, not to the candidate | No |
+| Felony disclosure instructions | per-candidate button | timestamp is display-only | No |
+| Youth program instructions | per-candidate button | display-only; repeatable by design | No |
+
+**A reschedule does not re-send anything, and cannot.** Nothing in `src/` ever clears
+`RegistrationConfirmationSentUtc`. That is safe rather than a gap only because
+`ApplyRescheduleRules` refuses to move a session that has candidates — it sets
+`RescheduleFlaggedForReview` and leaves the stored time alone, so a date change with candidates is
+always a human-handled event, and the human has "Resend confirmation email" per candidate. If that
+policy ever changes, this becomes a real hole: candidates would hold a stale date with nothing to
+correct it.
+
+The send-once properties are pinned by `RegistrationConfirmation_AlreadySent_IsNotResent`,
+`DayBeforeReminder_AlreadySent_IsNotResent` and `PreSessionReminder_RunTwiceInsideTheWindow_SendsOnce`.
 
 ### The one-shot gotcha
 
