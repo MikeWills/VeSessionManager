@@ -20,8 +20,22 @@ namespace VeSessionManager.Core.Reporting;
 /// "how much has each person worked" as a leaderboard. This answers "what did we do, and when", over
 /// time, for the whole team.</para>
 /// </summary>
-public class SessionStatsService(AppDbContext dbContext)
+public class SessionStatsService(AppDbContext dbContext, TimeProvider timeProvider)
 {
+    /// <summary>
+    /// How far back the VE activity panel looks — <b>fixed, and deliberately not the page's date
+    /// filter</b>.
+    ///
+    /// <para>That panel answers "who has been turning up lately", which is a different question from
+    /// the rest of the page, and the all-time version of it already exists on the VE Roster screen.
+    /// Settled with Mike 2026-08-15. The heading has to say "last 30 days" out loud, because a panel
+    /// that ignores the filter above it reads as a bug otherwise.</para>
+    /// </summary>
+    public static readonly TimeSpan VeActivityWindow = TimeSpan.FromDays(30);
+
+    /// <summary>Rows in the VE activity panel. A leaderboard, not a roster — 176 VEs is the roster, and VeRoster is where it lives.</summary>
+    public const int VeActivityTopCount = 10;
+
     /// <param name="teamIds">Null means every team merged — the convention every scoped read here uses.</param>
     public async Task<SessionStatsReport> GetAsync(
         IReadOnlyList<int>? teamIds, DateTime? fromUtc, DateTime? toUtc, CancellationToken cancellationToken)
@@ -105,7 +119,12 @@ public class SessionStatsService(AppDbContext dbContext)
             .OrderBy(p => p.MonthUtc)
             .ToList();
 
-        var veActivity = await GetVeActivityAsync(teamIds, fromUtc, toUtc, cancellationToken);
+        // Two separate questions, and they must not share an answer. The panel is a fixed-window top
+        // 10; the summary tile counts everyone who worked in the *filtered* range. Deriving the tile
+        // from the panel's list — which is what it used to do — would pin it at 10 forever the moment
+        // the list was capped.
+        var veActivity = await GetVeActivityAsync(teamIds, cancellationToken);
+        var activeVeCount = await CountActiveVolunteerExaminersAsync(teamIds, fromUtc, toUtc, cancellationToken);
 
         return new SessionStatsReport(
             periods,
@@ -123,16 +142,60 @@ public class SessionStatsService(AppDbContext dbContext)
             // rows every other figure comes from, so it moves with the team and date filters instead
             // of quietly reporting the deployment's oldest session under every filter.
             rows.Count == 0 ? null : rows.Min(r => r.ScheduledStartUtc),
+            activeVeCount,
             veActivity);
     }
 
     /// <summary>
-    /// The VE half of the title — who actually worked, and how much.
+    /// Who has been turning up lately — the busiest <see cref="VeActivityTopCount"/> VEs over
+    /// <see cref="VeActivityWindow"/>.
     ///
-    /// <para>Counted from the roster links on completed sessions, scoped the same way, so a VE's
-    /// number here always agrees with the range and teams the rest of the page is showing.</para>
+    /// <para><b>Deliberately ignores the page's date filter</b>, unlike everything else here. The
+    /// all-time, everyone version is the VE Roster screen's job; this is a recent-activity snapshot,
+    /// and it needs a heading that says so. See the constants above.</para>
+    ///
+    /// <para>Counted from roster links on sessions that actually finished, so a VE rostered onto next
+    /// week's session is not credited for it — the <c>Status == Active</c> trap CLAUDE.md records,
+    /// which has already produced this exact bug twice.</para>
     /// </summary>
     private async Task<IReadOnlyList<VeActivityRow>> GetVeActivityAsync(
+        IReadOnlyList<int>? teamIds, CancellationToken cancellationToken)
+    {
+        var since = timeProvider.GetUtcNow().UtcDateTime - VeActivityWindow;
+
+        var links = dbContext.SessionVolunteerExaminers
+            .Where(SessionCompletion.RosterLinkIsCompleted)
+            .Where(sve => sve.Session.ScheduledStartUtc >= since);
+
+        if (teamIds is not null)
+        {
+            links = links.Where(sve => teamIds.Contains(sve.Session.TeamId));
+        }
+
+        var counts = await links
+            .GroupBy(sve => new { sve.VolunteerExaminerId, sve.VolunteerExaminer.Name, sve.VolunteerExaminer.CallSign })
+            .Select(g => new { g.Key.VolunteerExaminerId, g.Key.Name, g.Key.CallSign, Sessions = g.Count() })
+            .ToListAsync(cancellationToken);
+
+        // Ordered and truncated in memory: EF InMemory cannot translate an OrderBy chained onto a
+        // GroupBy/Select projection (CLAUDE.md's Known Constraint, hit building
+        // VolunteerExaminerReportService). Thirty days of roster links is a small set regardless.
+        return [.. counts
+            .OrderByDescending(c => c.Sessions)
+            .ThenBy(c => c.Name)
+            .Take(VeActivityTopCount)
+            .Select(c => new VeActivityRow(c.VolunteerExaminerId, c.Name, c.CallSign, c.Sessions))];
+    }
+
+    /// <summary>
+    /// How many distinct VEs worked at least one completed session in the <b>filtered</b> range —
+    /// the summary tile, which belongs with the other range-scoped figures beside it.
+    ///
+    /// <para>Its own query rather than <c>VolunteerExaminers.Count</c> precisely because that list is
+    /// now a fixed-window top 10: deriving the tile from it would report "10" for every team and
+    /// every range, and look entirely plausible doing it.</para>
+    /// </summary>
+    private async Task<int> CountActiveVolunteerExaminersAsync(
         IReadOnlyList<int>? teamIds, DateTime? fromUtc, DateTime? toUtc, CancellationToken cancellationToken)
     {
         var links = dbContext.SessionVolunteerExaminers.Where(SessionCompletion.RosterLinkIsCompleted);
@@ -152,17 +215,7 @@ public class SessionStatsService(AppDbContext dbContext)
             links = links.Where(sve => sve.Session.ScheduledStartUtc <= to);
         }
 
-        var counts = await links
-            .GroupBy(sve => new { sve.VolunteerExaminerId, sve.VolunteerExaminer.Name, sve.VolunteerExaminer.CallSign })
-            .Select(g => new { g.Key.VolunteerExaminerId, g.Key.Name, g.Key.CallSign, Sessions = g.Count() })
-            .ToListAsync(cancellationToken);
-
-        // Ordered in memory: EF InMemory cannot translate an OrderBy chained onto a GroupBy/Select
-        // projection (CLAUDE.md's Known Constraint, hit building VolunteerExaminerReportService).
-        return [.. counts
-            .OrderByDescending(c => c.Sessions)
-            .ThenBy(c => c.Name)
-            .Select(c => new VeActivityRow(c.VolunteerExaminerId, c.Name, c.CallSign, c.Sessions))];
+        return await links.Select(sve => sve.VolunteerExaminerId).Distinct().CountAsync(cancellationToken);
     }
 }
 
@@ -187,6 +240,8 @@ public record SessionStatsReport(
     int TotalGenerals,
     int TotalExtras,
     DateTime? EarliestSessionUtc,
+    int ActiveVolunteerExaminers,
+    /// <summary>The busiest few VEs over a fixed recent window — NOT the filtered range, and not everyone. See SessionStatsService.VeActivityWindow.</summary>
     IReadOnlyList<VeActivityRow> VolunteerExaminers)
 {
     /// <summary>
@@ -209,7 +264,4 @@ public record SessionStatsReport(
     public double? PassRate => TotalPassed + TotalFailed == 0
         ? null
         : (double)TotalPassed / (TotalPassed + TotalFailed);
-
-    /// <summary>How many distinct VEs worked at least one session in range.</summary>
-    public int ActiveVolunteerExaminers => VolunteerExaminers.Count;
 }

@@ -72,7 +72,13 @@ public class SessionStatsServiceTests
         NewLicenseClass = earned
     };
 
-    private static SessionStatsService Service(AppDbContext dbContext) => new(dbContext);
+    private sealed class FixedTimeProvider(DateTime utcNow) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => new(utcNow, TimeSpan.Zero);
+    }
+
+    /// <summary>The VE activity panel is anchored on "now", not on the filter, so these tests need a fixed clock.</summary>
+    private static SessionStatsService Service(AppDbContext dbContext) => new(dbContext, new FixedTimeProvider(Now));
 
     /// <summary>
     /// A scheduled-but-not-yet-run session must not appear. <c>Status</c> stays Active for every
@@ -354,6 +360,90 @@ public class SessionStatsServiceTests
         var filtered = await Service(dbContext).GetAsync(
             null, new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc), null, CancellationToken.None);
         Assert.Equal(new DateTime(2026, 5, 15, 17, 0, 0, DateTimeKind.Utc), filtered.EarliestSessionUtc);
+    }
+
+    /// <summary>
+    /// The VE panel is a fixed recent window and does <b>not</b> follow the page's date filter
+    /// (settled with Mike 2026-08-15) — it answers "who has been turning up lately", while VeRoster
+    /// owns the all-time view. Filtering the page to a year of heavy activity must not repopulate it.
+    /// </summary>
+    [Fact]
+    public async Task VeActivity_IgnoresTheDateFilter_AndOnlyCoversTheFixedRecentWindow()
+    {
+        await using var dbContext = CreateContext();
+        var f = await SeedRefsAsync(dbContext);
+        var recent = Session(f, Now.AddDays(-3));
+        var old = Session(f, Now - SessionStatsService.VeActivityWindow - TimeSpan.FromDays(1));
+        dbContext.Sessions.AddRange(recent, old);
+        var active = new VolunteerExaminer { Name = "Recent VE", CallSign = "K0AAA" };
+        var retired = new VolunteerExaminer { Name = "Retired VE", CallSign = "K0BBB" };
+        dbContext.SessionVolunteerExaminers.AddRange(
+            new SessionVolunteerExaminer { Session = recent, VolunteerExaminer = active },
+            new SessionVolunteerExaminer { Session = old, VolunteerExaminer = retired });
+        await dbContext.SaveChangesAsync();
+
+        // Filter deliberately set wide enough to include the old session — the panel must not care.
+        var report = await Service(dbContext).GetAsync(
+            null, Now.AddYears(-5), null, CancellationToken.None);
+
+        var listed = Assert.Single(report.VolunteerExaminers);
+        Assert.Equal("Recent VE", listed.Name);
+
+        // ...while the summary tile, which IS range-scoped, still counts both.
+        Assert.Equal(2, report.ActiveVolunteerExaminers);
+    }
+
+    /// <summary>
+    /// The tile and the panel answer different questions, so the tile must not be the panel's row
+    /// count. Deriving it — which is what it used to do — would pin it at the cap forever and look
+    /// entirely plausible doing it.
+    /// </summary>
+    [Fact]
+    public async Task VeActivity_IsCappedButTheActiveVeCountIsNot()
+    {
+        await using var dbContext = CreateContext();
+        var f = await SeedRefsAsync(dbContext);
+        var session = Session(f, Now.AddDays(-3));
+        dbContext.Sessions.Add(session);
+        // Two more VEs than the panel will show.
+        for (var i = 0; i < SessionStatsService.VeActivityTopCount + 2; i++)
+        {
+            dbContext.SessionVolunteerExaminers.Add(new SessionVolunteerExaminer
+            {
+                Session = session,
+                VolunteerExaminer = new VolunteerExaminer { Name = $"VE {i:00}", CallSign = $"K0{i:00}" }
+            });
+        }
+        await dbContext.SaveChangesAsync();
+
+        var report = await Service(dbContext).GetAsync(null, null, null, CancellationToken.None);
+
+        Assert.Equal(SessionStatsService.VeActivityTopCount, report.VolunteerExaminers.Count);
+        Assert.Equal(SessionStatsService.VeActivityTopCount + 2, report.ActiveVolunteerExaminers);
+    }
+
+    /// <summary>Busiest first — a leaderboard whose order is arbitrary is just a list.</summary>
+    [Fact]
+    public async Task VeActivity_RanksBySessionsWorkedDescending()
+    {
+        await using var dbContext = CreateContext();
+        var f = await SeedRefsAsync(dbContext);
+        var one = Session(f, Now.AddDays(-3));
+        var two = Session(f, Now.AddDays(-5));
+        dbContext.Sessions.AddRange(one, two);
+        var busy = new VolunteerExaminer { Name = "Busy VE", CallSign = "K0AAA" };
+        var quiet = new VolunteerExaminer { Name = "Quiet VE", CallSign = "K0BBB" };
+        dbContext.SessionVolunteerExaminers.AddRange(
+            new SessionVolunteerExaminer { Session = one, VolunteerExaminer = busy },
+            new SessionVolunteerExaminer { Session = two, VolunteerExaminer = busy },
+            new SessionVolunteerExaminer { Session = one, VolunteerExaminer = quiet });
+        await dbContext.SaveChangesAsync();
+
+        var report = await Service(dbContext).GetAsync(null, null, null, CancellationToken.None);
+
+        Assert.Equal("Busy VE", report.VolunteerExaminers[0].Name);
+        Assert.Equal(2, report.VolunteerExaminers[0].SessionsWorked);
+        Assert.Equal(1, report.VolunteerExaminers[1].SessionsWorked);
     }
 
     [Fact]

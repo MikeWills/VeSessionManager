@@ -79,7 +79,11 @@
     // current page is one of its children (the individual links inside still get their own
     // .active state too, same as before).
     var applicantsGroupActive = activeNav is "ApplicantStatus" or "RenewalMonitor";
-    var vesGroupActive = activeNav is "VeRoster" or "VeDirectory" or "VeTags" or "VeImport" or "AuditioningReport" or "Stats";
+    @* Reports split out of the VEs group 2026-08-15: those three answer "how are we doing", while
+       what is left under VEs is roster maintenance. Keep each list in step with the group's own
+       [Authorize] — all six pages are Admins-only, which is why one gate wraps both groups. *@
+    var vesGroupActive = activeNav is "VeDirectory" or "VeTags" or "VeImport";
+    var reportsGroupActive = activeNav is "Stats" or "VeRoster" or "AuditioningReport";
     var settingsGroupActive = activeNav is "AdminTeams" or "AdminTeamSettings" or "AdminUsers" or "AdminEmailTemplates"
         or "AdminFees" or "AdminVecs" or "AdminAuditLog" or "AdminJobHistory" or "AdminJobSchedule" or "Reconciliation" or "AdminSystemSettings";
 }
@@ -150,14 +154,18 @@
                     <button type="button" class="kebab @(vesGroupActive ? "active" : "")">VEs <i class="bi bi-caret-down-fill" aria-hidden="true"></i></button>
                     <div class="menu">
                         <a class="item @(activeNav == "VeDirectory" ? "active" : "")" asp-page="/SessionManager/VeDirectory">VE Directory</a>
-                        <a class="item @(activeNav == "VeRoster" ? "active" : "")" asp-page="/SessionManager/VeRoster">VE Session Counts</a>
-                        <a class="item @(activeNav == "AuditioningReport" ? "active" : "")" asp-page="/SessionManager/AuditioningReport">Auditioning Report</a>
-                        @* Same admin-only gate as the rest of this group, and for the same reason as
-                           VE Session Counts: it shows a per-VE count (#63). *@
-                        <a class="item @(activeNav == "Stats" ? "active" : "")" asp-page="/SessionManager/Stats">Stats</a>
-                        <hr>
                         <a class="item @(activeNav == "VeTags" ? "active" : "")" asp-page="/SessionManager/VeTags">VE Tags</a>
                         <a class="item @(activeNav == "VeImport" ? "active" : "")" asp-page="/SessionManager/VeImport">Import VEs</a>
+                    </div>
+                </div>
+                @* Requested 2026-08-15. Same Admins gate as the VEs group above — every page in here
+                   shows a per-VE session count, which is why they were admin-only to begin with. *@
+                <div class="nav-group">
+                    <button type="button" class="kebab @(reportsGroupActive ? "active" : "")">Reports <i class="bi bi-caret-down-fill" aria-hidden="true"></i></button>
+                    <div class="menu">
+                        <a class="item @(activeNav == "Stats" ? "active" : "")" asp-page="/SessionManager/Stats">Stats</a>
+                        <a class="item @(activeNav == "VeRoster" ? "active" : "")" asp-page="/SessionManager/VeRoster">VE Session Counts</a>
+                        <a class="item @(activeNav == "AuditioningReport" ? "active" : "")" asp-page="/SessionManager/AuditioningReport">Auditioning Report</a>
                     </div>
                 </div>
             }
