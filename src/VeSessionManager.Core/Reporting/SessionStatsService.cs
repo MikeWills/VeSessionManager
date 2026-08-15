@@ -74,7 +74,12 @@ public class SessionStatsService(AppDbContext dbContext, TimeProvider timeProvid
                 Passed = s.Candidates.Count(c => c.Tested
                     && c.ApplicationStatus != CandidateApplicationStatus.Failed
                     && c.ApplicationStatus != CandidateApplicationStatus.NotTested),
-                Failed = s.Candidates.Count(c => c.ApplicationStatus == CandidateApplicationStatus.Failed),
+                // Gated on Tested exactly like Passed above, so both sides of the rate describe the
+                // same population — people who sat an exam. Without it the two are asymmetric and a
+                // candidate could land in the denominator while sitting outside "candidates tested",
+                // which is a rate over a set the page never shows. Symmetric since 2026-08-15.
+                Failed = s.Candidates.Count(c => c.Tested
+                    && c.ApplicationStatus == CandidateApplicationStatus.Failed),
 
                 // A license class is only set once a candidate passed something this sitting, so
                 // these two together are "people who walked out with a license". Walking in with
@@ -257,9 +262,17 @@ public record SessionStatsReport(
     public int TotalLicensesEarned => TotalTechnicians + TotalGenerals + TotalExtras;
 
     /// <summary>
-    /// Of those whose result is known. Deliberately excludes candidates still awaiting an FCC
-    /// outcome, rather than counting them as failures — a session run last week would otherwise
-    /// report a pass rate that climbs for a fortnight afterwards.
+    /// Of the candidates who sat an exam: passed over passed-plus-failed.
+    ///
+    /// <para><b>A tested candidate who is not recorded as failed counts as a pass immediately</b> —
+    /// including while <c>Unmatched</c> or <c>Received</c>, i.e. still waiting on the FCC. That is
+    /// deliberate: whether someone passed the exam is settled on the day, and the FCC grant is a
+    /// downstream administrative step, not a second verdict. Waiting for <c>Granted</c> would make a
+    /// recent session's rate climb by itself for a fortnight.</para>
+    ///
+    /// <para><i>This comment previously claimed the opposite — that candidates awaiting an FCC
+    /// outcome were excluded from the calculation. They never were. Corrected 2026-08-15; the code
+    /// was right and the comment had been describing a different design since #63 shipped.</i></para>
     /// </summary>
     public double? PassRate => TotalPassed + TotalFailed == 0
         ? null

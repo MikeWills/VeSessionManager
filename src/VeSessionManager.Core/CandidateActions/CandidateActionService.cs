@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Entities;
@@ -26,7 +26,25 @@ public class CandidateActionService(
     TimeProvider timeProvider,
     ILogger<CandidateActionService> logger)
 {
-    /// <summary>"mark a candidate Failed" — only meaningful from a non-terminal status; once Granted/Failed/NotTested, the FCC watcher (and every other job) already treats the row as settled.</summary>
+    /// <summary>
+    /// "mark a candidate Failed" — only meaningful from a non-terminal status; once
+    /// Granted/Failed/NotTested, the FCC watcher (and every other job) already treats the row as
+    /// settled.
+    ///
+    /// <para><b>Sets <see cref="Candidate.Tested"/> as well as the status (2026-08-15).</b> Someone
+    /// who failed an exam did, by definition, sit one, but this used to set only the status — so a
+    /// manually-failed candidate stayed <c>Tested = false</c> and the two fields disagreed. Three
+    /// consequences, all wrong in the same direction: the candidate was absent from "candidates
+    /// tested" on the stats page while still counting against the pass rate, the session and
+    /// candidate screens showed no tested tick, and — the one that could actually destroy data —
+    /// they remained eligible for the no-show delete, which is gated on <c>!Tested</c> and nulls PII
+    /// immediately.</para>
+    ///
+    /// <para><see cref="ExamResultSyncService"/> already set both when it auto-failed someone, which
+    /// is why this went unnoticed: every failure on this deployment came from that path, and
+    /// <c>ResultMarkedByUserId</c> is null on all of them. The manual button had never been used on
+    /// real data.</para>
+    /// </summary>
     public async Task<CandidateActionResult> MarkFailedAsync(int candidateId, int userId, CancellationToken cancellationToken)
     {
         var candidate = await dbContext.Candidates.FirstOrDefaultAsync(c => c.Id == candidateId, cancellationToken);
@@ -42,6 +60,7 @@ public class CandidateActionService(
 
         var now = timeProvider.GetUtcNow().UtcDateTime;
         candidate.ApplicationStatus = CandidateApplicationStatus.Failed;
+        candidate.Tested = true;
         candidate.ResultMarkedByUserId = userId;
         candidate.ResultMarkedUtc = now;
 

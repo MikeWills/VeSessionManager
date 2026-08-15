@@ -446,6 +446,63 @@ public class SessionStatsServiceTests
         Assert.Equal(1, report.VolunteerExaminers[1].SessionsWorked);
     }
 
+    /// <summary>
+    /// Both sides of the pass rate describe the same population: people who sat an exam. A row that
+    /// is <c>Failed</c> but never <c>Tested</c> belongs to neither, so it must not quietly appear in
+    /// the denominator while sitting outside "candidates tested" on the same screen.
+    ///
+    /// <para>That state was reachable until 2026-08-15 — <c>MarkFailedAsync</c> set the status
+    /// without setting <c>Tested</c> — and is repaired by its own migration. This asserts the report
+    /// is robust to it regardless, since a hand-edited row or a future caller could recreate it.</para>
+    /// </summary>
+    [Fact]
+    public async Task PassRate_IgnoresAFailedCandidateWhoNeverTested()
+    {
+        await using var dbContext = CreateContext();
+        var f = await SeedRefsAsync(dbContext);
+        var session = Session(f, Now.AddDays(-10));
+        dbContext.Sessions.Add(session);
+        dbContext.Candidates.AddRange(
+            Candidate(session, true, CandidateApplicationStatus.Granted, LicenseClass.None, LicenseClass.Technician),
+            Candidate(session, true, CandidateApplicationStatus.Failed),
+            // The odd one out: marked Failed, never Tested.
+            Candidate(session, false, CandidateApplicationStatus.Failed));
+        await dbContext.SaveChangesAsync();
+
+        var report = await Service(dbContext).GetAsync(null, null, null, CancellationToken.None);
+
+        Assert.Equal(2, report.TotalCandidatesTested);
+        Assert.Equal(1, report.TotalPassed);
+        Assert.Equal(1, report.TotalFailed);
+        // Passed + Failed must equal the tested count the page shows beside it, not exceed it.
+        Assert.Equal(report.TotalCandidatesTested, report.TotalPassed + report.TotalFailed);
+        Assert.Equal(0.5, report.PassRate);
+    }
+
+    /// <summary>
+    /// A candidate who tested and is still waiting on the FCC counts as a pass now, not later. The
+    /// alternative — holding them out until Granted — makes a recent session's rate climb by itself
+    /// for a fortnight. Pinned because the doc comment claimed the opposite behavior for weeks.
+    /// </summary>
+    [Fact]
+    public async Task PassRate_CountsATestedCandidateAwaitingTheFccAsAPass()
+    {
+        await using var dbContext = CreateContext();
+        var f = await SeedRefsAsync(dbContext);
+        var session = Session(f, Now.AddDays(-2));
+        dbContext.Sessions.Add(session);
+        dbContext.Candidates.AddRange(
+            Candidate(session, true, CandidateApplicationStatus.Unmatched, LicenseClass.None, LicenseClass.Technician),
+            Candidate(session, true, CandidateApplicationStatus.Received, LicenseClass.None, LicenseClass.General));
+        await dbContext.SaveChangesAsync();
+
+        var report = await Service(dbContext).GetAsync(null, null, null, CancellationToken.None);
+
+        Assert.Equal(2, report.TotalPassed);
+        Assert.Equal(0, report.TotalFailed);
+        Assert.Equal(1.0, report.PassRate);
+    }
+
     [Fact]
     public async Task EarliestSessionUtc_IsNullWhenNothingIsInRange()
     {

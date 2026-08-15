@@ -135,11 +135,30 @@ called before. Verified live via `GET /api/veUser/sessions/{sessionId}/applicant
 
 `ExamToolsApplicantDetail`/`ExamToolsExamResult` only map `exams[].graded`/`exams[].passed` — the
 richer per-exam stats (`total`/`correct`/etc.) and the full registration PII this endpoint also
-returns aren't needed by anything today. A candidate can have more than one entry in the same sitting
-(passes a lower element, then attempts and fails a higher one) — any graded-and-failed entry is
-treated as an overall Failed regardless of other elements passed the same session, since a retest fee
-is owed either way. See `ExamResultSyncService`'s own doc comment for the full field-setting/audit
-behavior and how it interacts with `PaymentReminderService`'s existing Reason=Retest logic.
+returns aren't needed by anything today.
+
+A candidate can have more than one entry in the same sitting (passes a lower element, then attempts
+and fails a higher one). **The outcome is decided by what they PASSED, not by whether anything
+failed.** *(Corrected 2026-08-09; this paragraph described the opposite rule until 2026-08-15, which
+is worth noting because the wrong version reads perfectly plausibly.)* The old test —
+any-graded-and-failed means Failed — is wrong for the ordinary case of reaching above your current
+class and missing: pass Element 2, fail Element 3, and you walk out a newly licensed Technician, but
+the app called you Failed, recorded no license class, and never looked at you again. Only a candidate
+who passed **nothing** is Failed. See `ExamResultSyncService`'s own doc comment for the full
+field-setting/audit behavior and how it interacts with `PaymentReminderService`'s Reason=Retest logic.
+
+### How far back the endpoint serves results (verified 2026-08-15)
+
+**At least to January 2022.** This was an open unknown when the historical import was taught to fetch
+exam results — nothing documents a retention window, and it was entirely plausible that old sessions
+would come back with empty `exams[]`, which would have looked identical to "not graded yet". Settled
+by running a multi-year import against real data: the stats page rendered a continuous monthly series
+from Jan 2022 to Aug 2026, totalling 2,518 licenses earned (1,415 Technician, 798 General, 305
+Extra), with no gap at the old end.
+
+So a historical import may be pointed at any range this deployment has sessions for, and the results
+will come back. If a range ever *does* return nothing while a recent one works, that is a retention
+boundary being discovered — not a bug — and it belongs in this section.
 
 ## Per-team host override (issue #18, 2026-07-28)
 
