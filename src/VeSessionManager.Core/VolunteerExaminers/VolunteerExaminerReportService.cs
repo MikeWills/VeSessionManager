@@ -120,11 +120,11 @@ public class VolunteerExaminerReportService(AppDbContext dbContext)
     /// </summary>
     /// <summary>The Eastern calendar year "this year" refers to. Reported alongside the count so a page states the year rather than leaving the reader to assume their own.</summary>
     public static int EasternYear(DateTime nowUtc) =>
-        TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(nowUtc, DateTimeKind.Utc), UlsSchedule.EasternTimeZone).Year;
+        UlsSchedule.ToEastern(nowUtc).Year;
 
     internal static DateTime EasternYearStartUtc(DateTime nowUtc)
     {
-        var easternNow = TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(nowUtc, DateTimeKind.Utc), UlsSchedule.EasternTimeZone);
+        var easternNow = UlsSchedule.ToEastern(nowUtc);
         var yearStart = new DateTime(easternNow.Year, 1, 1, 0, 0, 0, DateTimeKind.Unspecified);
         return TimeZoneInfo.ConvertTimeToUtc(yearStart, UlsSchedule.EasternTimeZone);
     }

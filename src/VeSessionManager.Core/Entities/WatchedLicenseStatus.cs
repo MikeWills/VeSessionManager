@@ -1,4 +1,4 @@
-using VeSessionManager.Core.Uls;
+﻿using VeSessionManager.Core.Uls;
 using CallSign = VeSessionManager.Core.CallSign;
 namespace VeSessionManager.Core.Entities;
 
@@ -110,7 +110,7 @@ public static class WatchedLicenseStatusExtensions
         if (date is not { } target) return null;
 
         var today = DateOnly.FromDateTime(
-            TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(utcNow, DateTimeKind.Utc), UlsSchedule.EasternTimeZone));
+            UlsSchedule.ToEastern(utcNow));
 
         return DateOnly.FromDateTime(target).DayNumber - today.DayNumber;
     }

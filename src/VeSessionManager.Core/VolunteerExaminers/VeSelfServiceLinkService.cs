@@ -105,12 +105,12 @@ public class VeSelfServiceLinkService(
         }
 
         // 32 bytes from a CSPRNG, URL-safe. Only the hash is stored — see VeSelfServiceToken.
-        var rawToken = Convert.ToHexString(RandomNumberGenerator.GetBytes(32)).ToLowerInvariant();
+        var rawToken = OneTimeToken.Mint();
 
         dbContext.VeSelfServiceTokens.Add(new VeSelfServiceToken
         {
             VolunteerExaminerId = volunteerExaminer.Id,
-            TokenHash = Hash(rawToken),
+            TokenHash = OneTimeToken.Hash(rawToken),
             CreatedUtc = now,
             ExpiresUtc = now + TokenLifetime,
             SentToEmail = volunteerExaminer.Email!
@@ -156,7 +156,7 @@ public class VeSelfServiceLinkService(
         }
 
         var now = timeProvider.GetUtcNow().UtcDateTime;
-        var hash = Hash(rawToken.Trim());
+        var hash = OneTimeToken.Hash(rawToken.Trim());
 
         var token = await dbContext.VeSelfServiceTokens
             .Include(t => t.VolunteerExaminer)
@@ -190,8 +190,6 @@ public class VeSelfServiceLinkService(
             .ExecuteDeleteAsync(cancellationToken);
     }
 
-    private static string Hash(string rawToken) =>
-        Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(rawToken))).ToLowerInvariant();
 }
 
 public enum VeSelfServiceRequestResult

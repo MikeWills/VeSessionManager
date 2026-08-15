@@ -28,6 +28,21 @@ public static class UlsSchedule
     /// <para><c>SpecifyKind</c> first because EF Core/SQLite returns <c>DateTimeKind.Unspecified</c>,
     /// and <c>ConvertTimeFromUtc</c> throws for a value it does not believe is UTC.</para>
     /// </summary>
-    public static DateTime ToEasternDate(DateTime utc) =>
-        TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(utc, DateTimeKind.Utc), EasternTimeZone).Date;
+    public static DateTime ToEasternDate(DateTime utc) => ToEastern(utc).Date;
+
+    /// <summary>
+    /// The same conversion keeping the time of day, for callers that need the hour rather than the
+    /// calendar date — the daily slot schedule, the year boundary on the VE report, and every
+    /// user-facing "… ET" timestamp (#309, DUP-14).
+    ///
+    /// <para>Five call sites spelled out
+    /// <c>ConvertTimeFromUtc(SpecifyKind(x, Utc), UlsSchedule.EasternTimeZone)</c> in full. All five
+    /// were correct — they already shared the zone, which is the part that matters — so this is
+    /// removing an incantation rather than fixing a bug. The <c>SpecifyKind</c> is the incantation's
+    /// load-bearing half: EF Core/SQLite returns <c>DateTimeKind.Unspecified</c> and
+    /// <c>ConvertTimeFromUtc</c> throws for a value it does not believe is UTC, so a site that
+    /// forgets it works on a freshly-computed timestamp and throws on one read from the database.</para>
+    /// </summary>
+    public static DateTime ToEastern(DateTime utc) =>
+        TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(utc, DateTimeKind.Utc), EasternTimeZone);
 }

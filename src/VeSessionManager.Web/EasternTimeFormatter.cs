@@ -1,4 +1,4 @@
-using System.Globalization;
+﻿using System.Globalization;
 using VeSessionManager.Core.Uls;
 
 namespace VeSessionManager.Web;
@@ -26,5 +26,5 @@ public static class EasternTimeFormatter
         utc is null ? null : Format(utc.Value, format);
 
     private static DateTime ToEastern(DateTime utc) =>
-        TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(utc, DateTimeKind.Utc), UlsSchedule.EasternTimeZone);
+        UlsSchedule.ToEastern(utc);
 }
