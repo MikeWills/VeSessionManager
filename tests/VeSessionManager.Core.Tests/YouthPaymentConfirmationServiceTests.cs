@@ -259,7 +259,7 @@ public class YouthPaymentConfirmationServiceTests
 
         var outcome = await CreateService(dbContext, square).CheckEligibilityAsync(token, CancellationToken.None);
 
-        Assert.Equal(YouthConfirmationOutcome.Success, outcome);
+        Assert.Equal(YouthConfirmationOutcome.Success, outcome.Outcome);
         Assert.Empty(square.CreateCalls);
         Assert.Empty(square.DeletedPaymentLinkIds);
         var unchanged = await dbContext.Payments.SingleAsync();

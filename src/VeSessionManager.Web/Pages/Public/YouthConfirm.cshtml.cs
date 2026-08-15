@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Authorization;
+﻿using Microsoft.AspNetCore.Authorization;
 using System.ComponentModel.DataAnnotations;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
@@ -20,6 +20,13 @@ public class YouthConfirmModel(YouthPaymentConfirmationService service) : PageMo
 
     public YouthConfirmationOutcome Outcome { get; private set; }
 
+    /// <summary>
+    /// The team's own reply-to address, for the COPPA instructions (#192). Null when the team has no
+    /// EmailSettings row — the copy then names no address rather than naming a wrong one, since this
+    /// page is shared by every team on the deployment.
+    /// </summary>
+    public string? TeamContactEmail { get; private set; }
+
     private const string ConfirmationRequiredMessage = "You must confirm you are a youth to continue.";
 
     public class InputModel
@@ -37,7 +44,9 @@ public class YouthConfirmModel(YouthPaymentConfirmationService service) : PageMo
 
     public async Task OnGetAsync(Guid token, CancellationToken cancellationToken)
     {
-        Outcome = await service.CheckEligibilityAsync(token, cancellationToken);
+        var eligibility = await service.CheckEligibilityAsync(token, cancellationToken);
+        Outcome = eligibility.Outcome;
+        TeamContactEmail = eligibility.TeamContactEmail;
     }
 
     public async Task<IActionResult> OnPostAsync(Guid token, CancellationToken cancellationToken)
@@ -53,7 +62,9 @@ public class YouthConfirmModel(YouthPaymentConfirmationService service) : PageMo
 
         if (!ModelState.IsValid)
         {
-            Outcome = await service.CheckEligibilityAsync(token, cancellationToken);
+            var eligibility = await service.CheckEligibilityAsync(token, cancellationToken);
+            Outcome = eligibility.Outcome;
+            TeamContactEmail = eligibility.TeamContactEmail;
             return Page();
         }
 
