@@ -171,6 +171,9 @@ public class SessionAccessScope
         // here was not just wasteful: Team's credential columns run through EncryptedStringConverter,
         // so this decrypted every team's ExamTools/Zoom/Square/SMTP secrets on every page render that
         // shows the team picker, purely to read two columns it already had one of.
+        //
+        // Note for anyone tempted to "optimize" a Team query with AsNoTracking() instead: that makes
+        // it worse, not better. See EncryptedStringConverter's remarks.
         return await dbContext.Teams
             .Where(t => effectiveTeamIds.Contains(t.Id))
             .OrderBy(t => t.Name)
