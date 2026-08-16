@@ -101,17 +101,24 @@ else
             </label>
             @if (Model.TagNames.Count > 0)
             {
-                @* Client-side, like the invitation screen: every recipient is already rendered, and
-                   "select all shown" then means the tag you filtered to (#394). *@
-                <select data-ve-tag-filter class="filter-select" aria-label="Filter by tag">
-                    <option value="">Any tag</option>
-                    @foreach (var tag in Model.TagNames)
-                    {
-                        <option value="@tag">@tag</option>
-                    }
-                    @* Untagged means guest, derived rather than stored — see docs/ve-management.md. *@
-                    <option value="@VeSessionManager.Web.VeTagFilter.UntaggedValue">Untagged (guests)</option>
-                </select>
+                @* Several tags at once, ORed: picking "Liaison" and "Mentor" is how you widen the
+                   list to both groups, which is the point of choosing two. Client-side, like the
+                   invitation screen — every recipient is already rendered, so "select all shown"
+                   then means exactly the people the filter left. *@
+                <div class="filter-dropdown">
+                    <button type="button" class="kebab">Tags: <span data-ve-tag-label>Any tag</span> <i class="bi bi-caret-down-fill" aria-hidden="true"></i></button>
+                    <div class="menu">
+                        @foreach (var tag in Model.TagNames)
+                        {
+                            <label class="item"><input type="checkbox" data-ve-tag-filter value="@tag" /> @tag</label>
+                        }
+                        @* Untagged means guest, derived rather than stored — see docs/ve-management.md. *@
+                        <label class="item">
+                            <input type="checkbox" data-ve-tag-filter value="@VeSessionManager.Web.VeTagFilter.UntaggedValue" />
+                            Untagged (guests)
+                        </label>
+                    </div>
+                </div>
             }
             <button type="button" class="btn-secondary btn-sm" data-ve-select="all">Select all shown</button>
             <button type="button" class="btn-secondary btn-sm" data-ve-select="none">Clear selection</button>

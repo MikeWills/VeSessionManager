@@ -36,6 +36,28 @@ The recipient list is **re-scoped inside the service**, not just checked on the 
 [#238](https://github.com/MikeWills/VeSessionManager/issues/238) again, in the place it originally
 happened.
 
+## Filtering the recipient list
+
+By text, and by tag. **Several tags at once, ORed**: picking "Liaison" and "Mentor" is how you widen
+the list to both groups, which is the point of choosing two — narrowing to the handful who hold both
+is not what anyone reaches for when picking who to write to. Nothing selected means no tag filter.
+
+The options are built from the tags actually in use on the people listed, so the dropdown can never
+offer one that matches nobody, and it shrinks with the list when "Subscribed only" is on. The trigger
+shows the count, because the checkboxes are inside a menu that is usually shut.
+
+The tag and text filters are ANDed through one `apply()` in `app.js`, not two handlers — with a
+handler each, whichever ran last would undo the other's hiding.
+
+**Verified in a browser, not by a unit test.** `app.js` had to learn to read several controls instead
+of one, and the session invitation screen shares that code with a single `<select>`. Both shapes were
+exercised against the real shipped `app.js` in an `<iframe>`-free harness page (a synthetic table, a
+throwaway local HTTP server) — the recipe CLAUDE.md records. Two things that came out of it: one tag
+shows the people holding it *plus* the people holding it among others, two tags show the union, and
+the invitation screen's `<select>` still filters and still ANDs with its text box. Worth knowing if
+this is touched again: `app.js` wires the **first** `[data-ve-picker]` on a page only, so a harness
+with two pickers silently leaves the second one dead — which looks exactly like a regression.
+
 ## Unsubscribe (CAN-SPAM)
 
 A link in every message. If the draft places `{{UnsubscribeUrl}}` itself it stays where the author
