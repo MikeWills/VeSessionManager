@@ -43,7 +43,8 @@ public class DetailModel(
     SessionActionService sessionActionService,
     CandidateNotificationService candidateNotificationService,
     VecSubmissionService vecSubmissionService,
-    ManualCandidateRefreshService manualRefreshService) : PageModel
+    ManualCandidateRefreshService manualRefreshService,
+    TimeProvider timeProvider) : PageModel
 {
     [BindProperty(SupportsGet = true)]
     public int Id { get; set; }
@@ -370,6 +371,10 @@ public class DetailModel(
         CanEdit = accessScope.CanEdit(user, session);
         CanDeleteSession = adminAccessScope.CanManageTeam(user, session.TeamId);
 
+        // Same comparison the session list makes, so a session on the boundary cannot render one
+        // chip here and a different one there.
+        var hasStarted = session.ScheduledStartUtc <= timeProvider.GetUtcNow().UtcDateTime;
+
         var discordEventUrl = session.DiscordEventId is not null && session.Team.DiscordGuildId is not (null or 0)
             ? $"https://discord.com/events/{session.Team.DiscordGuildId}/{session.DiscordEventId}"
             : null;
@@ -400,9 +405,10 @@ public class DetailModel(
                 ? $"Completed {EasternTimeFormatter.Format(completedUtc, "MMM d, yyyy")}"
                 : "Not yet completed",
             // Was its own copy of this switch, and had drifted: it lacked the list's cancelled
-            // branch, so a cancelled session read "Not submitted" here and "—" there.
-            SessionChips.VecSubmission(session.Status, session.VecSubmissionStatus).Class,
-            SessionChips.VecSubmission(session.Status, session.VecSubmissionStatus).Label,
+            // branch, so a cancelled session read "Not submitted" here and "—" there. hasStarted is
+            // the #338 half — a session that has not run has produced nothing to submit.
+            SessionChips.VecSubmission(session.Status, session.VecSubmissionStatus, hasStarted).Class,
+            SessionChips.VecSubmission(session.Status, session.VecSubmissionStatus, hasStarted).Label,
             session.VecSubmissionStatus == VecSubmissionStatus.Submitted,
             session.RescheduleFlaggedForReview,
             session.TestingCompletedUtc is not null,

@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -385,21 +385,12 @@ public class IndexModel(
             // agrees with the roster on Session Detail. A NotTested row is someone who left the
             // session; counting them made a session look fuller than it is.
             "candidates" => Order(s => s.Candidates.Count(c => c.ApplicationStatus != CandidateApplicationStatus.NotTested)),
-            // Spelled out rather than calling SessionChips: this runs inside an EF expression tree,
-            // which cannot invoke a method. It must stay in step with SessionChips.Status — same five
-            // states, same priority order — and SessionChipsTests asserts exactly that, because a
-            // mismatch here sorts a column by something the user cannot see, which was a real
-            // reported bug once. It caught the Upcoming split (2026-08-15) before it shipped.
-            "status" => Order(s =>
-                s.Status == SessionStatus.Cancelled ? "Cancelled"
-                : s.RescheduleFlaggedForReview ? "Reschedule flagged"
-                : s.TestingCompletedUtc != null || s.ExamToolsClosedUtc != null ? "Completed"
-                : s.ScheduledStartUtc <= now ? "Active"
-                : "Upcoming"),
-            "vecsubmission" => Order(s =>
-                s.Status == SessionStatus.Cancelled ? "—"
-                : s.VecSubmissionStatus == VecSubmissionStatus.Submitted ? "Submitted"
-                : "Not submitted"),
+            // Both of these used to be written out here, because a sort key runs inside an EF
+            // expression tree and cannot call SessionChips. Two copies of one rule, and the guard
+            // against them drifting only worked in one direction — see SessionChips' own remarks.
+            // They are expressions now, so there is one definition and EF still translates it.
+            "status" => Order(SessionChips.StatusSortKey(now)),
+            "vecsubmission" => Order(SessionChips.VecSubmissionSortKey(now)),
             _ => Order(s => s.ScheduledStartUtc)
         };
 
@@ -710,7 +701,8 @@ public class IndexModel(
         // to SQL, which a C# switch cannot.
         var (statusClass, statusLabel) = SessionChips.Status(
             s.Status, s.RescheduleFlaggedForReview, s.IsCompleted, hasStarted: s.ScheduledStartUtc <= now);
-        var (vecClass, vecLabel) = SessionChips.VecSubmission(s.Status, s.VecSubmissionStatus);
+        var (vecClass, vecLabel) = SessionChips.VecSubmission(
+            s.Status, s.VecSubmissionStatus, hasStarted: s.ScheduledStartUtc <= now);
 
         // Same availability rules the session Detail page applies to the same actions, so a control
         // never appears here that would be absent (or 403) there. Cancelled sessions expose nothing

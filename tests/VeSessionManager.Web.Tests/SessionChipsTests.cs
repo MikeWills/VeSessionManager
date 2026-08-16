@@ -1,37 +1,32 @@
-﻿using VeSessionManager.Core.Entities;
+using VeSessionManager.Core.Entities;
 using VeSessionManager.Web;
 using Xunit;
 
 namespace VeSessionManager.Web.Tests;
 
 /// <summary>
-/// <see cref="SessionChips"/> is the one definition of the two session chips — but the session
-/// list's *sort keys* cannot call it, because they run inside an EF expression tree and EF cannot
-/// invoke a method. So the sort keys restate the same rules by hand, and these tests are what stop
-/// the two drifting: they assert the inline SQL-bound spellings produce exactly the labels the chips
-/// render.
+/// <see cref="SessionChips"/> is the one definition of the two session chips, and since 2026-08-15
+/// also of the list's sort keys.
 ///
-/// <para>Sorting a column by something other than the text in it looks broken to the person reading
-/// it, and has been reported as a bug here before.</para>
+/// <para><b>What these tests used to be, and why that was not enough.</b> A sort key runs inside an
+/// EF expression tree and cannot call a method, so both rules were written out a second time in
+/// <c>Index.cshtml.cs</c> — and this file held a hand-copied third version to compare against. That
+/// catches the chip changing: the copy goes stale and fails. It does not catch the <i>sort key</i>
+/// changing — mutating the real one left every test here green, found while fixing #338.</para>
+///
+/// <para>The sort keys are <c>Expression</c>s now. EF still translates them, and the tests below
+/// <c>Compile()</c> and run them — so the comparison is between two artifacts that both ship, in both
+/// directions, with no copy anyone is obliged to keep in step.</para>
+///
+/// <para>Sorting a column by something other than the text in it looks broken to whoever is reading
+/// it, and has been a reported bug here before.</para>
 /// </summary>
 public class SessionChipsTests
 {
-    /// <summary>
-    /// Copied verbatim from Index.cshtml.cs's "status" sort key. If that changes and this does not,
-    /// the comparison below fails.
-    /// </summary>
-    private static string InlineStatusSortKey(Session s, bool hasStarted) =>
-        s.Status == SessionStatus.Cancelled ? "Cancelled"
-        : s.RescheduleFlaggedForReview ? "Reschedule flagged"
-        : s.TestingCompletedUtc != null || s.ExamToolsClosedUtc != null ? "Completed"
-        : hasStarted ? "Active"
-        : "Upcoming";
+    private static readonly DateTime Now = new(2026, 8, 15, 12, 0, 0, DateTimeKind.Utc);
 
-    /// <summary>Copied verbatim from Index.cshtml.cs's "vecsubmission" sort key.</summary>
-    private static string InlineVecSortKey(Session s) =>
-        s.Status == SessionStatus.Cancelled ? "—"
-        : s.VecSubmissionStatus == VecSubmissionStatus.Submitted ? "Submitted"
-        : "Not submitted";
+    private static readonly Func<Session, string> StatusSortKey = SessionChips.StatusSortKey(Now).Compile();
+    private static readonly Func<Session, string> VecSortKey = SessionChips.VecSubmissionSortKey(Now).Compile();
 
     /// <summary>Every combination that can reach a chip, including contradictory ones.</summary>
     public static TheoryData<SessionStatus, bool, DateTime?, DateTime?, VecSubmissionStatus, bool> Matrix()
@@ -64,16 +59,20 @@ public class SessionChipsTests
             RescheduleFlaggedForReview = flagged,
             TestingCompletedUtc = tested,
             ExamToolsClosedUtc = closed,
-            VecSubmissionStatus = submitted
+            VecSubmissionStatus = submitted,
+            // hasStarted is expressed as a real scheduled start either side of the instant the sort
+            // key captured, so both sides decide from the same fact rather than being handed the
+            // answer.
+            ScheduledStartUtc = hasStarted ? Now.AddHours(-1) : Now.AddHours(1)
         };
 
         Assert.Equal(
             SessionChips.Status(status, flagged, session.IsCompleted, hasStarted).Label,
-            InlineStatusSortKey(session, hasStarted));
+            StatusSortKey(session));
 
         Assert.Equal(
-            SessionChips.VecSubmission(status, submitted).Label,
-            InlineVecSortKey(session));
+            SessionChips.VecSubmission(status, submitted, hasStarted).Label,
+            VecSortKey(session));
     }
 
     /// <summary>
@@ -137,8 +136,40 @@ public class SessionChipsTests
     [Fact]
     public void ACancelledSessionHasNothingToSubmit()
     {
-        Assert.Equal("—", SessionChips.VecSubmission(SessionStatus.Cancelled, VecSubmissionStatus.NotSubmitted).Label);
-        Assert.Equal("—", SessionChips.VecSubmission(SessionStatus.Cancelled, VecSubmissionStatus.Submitted).Label);
-        Assert.Equal("Not submitted", SessionChips.VecSubmission(SessionStatus.Active, VecSubmissionStatus.NotSubmitted).Label);
+        Assert.Equal("—", SessionChips.VecSubmission(SessionStatus.Cancelled, VecSubmissionStatus.NotSubmitted, hasStarted: true).Label);
+        Assert.Equal("—", SessionChips.VecSubmission(SessionStatus.Cancelled, VecSubmissionStatus.Submitted, hasStarted: true).Label);
+        Assert.Equal("Not submitted", SessionChips.VecSubmission(SessionStatus.Active, VecSubmissionStatus.NotSubmitted, hasStarted: true).Label);
+    }
+
+    /// <summary>
+    /// A session that has not started yet has nothing to submit either (#338, the second half —
+    /// "I have a future session that 'hasn't been sent to the FCC', this is also confusing").
+    ///
+    /// <para>Exactly the same mistake as the status chip beside it, one chip over, and fixed the same
+    /// way. "Not submitted" is a true statement about a session next month and a <b>useless</b> one:
+    /// it names an outstanding task that cannot be done yet and that nobody has failed to do. There
+    /// is nothing to send a VEC until the session has run and produced results.</para>
+    ///
+    /// <para>Corroborated by the nav badge, which has always been right about this: it counts a
+    /// session as pending submission only once some candidate has reached a terminal status. So the
+    /// badge read zero while the chip read "Not submitted" — the two disagreed, and the chip was the
+    /// one lying.</para>
+    /// </summary>
+    [Fact]
+    public void AFutureSessionHasNothingToSubmitYet()
+    {
+        Assert.Equal("—",
+            SessionChips.VecSubmission(SessionStatus.Active, VecSubmissionStatus.NotSubmitted, hasStarted: false).Label);
+    }
+
+    /// <summary>
+    /// Submitted outranks not-yet-started. If a Session Manager has marked it submitted, that is a
+    /// fact about what happened and the chip reports it — showing "—" there would hide a real action.
+    /// </summary>
+    [Fact]
+    public void ASubmittedSessionSaysSoEvenIfItHasNotStarted()
+    {
+        Assert.Equal("Submitted",
+            SessionChips.VecSubmission(SessionStatus.Active, VecSubmissionStatus.Submitted, hasStarted: false).Label);
     }
 }
