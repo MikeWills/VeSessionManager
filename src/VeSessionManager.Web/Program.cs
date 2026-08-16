@@ -107,6 +107,9 @@ builder.Services.AddScoped<VolunteerExaminerImportService>();
 builder.Services.AddScoped<VeSelfServiceLinkService>();
 builder.Services.AddScoped<VeEmailChangeService>();
 builder.Services.AddScoped<VeSessionInvitationService>();
+// Writing to a team's VEs from the directory, and the CAN-SPAM unsubscribe behind it (#191).
+builder.Services.AddScoped<VeMessageService>();
+builder.Services.AddScoped<VeUnsubscribeService>();
 
 // Pending-work counts shown as badges on the app nav (_AppLayout.cshtml); also the single source of
 // the pending-VEC-submission predicate VecSubmissionReportService delegates to.
