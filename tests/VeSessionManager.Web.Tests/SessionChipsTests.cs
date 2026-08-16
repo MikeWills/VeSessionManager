@@ -1,4 +1,4 @@
-﻿using VeSessionManager.Core.Entities;
+using VeSessionManager.Core.Entities;
 using VeSessionManager.Web;
 using Xunit;
 
@@ -28,10 +28,61 @@ public class SessionChipsTests
         : "Upcoming";
 
     /// <summary>Copied verbatim from Index.cshtml.cs's "vecsubmission" sort key.</summary>
-    private static string InlineVecSortKey(Session s) =>
+    private static string InlineVecSortKey(Session s, bool hasStarted) =>
         s.Status == SessionStatus.Cancelled ? "—"
         : s.VecSubmissionStatus == VecSubmissionStatus.Submitted ? "Submitted"
-        : "Not submitted";
+        : hasStarted ? "Not submitted"
+        : "—";
+
+    /// <summary>
+    /// The two mirrors above are copies, and a copy only guards one direction.
+    ///
+    /// <para>Change <see cref="SessionChips"/> without updating this file and the comparison below
+    /// fails, as intended. Change the <b>real</b> sort key in <c>Index.cshtml.cs</c> and nothing here
+    /// notices — the theory compares the chip against the copy, and neither of them moved. Found by
+    /// mutating the real sort key while fixing #338: it kept passing.</para>
+    ///
+    /// <para>So this scans the source. It is deliberately narrow — it asserts only that each sort key
+    /// still consults the clock, which is the clause both chips depend on and the one an edit would
+    /// drop. A full text comparison would fail on whitespace and teach everyone to ignore it.</para>
+    /// </summary>
+    [Fact]
+    public void TheRealSortKeysStillConsultTheClock()
+    {
+        var source = File.ReadAllText(Path.Combine(RepoRoot(), "src", "VeSessionManager.Web", "Pages", "SessionManager", "Index.cshtml.cs"));
+
+        var statusKey = Between(source, "\"status\" => Order(", "),");
+        var vecKey = Between(source, "\"vecsubmission\" => Order(", "),");
+
+        Assert.Contains("ScheduledStartUtc <= now", statusKey);
+        Assert.Contains("Upcoming", statusKey);
+
+        // #338: without this clause a future session sorts under "Not submitted" while its chip
+        // reads "—", which is the column sorting by text the reader cannot see.
+        Assert.Contains("ScheduledStartUtc <= now", vecKey);
+    }
+
+    private static string Between(string source, string start, string end)
+    {
+        var from = source.IndexOf(start, StringComparison.Ordinal);
+        Assert.True(from >= 0, $"Could not find \"{start}\" in Index.cshtml.cs — the sort keys moved or were renamed.");
+        var to = source.IndexOf(end, from + start.Length, StringComparison.Ordinal);
+        Assert.True(to > from, $"Could not find the end of the block starting at \"{start}\".");
+        return source[from..to];
+    }
+
+    /// <summary>Walks up from the test binary to the repo root, same approach as the other source-scanning tests here.</summary>
+    private static string RepoRoot()
+    {
+        var directory = new DirectoryInfo(AppContext.BaseDirectory);
+        while (directory is not null && !Directory.Exists(Path.Combine(directory.FullName, "src")))
+        {
+            directory = directory.Parent;
+        }
+
+        Assert.NotNull(directory);
+        return directory!.FullName;
+    }
 
     /// <summary>Every combination that can reach a chip, including contradictory ones.</summary>
     public static TheoryData<SessionStatus, bool, DateTime?, DateTime?, VecSubmissionStatus, bool> Matrix()
@@ -72,8 +123,8 @@ public class SessionChipsTests
             InlineStatusSortKey(session, hasStarted));
 
         Assert.Equal(
-            SessionChips.VecSubmission(status, submitted).Label,
-            InlineVecSortKey(session));
+            SessionChips.VecSubmission(status, submitted, hasStarted).Label,
+            InlineVecSortKey(session, hasStarted));
     }
 
     /// <summary>
@@ -137,8 +188,40 @@ public class SessionChipsTests
     [Fact]
     public void ACancelledSessionHasNothingToSubmit()
     {
-        Assert.Equal("—", SessionChips.VecSubmission(SessionStatus.Cancelled, VecSubmissionStatus.NotSubmitted).Label);
-        Assert.Equal("—", SessionChips.VecSubmission(SessionStatus.Cancelled, VecSubmissionStatus.Submitted).Label);
-        Assert.Equal("Not submitted", SessionChips.VecSubmission(SessionStatus.Active, VecSubmissionStatus.NotSubmitted).Label);
+        Assert.Equal("—", SessionChips.VecSubmission(SessionStatus.Cancelled, VecSubmissionStatus.NotSubmitted, hasStarted: true).Label);
+        Assert.Equal("—", SessionChips.VecSubmission(SessionStatus.Cancelled, VecSubmissionStatus.Submitted, hasStarted: true).Label);
+        Assert.Equal("Not submitted", SessionChips.VecSubmission(SessionStatus.Active, VecSubmissionStatus.NotSubmitted, hasStarted: true).Label);
+    }
+
+    /// <summary>
+    /// A session that has not started yet has nothing to submit either (#338, the second half —
+    /// "I have a future session that 'hasn't been sent to the FCC', this is also confusing").
+    ///
+    /// <para>Exactly the same mistake as the status chip beside it, one chip over, and fixed the same
+    /// way. "Not submitted" is a true statement about a session next month and a <b>useless</b> one:
+    /// it names an outstanding task that cannot be done yet and that nobody has failed to do. There
+    /// is nothing to send a VEC until the session has run and produced results.</para>
+    ///
+    /// <para>Corroborated by the nav badge, which has always been right about this: it counts a
+    /// session as pending submission only once some candidate has reached a terminal status. So the
+    /// badge read zero while the chip read "Not submitted" — the two disagreed, and the chip was the
+    /// one lying.</para>
+    /// </summary>
+    [Fact]
+    public void AFutureSessionHasNothingToSubmitYet()
+    {
+        Assert.Equal("—",
+            SessionChips.VecSubmission(SessionStatus.Active, VecSubmissionStatus.NotSubmitted, hasStarted: false).Label);
+    }
+
+    /// <summary>
+    /// Submitted outranks not-yet-started. If a Session Manager has marked it submitted, that is a
+    /// fact about what happened and the chip reports it — showing "—" there would hide a real action.
+    /// </summary>
+    [Fact]
+    public void ASubmittedSessionSaysSoEvenIfItHasNotStarted()
+    {
+        Assert.Equal("Submitted",
+            SessionChips.VecSubmission(SessionStatus.Active, VecSubmissionStatus.Submitted, hasStarted: false).Label);
     }
 }

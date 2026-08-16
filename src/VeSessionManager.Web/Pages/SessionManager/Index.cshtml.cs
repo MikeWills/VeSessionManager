@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -396,10 +396,13 @@ public class IndexModel(
                 : s.TestingCompletedUtc != null || s.ExamToolsClosedUtc != null ? "Completed"
                 : s.ScheduledStartUtc <= now ? "Active"
                 : "Upcoming"),
+            // Must stay identical to SessionChips.VecSubmission, which cannot be called from an EF
+            // expression tree — SessionChipsTests compares the two spellings across every state.
             "vecsubmission" => Order(s =>
                 s.Status == SessionStatus.Cancelled ? "—"
                 : s.VecSubmissionStatus == VecSubmissionStatus.Submitted ? "Submitted"
-                : "Not submitted"),
+                : s.ScheduledStartUtc <= now ? "Not submitted"
+                : "—"),
             _ => Order(s => s.ScheduledStartUtc)
         };
 
@@ -710,7 +713,8 @@ public class IndexModel(
         // to SQL, which a C# switch cannot.
         var (statusClass, statusLabel) = SessionChips.Status(
             s.Status, s.RescheduleFlaggedForReview, s.IsCompleted, hasStarted: s.ScheduledStartUtc <= now);
-        var (vecClass, vecLabel) = SessionChips.VecSubmission(s.Status, s.VecSubmissionStatus);
+        var (vecClass, vecLabel) = SessionChips.VecSubmission(
+            s.Status, s.VecSubmissionStatus, hasStarted: s.ScheduledStartUtc <= now);
 
         // Same availability rules the session Detail page applies to the same actions, so a control
         // never appears here that would be absent (or 403) there. Cancelled sessions expose nothing
