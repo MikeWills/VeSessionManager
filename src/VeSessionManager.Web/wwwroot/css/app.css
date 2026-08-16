@@ -107,12 +107,12 @@ nav.chassis-nav a:hover { color: #fff; }
 /* Column, not the default row: once the menu below is position:static it becomes a real sibling of
    its trigger in this flex container, and a row would lay it out *beside* the button instead of
    under it. */
-.nav-group, .user-menu, .help-menu { flex-basis: 100%; flex-direction: column; align-items: stretch; }
-.nav-group .menu, .user-menu .menu, .help-menu .menu { position: static; width: auto; margin: 2px 0 6px 12px; background: transparent; border: none; border-radius: 0; box-shadow: none; padding: 0; }
-.nav-group .menu .item, .user-menu .menu .item, .help-menu .menu .item { color: #B9C0BC; padding: 11px 12px; }
-.nav-group .menu .item:hover, .user-menu .menu .item:hover, .help-menu .menu .item:hover { background: var(--panel-2); }
+.nav-group, .user-menu, .help-menu, .alert-menu { flex-basis: 100%; flex-direction: column; align-items: stretch; }
+.nav-group .menu, .user-menu .menu, .help-menu .menu, .alert-menu .menu { position: static; width: auto; margin: 2px 0 6px 12px; background: transparent; border: none; border-radius: 0; box-shadow: none; padding: 0; }
+.nav-group .menu .item, .user-menu .menu .item, .help-menu .menu .item, .alert-menu .menu .item { color: #B9C0BC; padding: 11px 12px; }
+.nav-group .menu .item:hover, .user-menu .menu .item:hover, .help-menu .menu .item:hover, .alert-menu .menu .item:hover { background: var(--panel-2); }
 .nav-group .menu a.item.active { background: var(--panel-2); color: #fff; }
-.nav-group .menu hr, .user-menu .menu hr, .help-menu .menu hr { border-top-color: #333B40; }
+.nav-group .menu hr, .user-menu .menu hr, .help-menu .menu hr, .alert-menu .menu hr { border-top-color: #333B40; }
 
 .who { font-family: "IBM Plex Mono", monospace; font-size: 11.5px; color: #9AA39D; display: none; flex-basis: 100%; flex-wrap: wrap; align-items: center; gap: 8px; padding-bottom: 6px; }
 header.chassis.nav-open .who { display: flex; }
@@ -217,6 +217,11 @@ tbody tr:last-child td { border-bottom: none; }
 tbody tr:hover { background: var(--row-hover); }
 tbody tr.row-past { background: var(--paper); }
 tbody tr.row-past:hover { background: var(--row-hover); }
+/* The row an alert navigated to (#339) — see _AlertBell.cshtml. A left rule plus a tint rather than
+   a flash: the highlight has to survive being looked at, since the reader arrives to read this row,
+   not to be told where it is. Declared after :hover so hovering it does not wash the marker out, and
+   in both mobile and desktop layers because table.cards restacks the row into a card. */
+tbody tr.row-highlight, tbody tr.row-highlight:hover { background: var(--amber-dim); box-shadow: inset 3px 0 0 var(--amber); }
 .session-title { font-weight: 600; }
 .session-sub { font-family: "IBM Plex Mono", monospace; font-size: 12px; color: var(--ink-soft); margin-top: 2px; }
 .count { font-family: "IBM Plex Mono", monospace; }
@@ -420,9 +425,21 @@ tbody tr.row-past:hover { background: var(--row-hover); }
 /* Help menu + user menu (chassis nav) — both reuse the row-actions kebab/menu component above,
    restyled to sit readably on the chassis's permanently-dark background rather than the light
    content area. */
-.help-menu, .user-menu { position: relative; display: inline-flex; }
-.help-menu .kebab, .user-menu .kebab { background: var(--panel-2); color: #EDEFEC; border-radius: 99px; padding: 6px 12px; font-family: "IBM Plex Mono", monospace; font-size: 11.5px; display: inline-flex; align-items: center; gap: 6px; }
-.help-menu .kebab:hover, .user-menu .kebab:hover { background: #2A3338; border-color: transparent; }
+.help-menu, .user-menu, .alert-menu { position: relative; display: inline-flex; }
+.help-menu .kebab, .user-menu .kebab, .alert-menu .kebab { background: var(--panel-2); color: #EDEFEC; border-radius: 99px; padding: 6px 12px; font-family: "IBM Plex Mono", monospace; font-size: 11.5px; display: inline-flex; align-items: center; gap: 6px; }
+.help-menu .kebab:hover, .user-menu .kebab:hover, .alert-menu .kebab:hover { background: #2A3338; border-color: transparent; }
+
+/* Alert bell (#339). The trigger is the same chassis pill as its neighbours; what is different is
+   the menu, whose items are three stacked lines rather than one label — .menu a.item is `all: unset`
+   plus display:block, so every child needs its own display and colour or the three lines run
+   together on one row. Two classes throughout: `.vesm a { color: inherit }` is (0,1,1) and beats a
+   single-class colour rule, which is how anchor-buttons once came out body-coloured. */
+.alert-menu .menu.alert-list { width: 320px; }
+.alert-menu .alert-empty { padding: 10px; font-size: 13px; color: #9AA39D; }
+.alert-menu a.alert-item { padding: 9px 10px; }
+.alert-menu a.alert-item .alert-item-title { display: block; font-weight: 600; font-size: 13px; }
+.alert-menu a.alert-item .alert-item-detail { display: block; font-size: 12px; line-height: 1.45; margin-top: 2px; opacity: .85; }
+.alert-menu a.alert-item .alert-item-meta { display: block; font-family: "IBM Plex Mono", monospace; font-size: 10.5px; letter-spacing: .03em; margin-top: 4px; opacity: .7; }
 
 footer.roster { margin-top: 28px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
 .roster-list { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 10px; }
@@ -612,6 +629,8 @@ footer.roster { margin-top: 28px; background: var(--surface); border: 1px solid 
   table.cards tr { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; margin-bottom: 12px; padding: 4px 0; }
   table.cards tr:hover, table.cards tr.row-past:hover { background: var(--surface); }
   table.cards tr.row-past { background: var(--paper); }
+  /* After the two rules above, both of which would otherwise repaint the highlighted card. */
+  table.cards tr.row-highlight, table.cards tr.row-highlight:hover { background: var(--amber-dim); border-color: var(--amber); }
 
   /* Two columns: the label from the <th>, then the value. minmax(0,1fr) rather than 1fr so a long
      unbroken value (an email, a URL) shrinks instead of widening the card past the screen. */
@@ -660,7 +679,7 @@ footer.roster { margin-top: 28px; background: var(--surface); border: 1px solid 
   nav.chassis-nav { display: flex; flex-basis: auto; flex-direction: row; align-items: center; gap: 4px; flex: 1; padding-bottom: 0; }
   nav.chassis-nav a { font-size: 13px; padding: 8px 12px; }
 
-  .nav-group, .user-menu, .help-menu { flex-basis: auto; display: inline-flex; flex-direction: row; align-items: center; }
+  .nav-group, .user-menu, .help-menu, .alert-menu { flex-basis: auto; display: inline-flex; flex-direction: row; align-items: center; }
   .nav-group { position: relative; }
   .nav-group > .kebab { flex: none; font-size: 13px; padding: 8px 12px; }
 
@@ -669,13 +688,16 @@ footer.roster { margin-top: 28px; background: var(--surface); border: 1px solid 
   .vesm .ve-search input { font-size: 12px; padding: 9px 0; }
 
   /* Back to floating dropdowns — undoing the inline/accordion form the mobile panel needs. */
-  .nav-group .menu, .user-menu .menu, .help-menu .menu { position: absolute; width: 260px; margin: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 10px 28px rgba(20, 24, 26, .14); padding: 6px; }
+  .nav-group .menu, .user-menu .menu, .help-menu .menu, .alert-menu .menu { position: absolute; width: 260px; margin: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 10px 28px rgba(20, 24, 26, .14); padding: 6px; }
   .nav-group .menu { top: 38px; left: 0; right: auto; }
-  .user-menu .menu, .help-menu .menu { top: 38px; right: 0; left: auto; }
-  .nav-group .menu .item, .user-menu .menu .item, .help-menu .menu .item { color: var(--ink); padding: 8px 10px; }
-  .nav-group .menu .item:hover, .user-menu .menu .item:hover, .help-menu .menu .item:hover { background: var(--paper); }
+  .user-menu .menu, .help-menu .menu, .alert-menu .menu { top: 38px; right: 0; left: auto; }
+  .nav-group .menu .item, .user-menu .menu .item, .help-menu .menu .item, .alert-menu .menu .item { color: var(--ink); padding: 8px 10px; }
+  .nav-group .menu .item:hover, .user-menu .menu .item:hover, .help-menu .menu .item:hover, .alert-menu .menu .item:hover { background: var(--paper); }
   .nav-group .menu a.item.active { font-weight: 600; background: var(--paper); color: var(--ink); }
-  .nav-group .menu hr, .user-menu .menu hr, .help-menu .menu hr { border-top-color: var(--line); }
+  .nav-group .menu hr, .user-menu .menu hr, .help-menu .menu hr, .alert-menu .menu hr { border-top-color: var(--line); }
+  /* After the shared rule above, which would otherwise reset the wider alert popover to 260px. */
+  .alert-menu .menu.alert-list { width: 320px; }
+  .alert-menu .alert-empty { color: var(--ink-soft); }
 
   .who { display: flex; flex-basis: auto; flex-wrap: nowrap; padding-bottom: 0; }
 

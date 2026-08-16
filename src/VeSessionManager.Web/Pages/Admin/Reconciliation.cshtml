@@ -56,7 +56,10 @@
         <tbody>
             @foreach (var row in Model.Findings)
             {
-                <tr>
+                @* Arrived from the alert bell: the row says which one was clicked and app.js scrolls
+                   it into view. The id is on every row, not only the highlighted one, so the anchor
+                   stays valid for anything else that wants to link at a finding. *@
+                <tr id="finding-@row.Finding.Id" class="@(Model.Highlight == row.Finding.Id ? "row-highlight" : "")">
                     <td data-sort-value="@row.Finding.SessionDateUtc.ToString("o")">
                         @EasternTimeFormatter.Format(row.Finding.SessionDateUtc, "MMM d, yyyy")
                     </td>

@@ -582,4 +582,18 @@
     });
   });
 
+
+  // ---- Alert highlight -------------------------------------------------------------------------
+  // The row an alert-bell link navigated to (#339). The server renders the marker itself, so with
+  // JavaScript unavailable the row is still visibly picked out — all this adds is bringing it into
+  // view, which is what makes the difference on a list hundreds of rows long.
+  //
+  // scrollIntoView rather than an `#id` fragment on the link: a fragment jump puts the row at the
+  // very top of the viewport, under the chassis header, and it would also fire before the sortable
+  // tables above have reordered the rows it is scrolling to.
+  var highlightedRow = document.querySelector(".row-highlight");
+  if (highlightedRow && typeof highlightedRow.scrollIntoView === "function") {
+    highlightedRow.scrollIntoView({ block: "center", behavior: "smooth" });
+  }
+
 })();

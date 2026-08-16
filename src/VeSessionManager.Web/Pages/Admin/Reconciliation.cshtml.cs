@@ -35,6 +35,15 @@ public class ReconciliationModel(
     [BindProperty(SupportsGet = true)]
     public bool IncludeResolved { get; set; }
 
+    /// <summary>
+    /// The finding the reader arrived here to look at, from the nav's alert bell (#339). Purely
+    /// presentational — the row is marked and scrolled to, never filtered to, because an alert that
+    /// silently hid the other findings would answer a narrower question than the one asked.
+    /// A stale or foreign id simply matches no row: nothing is looked up by it and nothing is shown.
+    /// </summary>
+    [BindProperty(SupportsGet = true)]
+    public int? Highlight { get; set; }
+
     public IReadOnlyList<FindingRow> Findings { get; private set; } = [];
     public int OpenCount { get; private set; }
 

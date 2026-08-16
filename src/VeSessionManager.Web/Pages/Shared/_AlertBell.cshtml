@@ -1,0 +1,64 @@
+@using VeSessionManager.Core.Navigation
+@model AlertBellContext
+@* Named Alerts, not AlertFeed: an injected property shadows the type of the same name, and
+   AlertFeed.Empty below would then resolve against the cache instead of the record. *@
+@inject AlertFeedCache Alerts
+@{
+    // #339: one place that answers "is anything wrong right now", instead of a count buried inside a
+    // closed nav dropdown. Reconciliation is the first source; the feed is built to take more.
+    //
+    // Rendered for every signed-in role even though today's only source is admin-gated, so the bell
+    // is always in the same place — a control that appears and disappears by role is one nobody
+    // learns to look at. AlertFeedService returns an empty feed for the roles that cannot act, and
+    // the empty state below says so plainly rather than pretending the feature is missing.
+    var feed = Model.Role is null
+        ? AlertFeed.Empty
+        : await Alerts.GetAsync(Model.Role.Value, Model.TeamIds, Context.RequestAborted);
+    var count = feed.TotalCount;
+}
+@if (Model.Role is not null)
+{
+    <div class="alert-menu">
+        @* .kebab is what app.js binds its open/close handler to — the same trigger the user and help
+           menus beside it use. aria-label carries the count because the icon alone says nothing to a
+           screen reader. *@
+        <button type="button" class="kebab" aria-label="@(count > 0 ? $"Alerts, {count} needing attention" : "Alerts, none")">
+            <i class="bi @(count > 0 ? "bi-bell-fill" : "bi-bell")" aria-hidden="true"></i>
+            @if (count > 0)
+            {
+                <span class="nav-badge">@count</span>
+            }
+        </button>
+        <div class="menu alert-list">
+            <div class="menu-head">Alerts</div>
+            <hr>
+            @if (feed.Items.Count == 0)
+            {
+                <div class="alert-empty">Nothing needs your attention.</div>
+            }
+            else
+            {
+                @foreach (var item in feed.Items)
+                {
+                    @* asp-route-highlight is the whole point: the link lands on the row itself, which
+                       the target page marks and scrolls to (see app.js), rather than on a list the
+                       reader then has to search. *@
+                    <a class="item alert-item" asp-page="@item.PageName" asp-route-highlight="@item.HighlightId">
+                        <span class="alert-item-title">@item.Title</span>
+                        <span class="alert-item-detail">@item.Detail</span>
+                        <span class="alert-item-meta">@item.Category &middot; @item.TeamName &middot; @EasternTimeFormatter.Format(item.OccurredUtc, "MMM d")</span>
+                    </a>
+                }
+                @if (feed.HasMore)
+                {
+                    <hr>
+                    @* Only when there are more than the menu lists — an "all" link under a complete
+                       list is a second way to reach what is already on screen. Points at
+                       Reconciliation because that is currently the only source; the second source is
+                       what earns a real /Alerts page, and this line is where that shows up. *@
+                    <a class="item" asp-page="/Admin/Reconciliation">View all @count alerts</a>
+                }
+            }
+        </div>
+    </div>
+}
