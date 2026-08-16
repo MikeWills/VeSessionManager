@@ -8,6 +8,21 @@ that window, or immediately if it's phase-numbered work already summarized in "C
 design rationale for any entry still lives in its linked `/docs/*.md` file, not here or in
 CLAUDE.md — this file, like CLAUDE.md's Change Log, is pointers only.
 
+- **Felony disclosure instructions are a button now, sent before the session (2026-08-11).** Issue
+  #221. See `docs/email-reference.md`. `MarkCompletedAsync` sent this automatically to every candidate
+  whose `Tested` flag that call flipped — no button, no confirmation. Two things wrong with that: the
+  email tells someone their **felony disclosure requires extra FCC paperwork**, which is not a thing
+  to send as a side effect of a bulk status flip, and keying it to "session completed" meant it could
+  only ever arrive **after** the exam, when the candidate can no longer easily ask anyone about it.
+  Now a per-candidate action, offered whenever a disclosure is declared — `Tested` is not consulted at
+  all. **Two consequences of deleting an automatic send, both deliberate:** the disclosure check moved
+  *into* the service (`NoFelonyDisclosure`), because the id arrives from a form now and one caller's
+  filtering can no longer be trusted; and the candidate is **marked, not just counted** — the session
+  row and candidate page both show "declared a disclosure, instructions not sent", since a count in a
+  one-off status message is gone on the next click. `SessionCompletionResult` reports how many are
+  still waiting rather than how many emails it sent, which is now always zero.
+
+
 - **The 5-day reminder chased the wrong fee (2026-08-11).** Issues #219/#218. See
   `docs/payment-reminders.md`. Found by *sending one and reading it* — the first candidate-facing
   email this app produced end to end. It fired on an unpaid Square `Payment`, the team's **exam

@@ -1,0 +1,76 @@
+# The alert bell (2026-08-16)
+
+One place in the chassis that answers "is anything wrong right now", and takes you to the row it is
+about. Issue [#339](https://github.com/MikeWills/VeSessionManager/issues/339).
+
+## Why a bell rather than another badge
+
+This app already counts outstanding work: `NavBadgeCountService` puts a number beside Sessions,
+Applicants, Unmatched Payments and Reconciliation. That works because each of those numbers sits on
+the link to the page it describes — right up until the page is *inside a closed dropdown*.
+
+The reconciliation badge is the worked example. It lives on an item in the Settings menu, so it is
+invisible until you open a menu you had no reason to open, to check a page you had no reason to
+suspect. And reconciliation findings are precisely the class of problem nobody thinks to go looking
+for: the sweep exists because a session went missing for months while every screen looked fine.
+
+A badge says *how many*. An alert says *what, and where* — it carries its own destination.
+
+## Shape
+
+```
+AlertFeedService (Core/Navigation)  → AlertFeed { Items, TotalCount }
+        ↓ (cached 30s, keyed by role + team ids)
+AlertFeedCache (Web)
+        ↓
+_AlertBell.cshtml  → one .kebab/.menu, same component as the user and help menus
+        ↓ click
+/Admin/Reconciliation?highlight=42  → row marked, scrolled into view
+```
+
+`AlertItem` is deliberately small: category, title, detail, team, when it was first noticed, the
+Razor page it lives on, and the id of the row to highlight there. Nothing in it is re-worded — the
+detail string is whatever the source already prints on its own page, because two phrasings of one
+fact drift apart.
+
+## Decisions worth keeping
+
+**The role gate lives in the feed, not only in the partial.** Every alert renders as a link to an
+authorized page, so a feed that hands a SessionManager a reconciliation alert has built a 403 —
+exactly the bug the nav's own role gates were added to fix. `AlertFeedService` therefore answers
+"which roles may see this source" itself, and `AlertPageRoleGateTests` checks that answer against
+each target page's real `[Authorize]` metadata. That test earns its place because the two copies of
+the rule cannot be merged: `RoleGroups` is a Web type and the service is in Core.
+
+**The bell renders for every signed-in role, even the ones with no possible alerts today.** A
+control that appears and disappears by role is one nobody learns to look at. The empty state says
+"Nothing needs your attention" rather than the bell vanishing.
+
+**The highlight marks, it does not filter.** The reader arrived to look at one row, but hiding the
+others would answer a narrower question than the one asked — and "is this the only one?" is usually
+the next question. A stale or foreign `highlight` id simply matches no row; nothing is ever looked
+up by it, which is why it needs no authorization check of its own.
+
+**Scrolled with `scrollIntoView`, not an `#id` fragment.** A fragment jump lands the row at the top
+of the viewport under the chassis header, and it fires before the sortable-table script has finished
+reordering the rows it is scrolling to. The marker itself is server-rendered, so the row is still
+picked out with JavaScript unavailable.
+
+**Cached like its neighbours.** Third cache of this shape on this layout, after `IngestionHealthCache`
+and `NavBadgeCountCache` — the partial renders on every authenticated page request. The key includes
+the role, unlike the badge cache: the feed is role-gated at source, so serving one role's entry to
+another would be a permissions bug rather than a stale number. The 30-second window means a resolved
+finding can linger in the bell briefly; these alerts come from a nightly sweep, so that is well below
+the resolution of the data itself.
+
+## Adding a second source
+
+1. Query it in `AlertFeedService.GetAsync`, returning `AlertItem`s with the target page and row id.
+2. Gate it by role there, next to the existing gate, and add the target page to the role-gate test's
+   reach (it walks whatever the feed returns, so this is automatic once the alert exists).
+3. Give the target page a `Highlight` bind property and `id="…-@id"` + `row-highlight` on its rows.
+4. Replace the menu's "View all N alerts" link. It points at `/Admin/Reconciliation` because that is
+   currently the only source; a second source is what earns a real `/Alerts` page.
+
+The cap (`AlertFeedService.MaxItems`, 8) bounds the menu, never the count — a bell reading "5" over a
+page listing forty is worse than no bell.

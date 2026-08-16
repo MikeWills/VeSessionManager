@@ -230,6 +230,10 @@
             }
         </nav>
         <div class="who">
+            @* First in .who so it sits beside the account menu rather than inside the nav — an alert
+               is not a place to go, it is something that happened (#339). Role and team scope are
+               handed down; the partial resolves the feed itself through its own cache. *@
+            <partial name="_AlertBell" model="new AlertBellContext(currentUser?.Role, effectiveTeamIds)" />
             <div class="user-menu">
                 <button type="button" class="kebab">@displayName <i class="bi bi-caret-down-fill" aria-hidden="true"></i></button>
                 <div class="menu">

@@ -112,6 +112,9 @@ builder.Services.AddScoped<VeSessionInvitationService>();
 // the pending-VEC-submission predicate VecSubmissionReportService delegates to.
 builder.Services.AddScoped<NavBadgeCountService>();
 
+// The alert bell's feed (#339) — the same outstanding work, but carrying where to go and look at it.
+builder.Services.AddScoped<AlertFeedService>();
+
 // "Refresh candidates" button on the session detail page (Pages/SessionManager/Detail.cshtml.cs) —
 // same per-team pipeline as the Worker's SessionIngestionJob, run on demand instead of waiting for
 // its next tick. Registrations below mirror VeSessionManager.Worker/Program.cs's own (same
@@ -166,6 +169,7 @@ builder.Services.AddSingleton<IngestionHealthCache>();
 // Same singleton reasoning as the line above, and for the same layout: the nav badges were four
 // uncached COUNT queries on every authenticated page render (#291).
 builder.Services.AddSingleton<NavBadgeCountCache>();
+builder.Services.AddSingleton<AlertFeedCache>();
 
 // Phase 9b: the actual UI-triggered wiring for every Session Manager action — see
 // Pages/SessionManager/Detail.cshtml.cs.

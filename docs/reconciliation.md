@@ -71,6 +71,10 @@ On an open finding the page shows `last seen`, because a stale date there means 
 running**, not that the problem went away. An empty list and a dead job look identical otherwise,
 which is why the empty state points at Job Schedule.
 
+Since 2026-08-16 an open finding also raises an **alert** in the nav bell, which links straight at
+its row here (`?highlight=<id>`) rather than at the list. Reconciliation is the first and so far only
+source — see [`docs/alerts.md`](alerts.md), including what a second source has to do.
+
 ## Limits worth knowing
 
 - **It compares against the remote feed, so a bug shared by both sides stays invisible.** It would

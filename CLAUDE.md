@@ -126,6 +126,20 @@ would be pure duplication — and goes straight to `CHANGELOG.md` instead. Non-p
 redesigns, hardening passes) start here and move to `CHANGELOG.md` once the section is at/over the
 cap and a newer entry needs to be added; oldest goes first.
 
+- **Alerts have a bell now, and it links at the row rather than the list (2026-08-16).** Issue #339.
+  See `docs/alerts.md`. The reconciliation badge was a number on an item **inside a closed dropdown** —
+  invisible until you opened a menu you had no reason to open, to check a page you had no reason to
+  suspect, counting exactly the class of problem nobody thinks to go looking for. The bell sits beside
+  the account menu, and each alert carries its own destination: `?highlight=<id>`, which the target
+  page marks and scrolls to. Reconciliation is the first source; `AlertFeedService` is built to take
+  more. Three things worth carrying forward: **the role gate belongs in the feed, not the partial** —
+  an alert *is* a link to an authorized page, so a feed offering one a role cannot open has built a
+  403, and since `RoleGroups` is a Web type the Core mirror is guarded by a test that reads each
+  target page's real `[Authorize]` metadata; **the highlight marks, it never filters**, because
+  hiding the other findings answers a narrower question than the one asked and a stale id then
+  costs nothing (nothing is looked up by it); and **the bell renders for every role, empty state and
+  all** — a control that appears and disappears by role is one nobody learns to look at.
+
 - **A TeamAdmin could not see anything the background jobs did (2026-08-15).** Issue #86, part 3 and
   the last of it. See `docs/audit-log.md`. `AuditLog.UserId` is null whenever a job wrote the row, and
   `ScopeAuditLog` narrowed a TeamAdmin to "actions taken by users on my team" — so every automated
