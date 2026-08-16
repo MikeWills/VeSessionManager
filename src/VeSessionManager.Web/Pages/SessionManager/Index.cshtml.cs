@@ -385,24 +385,12 @@ public class IndexModel(
             // agrees with the roster on Session Detail. A NotTested row is someone who left the
             // session; counting them made a session look fuller than it is.
             "candidates" => Order(s => s.Candidates.Count(c => c.ApplicationStatus != CandidateApplicationStatus.NotTested)),
-            // Spelled out rather than calling SessionChips: this runs inside an EF expression tree,
-            // which cannot invoke a method. It must stay in step with SessionChips.Status — same five
-            // states, same priority order — and SessionChipsTests asserts exactly that, because a
-            // mismatch here sorts a column by something the user cannot see, which was a real
-            // reported bug once. It caught the Upcoming split (2026-08-15) before it shipped.
-            "status" => Order(s =>
-                s.Status == SessionStatus.Cancelled ? "Cancelled"
-                : s.RescheduleFlaggedForReview ? "Reschedule flagged"
-                : s.TestingCompletedUtc != null || s.ExamToolsClosedUtc != null ? "Completed"
-                : s.ScheduledStartUtc <= now ? "Active"
-                : "Upcoming"),
-            // Must stay identical to SessionChips.VecSubmission, which cannot be called from an EF
-            // expression tree — SessionChipsTests compares the two spellings across every state.
-            "vecsubmission" => Order(s =>
-                s.Status == SessionStatus.Cancelled ? "—"
-                : s.VecSubmissionStatus == VecSubmissionStatus.Submitted ? "Submitted"
-                : s.ScheduledStartUtc <= now ? "Not submitted"
-                : "—"),
+            // Both of these used to be written out here, because a sort key runs inside an EF
+            // expression tree and cannot call SessionChips. Two copies of one rule, and the guard
+            // against them drifting only worked in one direction — see SessionChips' own remarks.
+            // They are expressions now, so there is one definition and EF still translates it.
+            "status" => Order(SessionChips.StatusSortKey(now)),
+            "vecsubmission" => Order(SessionChips.VecSubmissionSortKey(now)),
             _ => Order(s => s.ScheduledStartUtc)
         };
 

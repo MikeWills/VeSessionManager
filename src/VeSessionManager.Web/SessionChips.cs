@@ -1,3 +1,4 @@
+using System.Linq.Expressions;
 using VeSessionManager.Core.Entities;
 
 namespace VeSessionManager.Web;
@@ -82,4 +83,46 @@ public static class SessionChips
         : submissionStatus == VecSubmissionStatus.Submitted ? ("chip-green", "Submitted")
         : hasStarted ? ("chip-neutral", "Not submitted")
         : ("chip-neutral", "—");
+
+    // ---- Sort keys ---------------------------------------------------------------------------
+
+    /// <summary>
+    /// The list's sort keys, as expressions EF can translate — so the column sorts by the same rule
+    /// the chip renders, rather than by a restatement of it.
+    ///
+    /// <para><b>Why these live here and not at the call site.</b> They used to be written out inline
+    /// in <c>Index.cshtml.cs</c>, because a sort key runs inside an expression tree and EF cannot
+    /// invoke a method — <see cref="Status"/> is unreachable from there. So the same five-state
+    /// switch existed twice, and the test that was supposed to hold them together compared the chip
+    /// against a <i>copy</i> of the sort key kept in the test file. That catches the chip changing.
+    /// It does not catch the sort key changing: mutating the real one left the suite green (2026-08-15,
+    /// while fixing #338).</para>
+    ///
+    /// <para>An <c>Expression</c> is the way out. EF composes it into the query, and a test can
+    /// <c>Compile()</c> it and run it against a real <see cref="Session"/> — so the guard compares two
+    /// artifacts that both actually ship, in both directions, instead of a copy nobody is obliged to
+    /// update. Same pattern as <c>SessionListRow.Projection</c> a few hundred lines away.</para>
+    ///
+    /// <para>Sorting a column by something other than the text in it looks broken to whoever is
+    /// reading it, and has been a reported bug here before.</para>
+    /// </summary>
+    /// <param name="nowUtc">
+    /// Captured into the expression rather than read from a clock inside it: <c>DateTime.UtcNow</c>
+    /// in an expression tree is evaluated by SQLite, not by this process, and the caller already
+    /// holds the same instant it passes to <see cref="Status"/>.
+    /// </param>
+    public static Expression<Func<Session, string>> StatusSortKey(DateTime nowUtc) =>
+        s => s.Status == SessionStatus.Cancelled ? "Cancelled"
+            : s.RescheduleFlaggedForReview ? "Reschedule flagged"
+            // Session.IsCompleted's rule, spelled out: it is a property, so EF cannot call it either.
+            : s.TestingCompletedUtc != null || s.ExamToolsClosedUtc != null ? "Completed"
+            : s.ScheduledStartUtc <= nowUtc ? "Active"
+            : "Upcoming";
+
+    /// <inheritdoc cref="StatusSortKey"/>
+    public static Expression<Func<Session, string>> VecSubmissionSortKey(DateTime nowUtc) =>
+        s => s.Status == SessionStatus.Cancelled ? "—"
+            : s.VecSubmissionStatus == VecSubmissionStatus.Submitted ? "Submitted"
+            : s.ScheduledStartUtc <= nowUtc ? "Not submitted"
+            : "—";
 }

@@ -5,84 +5,28 @@ using Xunit;
 namespace VeSessionManager.Web.Tests;
 
 /// <summary>
-/// <see cref="SessionChips"/> is the one definition of the two session chips — but the session
-/// list's *sort keys* cannot call it, because they run inside an EF expression tree and EF cannot
-/// invoke a method. So the sort keys restate the same rules by hand, and these tests are what stop
-/// the two drifting: they assert the inline SQL-bound spellings produce exactly the labels the chips
-/// render.
+/// <see cref="SessionChips"/> is the one definition of the two session chips, and since 2026-08-15
+/// also of the list's sort keys.
 ///
-/// <para>Sorting a column by something other than the text in it looks broken to the person reading
-/// it, and has been reported as a bug here before.</para>
+/// <para><b>What these tests used to be, and why that was not enough.</b> A sort key runs inside an
+/// EF expression tree and cannot call a method, so both rules were written out a second time in
+/// <c>Index.cshtml.cs</c> — and this file held a hand-copied third version to compare against. That
+/// catches the chip changing: the copy goes stale and fails. It does not catch the <i>sort key</i>
+/// changing — mutating the real one left every test here green, found while fixing #338.</para>
+///
+/// <para>The sort keys are <c>Expression</c>s now. EF still translates them, and the tests below
+/// <c>Compile()</c> and run them — so the comparison is between two artifacts that both ship, in both
+/// directions, with no copy anyone is obliged to keep in step.</para>
+///
+/// <para>Sorting a column by something other than the text in it looks broken to whoever is reading
+/// it, and has been a reported bug here before.</para>
 /// </summary>
 public class SessionChipsTests
 {
-    /// <summary>
-    /// Copied verbatim from Index.cshtml.cs's "status" sort key. If that changes and this does not,
-    /// the comparison below fails.
-    /// </summary>
-    private static string InlineStatusSortKey(Session s, bool hasStarted) =>
-        s.Status == SessionStatus.Cancelled ? "Cancelled"
-        : s.RescheduleFlaggedForReview ? "Reschedule flagged"
-        : s.TestingCompletedUtc != null || s.ExamToolsClosedUtc != null ? "Completed"
-        : hasStarted ? "Active"
-        : "Upcoming";
+    private static readonly DateTime Now = new(2026, 8, 15, 12, 0, 0, DateTimeKind.Utc);
 
-    /// <summary>Copied verbatim from Index.cshtml.cs's "vecsubmission" sort key.</summary>
-    private static string InlineVecSortKey(Session s, bool hasStarted) =>
-        s.Status == SessionStatus.Cancelled ? "—"
-        : s.VecSubmissionStatus == VecSubmissionStatus.Submitted ? "Submitted"
-        : hasStarted ? "Not submitted"
-        : "—";
-
-    /// <summary>
-    /// The two mirrors above are copies, and a copy only guards one direction.
-    ///
-    /// <para>Change <see cref="SessionChips"/> without updating this file and the comparison below
-    /// fails, as intended. Change the <b>real</b> sort key in <c>Index.cshtml.cs</c> and nothing here
-    /// notices — the theory compares the chip against the copy, and neither of them moved. Found by
-    /// mutating the real sort key while fixing #338: it kept passing.</para>
-    ///
-    /// <para>So this scans the source. It is deliberately narrow — it asserts only that each sort key
-    /// still consults the clock, which is the clause both chips depend on and the one an edit would
-    /// drop. A full text comparison would fail on whitespace and teach everyone to ignore it.</para>
-    /// </summary>
-    [Fact]
-    public void TheRealSortKeysStillConsultTheClock()
-    {
-        var source = File.ReadAllText(Path.Combine(RepoRoot(), "src", "VeSessionManager.Web", "Pages", "SessionManager", "Index.cshtml.cs"));
-
-        var statusKey = Between(source, "\"status\" => Order(", "),");
-        var vecKey = Between(source, "\"vecsubmission\" => Order(", "),");
-
-        Assert.Contains("ScheduledStartUtc <= now", statusKey);
-        Assert.Contains("Upcoming", statusKey);
-
-        // #338: without this clause a future session sorts under "Not submitted" while its chip
-        // reads "—", which is the column sorting by text the reader cannot see.
-        Assert.Contains("ScheduledStartUtc <= now", vecKey);
-    }
-
-    private static string Between(string source, string start, string end)
-    {
-        var from = source.IndexOf(start, StringComparison.Ordinal);
-        Assert.True(from >= 0, $"Could not find \"{start}\" in Index.cshtml.cs — the sort keys moved or were renamed.");
-        var to = source.IndexOf(end, from + start.Length, StringComparison.Ordinal);
-        Assert.True(to > from, $"Could not find the end of the block starting at \"{start}\".");
-        return source[from..to];
-    }
-
-    /// <summary>Walks up from the test binary to the repo root, same approach as the other source-scanning tests here.</summary>
-    private static string RepoRoot()
-    {
-        var directory = new DirectoryInfo(AppContext.BaseDirectory);
-        while (directory is not null && !Directory.Exists(Path.Combine(directory.FullName, "src")))
-        {
-            directory = directory.Parent;
-        }
-
-        Assert.NotNull(directory);
-        return directory!.FullName;
-    }
+    private static readonly Func<Session, string> StatusSortKey = SessionChips.StatusSortKey(Now).Compile();
+    private static readonly Func<Session, string> VecSortKey = SessionChips.VecSubmissionSortKey(Now).Compile();
 
     /// <summary>Every combination that can reach a chip, including contradictory ones.</summary>
     public static TheoryData<SessionStatus, bool, DateTime?, DateTime?, VecSubmissionStatus, bool> Matrix()
@@ -115,16 +59,20 @@ public class SessionChipsTests
             RescheduleFlaggedForReview = flagged,
             TestingCompletedUtc = tested,
             ExamToolsClosedUtc = closed,
-            VecSubmissionStatus = submitted
+            VecSubmissionStatus = submitted,
+            // hasStarted is expressed as a real scheduled start either side of the instant the sort
+            // key captured, so both sides decide from the same fact rather than being handed the
+            // answer.
+            ScheduledStartUtc = hasStarted ? Now.AddHours(-1) : Now.AddHours(1)
         };
 
         Assert.Equal(
             SessionChips.Status(status, flagged, session.IsCompleted, hasStarted).Label,
-            InlineStatusSortKey(session, hasStarted));
+            StatusSortKey(session));
 
         Assert.Equal(
             SessionChips.VecSubmission(status, submitted, hasStarted).Label,
-            InlineVecSortKey(session, hasStarted));
+            VecSortKey(session));
     }
 
     /// <summary>
