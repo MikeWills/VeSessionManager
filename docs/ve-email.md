@@ -65,9 +65,12 @@ Three properties the page exists to satisfy:
 
 Unsubscribing twice is not an error, and the same link resubscribes.
 
-**Not covered:** CAN-SPAM also requires a valid physical postal address in commercial email. There is
-no team field for one, so nothing puts it in the footer. Worth adding before any of this is used for
-genuinely promotional mail.
+**Considered and deliberately not added: a physical postal address.** CAN-SPAM requires one in
+commercial email, and no team field holds one, so nothing puts it in the footer. Mike's call
+(2026-08-16) was that this is not a concern for how these messages are used — a team writing to its
+own volunteers about its own sessions, rather than promotional mail to strangers. Recorded here as a
+decision rather than a gap so it does not get re-raised as an oversight; it becomes worth revisiting
+only if this is ever pointed at a list somebody did not join by volunteering.
 
 ## Subscriptions, and why they are a team switch
 
