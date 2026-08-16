@@ -126,7 +126,7 @@ would be pure duplication — and goes straight to `CHANGELOG.md` instead. Non-p
 redesigns, hardening passes) start here and move to `CHANGELOG.md` once the section is at/over the
 cap and a newer entry needs to be added; oldest goes first.
 
-- **Candidates can be emailed by hand from a session now (2026-08-16).** Issue #144, first of two PRs.
+- **Candidates can be emailed by hand from a session now, from templates a team writes itself (2026-08-16).** Issue #144, both PRs.
   See `docs/candidate-email.md`. Pick candidates, start from a template, **edit the message**, send —
   which is a shape this app did not have: every other candidate email is composed by code. The issue
   asked for one "getting started locally" email one candidate at a time; Mike widened it twice while
@@ -145,6 +145,16 @@ cap and a newer entry needs to be added; oldest goes first.
   bugs were caught by guards that already existed rather than by review, including a hidden field
   whose name did not match its bind name — **which no send test can catch**, since a hand-built POST
   body never reads the markup.
+
+- **Teams can write their own email templates (2026-08-16).** Issue #144, second PR — same doc.
+  `EmailTemplateAdminService` was deliberately edit-only because "the set of Keys is fixed by what the
+  services look up", and **that reasoning is why create/delete is safe rather than why it was
+  blocked**: a team-defined template is never looked up by anything, so nothing can break by its
+  absence. Two things worth carrying forward: **the dot in the generated `Custom.<slug>` key is the
+  whole mechanism** keeping the two populations apart — no shipped key has one, so a typed name can
+  never collide with a key the code looks up, including one added years from now; and **a rename must
+  not move the key**, since history rows and any open compose screen refer to it, which is also why
+  `CandidateEmailSend` stores a label string rather than a foreign key.
 
 - **Alerts have a bell now, and it links at the row rather than the list (2026-08-16).** Issue #339.
   See `docs/alerts.md`. The reconciliation badge was a number on an item **inside a closed dropdown** —
@@ -277,22 +287,6 @@ cap and a newer entry needs to be added; oldest goes first.
   misfiles history *and* misreports the page *and* reads the wrong config key, and
   `JobRunHistoryLogger.RunAsync`'s overload resolution is load-bearing — the void one leaves every
   `ResultSummary` silently null.
-
-- **One rule, one home: the duplicated candidate/session actions collapsed (2026-08-11).** Issues
-  #304/#244/#274. See `docs/action-outcomes.md`. Nine candidate actions were written out on both
-  `Detail` and `CandidateDetail`, four session actions on both `Detail` and the session list,
-  identical down to the punctuation — and **two of them had already drifted**: a `SessionNotFound`
-  told the user the session was *already marked submitted*, and the roster offered "Send youth
-  program instructions" for VECs with no youth program, where its only outcome was an error naming an
-  internal enum. Two new types in Web own what actually drifted — `ActionOutcomes` (result → sentence)
-  and `CandidateCapabilities` (is this action applicable). **The handlers themselves stay duplicated
-  on purpose**: each is ~4 lines of authorization, ownership re-check and redirect, and all three
-  genuinely differ per page — collapsing them trades a real duplication for a fake abstraction and
-  hides the IDOR guard. Exhaustiveness came free once each mapping had one home, which is how the
-  email actions stopped rendering `$"…: {result}."` at the user. **The guard is a source scan, and it
-  had to be** — two copies agreeing is the normal state right until someone fixes one, so no
-  behavioural test of either copy can see the gap; what is checkable is "one string, one home", and
-  it reported 19 offenders before the refactor.
 
 Everything through Phase 0-10's initial build (ExamTools ingestion, Zoom/Discord, Square, email
 notifications, FCC ULS watcher, payment reminders, VE tracking, VEC submission tracker, admin

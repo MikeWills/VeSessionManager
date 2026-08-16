@@ -121,9 +121,46 @@ Worth recording, because all three were found by tests that already existed rath
 - `UserDeleteCoverageTests` — the new FK to `User` with nothing in the delete path, which would have
   thrown a Restrict violation instead of refusing with a reason.
 
+## Team-defined templates (second PR, 2026-08-16)
+
+A team can now write its own templates in Admin → Email Templates — create, rename, delete — and they
+appear in the compose picker alongside the shipped ones. That is what makes the screen cover cases
+nobody shipped a template for.
+
+`EmailTemplateAdminService` was deliberately edit-only, on the stated grounds that *"the set of Keys
+is fixed by what CandidateNotificationService/PaymentReminderService actually look up"*. **That
+reasoning is still right, and it is exactly why this is safe:** a team-defined template is never
+looked up by anything. A person picks it, so no code path can break by its absence and none can point
+at one that no longer exists.
+
+**The dot is the whole mechanism.** Generated keys are `Custom.<slug>`; no shipped key contains a dot,
+so a name somebody types can never become a key the sending code looks up — including a key added
+years from now. Everything a person sees is `DisplayName`; the key never appears in the UI.
+
+Other decisions:
+
+- **Rename does not move the key.** A rename is a label change; regenerating the key would strand an
+  open compose screen and make the row look like a different template. History rows keep the label
+  they were sent under — they record what was actually sent, not what it is called today.
+- **Delete is a real delete, and it is safe because nothing points at the row.** `CandidateEmailSend`
+  stores the label as a string precisely so the record that somebody was told something outlives the
+  template it was written from. There is a confirm step, because the body may be the only copy of
+  wording someone spent time on.
+- **Rename and delete refuse a shipped template in the service**, not just by hiding the buttons —
+  something in the app sends that key and has no other way to find it. The message says so rather
+  than reporting a permission problem.
+- **Duplicate names are allowed**, on one team and across teams; `(TeamId, Key)` is unique, so the key
+  gets a numeric suffix. A name of nothing but punctuation slugs to `template` rather than to nothing,
+  which would otherwise make every such name the same key.
+- Team-defined templates group under **"Your own templates"** on the admin page — they belong to no
+  session phase, because nothing sends them on a schedule.
+- Their placeholder chips are `CandidatePlaceholderValues` plus `{{Logo}}`: there is no send-site
+  dictionary to read a token list from, and that is what the compose screen actually resolves.
+
 ## Next
 
-PR 2 is team-defined templates: create, rename and delete in Admin → Email Templates, so the picker
-covers cases nobody shipped a template for. `EmailTemplateAdminService` is edit-only today on the
-stated grounds that "the set of Keys is fixed by what the services look up" — which stays true, and is
-exactly why it is safe to reverse for a class of row no service ever looks up.
+Issue [#191](https://github.com/MikeWills/VeSessionManager/issues/191) — the same shape aimed at VEs
+rather than candidates, waiting on this so it can ship with the picker from day one (Mike, 2026-08-16).
+Its stated blocker is stale: `VolunteerExaminer.Email`, `Phone` and `ContactPreference` all exist now.
+Decided already: one team is chosen on the message screen, and the recipients are that team's active
+members — a VE can be on several teams, but a message sends from one team's SMTP.
