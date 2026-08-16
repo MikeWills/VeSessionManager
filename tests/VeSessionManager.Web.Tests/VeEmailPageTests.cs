@@ -218,4 +218,48 @@ public class VeEmailPageTests
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
         Assert.Empty(factory.SentEmails);
     }
+
+    [Fact]
+    public async Task TheRecipientListOffersATagFilter_BuiltFromTheTagsActuallyInUse()
+    {
+        // #394. Built from the people listed rather than the team's whole vocabulary, so it can never
+        // offer a tag that would match nobody.
+        using var factory = new WebAppFactory();
+        await ConfigureTeamEmailAsync(factory);
+
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var tag = new VeTag { TeamId = factory.Seeded.TeamId, Name = "Liaison" };
+            var unused = new VeTag { TeamId = factory.Seeded.TeamId, Name = "Never assigned" };
+            db.VeTags.AddRange(tag, unused);
+            await db.SaveChangesAsync();
+
+            var membership = await db.VeTeamMemberships
+                .FirstAsync(m => m.TeamId == factory.Seeded.TeamId && m.VolunteerExaminerId == factory.Seeded.VolunteerExaminerId);
+            db.VeTagAssignments.Add(new VeTagAssignment { VeTeamMembershipId = membership.Id, VeTagId = tag.Id });
+            await db.SaveChangesAsync();
+        }
+
+        var client = factory.CreateClientAs(UserRole.SystemAdmin);
+        var html = await client.GetStringAsync($"/SessionManager/VeEmail?teamId={factory.Seeded.TeamId}");
+
+        Assert.Contains("data-ve-tag-filter", html);
+        Assert.Contains("Liaison", html);
+        Assert.DoesNotContain("Never assigned", html);
+        // The guest sentinel, whose leading space is load-bearing — see VeTagFilter.
+        Assert.Contains("Untagged (guests)", html);
+    }
+
+    [Fact]
+    public async Task WithNoTagsInUse_NoTagFilterIsOffered()
+    {
+        using var factory = new WebAppFactory();
+        await ConfigureTeamEmailAsync(factory);
+        var client = factory.CreateClientAs(UserRole.SystemAdmin);
+
+        var html = await client.GetStringAsync($"/SessionManager/VeEmail?teamId={factory.Seeded.TeamId}");
+
+        Assert.DoesNotContain("data-ve-tag-filter", html);
+    }
 }

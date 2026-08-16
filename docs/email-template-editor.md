@@ -96,3 +96,32 @@ fills and picker surfaces — without them the editor is a white slab in dark mo
 The `{{Logo}}` placeholder is a **separate PR**: it touches `Team`, a migration, and
 `SmtpEmailSender`'s message construction (MailKit `LinkedResources` for the CID attachment), which is
 a materially different blast radius from an admin-only UI change.
+
+## The list, the preview and the editor (2026-08-16)
+
+Issue #395 — "email templates are kludgy". They were: every template rendered its own trigger panel,
+placeholder chips, subject field and Quill editor, all stacked on one page. Finding the one you
+wanted meant scrolling past the rest, and the page grew with every template added — the
+team-defined ones especially, since a team can add as many as it likes.
+
+Split three ways:
+
+- **`/Admin/EmailTemplates`** is a list. Name, what sends it, when it was last edited, and two
+  actions. It answers "what have we got" and nothing else. Creating one stays at the bottom, because
+  the common case is editing something that already exists.
+- **`/Admin/EmailTemplatePreview/{id}`** shows what actually goes out, rendered through the real
+  `EmailTemplateRenderer` with sample values. A preview with its own renderer would agree with the
+  email right up until it did not. The values are obviously fake ("Ana Ruiz") on purpose: a preview
+  is opened casually, and pulling a live candidate's name and payment link into it would turn an idle
+  click into a PII exposure. It also names any placeholder nothing will fill in, which is the typo
+  check that previously only appeared as a status message after saving.
+- **`/Admin/EmailTemplateEdit/{id}`** is the editor that used to be inline, unchanged — Quill, the
+  chips, the trigger panel — plus rename and delete for a team's own templates.
+
+**The preview renders into a sandboxed iframe**, not into the page. The body is stored HTML that an
+admin wrote; inline, its markup could restyle or overlay the admin UI around it. `sandbox` with no
+`allow-*` blocks scripts outright regardless of the page CSP, and `srcdoc` means no request is made,
+so the app's own `frame-ancestors 'none'` is not involved.
+
+Removing the inline editors left `AuthorizeTemplateAsync` and both `PlaceholdersFor` overloads with
+no callers; they were deleted rather than left for a future audit to flag.

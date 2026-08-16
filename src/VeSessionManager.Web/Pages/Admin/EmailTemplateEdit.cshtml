@@ -1,0 +1,117 @@
+@page "{id:int}"
+@model VeSessionManager.Web.Pages.Admin.EmailTemplateEditModel
+@{
+    ViewData["Title"] = Model.Label;
+    ViewData["ActiveNav"] = "AdminEmailTemplates";
+    Layout = "_AppLayout";
+}
+
+<div class="page-head">
+    <div>
+        <p class="eyebrow"><a asp-page="/Admin/EmailTemplates" asp-route-teamId="@Model.Template.TeamId">Email Templates</a></p>
+        <h1>@Model.Label</h1>
+    </div>
+    <span style="display:inline-flex; gap:8px; align-items:center;">
+        <a class="btn-secondary btn-sm" asp-page="/Admin/EmailTemplatePreview" asp-route-id="@Model.Id">Preview</a>
+        @if (Model.Template.IsUserDefined)
+        {
+            <button type="button" class="btn-danger btn-sm" data-open-modal="deleteTemplateModal">Delete</button>
+        }
+    </span>
+</div>
+
+@* What actually causes this email to go out. Two of these are genuinely surprising —
+   PaymentExpirationNotice goes to the team rather than the candidate, and FelonyDisclosureInstructions
+   has no automatic trigger at all — so this is the difference between editing a template knowingly
+   and guessing. See EmailTemplateTriggers. *@
+@if (Model.IsRetired)
+{
+    <div class="vesm-alert error">
+        <b>No longer sent.</b> Nothing in the app sends this template any more. It stays here because
+        seeding never deletes, so any wording you added is preserved — but editing it has no effect.
+    </div>
+}
+else if (Model.Trigger is { } trigger)
+{
+    <div class="template-trigger">
+        <span class="chip @(trigger.Cadence == "Automatic" ? "chip-green" : "chip-neutral")">@trigger.Cadence</span>
+        <span class="chip chip-neutral">@trigger.Recipient</span>
+        <p>@trigger.Description</p>
+    </div>
+}
+
+@if (Model.Template.IsUserDefined)
+{
+    <div class="session-panel" style="display:block; margin-bottom:20px;">
+        <form method="post" asp-page-handler="Rename" style="display:flex; gap:8px; align-items:flex-end;">
+            <div class="field" style="max-width:320px; margin:0;">
+                <label for="templateName">Name</label>
+                <input id="templateName" name="name" value="@Model.Template.DisplayName" required />
+            </div>
+            <button type="submit" class="btn-secondary btn-sm">Rename</button>
+        </form>
+    </div>
+}
+
+<form method="post">
+    @* Chips are click-to-insert (see email-template-editor.js) — typing a placeholder by hand is the
+       easiest thing to get wrong here, and a typo only surfaces as a Worker log warning after a real
+       send. Rendered as buttons so they're keyboard-reachable. *@
+    <div class="roster-list" style="margin-bottom:12px;">
+        @foreach (var placeholder in Model.Placeholders)
+        {
+            <button type="button" class="chip chip-neutral placeholder-chip" data-token="{{@placeholder}}"
+                    title="Insert this placeholder">{{@placeholder}}</button>
+        }
+    </div>
+
+    <div class="field"><label for="subject">Subject</label><input id="subject" asp-for="Subject" required /></div>
+
+    @* The textarea remains the field that posts, in both tabs — Quill is a second view onto it, never
+       a replacement. Without JS the page degrades to exactly what it was before: a plain textarea. *@
+    <div class="field template-editor">
+        <label for="body">Body</label>
+        <div class="editor-tabs" role="tablist">
+            <button type="button" class="editor-tab" role="tab" data-mode="visual" aria-selected="true">Visual</button>
+            <button type="button" class="editor-tab" role="tab" data-mode="html" aria-selected="false">HTML</button>
+        </div>
+        <div class="editor-visual" data-editor-for="body">
+            <div class="editor-surface"></div>
+        </div>
+        <textarea id="body" asp-for="Body" rows="16" required></textarea>
+    </div>
+
+    <div class="panel-actions">
+        <a class="btn-secondary" asp-page="/Admin/EmailTemplates" asp-route-teamId="@Model.Template.TeamId">Cancel</a>
+        <button type="submit" class="btn-primary">Save</button>
+    </div>
+</form>
+
+@if (Model.Template.IsUserDefined)
+{
+    <div class="modal-backdrop" id="deleteTemplateModal">
+        <div class="modal">
+            <h3>Delete "@Model.Template.DisplayName"?</h3>
+            <p>
+                The template goes for good. Emails already sent from it are unaffected, and the
+                candidates who received them keep showing it in their email history.
+                <b>This cannot be undone.</b>
+            </p>
+            <form method="post" asp-page-handler="Delete">
+                <div class="modal-actions">
+                    <button type="button" class="btn-secondary btn-sm" data-close-modal>Cancel</button>
+                    <button type="submit" class="btn-danger btn-sm">Delete template</button>
+                </div>
+            </form>
+        </div>
+    </div>
+}
+
+@section Head {
+    <link rel="stylesheet" href="~/lib/quill/quill.snow.css" />
+}
+
+@section Scripts {
+    <script src="~/lib/quill/quill.js"></script>
+    <script src="~/js/email-template-editor.js" asp-append-version="true"></script>
+}

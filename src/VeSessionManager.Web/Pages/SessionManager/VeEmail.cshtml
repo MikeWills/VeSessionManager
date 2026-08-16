@@ -99,6 +99,20 @@ else
                 <i class="bi bi-search" aria-hidden="true"></i>
                 <input type="search" data-ve-filter placeholder="Filter by name, call sign or tag" />
             </label>
+            @if (Model.TagNames.Count > 0)
+            {
+                @* Client-side, like the invitation screen: every recipient is already rendered, and
+                   "select all shown" then means the tag you filtered to (#394). *@
+                <select data-ve-tag-filter class="filter-select" aria-label="Filter by tag">
+                    <option value="">Any tag</option>
+                    @foreach (var tag in Model.TagNames)
+                    {
+                        <option value="@tag">@tag</option>
+                    }
+                    @* Untagged means guest, derived rather than stored — see docs/ve-management.md. *@
+                    <option value="@VeSessionManager.Web.VeTagFilter.UntaggedValue">Untagged (guests)</option>
+                </select>
+            }
             <button type="button" class="btn-secondary btn-sm" data-ve-select="all">Select all shown</button>
             <button type="button" class="btn-secondary btn-sm" data-ve-select="none">Clear selection</button>
         </div>

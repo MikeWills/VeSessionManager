@@ -52,6 +52,13 @@ public class VeEmailModel(
     public IReadOnlyList<TemplateChoice> Templates { get; private set; } = [];
     public bool SubscriptionsEnabled { get; private set; }
 
+    /// <summary>
+    /// Tags actually in use on the people listed (#394). Built from the recipients rather than the
+    /// team's whole vocabulary, so the dropdown can never offer a tag that would match nobody — and
+    /// so it shrinks with the list when "Subscribed only" is on.
+    /// </summary>
+    public IReadOnlyList<string> TagNames { get; private set; } = [];
+
     public static IReadOnlyList<string> Placeholders => VolunteerExaminerPlaceholderValues.Names;
 
     public record TemplateChoice(string Key, string Label);
@@ -164,6 +171,8 @@ public class VeEmailModel(
         {
             Recipients = [.. Recipients.Where(r => subscribedIds.Contains(r.VolunteerExaminer.Id))];
         }
+
+        TagNames = [.. Recipients.SelectMany(r => r.Tags).Distinct().OrderBy(n => n)];
 
         // Only templates written for this audience: a candidate template's {{CandidateFirstName}}
         // resolves to nothing here and would reach a VE as literal text.

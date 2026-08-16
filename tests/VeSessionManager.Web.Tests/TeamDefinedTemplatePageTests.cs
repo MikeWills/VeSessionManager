@@ -125,10 +125,17 @@ public class TeamDefinedTemplatePageTests
         }
 
         var client = factory.CreateClientAs(UserRole.SystemAdmin);
-        var html = await client.GetStringAsync($"{AdminUrl}?teamId={factory.Seeded.TeamId}");
+        var list = await client.GetStringAsync($"{AdminUrl}?teamId={factory.Seeded.TeamId}");
+        Assert.Contains("Felony disclosure instructions", list);
 
-        Assert.Contains("Felony disclosure instructions", html);
-        Assert.DoesNotContain("Delete template", html);
+        using var editScope = factory.Services.CreateScope();
+        var editDb = editScope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var shipped = await editDb.EmailTemplates.FirstAsync(t => t.Key == "FelonyDisclosureInstructions");
+        var edit = await client.GetStringAsync($"/Admin/EmailTemplateEdit/{shipped.Id}");
+
+        // Offered for a team's own templates only. The service refuses either way — hiding the
+        // button is the courtesy, not the guard.
+        Assert.DoesNotContain("Delete template", edit);
     }
 
     [Fact]
@@ -154,9 +161,9 @@ public class TeamDefinedTemplatePageTests
         }
 
         var client = factory.CreateClientAs(UserRole.SystemAdmin);
+        // Delete moved to the edit page with #395; the guard is the service's either way.
         await PostWithTokenAsync(
-            client, $"{AdminUrl}?handler=Delete", $"{AdminUrl}?teamId={factory.Seeded.TeamId}",
-            ("templateId", templateId.ToString()));
+            client, $"/Admin/EmailTemplateEdit/{templateId}?handler=Delete", $"/Admin/EmailTemplateEdit/{templateId}");
 
         using var verifyScope = factory.Services.CreateScope();
         var verifyDb = verifyScope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -194,9 +201,9 @@ public class TeamDefinedTemplatePageTests
         }
 
         var client = factory.CreateClientAs(UserRole.TeamAdmin);
+        // A token from a page this admin may open, aimed at another team's template.
         var response = await PostWithTokenAsync(
-            client, $"{AdminUrl}?handler=Delete", $"{AdminUrl}?teamId={factory.Seeded.TeamId}",
-            ("templateId", otherTemplateId.ToString()));
+            client, $"/Admin/EmailTemplateEdit/{otherTemplateId}?handler=Delete", $"{AdminUrl}?teamId={factory.Seeded.TeamId}");
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
 

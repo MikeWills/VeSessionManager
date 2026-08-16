@@ -76,47 +76,8 @@ public class EmailTemplatesModel(AppDbContext dbContext, UserManager<User> userM
         return RedirectToPage(new { teamId });
     }
 
-    public async Task<IActionResult> OnPostRenameAsync(int templateId, string name)
-    {
-        var authorized = await AuthorizeTemplateAsync(templateId);
-        if (authorized is null) return Forbid();
 
-        var result = await emailTemplateAdminService.RenameAsync(templateId, name, authorized.Value.UserId, CancellationToken.None);
-        TempData[result == EmailTemplateActionResult.Success ? "StatusMessage" : "ErrorMessage"] = Describe(result, "renamed");
-        return RedirectToPage(new { teamId = authorized.Value.TeamId });
-    }
 
-    public async Task<IActionResult> OnPostDeleteAsync(int templateId)
-    {
-        var authorized = await AuthorizeTemplateAsync(templateId);
-        if (authorized is null) return Forbid();
-
-        var result = await emailTemplateAdminService.DeleteAsync(templateId, authorized.Value.UserId, CancellationToken.None);
-        TempData[result == EmailTemplateActionResult.Success ? "StatusMessage" : "ErrorMessage"] = Describe(result, "deleted");
-        return RedirectToPage(new { teamId = authorized.Value.TeamId });
-    }
-
-    /// <summary>
-    /// The IDOR re-check the update handler already does, shared by the two new handlers: authorize
-    /// against the template's <b>own</b> team, never a client-supplied one, or a TeamAdmin can post
-    /// their own valid teamId alongside another team's templateId.
-    /// </summary>
-    private async Task<(int UserId, int TeamId)?> AuthorizeTemplateAsync(int templateId)
-    {
-        var user = await userManager.GetUserWithManagerAsync(dbContext, User);
-        if (user is null)
-        {
-            return null;
-        }
-
-        var template = await dbContext.EmailTemplates.FirstOrDefaultAsync(t => t.Id == templateId);
-        if (template is null || !adminAccessScope.CanManageTeam(user, template.TeamId))
-        {
-            return null;
-        }
-
-        return (user.Id, template.TeamId);
-    }
 
     private static string Describe(EmailTemplateActionResult result, string verb) => result switch
     {
@@ -130,58 +91,6 @@ public class EmailTemplatesModel(AppDbContext dbContext, UserManager<User> userM
         _ => "Template not found."
     };
 
-    public async Task<IActionResult> OnPostUpdateAsync(int templateId, int teamId, string subject, string body)
-    {
-        var user = await userManager.GetUserWithManagerAsync(dbContext, User);
-        if (user is null)
-        {
-            return Forbid();
-        }
-
-        // Authorize against the template's actual owning team, not the client-supplied teamId —
-        // otherwise a TeamAdmin could submit their own (valid) teamId alongside a templateId that
-        // belongs to a different team and edit that team's template (cross-tenant IDOR).
-        var existingTemplate = await dbContext.EmailTemplates.FirstOrDefaultAsync(t => t.Id == templateId);
-        if (existingTemplate is null || !adminAccessScope.CanManageTeam(user, existingTemplate.TeamId))
-        {
-            return Forbid();
-        }
-
-        var result = await emailTemplateAdminService.UpdateAsync(templateId, subject, body, user.Id, CancellationToken.None);
-        if (result == EmailTemplateActionResult.Success)
-        {
-            var unknown = emailTemplateAdminService.FindUnknownPlaceholders(existingTemplate.Key, subject, body);
-            TempData["StatusMessage"] = unknown.Count == 0
-                ? "Template updated."
-                : $"Template updated — but references unknown placeholder(s): {string.Join(", ", unknown)}. Check for a typo.";
-        }
-        else
-        {
-            // Was a flat "Template not found." for every non-Success value, which would have reported
-            // a blank subject as a missing template (issue #275).
-            TempData["ErrorMessage"] = result switch
-            {
-                EmailTemplateActionResult.ContentRequired => "A template needs both a subject and a body.",
-                _ => "Template not found."
-            };
-        }
-
-        return RedirectToPage(new { teamId = existingTemplate.TeamId });
-    }
-
-    /// <summary>Which token set a team-defined template offers, by who it is written to (#191).</summary>
-    public static IReadOnlyList<string> PlaceholdersFor(TemplateRow row) =>
-        !row.IsUserDefined ? PlaceholdersFor(row.Key)
-        : row.Audience == EmailTemplateAudience.VolunteerExaminers
-            ? [.. VolunteerExaminerPlaceholderValues.Names, .. EmailTemplatePlaceholders.Universal]
-            : [.. EmailTemplatePlaceholders.ForUserDefined(), .. EmailTemplatePlaceholders.Universal];
-
-    public static IReadOnlyList<string> PlaceholdersFor(string key) =>
-        // A team-defined key has no registry entry, and falling through to the empty list would leave
-        // its editor with no chips at all — the one template most likely to need them.
-        key.StartsWith(EmailTemplateAdminService.UserDefinedKeyPrefix, StringComparison.Ordinal)
-            ? [.. EmailTemplatePlaceholders.ForUserDefined(), .. EmailTemplatePlaceholders.Universal]
-            : EmailTemplatePlaceholders.ForEditor(key);
 
     /// <summary>
     /// Templates grouped by where they fall in a session's life, in the order those things happen.
