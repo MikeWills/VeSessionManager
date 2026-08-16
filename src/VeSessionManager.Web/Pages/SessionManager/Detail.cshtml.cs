@@ -360,7 +360,10 @@ public class DetailModel(
             .Include(s => s.Team)
             .Include(s => s.FeeConfiguration)
             .Include(s => s.Candidates).ThenInclude(c => c.Payments)
+            // The hand-composed sends behind each candidate's Email history line (#144).
+            .Include(s => s.Candidates).ThenInclude(c => c.EmailSends)
             .Include(s => s.SessionVolunteerExaminers).ThenInclude(l => l.VolunteerExaminer).ThenInclude(v => v.VecAccreditations)
+            .AsSplitQuery()
             .FirstOrDefaultAsync(s => s.Id == Id);
 
         if (session is null || !accessScope.CanView(user, session))

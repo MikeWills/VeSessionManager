@@ -213,6 +213,8 @@ public class CandidateDetailModel(
             .Include(c => c.Session).ThenInclude(s => s.Vec)
             .Include(c => c.ResultMarkedByUser)
             .Include(c => c.Payments).ThenInclude(p => p.Refunds)
+            // The hand-composed sends behind this candidate's Email history (#144).
+            .Include(c => c.EmailSends)
             .FirstOrDefaultAsync(c => c.Id == Id);
 
         if (candidate is null || !accessScope.CanView(user, candidate.Session))

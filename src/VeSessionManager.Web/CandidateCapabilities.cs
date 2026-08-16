@@ -22,6 +22,13 @@ namespace VeSessionManager.Web;
 /// automatic send removed in #221. Not a capability but computed from the same state, and kept here
 /// so the two do not drift apart either.
 /// </param>
+/// <param name="CanReceiveEmail">
+/// Whether a hand-composed email can reach this candidate at all (#144) — the checkbox state on the
+/// Email candidates screen. Identical in form to <see cref="CanResendConfirmation"/> and kept
+/// separate anyway: the two answer different questions ("can we re-send the registration email" vs
+/// "can this person be written to"), and a future rule about one should not silently change the
+/// other.
+/// </param>
 public readonly record struct CandidateCapabilities(
     bool CanResendConfirmation,
     bool CanDelete,
@@ -30,7 +37,8 @@ public readonly record struct CandidateCapabilities(
     bool CanFlagRefund,
     bool CanSendYouthProgram,
     bool CanSendFelonyInstructions,
-    bool AwaitingFelonyInstructions)
+    bool AwaitingFelonyInstructions,
+    bool CanReceiveEmail)
 {
     /// <param name="vecSupportsYouthProgram">
     /// Passed in rather than read from <c>candidate.Session.Vec</c>, because the two callers load it
@@ -63,6 +71,9 @@ public readonly record struct CandidateCapabilities(
             // Not gated on Tested: the useful time to send this is before the session (#221).
             CanSendFelonyInstructions: active && candidate.HasFelonyDisclosure == true && candidate.Email is not null,
             AwaitingFelonyInstructions: active && candidate.HasFelonyDisclosure == true
-                && candidate.FelonyDisclosureInstructionsSentUtc is null);
+                && candidate.FelonyDisclosureInstructionsSentUtc is null,
+            // A withdrawn candidate's PII is cleared immediately, so there is usually no address left
+            // to write to anyway — but the rule is stated rather than relied upon.
+            CanReceiveEmail: active && !string.IsNullOrWhiteSpace(candidate.Email));
     }
 }

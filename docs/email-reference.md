@@ -7,14 +7,14 @@ debugging why a candidate did (or didn't) get an email.
 This consolidates and supersedes the scattered detail in `docs/email-notifications.md` (Phase 4,
 now stale on multi-team specifics) and `docs/payment-reminders.md` (Phase 6, still accurate for its
 own two templates) — both are still worth reading for their phase-specific implementation notes,
-but this doc is the one place with the full picture across all six templates. If this doc and the
+but this doc is the one place with the full picture across all seven templates. If this doc and the
 code ever disagree, trust the code — specifically
 `src/VeSessionManager.Core/Email/EmailTemplatePlaceholders.cs`, a registry hand-collected from the
 real send-time code and guarded by `EmailTemplatePlaceholdersTests.cs` so it can't silently drift.
 That registry is also what the Admin UI's template editor (`Pages/Admin/EmailTemplates.cshtml`,
 `SystemAdmin`/`TeamAdmin` only) shows as placeholder chips next to the editor.
 
-## The six templates
+## The seven templates
 
 | `EmailTemplate.Key` | Recipient | Trigger | Idempotency guard |
 |---|---|---|---|
@@ -24,6 +24,7 @@ That registry is also what the Admin UI's template editor (`Pages/Admin/EmailTem
 | `PaymentExpirationNotice` | **Session Manager** (`EmailSettings.AdminNotificationEmail`), not the candidate | The team's `Unpaid` exam-fee payment, 10+ days after FCC entered the application | `Payment.ExpiredUnpaid` |
 | `FelonyDisclosureInstructions` | Candidate | **Manual** — "Send felony disclosure instructions" on the candidate's row, for anyone with `HasFelonyDisclosure = true`. Usually sent *before* the session (#221) | None — a repeat click is a deliberate re-send; `Candidate.FelonyDisclosureInstructionsSentUtc` records the latest |
 | `ArrlYouthProgramInstructions` | Candidate | Session Manager clicks "Send Youth Program instructions" on the candidate row (only shown when the session's Vec has `SupportsYouthProgram`) | None — manual action, can be clicked more than once |
+| `GettingStartedLocally` | Candidate | **Never sent by code.** Starting text for a message composed by hand on Session Detail → "Email candidates", edited before sending (#144). See [`docs/candidate-email.md`](candidate-email.md) | None — a `CandidateEmailSend` row records each delivery, and re-sending is a decision somebody makes |
 
 One of these can be re-triggered by hand: a Session Manager's "Resend confirmation email" button on
 the session detail page re-sends `RegistrationConfirmation` regardless of whether it was already
@@ -46,7 +47,7 @@ literal, un-substituted text `{{Tag}}` in the sent email (see "Unknown/typo'd ta
 |---|---|---|
 | `{{CandidateName}}` | Full name | |
 | `{{CandidateFirstName}}` | First name only | |
-| `{{SessionDate}}` | e.g. `Friday, July 24, 2026 at 5:00 PM UTC` | Always UTC — no per-session timezone in the data model |
+| `{{SessionDate}}` | e.g. `10:00 AM ET / 7:00 AM PT` | Eastern **and** Pacific, via `SessionTimeFormatter.ForCandidate` — this said "always UTC" until 2026-08-16, which stopped being true at #205 and was wrong in the doc for months afterwards. Never format a candidate-facing time any other way |
 | `{{ZoomJoinUrl}}` | The session's Zoom join link | Blank if Zoom isn't configured for this team, or the meeting hasn't been created yet |
 | `{{PaymentLinkUrl}}` | The candidate's InitialExam Square payment link | Blank if the VEC's `FeeConfiguration` doesn't collect a fee, or Square hasn't generated the link yet |
 | `{{PrivacyPolicyUrl}}` | From this team's `EmailSettings.PrivacyPolicyUrl` | |
@@ -88,6 +89,22 @@ the team's Square link pays a different bill, and offering it was the original d
 |---|---|
 | `{{CandidateName}}` | Full name |
 | `{{CallSign}}` | Candidate's call sign |
+
+**`GettingStartedLocally`** (composed by hand — see [`docs/candidate-email.md`](candidate-email.md))
+| Tag | Value |
+|---|---|
+| `{{CandidateName}}` | Full name |
+| `{{CandidateFirstName}}` | First name only |
+| `{{CallSign}}` | Candidate's call sign — **usually empty here**, since a new licensee's arrives from the FCC days after the session. The compose screen warns when it applies to anyone selected |
+| `{{SessionDate}}` | Same formatting as above |
+| `{{TeamName}}` | The team's own name |
+
+The odd one out in this section: these are resolved by `CandidatePlaceholderValues`, not by a
+dictionary at a send site, because the message is whatever somebody typed rather than a known
+template. `EmailTemplatePlaceholdersTests` asserts the two lists agree, since this table is also what
+the compose screen prints as insertable chips. **No payment-link tag, deliberately** — a hand-composed
+message goes out whenever somebody decides to send it, so a checkout link that is expired or already
+paid is worse than none.
 
 ### Unknown/typo'd tags
 
@@ -241,6 +258,9 @@ tracked send for that candidate (label + timestamp), sourced from:
   a separate retest fee both show up if both were reminded)
 - `Candidate.FelonyDisclosureInstructionsSentUtc`
 - `Candidate.YouthProgramInstructionsSentUtc`
+- `CandidateEmailSend` rows — every hand-composed send (#144), labelled with the template it started
+  from. A table rather than a column, because a team writes its own templates and a column per
+  template cannot be added by somebody at runtime; see [`docs/candidate-email.md`](candidate-email.md)
 
 The last two didn't exist before this modal — `SendFelonyDisclosureInstructionsAsync`/
 `SendYouthProgramInstructionsAsync` sent successfully but tracked nothing. They're purely display

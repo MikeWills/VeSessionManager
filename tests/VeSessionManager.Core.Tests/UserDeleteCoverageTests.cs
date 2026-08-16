@@ -42,6 +42,7 @@ public class UserDeleteCoverageTests
         "SystemSettings.UpdatedByUserId",
         "UnmatchedSquarePayment.ResolvedByUserId",
         "WatchedLicense.AddedByUserId",
+        "CandidateEmailSend.SentByUserId",
         "User.ManagedByUserId",
         "AuditLog.UserId",
         "UserTeam.UserId",

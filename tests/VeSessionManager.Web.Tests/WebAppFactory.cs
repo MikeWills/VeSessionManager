@@ -60,6 +60,29 @@ public class WebAppFactory : WebApplicationFactory<Program>
     /// <summary>Held open for the lifetime of the factory: a SQLite in-memory database exists only while a connection to it does.</summary>
     private SqliteConnection? _connection;
 
+    /// <summary>
+    /// Every email the app tried to send during this factory's life.
+    ///
+    /// <para>The registration below replaces <c>SmtpEmailSender</c>, which is not optional: a page
+    /// test that triggers a send would otherwise open a real socket to whatever host the seeded team
+    /// carries, and fail slowly on a DNS timeout rather than quickly on an assertion. Nothing here
+    /// should be talking to a mail server.</para>
+    /// </summary>
+    public List<VeSessionManager.Core.Email.EmailMessage> SentEmails { get; } = [];
+
+    private sealed class CapturingEmailSender(List<VeSessionManager.Core.Email.EmailMessage> sent)
+        : VeSessionManager.Core.Email.IEmailSender
+    {
+        public Task SendAsync(
+            VeSessionManager.Core.Email.EmailCredentials credentials,
+            VeSessionManager.Core.Email.EmailMessage message,
+            CancellationToken cancellationToken)
+        {
+            sent.Add(message);
+            return Task.CompletedTask;
+        }
+    }
+
     public SeededIds Seeded { get; private set; } = new();
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -127,6 +150,10 @@ public class WebAppFactory : WebApplicationFactory<Program>
             // loopback address makes the harness resemble the deployment rather than a case that
             // never occurs.
             services.AddSingleton<IStartupFilter>(new RemoteIpStartupFilter());
+
+            // See SentEmails: no test may open a socket to a mail server.
+            services.RemoveAll<VeSessionManager.Core.Email.IEmailSender>();
+            services.AddSingleton<VeSessionManager.Core.Email.IEmailSender>(new CapturingEmailSender(SentEmails));
 
             services.AddLogging(logging => logging.SetMinimumLevel(LogLevel.Warning));
         });

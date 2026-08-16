@@ -590,6 +590,11 @@ public class UserManagementService(UserManager<User> userManager, AppDbContext d
         // Of everything on this list it is the one least suitable for quiet removal.
         await CheckAsync("refund issued", dbContext.Refunds.Where(r => r.RequestedByUserId == userId).Select(r => r.Id));
 
+        // Mail this account actually sent to candidates, in text it wrote itself (#144). Refused for
+        // the same reason as the rest: the row records what a person did, and it is the only record
+        // that a particular candidate was told a particular thing.
+        await CheckAsync("email sent to a candidate", dbContext.CandidateEmailSends.Where(s => s.SentByUserId == userId).Select(s => s.Id));
+
         // Refused rather than nulled, which #188 left open. Nulling would quietly restructure other
         // people's accounts as a side effect of deleting this one; refusing makes the admin reassign
         // them deliberately, and the message says how many.

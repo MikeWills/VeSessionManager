@@ -153,6 +153,28 @@ public static class EmailDefaultsSeeder
 
         // Phase 9b: manual, per-candidate trigger from the Session Manager ("Send ARRL Youth Program
         // instructions"), only surfaced when the session's Vec.SupportsYouthProgram = true.
+        // #144. Unlike every other template here, nothing sends this one: it is the starting text for
+        // a message composed on a session's "Email candidates" screen, edited per send. The seeded
+        // copy is therefore more obviously a placeholder than the others — what a team points new
+        // licensees at is local knowledge this app cannot guess, and the whole point of storing it is
+        // that they write it once and keep it.
+        await SeedTemplateIfMissingAsync(dbContext, logger, team, "GettingStartedLocally",
+            "Welcome to amateur radio — getting started locally",
+            """
+            <p>Hi {{CandidateFirstName}},</p>
+            <p>Congratulations again on your exam on {{SessionDate}}. Here is how to get on the air
+            with people near you.</p>
+            <p><strong>Replace the list below with your own club's details before sending this.</strong></p>
+            <ul>
+              <li><strong>Club meetings</strong> — where and when</li>
+              <li><strong>Nets</strong> — the weekly on-air check-in, with the frequency and time</li>
+              <li><strong>Repeaters</strong> — the local machines and their offsets/tones</li>
+              <li><strong>Who to ask</strong> — a name and an email for someone happy to help a new licensee</li>
+            </ul>
+            <p>Reply to this email if you have questions — someone here will answer.</p>
+            <p>{{TeamName}}</p>
+            """);
+
         await SeedTemplateIfMissingAsync(dbContext, logger, team, "ArrlYouthProgramInstructions",
             "ARRL Youth Program — Discount/Reimbursement Instructions",
             """

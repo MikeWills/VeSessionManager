@@ -33,6 +33,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options, IDataProtectio
     public DbSet<Session> Sessions => Set<Session>();
     public DbSet<Candidate> Candidates => Set<Candidate>();
     public DbSet<Payment> Payments => Set<Payment>();
+    public DbSet<CandidateEmailSend> CandidateEmailSends => Set<CandidateEmailSend>();
     public DbSet<VolunteerExaminer> VolunteerExaminers => Set<VolunteerExaminer>();
     public DbSet<SessionVolunteerExaminer> SessionVolunteerExaminers => Set<SessionVolunteerExaminer>();
     public DbSet<VeTeamMembership> VeTeamMemberships => Set<VeTeamMembership>();

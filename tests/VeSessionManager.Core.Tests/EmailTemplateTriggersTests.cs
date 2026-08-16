@@ -21,7 +21,8 @@ public class EmailTemplateTriggersTests
         "FccFeeReminder5Day",
         "PaymentExpirationNotice",
         "FelonyDisclosureInstructions",
-        "ArrlYouthProgramInstructions"
+        "ArrlYouthProgramInstructions",
+        "GettingStartedLocally"
     ];
 
     public static IEnumerable<object[]> SeededKeyData() => SeededKeys.Select(k => new object[] { k });

@@ -19,6 +19,12 @@ public static class EmailTemplatePlaceholders
         ["PaymentExpirationNotice"] = ["CandidateName", "SessionDate", "PaymentAmount"],
         ["FelonyDisclosureInstructions"] = ["CandidateName"],
         ["ArrlYouthProgramInstructions"] = ["CandidateName", "CallSign"],
+        // The odd one out: nothing in this app sends this key on its own. It is the starting text for
+        // a message somebody composes on a session's Email candidates screen (#144), so what actually
+        // resolves is decided by CandidatePlaceholderValues rather than by a dictionary at a send
+        // site — and EmailTemplatePlaceholdersTests asserts the two agree, since this entry is what
+        // the compose screen prints as insertable chips.
+        ["GettingStartedLocally"] = [.. CandidatePlaceholderValues.Names],
     };
 
     /// <summary>

@@ -431,6 +431,150 @@ public class CandidateNotificationService(
     }
 
     /// <summary>
+    /// Sends a <b>hand-composed</b> message to candidates chosen on one session (#144) — the Email
+    /// candidates screen. The draft starts from a template and is edited before it goes, so unlike
+    /// every other method here the message is not a stored template and there is no
+    /// <c>...SentUtc</c> column to guard it: a re-send is a decision somebody made.
+    ///
+    /// <para><b>It takes no template key on purpose.</b> The draft is the message; the key survives
+    /// only as <paramref name="templateLabel"/>, for the history row and the audit line. That is what
+    /// makes a blank draft, a shipped template and a team's own template one code path.</para>
+    ///
+    /// <para><b>Reported like a fan-out, not like a single send.</b> A partial outcome is the normal
+    /// case — some candidates have no address — so this returns counts and an optional
+    /// <c>Error</c> rather than one enum, exactly as <c>VeSessionInvitationService</c> does for the
+    /// same shape of screen.</para>
+    /// </summary>
+    /// <param name="candidateIds">Whatever the form posted. Re-scoped to the session below; ids outside it are dropped and counted, never mailed.</param>
+    public async Task<CandidateEmailBatchResult> SendComposedAsync(
+        int sessionId, IReadOnlyList<int> candidateIds, string subject, string body, string templateLabel,
+        int userId, CancellationToken cancellationToken)
+    {
+        var result = new CandidateEmailBatchResult();
+
+        var session = await dbContext.Sessions
+            .Include(s => s.Team)
+            .FirstOrDefaultAsync(s => s.Id == sessionId, cancellationToken);
+        if (session is null)
+        {
+            result.Error = "That session no longer exists.";
+            return result;
+        }
+
+        if (string.IsNullOrWhiteSpace(subject) || string.IsNullOrWhiteSpace(body))
+        {
+            result.Error = "An email needs both a subject and a message.";
+            return result;
+        }
+
+        var team = session.Team;
+        if (!team.IsEmailConfigured)
+        {
+            result.Error = "This team has no SMTP settings, so nothing can be sent. Set them in Team Settings.";
+            return result;
+        }
+
+        var emailSettings = await dbContext.EmailSettings.FirstOrDefaultAsync(e => e.TeamId == team.Id, cancellationToken);
+        if (emailSettings is null)
+        {
+            result.Error = "This team has no email From/Reply-To settings yet, so nothing can be sent.";
+            return result;
+        }
+
+        // Reported rather than settled silently. TrySendAsync answers true for a muted team — the
+        // deliberate settle-without-doing rule that stops the scan-based jobs building a backlog they
+        // would then flush all at once — and that is exactly wrong for somebody standing at a button
+        // waiting to hear what happened. Same call VeSessionInvitationService.SendAsync makes.
+        if (!integrationState.ShouldCall(team, TeamIntegration.Email, "sending a composed candidate email"))
+        {
+            result.Error = "Email is switched off for this team, so nothing was sent. Turn it back on in Team Settings.";
+            return result;
+        }
+
+        // Scoped to the session the screen was opened on (#238). The ids arrive from a posted form,
+        // so "the screen only offered this session's candidates" is a default, not a constraint —
+        // unscoped, this sends an attacker-authored subject and body from the team's own SMTP to any
+        // candidate row on the deployment, and the mail is indistinguishable from a genuine one
+        // because it *is* genuine: same From, same Reply-To, same server.
+        //
+        // Ids outside the scope are dropped and counted rather than failing the send: a legitimate
+        // sender reaches this by leaving the screen open while a candidate is withdrawn, which should
+        // not lose the other nine emails.
+        var recipients = await dbContext.Candidates
+            .Include(c => c.Session)
+            .Where(c => c.SessionId == sessionId && candidateIds.Contains(c.Id))
+            .ToListAsync(cancellationToken);
+
+        result.NotOnSession = candidateIds.Distinct().Count() - recipients.Count;
+        if (result.NotOnSession > 0)
+        {
+            logger.LogWarning(
+                "Composed candidate email for session {SessionId} requested {Requested} recipient(s), {Dropped} of which are not on it and were dropped.",
+                sessionId, candidateIds.Distinct().Count(), result.NotOnSession);
+        }
+
+        // Composed first, sent second (#293): SmtpEmailSender does a full connect + TLS + AUTH +
+        // disconnect per message, so a 20-candidate session would otherwise be 20 handshakes inside
+        // one POST with the sender watching a spinner.
+        var addressable = new List<Candidate>(recipients.Count);
+        var messages = new List<EmailMessage>(recipients.Count);
+
+        foreach (var candidate in recipients)
+        {
+            if (string.IsNullOrWhiteSpace(candidate.Email))
+            {
+                // Counted, not silently dropped — "sent 8 of 10" with no explanation is worse than a
+                // number somebody can act on by filling in an address.
+                result.NoEmailAddress++;
+                continue;
+            }
+
+            var rendered = await templateRenderer.RenderTextAsync(
+                team.Id, subject, body, CandidatePlaceholderValues.For(candidate, team.Name), templateLabel, cancellationToken);
+
+            addressable.Add(candidate);
+            messages.Add(new EmailMessage(
+                candidate.Email!, emailSettings.FromAddress, emailSettings.FromDisplayName,
+                emailSettings.ReplyToAddress, rendered.Subject, rendered.Body, rendered.InlineLogo,
+                BccAddress: emailSettings.BccAddress));
+        }
+
+        var outcomes = await emailSender.SendManyAsync(team.ToEmailCredentials(), messages, cancellationToken);
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+
+        for (var i = 0; i < outcomes.Count; i++)
+        {
+            if (!outcomes[i].Sent)
+            {
+                // One bad address must not stop the rest; that rule lives in the sender, which is the
+                // only layer that can hold the connection open across the failure.
+                result.Failed++;
+                logger.LogError(outcomes[i].Error, "Failed to send a composed email to candidate {CandidateId}", addressable[i].Id);
+                continue;
+            }
+
+            result.Sent++;
+            // Only for a delivery that succeeded. This list answers "who has already had one", and a
+            // second pass over a session skips the people on it — so a failed send recorded here
+            // would hide exactly the person that pass exists to catch.
+            dbContext.CandidateEmailSends.Add(new CandidateEmailSend
+            {
+                CandidateId = addressable[i].Id,
+                TemplateLabel = templateLabel,
+                SentUtc = now,
+                SentByUserId = userId
+            });
+        }
+
+        dbContext.AddAuditLog(userId, "CandidateEmailsSent", nameof(Session), session.Id,
+            $"\"{templateLabel}\" to candidates on session {session.ExamToolsSessionId}: {result}", now);
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        logger.LogInformation("Composed candidate email for session {SessionId}: {Result}", session.Id, result);
+        return result;
+    }
+
+    /// <summary>
     /// Every candidate-facing email this service sends funnels through here, which is why the mute
     /// switch is checked here and not at five call sites (#64). Takes the Team rather than its id for
     /// exactly that reason.

@@ -63,6 +63,18 @@ public static class EmailTemplateTriggers
             "On demand",
             "To the candidate",
             "Only when someone chooses \"Send youth program instructions\" on a candidate's row. Available only if the session's VEC runs a youth program."),
+
+        // The first entry here that describes something nothing in this app ever sends by itself.
+        // Every other template is text the code fills in and posts; this one is a starting point a
+        // person edits before sending, which is why the description leads with that rather than with
+        // a condition.
+        ["GettingStartedLocally"] = new(
+            EmailTemplatePhase.PostSession,
+            "On demand",
+            "To the candidate",
+            "Never sent automatically. Open a session, choose \"Email candidates\", pick who should get it, and edit the message before sending — " +
+            "what goes out is your edited draft, and nothing is written back to this template. " +
+            "Note {{CallSign}} is blank until the FCC grants the license, which is usually a few days after the session; the compose screen warns you when that applies to anyone you have picked."),
     };
 
     /// <summary>
