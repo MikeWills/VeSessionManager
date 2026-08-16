@@ -17,6 +17,6 @@ namespace VeSessionManager.Worker;
 public class RefundStatusJob(IServiceScopeFactory scopeFactory, IConfiguration configuration, ILogger<RefundStatusJob> logger)
     : PerTeamDailyJob(scopeFactory, configuration, logger, JobSchedules.RefundStatus)
 {
-    protected override Task RunForTeamAsync(IServiceProvider scopedServices, Team team, CancellationToken cancellationToken) =>
-        scopedServices.GetRequiredService<RefundStatusService>().RunAsync(team, cancellationToken);
+    protected override async Task<object?> RunForTeamAsync(IServiceProvider scopedServices, Team team, CancellationToken cancellationToken) =>
+        await scopedServices.GetRequiredService<RefundStatusService>().RunAsync(team, cancellationToken);
 }

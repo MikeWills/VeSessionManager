@@ -18,6 +18,6 @@ namespace VeSessionManager.Worker;
 public class DayBeforeReminderJob(IServiceScopeFactory scopeFactory, IConfiguration configuration, ILogger<DayBeforeReminderJob> logger)
     : PerTeamDailyJob(scopeFactory, configuration, logger, JobSchedules.DayBeforeReminder)
 {
-    protected override Task RunForTeamAsync(IServiceProvider scopedServices, Team team, CancellationToken cancellationToken) =>
-        scopedServices.GetRequiredService<CandidateNotificationService>().SendDayBeforeRemindersAsync(team, cancellationToken);
+    protected override async Task<object?> RunForTeamAsync(IServiceProvider scopedServices, Team team, CancellationToken cancellationToken) =>
+        await scopedServices.GetRequiredService<CandidateNotificationService>().SendDayBeforeRemindersAsync(team, cancellationToken);
 }

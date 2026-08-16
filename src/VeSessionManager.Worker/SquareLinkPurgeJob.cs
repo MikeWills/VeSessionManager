@@ -17,6 +17,6 @@ namespace VeSessionManager.Worker;
 public class SquareLinkPurgeJob(IServiceScopeFactory scopeFactory, IConfiguration configuration, ILogger<SquareLinkPurgeJob> logger)
     : PerTeamDailyJob(scopeFactory, configuration, logger, JobSchedules.SquareLinkPurge)
 {
-    protected override Task RunForTeamAsync(IServiceProvider scopedServices, Team team, CancellationToken cancellationToken) =>
-        scopedServices.GetRequiredService<SquarePaymentLinkPurgeService>().RunAsync(team, cancellationToken);
+    protected override async Task<object?> RunForTeamAsync(IServiceProvider scopedServices, Team team, CancellationToken cancellationToken) =>
+        await scopedServices.GetRequiredService<SquarePaymentLinkPurgeService>().RunAsync(team, cancellationToken);
 }
