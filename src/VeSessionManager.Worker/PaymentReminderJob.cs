@@ -16,6 +16,6 @@ namespace VeSessionManager.Worker;
 public class PaymentReminderJob(IServiceScopeFactory scopeFactory, IConfiguration configuration, ILogger<PaymentReminderJob> logger)
     : PerTeamDailyJob(scopeFactory, configuration, logger, JobSchedules.PaymentReminder)
 {
-    protected override Task RunForTeamAsync(IServiceProvider scopedServices, Team team, CancellationToken cancellationToken) =>
-        scopedServices.GetRequiredService<PaymentReminderService>().RunAsync(team, cancellationToken);
+    protected override async Task<object?> RunForTeamAsync(IServiceProvider scopedServices, Team team, CancellationToken cancellationToken) =>
+        await scopedServices.GetRequiredService<PaymentReminderService>().RunAsync(team, cancellationToken);
 }

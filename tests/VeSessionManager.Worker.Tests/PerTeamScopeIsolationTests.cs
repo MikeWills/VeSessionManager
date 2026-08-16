@@ -47,7 +47,7 @@ public class PerTeamScopeIsolationTests
         /// <summary>Which DbContext instance served each team, by reference identity.</summary>
         public List<AppDbContext> ContextsSeen { get; } = [];
 
-        protected override async Task RunForTeamAsync(
+        protected override async Task<object?> RunForTeamAsync(
             IServiceProvider scopedServices, Team team, CancellationToken cancellationToken)
         {
             var dbContext = scopedServices.GetRequiredService<AppDbContext>();
@@ -70,6 +70,10 @@ public class PerTeamScopeIsolationTests
             }
 
             await dbContext.SaveChangesAsync(cancellationToken);
+
+            // The base stringifies whatever comes back into JobRunHistory.ResultSummary; this probe
+            // is about scope isolation, so it has nothing to report.
+            return null;
         }
     }
 

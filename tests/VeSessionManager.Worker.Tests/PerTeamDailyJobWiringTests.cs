@@ -56,11 +56,17 @@ public class PerTeamDailyJobWiringTests
         var team = new Team { Id = 1, Name = "TEAM" };
 
         // The resolve is the first thing each override does, so the throw comes after it.
+        //
+        // The returned Task has to be awaited, not merely started. The overrides became `async` when
+        // RunForTeamAsync started returning Task<object?> (#309, DUP-11) — before that they were
+        // expression-bodied and non-async, so a failed resolve threw straight out of Invoke. An
+        // async method captures it in the Task instead, and dropping the Task makes this probe pass
+        // while observing nothing. GetAwaiter().GetResult() rethrows it unwrapped.
         Assert.ThrowsAny<Exception>(() =>
         {
             try
             {
-                _ = method!.Invoke(job, [provider, team, CancellationToken.None]);
+                ((Task)method!.Invoke(job, [provider, team, CancellationToken.None])!).GetAwaiter().GetResult();
             }
             catch (TargetInvocationException ex)
             {

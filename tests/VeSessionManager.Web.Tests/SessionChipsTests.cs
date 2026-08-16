@@ -142,6 +142,24 @@ public class SessionChipsTests
     }
 
     /// <summary>
+    /// The payment chip (#309, DUP-10). The three-arm switch was written out on both the session
+    /// roster and the candidate page; only the roster had the fourth case, because only it can be
+    /// looking at a candidate with no payment at all.
+    /// </summary>
+    [Fact]
+    public void ThePaymentChipCoversEveryStatusAndTheNoPaymentCase()
+    {
+        Assert.Equal("Paid", SessionChips.Payment(PaymentStatus.Paid).Label);
+        Assert.Equal("Unpaid", SessionChips.Payment(PaymentStatus.Unpaid).Label);
+        Assert.Equal("Not applicable", SessionChips.Payment(PaymentStatus.NotApplicable).Label);
+
+        // Null is "this candidate has no payment row", which is not the same as one that exists and
+        // is not applicable — the roster shows both and they must not collapse.
+        Assert.Equal("No payment", SessionChips.Payment(null).Label);
+        Assert.NotEqual(SessionChips.Payment(null), SessionChips.Payment(PaymentStatus.NotApplicable));
+    }
+
+    /// <summary>
     /// A session that has not started yet has nothing to submit either (#338, the second half —
     /// "I have a future session that 'hasn't been sent to the FCC', this is also confusing").
     ///

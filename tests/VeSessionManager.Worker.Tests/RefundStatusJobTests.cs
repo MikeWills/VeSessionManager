@@ -278,5 +278,17 @@ public class RefundStatusJobTests
         var run = Assert.Single(await dbContext.JobRunHistories.ToListAsync());
         Assert.Equal(JobSchedules.RefundStatus, run.JobName);
         Assert.True(run.Success);
+
+        // ResultSummary is what the ops page shows for a run — "settled 1, still pending 0, …".
+        //
+        // It was null for every PerTeamDailyJob subclass until 2026-08-16 (#309, DUP-11), and
+        // silently: JobRunHistoryLogger.RunAsync has a generic overload that stringifies the
+        // returned result and a void one that records nothing, and the base declared
+        // RunForTeamAsync as returning plain Task — so every subclass bound the void overload no
+        // matter what its service returned. Four jobs, blank summaries, nothing failing. CLAUDE.md
+        // had already recorded that this overload resolution is load-bearing; nothing asserted it.
+        Assert.NotNull(run.ResultSummary);
+        Assert.Contains("settled", run.ResultSummary);
+
     }
 }

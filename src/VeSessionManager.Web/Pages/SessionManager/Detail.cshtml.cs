@@ -444,14 +444,7 @@ public class DetailModel(
         var primaryPayment = candidate.Payments.OrderByDescending(p => p.CreatedUtc).FirstOrDefault(p => p.Status == PaymentStatus.Unpaid)
             ?? candidate.Payments.OrderByDescending(p => p.CreatedUtc).FirstOrDefault();
 
-        var (paymentClass, paymentLabel) = primaryPayment is null
-            ? ("chip-neutral", "No payment")
-            : primaryPayment.Status switch
-            {
-                PaymentStatus.Paid => ("chip-green", "Paid"),
-                PaymentStatus.Unpaid => ("chip-amber", "Unpaid"),
-                _ => ("chip-neutral", "Not applicable")
-            };
+        var (paymentClass, paymentLabel) = SessionChips.Payment(primaryPayment?.Status);
 
         var meterSegments = candidate.ApplicationStatus switch
         {

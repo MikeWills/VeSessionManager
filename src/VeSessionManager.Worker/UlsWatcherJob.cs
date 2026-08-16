@@ -22,12 +22,16 @@ namespace VeSessionManager.Worker;
 ///
 /// <para>Wall-clock ET rather than "whenever the Worker started" is kept because FCC's own issuance
 /// runs at 02:00 ET, so a morning slot lands after that day's grants exist.</para>
+///
+/// <para>The tick loop and slot guard live in <see cref="AnchoredDailyJob"/> since 2026-08-16
+/// (#309, DUP-11) — they were a verbatim second copy of <see cref="LicenseWatchJob"/>'s.</para>
 /// </summary>
 public class UlsWatcherJob(
     IServiceScopeFactory scopeFactory,
     IConfiguration configuration,
     TimeProvider timeProvider,
-    ILogger<UlsWatcherJob> logger) : BackgroundService
+    ILogger<UlsWatcherJob> logger)
+    : AnchoredDailyJob(scopeFactory, timeProvider, logger, JobSchedules.UlsWatcher)
 {
     /// <summary>
     /// Shared schedule definition — the admin Job Schedule page reports this job's cadence from the
@@ -35,68 +39,38 @@ public class UlsWatcherJob(
     /// </summary>
     private static readonly JobScheduleDescriptor UlsDescriptor = JobSchedules.For(JobSchedules.UlsWatcher);
 
-    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    /// <summary>
+    /// Reads SystemSettings directly, with a fall back to configuration when no settings row exists
+    /// yet. Deliberately <b>not</b> switched to <c>SystemSettingsService</c> the way
+    /// <see cref="LicenseWatchJob"/> does it: that service materializes defaults, which would
+    /// silently change what a deployment with no settings row uses from its configured
+    /// <c>Jobs:UlsWatcher*</c> values to the code defaults. Same two settings, different fallback,
+    /// and the difference is the reason this stayed per-job when the rest was extracted.
+    /// </summary>
+    protected override async Task<(int StartHourEt, int IntervalHours)> ResolveScheduleAsync(
+        IServiceProvider scopedServices, CancellationToken cancellationToken)
     {
-        using var timer = new PeriodicTimer(TimeSpan.FromHours(1));
+        var dbContext = scopedServices.GetRequiredService<AppDbContext>();
+        var settings = await dbContext.SystemSettings
+            .FirstOrDefaultAsync(s => s.Id == SystemSettingsService.SingletonId, cancellationToken);
 
-        do
-        {
-            await JobTick.GuardedAsync(logger, "UlsWatcher", () => RunTickAsync(stoppingToken));
-        }
-        while (await timer.WaitForNextTickAsync(stoppingToken));
-    }
-
-    private async Task<(int IntervalHours, int StartHourEt)> GetSettingsAsync(CancellationToken cancellationToken)
-    {
-        using var scope = scopeFactory.CreateScope();
-        var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        var settings = await dbContext.SystemSettings.FirstOrDefaultAsync(s => s.Id == SystemSettingsService.SingletonId, cancellationToken);
         if (settings is not null)
         {
-            return (JobSchedules.IntervalOrDefault(settings.UlsWatcherIntervalHours, UlsDescriptor.DefaultIntervalHours!.Value),
-                    JobSchedules.StartHourOrDefault(settings.UlsWatcherStartHourEt, UlsDescriptor.StartHourEt!.Value));
+            return (JobSchedules.StartHourOrDefault(settings.UlsWatcherStartHourEt, UlsDescriptor.StartHourEt!.Value),
+                    JobSchedules.IntervalOrDefault(settings.UlsWatcherIntervalHours, UlsDescriptor.DefaultIntervalHours!.Value));
         }
 
         return (
-            configuration.GetValue(UlsDescriptor.IntervalConfigKey!, UlsDescriptor.DefaultIntervalHours!.Value),
-            configuration.GetValue("Jobs:UlsWatcherStartHourEt", UlsDescriptor.StartHourEt!.Value));
+            configuration.GetValue("Jobs:UlsWatcherStartHourEt", UlsDescriptor.StartHourEt!.Value),
+            configuration.GetValue(UlsDescriptor.IntervalConfigKey!, UlsDescriptor.DefaultIntervalHours!.Value));
     }
 
-    /// <summary>
-    /// One iteration of this job's work, separated from the timer loop so it can be driven directly
-    /// by a test (issue #325). The loop above is three lines of framework usage; every bug this job
-    /// has had lived in here.
-    /// </summary>
-    internal async Task RunTickAsync(CancellationToken stoppingToken)
-    {
-        var (intervalHours, startHourEt) = await GetSettingsAsync(stoppingToken);
-
-        var nowEt = DailySlotSchedule.NowEastern(timeProvider);
-        var dueSlotUtc = DailySlotSchedule.LatestDueSlotUtc(nowEt, startHourEt, intervalHours);
-
-        using var scope = scopeFactory.CreateScope();
-        var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        // TeamId == null is not a narrowing — this job always logs its run with teamId: null (see
-        // the RunAsync call below), so the rows it is looking for are exactly the null-team ones.
-        // It is here to make the (TeamId, JobName, StartedUtc) index seedable: without a leading
-        // TeamId predicate SQLite cannot use it and this scans the whole table, hourly (#296).
-        var alreadyRanThisSlot = await dbContext.JobRunHistories.AnyAsync(
-            h => h.TeamId == null && h.JobName == "UlsWatcher" && h.Success && h.StartedUtc >= dueSlotUtc, stoppingToken);
-        if (alreadyRanThisSlot)
-        {
-            // `return` (not `continue`) — this is the guarded tick body; returning ends this
-            // tick and the do-while waits for the next hourly one, same as before.
-            return;
-        }
-
-        var jobRunHistoryLogger = scope.ServiceProvider.GetRequiredService<JobRunHistoryLogger>();
-        var watcherService = scope.ServiceProvider.GetRequiredService<UlsWatcherService>();
-
-        await jobRunHistoryLogger.RunAsync(
-            "UlsWatcher",
-            watcherService.RunAsync,
+    protected override Task RunSlotAsync(
+        IServiceProvider scopedServices, JobRunHistoryLogger historyLogger, CancellationToken cancellationToken) =>
+        historyLogger.RunAsync(
+            JobSchedules.UlsWatcher,
+            scopedServices.GetRequiredService<UlsWatcherService>().RunAsync,
+            // Global rather than per-team: one scan covers every team's candidates.
             null,
-            stoppingToken);
-    }
-
+            cancellationToken);
 }

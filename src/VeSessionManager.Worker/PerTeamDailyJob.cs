@@ -36,8 +36,24 @@ public abstract class PerTeamDailyJob(
         while (await timer.WaitForNextTickAsync(stoppingToken));
     }
 
-    /// <summary>Resolve this job's specific service from scopedServices and run it for the given team.</summary>
-    protected abstract Task RunForTeamAsync(IServiceProvider scopedServices, Team team, CancellationToken cancellationToken);
+    /// <summary>
+    /// Resolve this job's specific service from scopedServices and run it for the given team, and
+    /// return whatever that service returns — its <c>ToString()</c> becomes the run's
+    /// <c>ResultSummary</c>, which is the text the admin Job Run History page shows.
+    ///
+    /// <para><b>Returning <c>Task</c> here silently blanked every summary</b>, which is what this
+    /// signature exists to prevent (#309, DUP-11, fixed 2026-08-16).
+    /// <c>JobRunHistoryLogger.RunAsync</c> has two overloads — a generic one that stringifies the
+    /// result, and a void one that records nothing. With a plain <c>Task</c> the void overload wins,
+    /// for every subclass, regardless of what its service actually returned. All four jobs on this
+    /// base showed a blank summary and nothing failed. CLAUDE.md had already recorded that this
+    /// overload resolution is load-bearing; the note existed and the code did not obey it.</para>
+    ///
+    /// <para><c>object?</c> rather than a generic parameter because the base does exactly one thing
+    /// with the value — calls <c>ToString()</c> on it — and a type parameter would say otherwise
+    /// while also making the base unusable as a single type in tests that drive any job through it.</para>
+    /// </summary>
+    protected abstract Task<object?> RunForTeamAsync(IServiceProvider scopedServices, Team team, CancellationToken cancellationToken);
 
     /// <summary>
     /// One iteration of this job's work, separated from the timer loop so it can be driven directly

@@ -1,4 +1,4 @@
-﻿using System.Globalization;
+using System.Globalization;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
@@ -300,12 +300,7 @@ public class CandidateDetailModel(
 
     private static PaymentRow ToPaymentRow(Payment payment, DateTime nowUtc)
     {
-        var (chipClass, chipLabel) = payment.Status switch
-        {
-            PaymentStatus.Paid => ("chip-green", "Paid"),
-            PaymentStatus.Unpaid => ("chip-amber", "Unpaid"),
-            _ => ("chip-neutral", "Not applicable")
-        };
+        var (chipClass, chipLabel) = SessionChips.Payment(payment.Status);
 
         var amountMismatchLine = payment.AmountMismatchFlaggedUtc is not null
             ? $"Paid {Usd.Format(payment.SquareAmountPaidUsd!.Value)} against {Usd.Format(payment.Amount)} owed"

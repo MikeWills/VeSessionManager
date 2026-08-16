@@ -84,6 +84,24 @@ public static class SessionChips
         : hasStarted ? ("chip-neutral", "Not submitted")
         : ("chip-neutral", "—");
 
+    /// <summary>
+    /// A candidate's payment state (#309, DUP-10) — written out on both the session roster and the
+    /// candidate detail page until 2026-08-16.
+    /// </summary>
+    /// <param name="status">
+    /// Null means <b>no payment row at all</b>, which only the roster can encounter: the candidate
+    /// page renders one chip per payment it already has. Deliberately distinct from
+    /// <see cref="PaymentStatus.NotApplicable"/>, which is a payment that exists and is not owed —
+    /// collapsing the two would report "no payment" for a session that collects no fees.
+    /// </param>
+    public static (string Class, string Label) Payment(PaymentStatus? status) => status switch
+    {
+        null => ("chip-neutral", "No payment"),
+        PaymentStatus.Paid => ("chip-green", "Paid"),
+        PaymentStatus.Unpaid => ("chip-amber", "Unpaid"),
+        _ => ("chip-neutral", "Not applicable")
+    };
+
     // ---- Sort keys ---------------------------------------------------------------------------
 
     /// <summary>
