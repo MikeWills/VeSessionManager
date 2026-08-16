@@ -126,6 +126,26 @@ would be pure duplication — and goes straight to `CHANGELOG.md` instead. Non-p
 redesigns, hardening passes) start here and move to `CHANGELOG.md` once the section is at/over the
 cap and a newer entry needs to be added; oldest goes first.
 
+- **Candidates can be emailed by hand from a session now (2026-08-16).** Issue #144, first of two PRs.
+  See `docs/candidate-email.md`. Pick candidates, start from a template, **edit the message**, send —
+  which is a shape this app did not have: every other candidate email is composed by code. The issue
+  asked for one "getting started locally" email one candidate at a time; Mike widened it twice while
+  it was being scoped (several at once, and a picker over which template to start from), so what
+  shipped is the mechanism and that email is the first template on it. Four things worth carrying
+  forward: **`EmailTemplateRenderer` gained `RenderTextAsync` rather than this growing its own
+  `Replace` chain** — that is precisely what `VeSessionInvitationService` did, and it shipped without
+  HTML-encoding (#260), with candidate names coming from the same registration intake; **the posted
+  candidate ids are re-scoped to the session inside the service**, because unscoped this sends
+  attacker-authored text from the team's own SMTP and the mail is indistinguishable from genuine (#238
+  again); **history is a `CandidateEmailSend` table, not another `...SentUtc` column**, since a team
+  will be writing its own templates in PR 2 and a column cannot be added at runtime — recorded only on
+  a delivery that succeeded, because the list is what a second pass over a session skips; and **a
+  muted team is an error here, not a quiet success**, unlike `TrySendAsync`'s deliberate
+  settle-without-doing rule, which is right for a job and wrong for someone waiting at a button. Three
+  bugs were caught by guards that already existed rather than by review, including a hidden field
+  whose name did not match its bind name — **which no send test can catch**, since a hand-built POST
+  body never reads the markup.
+
 - **Alerts have a bell now, and it links at the row rather than the list (2026-08-16).** Issue #339.
   See `docs/alerts.md`. The reconciliation badge was a number on an item **inside a closed dropdown** —
   invisible until you opened a menu you had no reason to open, to check a page you had no reason to
@@ -273,37 +293,6 @@ cap and a newer entry needs to be added; oldest goes first.
   had to be** — two copies agreeing is the normal state right until someone fixes one, so no
   behavioural test of either copy can see the gap; what is checkable is "one string, one home", and
   it reported 19 offenders before the refactor.
-
-- **Nine-agent full-codebase audit, and the first six waves of fixes (2026-08-11).** See
-  `docs/audit-2026-08-11-report.md` (narrative, cross-cutting themes, and — most valuable — what was
-  *verified clean*, so it does not get re-audited) and `docs/audit-2026-08-11-tasks.md` (every
-  finding, with the task-ID↔issue map). Three security, two optimization and four traceability
-  agents, one per layer from Razor markup to the database. **Nothing rated Critical; 19 rated High,
-  and they collapsed into five recurring shapes rather than 19 unrelated bugs** — `ChangeTracker.Clear()`
-  as a per-row error handler, `VolunteerExaminer` being global while its callers assume team scoping,
-  failure that renders as success, unbounded historical scans, and ~110 POST handlers with one test
-  between them. All 85 findings are GitHub issues (`audit-2026-08-11`), which remain the list of
-  record; the two docs hold the analysis that does not fit in an issue. **Two decisions came out of
-  it rather than code**: cross-team VE reach is intended and stays (`docs/ve-management.md` records
-  the reasoning, the counts, and the three conditions that would reverse it), and the beta box runs
-  the *Production* environment, so `appsettings.Test.json` is a local-only file pinned to localhost.
-  Worth knowing for anything similar: **three findings were wrong or mis-scoped on re-check** — the
-  suggested fix for the NUL sentinel would have left the real bug in place, `#266` assumed a Test
-  deployment that does not exist, and 11 cross-references in the filed issues were off by six.
-
-- **Felony disclosure instructions are a button now, sent before the session (2026-08-11).** Issue
-  #221. See `docs/email-reference.md`. `MarkCompletedAsync` sent this automatically to every candidate
-  whose `Tested` flag that call flipped — no button, no confirmation. Two things wrong with that: the
-  email tells someone their **felony disclosure requires extra FCC paperwork**, which is not a thing
-  to send as a side effect of a bulk status flip, and keying it to "session completed" meant it could
-  only ever arrive **after** the exam, when the candidate can no longer easily ask anyone about it.
-  Now a per-candidate action, offered whenever a disclosure is declared — `Tested` is not consulted at
-  all. **Two consequences of deleting an automatic send, both deliberate:** the disclosure check moved
-  *into* the service (`NoFelonyDisclosure`), because the id arrives from a form now and one caller's
-  filtering can no longer be trusted; and the candidate is **marked, not just counted** — the session
-  row and candidate page both show "declared a disclosure, instructions not sent", since a count in a
-  one-off status message is gone on the next click. `SessionCompletionResult` reports how many are
-  still waiting rather than how many emails it sent, which is now always zero.
 
 Everything through Phase 0-10's initial build (ExamTools ingestion, Zoom/Discord, Square, email
 notifications, FCC ULS watcher, payment reminders, VE tracking, VEC submission tracker, admin

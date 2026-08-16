@@ -1,0 +1,141 @@
+@page "{id:int}"
+@model VeSessionManager.Web.Pages.SessionManager.CandidateEmailModel
+@{
+    ViewData["Title"] = "Email candidates";
+    ViewData["ActiveNav"] = "Sessions";
+    Layout = "_AppLayout";
+}
+
+<div class="page-head">
+    <div>
+        <p class="eyebrow"><a asp-page="/SessionManager/Detail" asp-route-id="@Model.Session.Id">@Model.Session.Title</a></p>
+        <h1>Email candidates</h1>
+    </div>
+</div>
+
+@* A GET form, so choosing a template reloads the draft from that team's current text. No JS beyond
+   app.js's data-autosubmit, and the consequence is stated rather than hidden behind a confirm
+   dialog: the draft is replaced. *@
+<form method="get" class="filters" style="margin-bottom:18px;">
+    <label class="ve-search" style="max-width:320px;">
+        <span class="visually-hidden">Start from</span>
+        <select name="template" data-autosubmit class="filter-select" aria-label="Start from a template">
+            <option value="">(no template) — write your own</option>
+            @foreach (var choice in Model.Templates)
+            {
+                <option value="@choice.Key" selected="@(choice.Key == Model.SelectedTemplateKey)">@choice.Label</option>
+            }
+        </select>
+    </label>
+    <span class="session-sub">Choosing a template replaces the draft below. Your edits are sent as written and never saved back to the template.</span>
+</form>
+
+@if (Model.CallSignWarningCount > 0)
+{
+    @* The normal case, not an edge one: a new licensee's call sign arrives from the FCC days after
+       the session, so this token is usually empty for the people this screen is most used on. *@
+    <div class="vesm-alert error">
+        @Model.CallSignWarningCount of the candidates you can email have no call sign yet, so
+        <code>{{CallSign}}</code> will come out empty for them. Take the placeholder out, or send this
+        once the FCC has granted.
+    </div>
+}
+
+<form method="post">
+    @* name="template", matching the [BindProperty(Name = "template")] — not the property's own name,
+       which binds nothing and would have labelled every send "Custom message". Caught by
+       FormBindingTests, not by a passing send test. *@
+    <input type="hidden" name="template" value="@Model.SelectedTemplateKey" />
+    <div class="ve-panel">
+        <h2>Message</h2>
+        <p class="session-sub">
+            Placeholders:
+            @foreach (var placeholder in VeSessionManager.Web.Pages.SessionManager.CandidateEmailModel.Placeholders)
+            {
+                <code>@("{{" + placeholder + "}}")</code><text> </text>
+            }
+            <code>{{Logo}}</code>
+        </p>
+
+        <div class="field">
+            <label asp-for="Subject">Subject</label>
+            <input asp-for="Subject" />
+        </div>
+
+        <div class="field">
+            <label asp-for="Body">Message</label>
+            <textarea asp-for="Body" rows="14"></textarea>
+            <span class="session-sub">HTML is allowed. Sent from your team's own email address.</span>
+        </div>
+    </div>
+
+    <div class="ve-panel" data-ve-picker>
+        <h2>Who to email</h2>
+        <p class="session-sub">
+            Candidates on this session. Anyone withdrawn, or with no address on file, cannot be
+            emailed — their details are gone or were never there.
+        </p>
+
+        <div class="filters" style="margin-bottom:12px;">
+            <label class="ve-search">
+                <span class="visually-hidden">Filter this list</span>
+                <i class="bi bi-search" aria-hidden="true"></i>
+                <input type="search" data-ve-filter placeholder="Filter by name or call sign" />
+            </label>
+            <button type="button" class="btn-secondary btn-sm" data-ve-select="all">Select all shown</button>
+            <button type="button" class="btn-secondary btn-sm" data-ve-select="none">Clear selection</button>
+        </div>
+
+        <div class="table-scroll">
+        <table class="cards">
+            <thead><tr><th></th><th>Call sign</th><th>Name</th><th>Already sent</th></tr></thead>
+            <tbody>
+                @if (Model.Candidates.Count == 0)
+                {
+                    <tr><td colspan="4">No candidates on this session yet.</td></tr>
+                }
+                @foreach (var candidate in Model.Candidates)
+                {
+                    <tr>
+                        <td>
+                            <input type="checkbox" name="SelectedCandidateIds" value="@candidate.Id"
+                                   @(candidate.CanReceive ? "" : "disabled")
+                                   title="@(candidate.CanReceive ? null : "No email address on file")" />
+                        </td>
+                        <td class="mono">@(candidate.CallSign ?? "—")</td>
+                        <td>
+                            @candidate.Name
+                            @if (candidate.IsWithdrawn)
+                            {
+                                <span class="chip chip-neutral">Withdrawn</span>
+                            }
+                            else if (string.IsNullOrWhiteSpace(candidate.Email))
+                            {
+                                <span class="chip chip-brick">No email</span>
+                            }
+                        </td>
+                        @* What makes a second pass over a session possible without sending twice —
+                           for this message specifically, not email in general. *@
+                        <td>
+                            @if (candidate.LastSentDisplay is { } sent)
+                            {
+                                <span class="chip chip-green">Sent @sent</span>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        </div>
+    </div>
+
+    @* Sticky for the same reason as the VE invitation screen: a long roster otherwise pushes the
+       send button off the bottom of a long page. *@
+    <div class="ve-action-bar">
+        <span class="session-sub" data-ve-selected-count>0 selected</span>
+        <span>
+            <a class="btn-secondary btn-sm" asp-page="/SessionManager/Detail" asp-route-id="@Model.Session.Id">Cancel</a>
+            <button type="submit" class="btn-primary btn-sm">Send email</button>
+        </span>
+    </div>
+</form>

@@ -8,6 +8,23 @@ that window, or immediately if it's phase-numbered work already summarized in "C
 design rationale for any entry still lives in its linked `/docs/*.md` file, not here or in
 CLAUDE.md — this file, like CLAUDE.md's Change Log, is pointers only.
 
+- **Nine-agent full-codebase audit, and the first six waves of fixes (2026-08-11).** See
+  `docs/audit-2026-08-11-report.md` (narrative, cross-cutting themes, and — most valuable — what was
+  *verified clean*, so it does not get re-audited) and `docs/audit-2026-08-11-tasks.md` (every
+  finding, with the task-ID↔issue map). Three security, two optimization and four traceability
+  agents, one per layer from Razor markup to the database. **Nothing rated Critical; 19 rated High,
+  and they collapsed into five recurring shapes rather than 19 unrelated bugs** — `ChangeTracker.Clear()`
+  as a per-row error handler, `VolunteerExaminer` being global while its callers assume team scoping,
+  failure that renders as success, unbounded historical scans, and ~110 POST handlers with one test
+  between them. All 85 findings are GitHub issues (`audit-2026-08-11`), which remain the list of
+  record; the two docs hold the analysis that does not fit in an issue. **Two decisions came out of
+  it rather than code**: cross-team VE reach is intended and stays (`docs/ve-management.md` records
+  the reasoning, the counts, and the three conditions that would reverse it), and the beta box runs
+  the *Production* environment, so `appsettings.Test.json` is a local-only file pinned to localhost.
+  Worth knowing for anything similar: **three findings were wrong or mis-scoped on re-check** — the
+  suggested fix for the NUL sentinel would have left the real bug in place, `#266` assumed a Test
+  deployment that does not exist, and 11 cross-references in the filed issues were off by six.
+
 - **Felony disclosure instructions are a button now, sent before the session (2026-08-11).** Issue
   #221. See `docs/email-reference.md`. `MarkCompletedAsync` sent this automatically to every candidate
   whose `Tested` flag that call flipped — no button, no confirmation. Two things wrong with that: the

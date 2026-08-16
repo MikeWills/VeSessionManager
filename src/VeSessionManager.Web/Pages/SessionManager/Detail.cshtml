@@ -107,9 +107,17 @@
     </div>
     @if (Model.CanEdit)
     {
-        <form method="post" asp-page-handler="RefreshCandidates">
-            <button type="submit" class="btn-secondary btn-sm"><i class="bi bi-arrow-clockwise" aria-hidden="true"></i> Refresh candidates</button>
-        </form>
+        <span style="display:inline-flex; gap:8px; align-items:center;">
+            @* A link, not a form: nothing sends until the draft has been read (#144). Beside Refresh
+               for the same reason "Invite VEs" sits beside the VE roster — the action belongs to the
+               list it acts on. *@
+            <a class="btn-secondary btn-sm" asp-page="/SessionManager/CandidateEmail" asp-route-id="@Model.Session.Id">
+                <i class="bi bi-envelope" aria-hidden="true"></i> Email candidates
+            </a>
+            <form method="post" asp-page-handler="RefreshCandidates">
+                <button type="submit" class="btn-secondary btn-sm"><i class="bi bi-arrow-clockwise" aria-hidden="true"></i> Refresh candidates</button>
+            </form>
+        </span>
     }
 </div>
 

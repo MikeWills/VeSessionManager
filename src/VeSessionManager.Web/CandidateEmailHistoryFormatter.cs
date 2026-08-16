@@ -40,6 +40,14 @@ public static class CandidateEmailHistoryFormatter
             lines.Add(new EmailHistoryLine("Youth Program instructions email", FormatSentUtc(youthSent)));
         }
 
+        // Hand-composed sends (#144) — rows rather than columns, because a team writes its own
+        // templates and a column per template cannot be added by somebody at runtime. Requires
+        // candidate.EmailSends to be Included by the caller, same as Payments above.
+        foreach (var send in candidate.EmailSends.OrderBy(s => s.SentUtc))
+        {
+            lines.Add(new EmailHistoryLine(send.TemplateLabel, FormatSentUtc(send.SentUtc)));
+        }
+
         return lines;
     }
 

@@ -33,11 +33,32 @@ public partial class EmailTemplateRenderer(AppDbContext dbContext, ILogger<Email
             return null;
         }
 
+        return await RenderTextAsync(teamId, template.Subject, template.Body, placeholders, templateKey, cancellationToken);
+    }
+
+    /// <summary>
+    /// The same rendering, over text that is <b>not</b> a stored template — a draft someone composed
+    /// on the Email candidates screen, starting from one and editing it (#144).
+    ///
+    /// <para><b>This exists so there is not a second renderer.</b>
+    /// <c>VeSessionInvitationService</c> had exactly this need and wrote its own <c>Replace</c> chain,
+    /// which shipped without HTML-encoding: a session title carrying markup rendered as a live link in
+    /// every invited VE's mail client, inside a genuine message from the team's real address (#260).
+    /// Candidate names come from the same class of source — ExamTools' public registration intake — so
+    /// the encoding rule, the subject line-break stripping (#261) and <c>{{Logo}}</c>'s
+    /// raw-HTML-plus-attachment handling all have to be the ones below, not a second copy of
+    /// them.</para>
+    /// </summary>
+    /// <param name="templateKey">Only for the log line naming an unknown placeholder. A composed draft passes the label it started from, so a typo is still attributable to something.</param>
+    public async Task<RenderedEmail> RenderTextAsync(
+        int teamId, string subject, string body, IReadOnlyDictionary<string, string> placeholders,
+        string templateKey, CancellationToken cancellationToken)
+    {
         // Only load the logo when the body actually asks for it — a template without {{Logo}} should
         // never pay the size cost of an attachment on every send.
         InlineImage? logo = null;
         var effectivePlaceholders = placeholders;
-        if (LogoPlaceholderPattern().IsMatch(template.Body))
+        if (LogoPlaceholderPattern().IsMatch(body))
         {
             var team = await dbContext.Teams.FirstOrDefaultAsync(t => t.Id == teamId, cancellationToken);
             if (team?.LogoBytes is { Length: > 0 } bytes)
@@ -58,8 +79,8 @@ public partial class EmailTemplateRenderer(AppDbContext dbContext, ILogger<Email
         }
 
         return new RenderedEmail(
-            Substitute(template.Subject, effectivePlaceholders, templateKey, "Subject", encodeHtml: false),
-            Substitute(template.Body, effectivePlaceholders, templateKey, "Body", encodeHtml: true),
+            Substitute(subject, effectivePlaceholders, templateKey, "Subject", encodeHtml: false),
+            Substitute(body, effectivePlaceholders, templateKey, "Body", encodeHtml: true),
             logo);
     }
 

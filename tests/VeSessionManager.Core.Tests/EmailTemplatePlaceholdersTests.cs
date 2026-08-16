@@ -15,8 +15,25 @@ public class EmailTemplatePlaceholdersTests
         "FccFeeReminder5Day",
         "PaymentExpirationNotice",
         "FelonyDisclosureInstructions",
-        "ArrlYouthProgramInstructions"
+        "ArrlYouthProgramInstructions",
+        "GettingStartedLocally"
     ];
+
+    /// <summary>
+    /// The one template nobody's code sends: it is the starting text for a hand-composed message
+    /// (#144), so what actually resolves is decided by <see cref="CandidatePlaceholderValues"/> rather
+    /// than by a dictionary at a send site.
+    ///
+    /// <para>That makes this registry entry a promise the compose screen prints as insertable chips.
+    /// Two lists, no compiler tying them together — which is the arrangement that has drifted here
+    /// before. A token advertised but not resolved reaches a candidate as a literal
+    /// <c>{{CallSign}}</c>; one resolved but not advertised is simply undiscoverable.</para>
+    /// </summary>
+    [Fact]
+    public void GettingStartedLocally_AdvertisesExactlyWhatTheComposeScreenResolves()
+    {
+        Assert.Equal(CandidatePlaceholderValues.Names, EmailTemplatePlaceholders.For("GettingStartedLocally"));
+    }
 
     [Theory]
     [MemberData(nameof(SeededKeyData))]

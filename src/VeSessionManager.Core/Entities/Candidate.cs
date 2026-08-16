@@ -130,6 +130,14 @@ public class Candidate
     public List<Payment> Payments { get; } = [];
 
     /// <summary>
+    /// Hand-composed emails this candidate has actually received (#144) — the ones somebody wrote on
+    /// the Email candidates screen. A collection rather than another <c>...SentUtc</c> column because
+    /// a team writes its own templates, so the set of things that can be sent is not fixed by the
+    /// code. See <see cref="CandidateEmailSend"/>.
+    /// </summary>
+    public List<CandidateEmailSend> EmailSends { get; } = [];
+
+    /// <summary>
     /// True when this candidate already held an active license before this exact session started —
     /// the FCC's Grant Date predates Session.ScheduledStartUtc, so the Granted match reflects a
     /// pre-existing license (a repeat test or class upgrade), not a new grant from this session.
