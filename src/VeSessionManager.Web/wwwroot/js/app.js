@@ -530,9 +530,11 @@
     // Text and tag filters are ANDed through one apply(), not two independent handlers: with a
     // handler each, whichever ran last would undo the other's hiding, and "Team Member" + "granger"
     // would show everyone named Granger.
-    var tagFilter = picker.querySelector("[data-ve-tag-filter]");
+    // One control on the invitation screen (a <select>), several on Email VEs (a checkbox per tag,
+    // #394 follow-up) — so this reads "whatever is selected" rather than "the value of the filter".
+    var tagFilters = picker.querySelectorAll("[data-ve-tag-filter]");
     // Sentinel for the "Untagged" option. Must stay byte-identical to
-    // VeInviteModel.UntaggedFilterValue -- two copies of one constant, nothing tying them together.
+    // VeTagFilter.UntaggedValue -- two copies of one constant, nothing tying them together.
     //
     // The leading character is a SPACE and must stay one. It was a literal U+0000 until 2026-08-11
     // (issue #300), which broke this filter outright: an HTML parser rewrites U+0000 to U+FFFD, so
@@ -541,9 +543,24 @@
     // because tag names are Trim()ed and rejected when blank, so no stored tag can start with one.
     var UNTAGGED = " untagged";
 
+    // Which tags are being filtered on. A <select> contributes its value; checkboxes contribute the
+    // ones ticked. Nothing selected means no tag filter at all, which is why an empty array and
+    // "show everything" are the same answer below.
+    function selectedTags() {
+      var chosen = [];
+      tagFilters.forEach(function (control) {
+        if (control.tagName === "SELECT") {
+          if (control.value) chosen.push(control.value);
+        } else if (control.checked) {
+          chosen.push(control.value);
+        }
+      });
+      return chosen;
+    }
+
     function apply() {
       var term = filter ? filter.value.trim().toLowerCase() : "";
-      var tag = tagFilter ? tagFilter.value : "";
+      var tags = selectedTags();
 
       boxes.forEach(function (b) {
         var row = rowOf(b);
@@ -552,15 +569,33 @@
         var matchesText = !term || row.textContent.toLowerCase().indexOf(term) !== -1;
 
         var rowTags = (row.getAttribute("data-ve-tags") || "").split("|").filter(Boolean);
-        var matchesTag = !tag
-          || (tag === UNTAGGED ? rowTags.length === 0 : rowTags.indexOf(tag) !== -1);
+        // ANY of the chosen tags, not all of them. Picking "Liaison" and "Mentor" means "show me
+        // both groups" — the reason for choosing two is to widen the list, not narrow it to the
+        // handful of people who happen to hold both.
+        var matchesTag = tags.length === 0 || tags.some(function (tag) {
+          return tag === UNTAGGED ? rowTags.length === 0 : rowTags.indexOf(tag) !== -1;
+        });
 
         row.style.display = matchesText && matchesTag ? "" : "none";
       });
+
+      updateTagLabel(tags.length);
+    }
+
+    // The chosen tags live inside a closed dropdown on Email VEs, so the trigger has to say how many
+    // there are or the filter is invisible once the menu shuts.
+    var tagLabel = picker.querySelector("[data-ve-tag-label]");
+    function updateTagLabel(count) {
+      if (!tagLabel) return;
+      tagLabel.textContent = count === 0 ? "Any tag" : count + " selected";
     }
 
     if (filter) filter.addEventListener("input", apply);
-    if (tagFilter) tagFilter.addEventListener("change", apply);
+    // Delegated: the checkboxes are inside a dropdown that is built server-side, and binding each
+    // one individually would miss any added later.
+    picker.addEventListener("change", function (event) {
+      if (event.target.closest("[data-ve-tag-filter]")) apply();
+    });
 
     updateCount();
   }

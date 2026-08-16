@@ -249,6 +249,10 @@ public class VeEmailPageTests
         Assert.DoesNotContain("Never assigned", html);
         // The guest sentinel, whose leading space is load-bearing — see VeTagFilter.
         Assert.Contains("Untagged (guests)", html);
+        // Checkboxes, not a <select>: several tags at once, ORed. The filtering itself is app.js and
+        // is verified in a browser harness, not here — this pins the markup that drives it.
+        Assert.Contains("type=\"checkbox\" data-ve-tag-filter", html);
+        Assert.Contains("data-ve-tag-label", html);
     }
 
     [Fact]
