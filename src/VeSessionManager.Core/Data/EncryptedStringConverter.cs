@@ -19,6 +19,23 @@ namespace VeSessionManager.Core.Data;
 /// See TeamSecretsMigrationService for the one-time sweep that forces every legacy row to be
 /// rewritten through this converter — it works by simply forcing a re-save, not by hand-calling
 /// Protect/Unprotect itself.
+///
+/// <para><b>Do not add plain <c>AsNoTracking()</c> to a query that materializes Team.</b> This
+/// converter runs per property per materialization, so each Team costs one Unprotect per encrypted
+/// column. The change tracker's identity resolution is what stops that repeating: the same Team
+/// appearing on fifty rows is materialized once. <c>AsNoTracking()</c> <b>disables</b> identity
+/// resolution, so the obvious "this is a read, make it faster" change multiplies decryption by row
+/// count and makes the query slower than it was.</para>
+///
+/// <para>Use <c>AsNoTrackingWithIdentityResolution()</c> if a read path genuinely needs it, or
+/// better, project to what the caller actually reads — see
+/// <c>SessionAccessScope.GetAvailableTeamsAsync</c>, which was rewritten to a projection after
+/// materializing whole Teams decrypted every team's credentials on every render of the team
+/// picker.</para>
+///
+/// <para>Recorded here rather than in an issue (#295, closed 2026-08-16 as won't-fix) because this
+/// is the type that makes it true, and it is the thing anyone reaching for <c>AsNoTracking</c> will
+/// not think to look at.</para>
 /// </summary>
 public sealed class EncryptedStringConverter : ValueConverter<string?, string?>
 {
