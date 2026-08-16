@@ -171,3 +171,27 @@ Every Session Manager and Admin page is `[Authorize]`d, and Claude does not ente
 each authenticated page's own content renders well with real data. The remaining check is a
 logged-in pass over Session Detail, Applicant Status, Candidate Detail and Team Settings at phone
 width.
+
+## Anchor-buttons were never styled as buttons (2026-08-16)
+
+Reported as "the email button is smaller compared to the refresh candidates button". Measured in a
+browser rather than eyeballed, and the difference was bigger than the report: an
+`<a class="btn-secondary btn-sm">` came out **weight 400, no border, no border-radius,
+`display: inline`**, beside an identically-classed `<button>` that had all four.
+
+The cause is the same specificity trap this file and CLAUDE.md already record twice. The base rule is
+`.vesm button, .vesm .btn { … }`, and **every anchor-button in the app is written
+`class="btn-secondary btn-sm"` with no `.btn`** — 24 of them. They matched no base rule at all, so
+they inherited plain link styling and picked up only `.btn-sm`'s font-size and padding.
+
+Fixed by naming the variants in the base rule: `.vesm button, .vesm .btn, .vesm .btn-primary,
+.vesm .btn-secondary, .vesm .btn-danger`. The `border-color` rules for secondary and danger must stay
+**after** it — they are now equal specificity, and the base rule's `border` shorthand would otherwise
+leave every secondary button borderless, which is the exact regression the comment above them
+describes.
+
+**Found while measuring, not fixed:** `.btn-sm` does nothing to a `<button>`. `.vesm button` is
+(0,1,1) and `.btn-sm` is (0,1,0), so a small button and a full-size one measure identically —
+`13px | 600 | 9px 16px` for both. Every "small" button in the app is full size and always has been.
+Fixing it would resize buttons on every screen, which is a visual change nobody asked for, so it is
+recorded here rather than done quietly.

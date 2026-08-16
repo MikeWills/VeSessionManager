@@ -326,4 +326,36 @@ public class CandidateEmailPageTests
 
         Assert.Contains("Getting started locally", html);
     }
+
+    [Fact]
+    public async Task TheSessionPageOffersEachTemplateAsAShortcut_AndKeepsThePlainButton()
+    {
+        // "Keep the existing place as well" (Mike, 2026-08-16): the menu is a shortcut into the same
+        // screen, not a replacement for opening it.
+        using var factory = new WebAppFactory();
+        await SeedTemplateAsync(factory, "Welcome", "<p>Body</p>");
+        var client = factory.CreateClientAs(UserRole.SystemAdmin);
+
+        var html = await client.GetStringAsync($"/SessionManager/Detail/{factory.Seeded.SessionId}");
+
+        // The plain button, unchanged.
+        Assert.Contains($"/SessionManager/CandidateEmail/{factory.Seeded.SessionId}\"", html);
+        // And the same destination with a template already chosen.
+        Assert.Contains($"/SessionManager/CandidateEmail/{factory.Seeded.SessionId}?template={TemplateKey}", html);
+        Assert.Contains("Getting started locally", html);
+        Assert.Contains("Write your own", html);
+    }
+
+    [Fact]
+    public async Task WithNoTemplatesSeeded_NoShortcutMenuIsRendered()
+    {
+        using var factory = new WebAppFactory();
+        var client = factory.CreateClientAs(UserRole.SystemAdmin);
+
+        var html = await client.GetStringAsync($"/SessionManager/Detail/{factory.Seeded.SessionId}");
+
+        Assert.DoesNotContain("Start from", html);
+        // The button itself is not conditional on having templates — a blank draft is always allowed.
+        Assert.Contains("Email candidates", html);
+    }
 }

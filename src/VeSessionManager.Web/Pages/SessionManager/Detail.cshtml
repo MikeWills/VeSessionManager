@@ -114,6 +114,27 @@
             <a class="btn-secondary btn-sm" asp-page="/SessionManager/CandidateEmail" asp-route-id="@Model.Session.Id">
                 <i class="bi bi-envelope" aria-hidden="true"></i> Email candidates
             </a>
+            @* The same destination, one click shorter: pick which email you are writing and land on
+               the compose screen with it already loaded. The plain button above stays, because
+               "just open it" is still the common case and a menu is a worse way to say that. *@
+            @if (Model.EmailTemplateChoices.Count > 0)
+            {
+                <div class="nav-group" style="position:relative;">
+                    <button type="button" class="kebab" aria-label="Email candidates from a template">
+                        <i class="bi bi-caret-down-fill" aria-hidden="true"></i>
+                    </button>
+                    <div class="menu">
+                        <div class="menu-head">Start from</div>
+                        @foreach (var choice in Model.EmailTemplateChoices)
+                        {
+                            <a class="item" asp-page="/SessionManager/CandidateEmail"
+                               asp-route-id="@Model.Session.Id" asp-route-template="@choice.Key">@choice.Label</a>
+                        }
+                        <hr>
+                        <a class="item" asp-page="/SessionManager/CandidateEmail" asp-route-id="@Model.Session.Id">Write your own</a>
+                    </div>
+                </div>
+            }
             <form method="post" asp-page-handler="RefreshCandidates">
                 <button type="submit" class="btn-secondary btn-sm"><i class="bi bi-arrow-clockwise" aria-hidden="true"></i> Refresh candidates</button>
             </form>

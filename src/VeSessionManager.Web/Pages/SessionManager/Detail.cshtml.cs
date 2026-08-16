@@ -66,6 +66,9 @@ public class DetailModel(
     public IReadOnlyList<VeChip> VeRoster { get; private set; } = [];
     public bool CanEdit { get; private set; }
 
+    /// <summary>What the "Email candidates" menu offers as one-click starting points — see ComposableEmailTemplates.</summary>
+    public IReadOnlyList<ComposableEmailTemplates.Choice> EmailTemplateChoices { get; private set; } = [];
+
     /// <summary>TeamAdmin/SystemAdmin-only, not a Session Manager action — see AdminAccessScope.CanManageTeam. Gates the "Delete session" control separately from CanEdit.</summary>
     public bool CanDeleteSession { get; private set; }
 
@@ -372,6 +375,11 @@ public class DetailModel(
         }
 
         CanEdit = accessScope.CanEdit(user, session);
+        // Shortcuts straight into the compose screen with a template already chosen (#394 follow-up).
+        // Only loaded for someone who can act on them.
+        EmailTemplateChoices = CanEdit
+            ? await ComposableEmailTemplates.LoadAsync(dbContext, session.TeamId, HttpContext.RequestAborted)
+            : [];
         CanDeleteSession = adminAccessScope.CanManageTeam(user, session.TeamId);
 
         // Same comparison the session list makes, so a session on the boundary cannot render one
