@@ -325,6 +325,11 @@ public class PiiPurgeServiceTests
         Assert.Null(audit.UserId);
         Assert.Equal("CandidatePiiPurged", audit.Action);
         Assert.Contains("Trigger A", audit.Details);
+
+        // #86 part 3. A job has no acting user to scope through, so without the team on the row this
+        // entry is invisible to every TeamAdmin — filtered out by AdminAccessScope.ScopeAuditLog not
+        // as a decision but because nothing matched. The purge is deployment-wide; the entry is not.
+        Assert.Equal(candidate.Session.TeamId, audit.TeamId);
     }
 
     [Fact]

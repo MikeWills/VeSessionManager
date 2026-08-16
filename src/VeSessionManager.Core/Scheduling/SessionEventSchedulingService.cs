@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Discord;
@@ -377,7 +377,8 @@ public class SessionEventSchedulingService(
                 await zoomClient.DeleteMeetingAsync(zoomCredentials, session.ZoomMeetingId, cancellationToken);
                 // userId null = system action, not a person.
                 dbContext.AddAuditLog(null, "ZoomMeetingCancelled", nameof(Session), session.Id,
-                    $"Zoom meeting {session.ZoomMeetingId} cancelled for ExamTools session {session.ExamToolsSessionId}.", now);
+                    $"Zoom meeting {session.ZoomMeetingId} cancelled for ExamTools session {session.ExamToolsSessionId}.", now,
+                    teamId: team.Id);
                 session.ZoomMeetingId = null;
                 session.ZoomJoinUrl = null;
             }
@@ -399,7 +400,8 @@ public class SessionEventSchedulingService(
             {
                 await discordEventClient.DeleteEventAsync(team.DiscordGuildId.Value, session.DiscordEventId, cancellationToken);
                 dbContext.AddAuditLog(null, "DiscordEventCancelled", nameof(Session), session.Id,
-                    $"Discord scheduled event {session.DiscordEventId} deleted for ExamTools session {session.ExamToolsSessionId}.", now);
+                    $"Discord scheduled event {session.DiscordEventId} deleted for ExamTools session {session.ExamToolsSessionId}.", now,
+                    teamId: team.Id);
                 session.DiscordEventId = null;
             }
         }

@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Entities;
 
@@ -185,7 +185,19 @@ public class AdminAccessScope(SessionAccessScope sessionAccessScope)
         }
 
         var effectiveTeamIds = GetEffectiveTeamIds(user) ?? [];
-        return auditLogs.Where(a => a.User != null && a.User.UserTeams.Any(ut => effectiveTeamIds.Contains(ut.TeamId)));
+
+        // Two ways an entry reaches a scoped admin, and the second one is #86 part 3.
+        //
+        // A *person's* action is attributed through their team memberships, as it always was. A
+        // *background job's* action has no person to attribute through — AuditLog.UserId is null —
+        // so before AuditLog.TeamId existed every automated entry matched nothing here and was
+        // silently invisible to a TeamAdmin. Not filtered out for a reason: simply unreachable.
+        //
+        // A row with neither stays SystemAdmin-only. See AuditLog.TeamId for why that is the right
+        // answer for a VolunteerExaminer action rather than an omission.
+        return auditLogs.Where(a =>
+            (a.User != null && a.User.UserTeams.Any(ut => effectiveTeamIds.Contains(ut.TeamId)))
+            || (a.TeamId != null && effectiveTeamIds.Contains(a.TeamId.Value)));
     }
 
     public IQueryable<JobRunHistory> ScopeJobRunHistory(IQueryable<JobRunHistory> jobRuns, User user)

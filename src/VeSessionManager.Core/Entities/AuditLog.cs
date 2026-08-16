@@ -10,6 +10,31 @@ public class AuditLog
     public int? UserId { get; set; }
     public User? User { get; set; }
 
+    /// <summary>
+    /// Which team this entry belongs to, when that is knowable — the team attribution that makes a
+    /// background-job entry visible to a TeamAdmin (#86 part 3).
+    ///
+    /// <para><b>Why it exists.</b> <see cref="UserId"/> is null for anything a job did, and
+    /// <c>AdminAccessScope.ScopeAuditLog</c> filtered a TeamAdmin down to "actions taken by users on
+    /// my team". Null-user rows matched nothing, so every automated action was invisible to them —
+    /// candidates withdrawn from the feed, PII purged, Zoom/Discord cancellations — with nothing on
+    /// the page to say so. There was no team on the row to filter on instead. Now there is.</para>
+    ///
+    /// <para><b>Null does not mean "no team", it means "not attributable to one".</b> Two cases, and
+    /// keeping them both null is deliberate. A <see cref="VolunteerExaminer"/> is global here — one VE
+    /// can sit on several teams' rosters (see docs/ve-management.md) — so a VE PII purge or a
+    /// self-service email change genuinely belongs to no single team, and picking one would show it
+    /// to a TeamAdmin with no claim on it. And every row written before this column existed is null,
+    /// because only some of them could be backfilled. Either way a TeamAdmin does not see it and a
+    /// SystemAdmin does, which is the same answer as before this column and so no worse.</para>
+    ///
+    /// <para>Not populated on the ~44 user-attributed call sites: those already scope correctly
+    /// through the user's own team memberships, and setting it there would be a second source of
+    /// truth for the same question.</para>
+    /// </summary>
+    public int? TeamId { get; set; }
+    public Team? Team { get; set; }
+
     public required string Action { get; set; }
     public required string EntityType { get; set; }
     public int EntityId { get; set; }

@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Entities;
@@ -173,7 +173,8 @@ public class YouthPaymentConfirmationService(
 
         var now = timeProvider.GetUtcNow().UtcDateTime;
         dbContext.AddAuditLog(null, "YouthRateConfirmed", nameof(Payment), payment.Id,
-            $"Candidate self-confirmed youth rate via public link; Payment switched from standard rate to {Usd.Format(feeConfiguration.YouthExamFeeAmount.Value)}.", now);
+            $"Candidate self-confirmed youth rate via public link; Payment switched from standard rate to {Usd.Format(feeConfiguration.YouthExamFeeAmount.Value)}.", now,
+            teamId: team.Id);
 
         await dbContext.SaveChangesAsync(cancellationToken);
         logger.LogInformation("Confirmed youth rate for Payment {PaymentId}, candidate {CandidateId}", payment.Id, payment.CandidateId);

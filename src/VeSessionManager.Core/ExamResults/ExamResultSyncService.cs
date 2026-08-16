@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using VeSessionManager.Core.Data;
@@ -186,7 +186,7 @@ public class ExamResultSyncService(
             try
             {
                 var detail = await examToolsClient.GetApplicantDetailAsync(credentials, session.ExamToolsSessionId, candidate.ExamToolsApplicantId!, cancellationToken);
-                ApplyResult(candidate, detail, now, result);
+                ApplyResult(candidate, detail, now, result, session.TeamId);
                 await dbContext.SaveChangesAsync(cancellationToken);
             }
             catch (Exception ex)
@@ -196,7 +196,12 @@ public class ExamResultSyncService(
         }
     }
 
-    private void ApplyResult(Candidate candidate, ExamToolsApplicantDetail? detail, DateTime now, ExamResultSyncResult result)
+    /// <param name="teamId">
+    /// The session's team, carried in purely so the two audit entries below can be attributed
+    /// to one (#86 part 3). Both are written with a null user — a job did them — so without a
+    /// team on the row they were invisible to every TeamAdmin.
+    /// </param>
+    private void ApplyResult(Candidate candidate, ExamToolsApplicantDetail? detail, DateTime now, ExamResultSyncResult result, int teamId)
     {
         var gradedExams = detail?.Exams.Where(e => e.Graded).ToList() ?? [];
         if (gradedExams.Count == 0)
@@ -236,7 +241,8 @@ public class ExamResultSyncService(
             candidate.ResultMarkedByUserId = null;
 
             dbContext.AddAuditLog(null, "CandidateAutoMarkedFailed", nameof(Candidate), candidate.Id,
-                $"Candidate {candidate.Id} auto-marked Failed — every graded element was failed.", now);
+                $"Candidate {candidate.Id} auto-marked Failed — every graded element was failed.", now,
+                teamId: teamId);
             result.CandidatesMarkedFailed++;
         }
         else
@@ -255,7 +261,8 @@ public class ExamResultSyncService(
                 candidate.ResultMarkedUtc = null;
 
                 dbContext.AddAuditLog(null, "CandidateAutoFailedCorrected", nameof(Candidate), candidate.Id,
-                    $"Candidate {candidate.Id} was auto-marked Failed but passed element(s) {string.Join(", ", passedElements.OrderBy(e => e))} — status cleared and the earned license class recorded.", now);
+                    $"Candidate {candidate.Id} was auto-marked Failed but passed element(s) {string.Join(", ", passedElements.OrderBy(e => e))} — status cleared and the earned license class recorded.", now,
+                    teamId: teamId);
                 result.CandidatesAutoFailedCorrected++;
             }
 
