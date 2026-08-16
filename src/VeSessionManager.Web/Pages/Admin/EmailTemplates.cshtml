@@ -1,4 +1,4 @@
-﻿@page
+@page
 @model VeSessionManager.Web.Pages.Admin.EmailTemplatesModel
 @{
     ViewData["Title"] = "Email Templates";
@@ -27,15 +27,12 @@
 {
     <p>@(Model.IsSystemAdmin ? "Pick a team above." : "No team assigned to this account.")</p>
 }
-else if (Model.Templates.Count == 0)
-{
-    <p>No templates seeded for this team yet.</p>
-}
 else
 {
-    @* Grouped by where each email falls in a session's life, in the order those things actually
-       happen. A template with no registry entry lands in the trailing "Other" group rather than
-       being hidden — an unrecognized Key is still editable. *@
+    @* A list, not eleven stacked editors (#395). Every template used to render its own trigger panel,
+       placeholder chips, subject field and Quill editor on this one page — so finding the one you
+       wanted meant scrolling past all the others, and the page grew with every template added. The
+       editor moved to a page of its own; this answers "what have we got" and nothing else. *@
     @foreach (var group in Model.GroupedTemplates)
     {
         <div class="template-phase">
@@ -43,114 +40,57 @@ else
             <p class="session-sub">@group.Blurb</p>
         </div>
 
-        @foreach (var template in group.Templates)
-        {
-        <div class="session-panel" style="display:block; margin-bottom:20px;">
-            <div class="section-head">
-                <div>
-                    <h2 class="mono">@template.Label</h2>
-                    @if (template.IsUserDefined)
+        <div class="table-scroll" style="margin-bottom:24px;">
+            <table class="cards">
+                <thead>
+                    <tr>
+                        <th>Template</th>
+                        <th>Sent</th>
+                        <th>Last updated</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var template in group.Templates)
                     {
-                        <span class="chip chip-neutral">@(template.Audience == VeSessionManager.Core.Entities.EmailTemplateAudience.VolunteerExaminers ? "To VEs" : "To candidates")</span>
+                        <tr>
+                            <td>
+                                <span class="session-title">@template.Label</span>
+                                @if (template.IsUserDefined)
+                                {
+                                    <span class="chip chip-neutral">@(template.Audience == VeSessionManager.Core.Entities.EmailTemplateAudience.VolunteerExaminers ? "To VEs" : "To candidates")</span>
+                                }
+                                @if (VeSessionManager.Web.Pages.Admin.EmailTemplatesModel.IsRetired(template.Key))
+                                {
+                                    <span class="chip chip-brick">No longer sent</span>
+                                }
+                                <div class="session-sub">@template.Subject</div>
+                            </td>
+                            <td>
+                                @if (VeSessionManager.Web.Pages.Admin.EmailTemplatesModel.TriggerFor(template.Key) is { } trigger)
+                                {
+                                    <span class="chip @(trigger.Cadence == "Automatic" ? "chip-green" : "chip-neutral")">@trigger.Cadence</span>
+                                    <div class="session-sub">@trigger.Recipient</div>
+                                }
+                                else if (template.IsUserDefined)
+                                {
+                                    <span class="chip chip-neutral">By hand</span>
+                                }
+                            </td>
+                            <td data-sort-value="@(template.UpdatedUtc?.ToString("o") ?? "")">
+                                @(template.UpdatedUtc is { } updated
+                                    ? EasternTimeFormatter.Format(updated, "MMM d, yyyy")
+                                    : "Not edited yet")
+                            </td>
+                            <td class="row-actions">
+                                <a class="btn-secondary btn-sm" asp-page="/Admin/EmailTemplatePreview" asp-route-id="@template.Id">View</a>
+                                <a class="btn-secondary btn-sm" asp-page="/Admin/EmailTemplateEdit" asp-route-id="@template.Id">Edit</a>
+                            </td>
+                        </tr>
                     }
-                    @if (template.UpdatedUtc is not null)
-                    {
-                        <span class="session-sub">Last updated @EasternTimeFormatter.Format(template.UpdatedUtc.Value, "MMM d, yyyy h:mm tt")</span>
-                    }
-                </div>
-                @* Rename and delete only for a team's own templates. The service refuses either on a
-                   shipped one regardless — something in the app sends it by name — so hiding the
-                   buttons is the courtesy, not the guard. *@
-                @if (template.IsUserDefined)
-                {
-                    <span style="display:inline-flex; gap:8px; align-items:center;">
-                        <form method="post" asp-page-handler="Rename" style="display:inline-flex; gap:6px; align-items:center;">
-                            <input type="hidden" name="templateId" value="@template.Id" />
-                            <label class="visually-hidden" for="rename-@template.Id">New name</label>
-                            <input id="rename-@template.Id" name="name" value="@template.DisplayName" class="menu-input" style="width:200px;" required />
-                            <button type="submit" class="btn-secondary btn-sm">Rename</button>
-                        </form>
-                        <button type="button" class="btn-danger btn-sm" data-open-modal="deleteTemplate-@template.Id">Delete</button>
-                    </span>
-                }
-            </div>
-            @if (template.IsUserDefined)
-            {
-                @* A confirm step, because a delete is not recoverable from this page and the body may
-                   be the only copy of wording somebody spent time on. *@
-                <div class="modal-backdrop" id="deleteTemplate-@template.Id">
-                    <div class="modal">
-                        <h3>Delete "@template.DisplayName"?</h3>
-                        <p>
-                            The template goes for good. Emails already sent from it are unaffected, and the
-                            candidates who received them keep showing it in their email history.
-                            <b>This cannot be undone.</b>
-                        </p>
-                        <form method="post" asp-page-handler="Delete">
-                            <input type="hidden" name="templateId" value="@template.Id" />
-                            <div class="modal-actions">
-                                <button type="button" class="btn-secondary btn-sm" data-close-modal>Cancel</button>
-                                <button type="submit" class="btn-danger btn-sm">Delete template</button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            }
-            @* What actually causes this email to go out. Two of these are genuinely surprising —
-               PaymentExpirationNotice goes to the team rather than the candidate, and
-               FelonyDisclosureInstructions has no button — so this is the difference between editing
-               a template knowingly and guessing. See EmailTemplateTriggers. *@
-            @if (VeSessionManager.Web.Pages.Admin.EmailTemplatesModel.IsRetired(template.Key))
-            {
-                @* Says so rather than leaving a blank where the trigger goes. A row with no
-                   description reads as "we forgot to document this", not "nothing sends this". *@
-                <div class="vesm-alert error">
-                    <b>No longer sent.</b> Nothing in the app sends this template any more. It stays here because
-                    seeding never deletes, so any wording you added is preserved — but editing it has no effect.
-                </div>
-            }
-            else if (VeSessionManager.Web.Pages.Admin.EmailTemplatesModel.TriggerFor(template.Key) is { } trigger)
-            {
-                <div class="template-trigger">
-                    <span class="chip @(trigger.Cadence == "Automatic" ? "chip-green" : "chip-neutral")">@trigger.Cadence</span>
-                    <span class="chip chip-neutral">@trigger.Recipient</span>
-                    <p>@trigger.Description</p>
-                </div>
-            }
-            @* Chips are now click-to-insert (see email-template-editor.js) — typing a placeholder by
-               hand is the easiest thing to get wrong here, and a typo only surfaces as a Worker log
-               warning after a real send. Rendered as buttons so they're keyboard-reachable. *@
-            <div class="roster-list" style="margin-bottom:12px;">
-                @foreach (var placeholder in VeSessionManager.Web.Pages.Admin.EmailTemplatesModel.PlaceholdersFor(template))
-                {
-                    <button type="button" class="chip chip-neutral placeholder-chip" data-token="{{@placeholder}}"
-                            title="Insert this placeholder">{{@placeholder}}</button>
-                }
-            </div>
-            <form method="post" asp-page-handler="Update">
-                <input type="hidden" name="templateId" value="@template.Id" />
-                <input type="hidden" name="teamId" value="@Model.TeamId" />
-                <div class="field"><label for="subject-@template.Id">Subject</label><input id="subject-@template.Id" name="subject" value="@template.Subject" required /></div>
-
-                @* The textarea remains the field that posts, in both tabs — Quill is a second view
-                   onto it, never a replacement. Without JS the page degrades to exactly what it was
-                   before: a plain HTML textarea. *@
-                <div class="field template-editor">
-                    <label for="body-@template.Id">Body</label>
-                    <div class="editor-tabs" role="tablist">
-                        <button type="button" class="editor-tab" role="tab" data-mode="visual" aria-selected="true">Visual</button>
-                        <button type="button" class="editor-tab" role="tab" data-mode="html" aria-selected="false">HTML</button>
-                    </div>
-                    <div class="editor-visual" data-editor-for="body-@template.Id">
-                        <div class="editor-surface"></div>
-                    </div>
-                    <textarea id="body-@template.Id" name="body" rows="12" required>@template.Body</textarea>
-                </div>
-
-                <button type="submit" class="btn-primary btn-sm" style="margin-top:8px;">Save</button>
-            </form>
+                </tbody>
+            </table>
         </div>
-        }
     }
 
     @* Creating one is deliberately at the bottom, after the shipped templates: the common case is
@@ -162,8 +102,8 @@ else
                 <h2>New template</h2>
                 <p class="session-sub">
                     Your own starting text, for anything the templates above do not cover. Nothing sends it
-                    on a schedule — you pick it on a session's "Email candidates" screen, edit it, and choose
-                    who gets it.
+                    on a schedule — you pick it on a session's "Email candidates" screen, or on Email VEs,
+                    edit it, and choose who gets it.
                 </p>
             </div>
         </div>
@@ -190,25 +130,9 @@ else
             <div class="field">
                 <label for="new-template-body">Body</label>
                 <textarea id="new-template-body" name="body" rows="8" required></textarea>
-                <span class="session-sub">
-                    HTML is allowed. Available placeholders:
-                    @foreach (var placeholder in VeSessionManager.Core.Email.EmailTemplatePlaceholders.ForUserDefined())
-                    {
-                        <code>@("{{" + placeholder + "}}")</code><text> </text>
-                    }
-                    <code>{{Logo}}</code>
-                </span>
+                <span class="session-sub">HTML is allowed. You can edit it properly, with the visual editor, once it exists.</span>
             </div>
             <button type="submit" class="btn-primary btn-sm">Create template</button>
         </form>
     </div>
-}
-
-@section Head {
-    <link rel="stylesheet" href="~/lib/quill/quill.snow.css" />
-}
-
-@section Scripts {
-    <script src="~/lib/quill/quill.js"></script>
-    <script src="~/js/email-template-editor.js" asp-append-version="true"></script>
 }

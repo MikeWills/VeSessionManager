@@ -1,0 +1,50 @@
+@page "{id:int}"
+@model VeSessionManager.Web.Pages.Admin.EmailTemplatePreviewModel
+@{
+    ViewData["Title"] = $"Preview — {Model.Label}";
+    ViewData["ActiveNav"] = "AdminEmailTemplates";
+    Layout = "_AppLayout";
+}
+
+<div class="page-head">
+    <div>
+        <p class="eyebrow"><a asp-page="/Admin/EmailTemplates" asp-route-teamId="@Model.Template.TeamId">Email Templates</a></p>
+        <h1>@Model.Label</h1>
+    </div>
+    <a class="btn-primary btn-sm" asp-page="/Admin/EmailTemplateEdit" asp-route-id="@Model.Id">Edit</a>
+</div>
+
+<p class="session-sub" style="margin-bottom:18px;">
+    Rendered with example values — <strong>Ana Ruiz</strong> and the rest are made up, not a real
+    candidate. Your team's logo appears here exactly as it will in the email.
+</p>
+
+@if (Model.UnknownPlaceholders.Count > 0)
+{
+    @* The renderer leaves an unknown token as literal text rather than blanking it, so it is already
+       visible below. Naming them is what turns "why does it say that" into "that is a typo". *@
+    <div class="vesm-alert error">
+        This template uses placeholder(s) nothing will fill in:
+        @foreach (var placeholder in Model.UnknownPlaceholders)
+        {
+            <code>@("{{" + placeholder + "}}")</code><text> </text>
+        }
+        They will reach the recipient exactly as written. Check for a typo.
+    </div>
+}
+
+<div class="ve-panel">
+    <div class="field">
+        <label>Subject</label>
+        <p class="session-title">@Model.RenderedSubject</p>
+    </div>
+
+    <label>Body</label>
+    @* A sandboxed iframe, not the markup dropped into this page. The body is stored HTML that an
+       admin wrote, and rendering it inline would let a template's markup restyle or overlay the
+       admin page around it. `sandbox` with no allow-* blocks scripts outright, whatever the page CSP
+       does, and srcdoc means no request is made — so the app's own frame-ancestors rule is not
+       involved. Razor attribute-encodes the value. *@
+    <iframe sandbox srcdoc="@Model.RenderedBody" title="Rendered email body"
+            style="width:100%; min-height:520px; border:1px solid var(--line); border-radius:8px; background:#fff;"></iframe>
+</div>
