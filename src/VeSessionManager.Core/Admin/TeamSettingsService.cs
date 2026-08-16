@@ -96,6 +96,34 @@ public class TeamSettingsService(AppDbContext dbContext, TimeProvider timeProvid
     /// The per-integration mute switches (#64). One save for the whole group, because they are set
     /// together on one panel and a half-applied state is meaningless.
     /// </summary>
+    /// <summary>
+    /// Whether VEs on this team may subscribe to hear about its sessions (#191).
+    ///
+    /// <para>Turning it off deliberately leaves existing <c>VeTeamMembership.EmailSubscribed</c>
+    /// values alone: this is a decision about what to <i>offer</i>, and a team that turns it back on
+    /// should find its volunteers' answers still there rather than having silently unsubscribed
+    /// everyone.</para>
+    /// </summary>
+    public async Task<TeamActionResult> UpdateVeEmailSettingsAsync(
+        int teamId, bool subscriptionsEnabled, int userId, CancellationToken cancellationToken)
+    {
+        var team = await dbContext.Teams.FirstOrDefaultAsync(t => t.Id == teamId, cancellationToken);
+        if (team is null)
+        {
+            return TeamActionResult.NotFound;
+        }
+
+        team.VeEmailSubscriptionsEnabled = subscriptionsEnabled;
+        dbContext.AddAuditLog(userId, "TeamVeEmailSettingsUpdated", nameof(Team), team.Id,
+            subscriptionsEnabled
+                ? "VEs may subscribe to session email for this team."
+                : "VEs may no longer subscribe to session email for this team; existing subscriptions kept.",
+            timeProvider.GetUtcNow().UtcDateTime);
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return TeamActionResult.Success;
+    }
+
     public async Task<TeamActionResult> UpdateIntegrationSwitchesAsync(
         int teamId, bool overridesEnabled, bool zoom, bool discord, bool square, bool email, int userId, CancellationToken cancellationToken)
     {

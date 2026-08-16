@@ -68,7 +68,7 @@ public class TeamDefinedTemplateTests
         var (team, user) = await SeedAsync(dbContext);
 
         var result = await CreateService(dbContext).CreateAsync(
-            team.Id, "Field Day invite", "Come to Field Day", "<p>Hi {{CandidateFirstName}}</p>", user.Id, CancellationToken.None);
+            team.Id, "Field Day invite", "Come to Field Day", "<p>Hi {{CandidateFirstName}}</p>", EmailTemplateAudience.Candidates, user.Id, CancellationToken.None);
 
         Assert.Equal(EmailTemplateActionResult.Success, result);
         var template = await dbContext.EmailTemplates.SingleAsync();
@@ -86,7 +86,7 @@ public class TeamDefinedTemplateTests
         var (team, user) = await SeedAsync(dbContext);
 
         await CreateService(dbContext).CreateAsync(
-            team.Id, "Registration confirmation", "S", "<p>B</p>", user.Id, CancellationToken.None);
+            team.Id, "Registration confirmation", "S", "<p>B</p>", EmailTemplateAudience.Candidates, user.Id, CancellationToken.None);
 
         var template = await dbContext.EmailTemplates.SingleAsync();
         Assert.Contains('.', template.Key);
@@ -103,8 +103,8 @@ public class TeamDefinedTemplateTests
         var (team, user) = await SeedAsync(dbContext);
         var service = CreateService(dbContext);
 
-        await service.CreateAsync(team.Id, "Field Day", "S", "<p>B</p>", user.Id, CancellationToken.None);
-        var second = await service.CreateAsync(team.Id, "Field Day", "S2", "<p>B2</p>", user.Id, CancellationToken.None);
+        await service.CreateAsync(team.Id, "Field Day", "S", "<p>B</p>", EmailTemplateAudience.Candidates, user.Id, CancellationToken.None);
+        var second = await service.CreateAsync(team.Id, "Field Day", "S2", "<p>B2</p>", EmailTemplateAudience.Candidates, user.Id, CancellationToken.None);
 
         Assert.Equal(EmailTemplateActionResult.Success, second);
         var keys = await dbContext.EmailTemplates.Select(t => t.Key).ToListAsync();
@@ -121,8 +121,8 @@ public class TeamDefinedTemplateTests
         await dbContext.SaveChangesAsync();
         var service = CreateService(dbContext);
 
-        await service.CreateAsync(teamA.Id, "Field Day", "S", "<p>B</p>", user.Id, CancellationToken.None);
-        var result = await service.CreateAsync(teamB.Id, "Field Day", "S", "<p>B</p>", user.Id, CancellationToken.None);
+        await service.CreateAsync(teamA.Id, "Field Day", "S", "<p>B</p>", EmailTemplateAudience.Candidates, user.Id, CancellationToken.None);
+        var result = await service.CreateAsync(teamB.Id, "Field Day", "S", "<p>B</p>", EmailTemplateAudience.Candidates, user.Id, CancellationToken.None);
 
         Assert.Equal(EmailTemplateActionResult.Success, result);
         Assert.Equal(2, await dbContext.EmailTemplates.CountAsync());
@@ -137,7 +137,7 @@ public class TeamDefinedTemplateTests
         var (team, user) = await SeedAsync(dbContext);
 
         var result = await CreateService(dbContext).CreateAsync(
-            team.Id, name, "S", "<p>B</p>", user.Id, CancellationToken.None);
+            team.Id, name, "S", "<p>B</p>", EmailTemplateAudience.Candidates, user.Id, CancellationToken.None);
 
         Assert.Equal(EmailTemplateActionResult.NameRequired, result);
         Assert.Empty(await dbContext.EmailTemplates.ToListAsync());
@@ -150,7 +150,7 @@ public class TeamDefinedTemplateTests
         var (team, user) = await SeedAsync(dbContext);
 
         var result = await CreateService(dbContext).CreateAsync(
-            team.Id, "Field Day", "", "<p>B</p>", user.Id, CancellationToken.None);
+            team.Id, "Field Day", "", "<p>B</p>", EmailTemplateAudience.Candidates, user.Id, CancellationToken.None);
 
         Assert.Equal(EmailTemplateActionResult.ContentRequired, result);
         Assert.Empty(await dbContext.EmailTemplates.ToListAsync());
@@ -165,8 +165,8 @@ public class TeamDefinedTemplateTests
         var (team, user) = await SeedAsync(dbContext);
         var service = CreateService(dbContext);
 
-        await service.CreateAsync(team.Id, "!!! ???", "S", "<p>B</p>", user.Id, CancellationToken.None);
-        var result = await service.CreateAsync(team.Id, "@@@ ###", "S", "<p>B</p>", user.Id, CancellationToken.None);
+        await service.CreateAsync(team.Id, "!!! ???", "S", "<p>B</p>", EmailTemplateAudience.Candidates, user.Id, CancellationToken.None);
+        var result = await service.CreateAsync(team.Id, "@@@ ###", "S", "<p>B</p>", EmailTemplateAudience.Candidates, user.Id, CancellationToken.None);
 
         Assert.Equal(EmailTemplateActionResult.Success, result);
         var keys = await dbContext.EmailTemplates.Select(t => t.Key).ToListAsync();
@@ -182,7 +182,7 @@ public class TeamDefinedTemplateTests
         await using var dbContext = CreateContext();
         var (team, user) = await SeedAsync(dbContext);
         var service = CreateService(dbContext);
-        await service.CreateAsync(team.Id, "Field Day", "S", "<p>B</p>", user.Id, CancellationToken.None);
+        await service.CreateAsync(team.Id, "Field Day", "S", "<p>B</p>", EmailTemplateAudience.Candidates, user.Id, CancellationToken.None);
         var created = await dbContext.EmailTemplates.SingleAsync();
         var originalKey = created.Key;
 
@@ -228,7 +228,7 @@ public class TeamDefinedTemplateTests
         await using var dbContext = CreateContext();
         var (team, user) = await SeedAsync(dbContext);
         var service = CreateService(dbContext);
-        await service.CreateAsync(team.Id, "Field Day", "S", "<p>B</p>", user.Id, CancellationToken.None);
+        await service.CreateAsync(team.Id, "Field Day", "S", "<p>B</p>", EmailTemplateAudience.Candidates, user.Id, CancellationToken.None);
         var created = await dbContext.EmailTemplates.SingleAsync();
 
         var result = await service.DeleteAsync(created.Id, user.Id, CancellationToken.None);
@@ -246,7 +246,7 @@ public class TeamDefinedTemplateTests
         await using var dbContext = CreateContext();
         var (team, user) = await SeedAsync(dbContext);
         var service = CreateService(dbContext);
-        await service.CreateAsync(team.Id, "Field Day", "S", "<p>B</p>", user.Id, CancellationToken.None);
+        await service.CreateAsync(team.Id, "Field Day", "S", "<p>B</p>", EmailTemplateAudience.Candidates, user.Id, CancellationToken.None);
         var created = await dbContext.EmailTemplates.SingleAsync();
 
         var vec = new Vec { Name = "ARRL" };

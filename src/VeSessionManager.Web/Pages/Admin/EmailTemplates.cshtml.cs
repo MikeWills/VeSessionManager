@@ -52,7 +52,7 @@ public class EmailTemplatesModel(AppDbContext dbContext, UserManager<User> userM
         Templates = await dbContext.EmailTemplates
             .Where(t => t.TeamId == effectiveTeamId.Value)
             .OrderBy(t => t.Key)
-            .Select(t => new TemplateRow(t.Id, t.Key, t.Subject, t.Body, t.UpdatedUtc, t.IsUserDefined, t.DisplayName))
+            .Select(t => new TemplateRow(t.Id, t.Key, t.Subject, t.Body, t.UpdatedUtc, t.IsUserDefined, t.DisplayName, t.Audience))
             .ToListAsync(HttpContext.RequestAborted);
 
         return Page();
@@ -63,7 +63,7 @@ public class EmailTemplatesModel(AppDbContext dbContext, UserManager<User> userM
     /// which is the only id available — there is no existing row to check against, so
     /// <c>CanManageTeam</c> is the whole guard here.
     /// </summary>
-    public async Task<IActionResult> OnPostCreateAsync(int teamId, string name, string subject, string body)
+    public async Task<IActionResult> OnPostCreateAsync(int teamId, string name, string subject, string body, EmailTemplateAudience audience)
     {
         var user = await userManager.GetUserWithManagerAsync(dbContext, User);
         if (user is null || !adminAccessScope.CanManageTeam(user, teamId))
@@ -71,7 +71,7 @@ public class EmailTemplatesModel(AppDbContext dbContext, UserManager<User> userM
             return Forbid();
         }
 
-        var result = await emailTemplateAdminService.CreateAsync(teamId, name, subject, body, user.Id, CancellationToken.None);
+        var result = await emailTemplateAdminService.CreateAsync(teamId, name, subject, body, audience, user.Id, CancellationToken.None);
         TempData[result == EmailTemplateActionResult.Success ? "StatusMessage" : "ErrorMessage"] = Describe(result, "created");
         return RedirectToPage(new { teamId });
     }
@@ -169,6 +169,13 @@ public class EmailTemplatesModel(AppDbContext dbContext, UserManager<User> userM
         return RedirectToPage(new { teamId = existingTemplate.TeamId });
     }
 
+    /// <summary>Which token set a team-defined template offers, by who it is written to (#191).</summary>
+    public static IReadOnlyList<string> PlaceholdersFor(TemplateRow row) =>
+        !row.IsUserDefined ? PlaceholdersFor(row.Key)
+        : row.Audience == EmailTemplateAudience.VolunteerExaminers
+            ? [.. VolunteerExaminerPlaceholderValues.Names, .. EmailTemplatePlaceholders.Universal]
+            : [.. EmailTemplatePlaceholders.ForUserDefined(), .. EmailTemplatePlaceholders.Universal];
+
     public static IReadOnlyList<string> PlaceholdersFor(string key) =>
         // A team-defined key has no registry entry, and falling through to the empty list would leave
         // its editor with no chips at all — the one template most likely to need them.
@@ -213,7 +220,7 @@ public class EmailTemplatesModel(AppDbContext dbContext, UserManager<User> userM
     public static bool IsRetired(string key) => EmailTemplateTriggers.IsRetired(key);
 
     /// <param name="DisplayName">Set only for a team's own template; the shipped ones take their label from <c>EmailTemplateLabels</c>, so a name lives in one place rather than in every team's row.</param>
-    public record TemplateRow(int Id, string Key, string Subject, string Body, DateTime? UpdatedUtc, bool IsUserDefined, string? DisplayName)
+    public record TemplateRow(int Id, string Key, string Subject, string Body, DateTime? UpdatedUtc, bool IsUserDefined, string? DisplayName, EmailTemplateAudience Audience)
     {
         public string Label => DisplayName ?? EmailTemplateLabels.For(Key);
     }

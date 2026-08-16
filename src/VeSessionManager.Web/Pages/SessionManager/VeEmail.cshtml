@@ -1,0 +1,160 @@
+@page
+@model VeSessionManager.Web.Pages.SessionManager.VeEmailModel
+@{
+    ViewData["Title"] = "Email VEs";
+    ViewData["ActiveNav"] = "VeDirectory";
+    Layout = "_AppLayout";
+}
+
+<div class="page-head">
+    <div>
+        <p class="eyebrow"><a asp-page="/SessionManager/VeDirectory">VE Directory</a></p>
+        <h1>Email VEs</h1>
+    </div>
+</div>
+
+@* One team at a time, and it is not a filter: the message is sent *as* this team, over its SMTP and
+   with its From and Reply-To. *@
+<form method="get" class="filters" style="margin-bottom:18px;">
+    <div class="filter-dropdown">
+        <button type="button" class="kebab @(Model.TeamId is not null ? "active" : "")">Send as: @Model.TeamSummaryLabel <i class="bi bi-caret-down-fill" aria-hidden="true"></i></button>
+        <div class="menu">
+            @foreach (var team in Model.AvailableTeams)
+            {
+                <label class="item"><input type="radio" name="teamId" value="@team.Id" @(team.Id == Model.TeamId ? "checked" : "") /> @team.Name</label>
+            }
+            <hr />
+            <button type="submit" class="item">Apply</button>
+        </div>
+    </div>
+
+    <label class="ve-search" style="max-width:320px;">
+        <span class="visually-hidden">Start from</span>
+        <select name="template" data-autosubmit class="filter-select" aria-label="Start from a template">
+            <option value="">(no template) — write your own</option>
+            @foreach (var choice in Model.Templates)
+            {
+                <option value="@choice.Key" selected="@(choice.Key == Model.SelectedTemplateKey)">@choice.Label</option>
+            }
+        </select>
+    </label>
+
+    @if (Model.SubscriptionsEnabled)
+    {
+        @* Only when the team lets VEs subscribe — otherwise nobody can be subscribed and the filter
+           would silently empty the list. *@
+        <label class="toggle-pill @(Model.SubscribedOnly ? "active" : "")">
+            <input type="checkbox" name="subscribedOnly" value="true" data-autosubmit @(Model.SubscribedOnly ? "checked" : "") />
+            <span>Subscribed only</span>
+        </label>
+    }
+    <span class="session-sub">Choosing a template replaces the draft below. Nothing is saved back to it.</span>
+</form>
+
+@if (Model.TeamId is null)
+{
+    <div class="ve-panel"><p>Choose a team to send as.</p></div>
+}
+else
+{
+<form method="post">
+    <input type="hidden" name="teamId" value="@Model.TeamId" />
+    <input type="hidden" name="template" value="@Model.SelectedTemplateKey" />
+    <input type="hidden" name="subscribedOnly" value="@Model.SubscribedOnly.ToString().ToLowerInvariant()" />
+
+    <div class="ve-panel">
+        <h2>Message</h2>
+        <p class="session-sub">
+            Placeholders:
+            @foreach (var placeholder in VeSessionManager.Web.Pages.SessionManager.VeEmailModel.Placeholders)
+            {
+                <code>@("{{" + placeholder + "}}")</code><text> </text>
+            }
+            <code>{{Logo}}</code>
+        </p>
+        <p class="session-sub">
+            An unsubscribe link is added to the bottom of every message automatically. Put
+            <code>{{UnsubscribeUrl}}</code> in the body yourself if you would rather place it.
+        </p>
+
+        <div class="field">
+            <label asp-for="Subject">Subject</label>
+            <input asp-for="Subject" />
+        </div>
+
+        <div class="field">
+            <label asp-for="Body">Message</label>
+            <textarea asp-for="Body" rows="14"></textarea>
+            <span class="session-sub">HTML is allowed. Sent from your team's own email address.</span>
+        </div>
+    </div>
+
+    <div class="ve-panel" data-ve-picker>
+        <h2>Who to email</h2>
+        <p class="session-sub">Active VEs on @Model.TeamSummaryLabel. Anyone who has unsubscribed cannot be selected.</p>
+
+        <div class="filters" style="margin-bottom:12px;">
+            <label class="ve-search">
+                <span class="visually-hidden">Filter this list</span>
+                <i class="bi bi-search" aria-hidden="true"></i>
+                <input type="search" data-ve-filter placeholder="Filter by name, call sign or tag" />
+            </label>
+            <button type="button" class="btn-secondary btn-sm" data-ve-select="all">Select all shown</button>
+            <button type="button" class="btn-secondary btn-sm" data-ve-select="none">Clear selection</button>
+        </div>
+
+        <div class="table-scroll">
+        <table class="cards">
+            <thead><tr><th></th><th>Call sign</th><th>Name</th><th>Tags</th></tr></thead>
+            <tbody>
+                @if (Model.Recipients.Count == 0)
+                {
+                    <tr><td colspan="4">No active VEs on this team@(Model.SubscribedOnly ? " have subscribed" : "") yet.</td></tr>
+                }
+                @foreach (var recipient in Model.Recipients)
+                {
+                    <tr data-ve-tags="@string.Join("|", recipient.Tags)">
+                        <td>
+                            <input type="checkbox" name="SelectedVeIds" value="@recipient.VolunteerExaminer.Id"
+                                   @(recipient.CanReceive ? "" : "disabled") />
+                        </td>
+                        <td class="mono">@(recipient.VolunteerExaminer.CallSign ?? "—")</td>
+                        <td>
+                            @recipient.VolunteerExaminer.Name
+                            @* Shown rather than silently unselectable: an unsubscribed VE still needs
+                               to hear about Saturday, just not from here. *@
+                            @if (recipient.IsUnsubscribed)
+                            {
+                                <span class="chip chip-brick">Unsubscribed</span>
+                            }
+                            else if (!recipient.HasEmail)
+                            {
+                                <span class="chip chip-brick">No email</span>
+                            }
+                            else if (recipient.IsTextOnly)
+                            {
+                                <span class="chip chip-neutral">Text only</span>
+                            }
+                        </td>
+                        <td>
+                            @foreach (var tag in recipient.Tags)
+                            {
+                                <span class="chip chip-neutral">@tag</span>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+        </div>
+    </div>
+
+    <div class="ve-action-bar">
+        <span class="session-sub" data-ve-selected-count>0 selected</span>
+        <span>
+            <a class="btn-secondary btn-sm" asp-page="/SessionManager/VeDirectory">Cancel</a>
+            <button type="submit" class="btn-primary btn-sm">Send email</button>
+        </span>
+    </div>
+</form>
+}

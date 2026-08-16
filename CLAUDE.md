@@ -146,6 +146,19 @@ cap and a newer entry needs to be added; oldest goes first.
   whose name did not match its bind name — **which no send test can catch**, since a hand-built POST
   body never reads the markup.
 
+- **VEs can be emailed, and can tell you to stop (2026-08-16).** Issue #191. See `docs/ve-email.md`.
+  A message screen off the VE Directory (one team sends, over its own SMTP), contact **presence**
+  icons rather than the values on the directory rows, a CAN-SPAM unsubscribe, and an opt-in
+  subscription gated by a per-team switch. Four things worth carrying forward: **the unsubscribe stops
+  session invitations too** — deliberate, and it costs somebody a phone call, but a partly-honoured
+  unsubscribe is one that filtered rather than stopped; **its token is stored in the clear**, the one
+  deliberate exception to the hash-at-rest convention, because a hash cannot be re-derived and
+  re-minting per send would break the link in every message already delivered (which is what the
+  30-day rule is about); **the opt-out page changes nothing on a GET**, since mail clients and
+  scanners prefetch links; and **the subscribe box is gated by a team switch** because a team that
+  does not email every VE about every session must not show a box implying it does. Still missing for
+  full CAN-SPAM: a physical postal address in the footer, which no team field holds.
+
 - **Teams can write their own email templates (2026-08-16).** Issue #144, second PR — same doc.
   `EmailTemplateAdminService` was deliberately edit-only because "the set of Keys is fixed by what the
   services look up", and **that reasoning is why create/delete is safe rather than why it was
@@ -271,22 +284,6 @@ cap and a newer entry needs to be added; oldest goes first.
   written; the provider buttons had to move *inside* the credentials form for the checkbox to reach
   the external round trip; and **ASP.NET Core writes `expires=`, not `max-age=`** — the first test
   asserted on the wrong one and failed against a correct cookie.
-
-- **Every Worker job now has its tick driven by a test (2026-08-11).** Issue #325. See
-  `docs/worker-job-tests.md`. The Worker had **no test project at all** — nine background jobs running
-  unattended on the deploy box, none of which had ever been executed. Each job's tick is now
-  `internal RunTickAsync`, driven directly by `WorkerTickHarness` over real SQLite (InMemory cannot
-  see transactions, `ExecuteUpdateAsync`, or the scope/change-tracker behaviour that most of these
-  tests are *about*). **Every one was checked by breaking the thing it guards** — seven mutations,
-  each failing exactly one test — and one did not discriminate on the first attempt: the deleted-team
-  test deleted the team *before* the tick, where it simply never enters the list, so it passed with
-  the guard removed. `JobCoverageCompletenessTests` is what stops this decaying: a new job fails the
-  build until some test runs it. Three things worth knowing are in the doc — `UlsWatcherJob` needed
-  its own slot-guard tests despite sharing a schedule with `LicenseWatchJob` (they share the anchor
-  and nothing else, which is what #288 was), a wrong schedule key on a `PerTeamDailyJob` subclass
-  misfiles history *and* misreports the page *and* reads the wrong config key, and
-  `JobRunHistoryLogger.RunAsync`'s overload resolution is load-bearing — the void one leaves every
-  `ResultSummary` silently null.
 
 Everything through Phase 0-10's initial build (ExamTools ingestion, Zoom/Discord, Square, email
 notifications, FCC ULS watcher, payment reminders, VE tracking, VEC submission tracker, admin

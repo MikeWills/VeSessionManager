@@ -88,8 +88,8 @@
                     <tr data-ve-tags="@string.Join("|", candidate.Tags)">
                         <td>
                             <input type="checkbox" name="SelectedVeIds" value="@candidate.VolunteerExaminer.Id"
-                                   @(candidate.HasEmail ? "" : "disabled")
-                                   title="@(candidate.HasEmail ? null : "No email address on file")" />
+                                   @(candidate.HasEmail && !candidate.IsUnsubscribed ? "" : "disabled")
+                                   title="@(candidate.IsUnsubscribed ? "This VE has unsubscribed from email" : candidate.HasEmail ? null : "No email address on file")" />
                         </td>
                         <td class="mono">@(candidate.VolunteerExaminer.CallSign ?? "—")</td>
                         <td>
@@ -98,7 +98,13 @@
                             {
                                 <span class="chip chip-green">Already on this session</span>
                             }
-                            @if (!candidate.HasEmail)
+                            @if (candidate.IsUnsubscribed)
+                            {
+                                @* An unsubscribe stops invitations too (#191), so the team has to
+                                   know to telephone them rather than assume the invite landed. *@
+                                <span class="chip chip-brick">Unsubscribed</span>
+                            }
+                            else if (!candidate.HasEmail)
                             {
                                 <span class="chip chip-brick">No email</span>
                             }

@@ -101,6 +101,29 @@ else
             <button type="submit" class="btn-primary btn-sm" style="margin-top:12px;">Save integration switches</button>
         </form>
 
+        <div class="section-head"><h2>Volunteer examiners</h2></div>
+        <form method="post" asp-page-handler="UpdateVeEmail">
+            <input type="hidden" name="TeamId" value="@Model.TeamId" />
+            <label class="switch-row">
+                <input id="veEmailSubscriptions" name="veEmailSubscriptionsEnabled" type="checkbox" value="true"
+                       checked="@Model.Team.VeEmailSubscriptionsEnabled" style="width:auto;" />
+                <span>Let VEs subscribe to email about this team's sessions</span>
+            </label>
+            @* The reason this is a switch rather than always-on: a team that does not email every VE
+               about every session must not show them a box implying it does. Somebody who ticked it
+               would wait for mail nobody sends, instead of checking the schedule. *@
+            <p class="session-sub">
+                Only turn this on if you actually email your VEs about sessions. When it is on, VEs see a
+                subscribe box on their own details page; when it is off, they do not, and anyone who
+                subscribed earlier keeps their answer for if you turn it back on.
+            </p>
+            <p class="session-sub">
+                Separate from unsubscribing, which is always available from a link in every message and
+                stops <strong>all</strong> email to that VE, session invitations included.
+            </p>
+            <button type="submit" class="btn-primary btn-sm" style="margin-top:12px;">Save VE email settings</button>
+        </form>
+
         <div class="section-head"><h2>ExamTools</h2></div>
         <form method="post" asp-page-handler="UpdateExamTools">
             <input type="hidden" name="TeamId" value="@Model.TeamId" />

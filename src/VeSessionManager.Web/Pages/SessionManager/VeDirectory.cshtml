@@ -24,9 +24,15 @@
        explicitly rather than inherited from the current URL. And because the tag helper generates
        the action itself, it emits the antiforgery token automatically; an explicit action= would
        silently drop it. *@
-    <form method="post" asp-page-handler="Export" asp-all-route-data="@Model.FilterRoute" class="inline-form">
-        <button type="submit" class="btn-secondary btn-sm">Export CSV</button>
-    </form>
+    <span style="display:inline-flex; gap:8px; align-items:center;">
+        @* A link, not a form: nothing sends until the draft has been read (#191). *@
+        <a class="btn-secondary btn-sm" asp-page="/SessionManager/VeEmail" asp-route-teamId="@Model.TeamId">
+            <i class="bi bi-envelope" aria-hidden="true"></i> Email VEs
+        </a>
+        <form method="post" asp-page-handler="Export" asp-all-route-data="@Model.FilterRoute" class="inline-form">
+            <button type="submit" class="btn-secondary btn-sm">Export CSV</button>
+        </form>
+    </span>
 </div>
 
 <form method="get" class="filters" style="margin-bottom:20px; align-items:flex-start;">
