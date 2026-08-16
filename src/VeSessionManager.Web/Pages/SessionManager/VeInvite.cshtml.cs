@@ -45,29 +45,8 @@ public class VeInviteModel(
 
     public static IReadOnlyList<string> Placeholders => VeSessionInvitationService.Placeholders;
 
-    /// <summary>
-    /// Sentinel for "no tags at all", used as the <c>&lt;option value&gt;</c> of the tag filter's
-    /// "Untagged" entry. A real tag can never collide with it: <c>CreateTagAsync</c>/<c>UpdateTagAsync</c>
-    /// <c>Trim()</c> the name and reject it when blank, so no stored tag can begin with whitespace.
-    ///
-    /// <para><b>The leading character is a space, and must stay one — it was a literal U+0000 until
-    /// 2026-08-11 (issue #300) and that silently broke this filter.</b> An HTML parser replaces
-    /// U+0000 with U+FFFD, and does so whether it arrives raw or as <c>&amp;#x0;</c>, so the value
-    /// JavaScript read back was never the value C# emitted. The equality test in <c>app.js</c>
-    /// always failed and fell through to "find a tag literally named this", which matches nothing —
-    /// so choosing "Untagged" hid every VE instead of showing the untagged ones. Verified against a
-    /// real browser rather than reasoned about; a unit test could not have caught it, because the
-    /// mangling happens in the parser.</para>
-    ///
-    /// <para>The literal NUL also made this file <b>binary to ripgrep</b>, so every search silently
-    /// skipped it — which is how the bug survived, and how a code review nearly deleted the DI
-    /// registration for <c>VeSessionInvitationService</c> on the evidence that nothing referenced it.
-    /// <c>NoNulBytesInSourceTests</c> now fails the build if a NUL reappears anywhere under src/.</para>
-    ///
-    /// <para><b>Keep this in sync with <c>UNTAGGED</c> in <c>wwwroot/js/app.js</c>.</b> Two copies of
-    /// one constant with no compiler tying them together; the comment there says the same.</para>
-    /// </summary>
-    public const string UntaggedFilterValue = " untagged";
+    /// <summary>Shared with the Email VEs screen — see <see cref="VeTagFilter.UntaggedValue"/>, which carries the reasoning.</summary>
+    public const string UntaggedFilterValue = VeTagFilter.UntaggedValue;
 
     public async Task<IActionResult> OnGetAsync()
     {
