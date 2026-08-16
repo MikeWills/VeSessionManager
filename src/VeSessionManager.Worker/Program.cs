@@ -76,6 +76,19 @@ builder.Services.AddScoped<ExamResultSyncService>();
 // Issue #67 part 2: drains the one-off historical-import queue Admin -> Team Maintenance writes to.
 builder.Services.AddScoped<HistoricalImportService>();
 
+// ---------------------------------------------------------------------------------------------
+// A handful of the registrations below are resolved only by the OTHER host, and that is fine.
+//
+// Both hosts build the same Core service graph. An unresolved scoped registration costs nothing at
+// runtime — it is a dictionary entry nobody looks up — while a MISSING one is a failure at
+// resolution time, in a background job, on the box. The asymmetry is the whole argument: the
+// downside of keeping one is a line of code, the downside of dropping one is an outage.
+//
+// A dead-code sweep flagged six of these (#360, closed 2026-08-16, "low payoff" in its own notes).
+// Recorded here rather than left to be re-derived: "this registration has no consumer in this host"
+// is true, easy to find, and not a reason to remove it.
+// ---------------------------------------------------------------------------------------------
+
 // Phase 7: reuses IExamToolsClient, no new client/credentials needed.
 builder.Services.AddScoped<VolunteerExaminerSyncService>();
 builder.Services.AddScoped<VolunteerExaminerReportService>();

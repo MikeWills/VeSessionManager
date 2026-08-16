@@ -9,6 +9,12 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.9" />
+    <!-- Wider than this project appears to need — the Worker calls only AddSerilog, which comes from
+         Serilog.Extensions.Hosting. KEPT DELIBERATELY (#360, closed 2026-08-16). appsettings.json
+         names a Console sink, and Serilog resolves sinks by assembly scanning at runtime, so whether
+         Console still resolves after narrowing this reference is a question a green build does not
+         answer. The payoff is one package reference; the failure mode is a Worker that starts and
+         logs nothing, which is exactly the condition nobody notices until they need the log. -->
     <PackageReference Include="Serilog.AspNetCore" Version="10.0.0" />
     <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
   </ItemGroup>

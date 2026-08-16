@@ -16,6 +16,13 @@
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.10" />
+    <!-- Redundant on paper — already transitive via EFCore.Sqlite, and nothing calls Batteries.Init().
+         KEPT DELIBERATELY (#360, closed 2026-08-16). An explicit bundle pin is the standard fix for a
+         missing native SQLite provider on Linux, and this app develops on Windows and deploys only to
+         Linux. If that is why it is here, removing it builds and tests green on a dev machine and
+         fails at runtime on the box — so the check costs a deploy and the payoff is one line of XML.
+         A dead-code sweep has flagged this once already; this comment is here so the next one does
+         not have to re-derive the answer. -->
     <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.3" />
     <PackageReference Include="Square" Version="45.0.1" />
   </ItemGroup>
