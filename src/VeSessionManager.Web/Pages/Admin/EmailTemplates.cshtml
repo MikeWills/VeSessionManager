@@ -47,12 +47,51 @@ else
         {
         <div class="session-panel" style="display:block; margin-bottom:20px;">
             <div class="section-head">
-                <h2 class="mono">@template.Key</h2>
-                @if (template.UpdatedUtc is not null)
+                <div>
+                    <h2 class="mono">@template.Label</h2>
+                    @if (template.UpdatedUtc is not null)
+                    {
+                        <span class="session-sub">Last updated @EasternTimeFormatter.Format(template.UpdatedUtc.Value, "MMM d, yyyy h:mm tt")</span>
+                    }
+                </div>
+                @* Rename and delete only for a team's own templates. The service refuses either on a
+                   shipped one regardless — something in the app sends it by name — so hiding the
+                   buttons is the courtesy, not the guard. *@
+                @if (template.IsUserDefined)
                 {
-                    <span class="session-sub">Last updated @EasternTimeFormatter.Format(template.UpdatedUtc.Value, "MMM d, yyyy h:mm tt")</span>
+                    <span style="display:inline-flex; gap:8px; align-items:center;">
+                        <form method="post" asp-page-handler="Rename" style="display:inline-flex; gap:6px; align-items:center;">
+                            <input type="hidden" name="templateId" value="@template.Id" />
+                            <label class="visually-hidden" for="rename-@template.Id">New name</label>
+                            <input id="rename-@template.Id" name="name" value="@template.DisplayName" class="menu-input" style="width:200px;" required />
+                            <button type="submit" class="btn-secondary btn-sm">Rename</button>
+                        </form>
+                        <button type="button" class="btn-danger btn-sm" data-open-modal="deleteTemplate-@template.Id">Delete</button>
+                    </span>
                 }
             </div>
+            @if (template.IsUserDefined)
+            {
+                @* A confirm step, because a delete is not recoverable from this page and the body may
+                   be the only copy of wording somebody spent time on. *@
+                <div class="modal-backdrop" id="deleteTemplate-@template.Id">
+                    <div class="modal">
+                        <h3>Delete "@template.DisplayName"?</h3>
+                        <p>
+                            The template goes for good. Emails already sent from it are unaffected, and the
+                            candidates who received them keep showing it in their email history.
+                            <b>This cannot be undone.</b>
+                        </p>
+                        <form method="post" asp-page-handler="Delete">
+                            <input type="hidden" name="templateId" value="@template.Id" />
+                            <div class="modal-actions">
+                                <button type="button" class="btn-secondary btn-sm" data-close-modal>Cancel</button>
+                                <button type="submit" class="btn-danger btn-sm">Delete template</button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            }
             @* What actually causes this email to go out. Two of these are genuinely surprising —
                PaymentExpirationNotice goes to the team rather than the candidate, and
                FelonyDisclosureInstructions has no button — so this is the difference between editing
@@ -109,6 +148,47 @@ else
         </div>
         }
     }
+
+    @* Creating one is deliberately at the bottom, after the shipped templates: the common case is
+       editing what is already here, and a "New template" button at the top would suggest otherwise.
+       Nothing sends what you make here — see the blurb. *@
+    <div class="session-panel" style="display:block; margin-bottom:20px;">
+        <div class="section-head">
+            <div>
+                <h2>New template</h2>
+                <p class="session-sub">
+                    Your own starting text, for anything the templates above do not cover. Nothing sends it
+                    on a schedule — you pick it on a session's "Email candidates" screen, edit it, and choose
+                    who gets it.
+                </p>
+            </div>
+        </div>
+        <form method="post" asp-page-handler="Create">
+            <input type="hidden" name="teamId" value="@Model.TeamId" />
+            <div class="field">
+                <label for="new-template-name">Name</label>
+                <input id="new-template-name" name="name" required placeholder="e.g. Field Day invite" />
+                <span class="session-sub">Only you see this — it is how the template is listed when you pick one.</span>
+            </div>
+            <div class="field">
+                <label for="new-template-subject">Subject</label>
+                <input id="new-template-subject" name="subject" required />
+            </div>
+            <div class="field">
+                <label for="new-template-body">Body</label>
+                <textarea id="new-template-body" name="body" rows="8" required></textarea>
+                <span class="session-sub">
+                    HTML is allowed. Available placeholders:
+                    @foreach (var placeholder in VeSessionManager.Core.Email.EmailTemplatePlaceholders.ForUserDefined())
+                    {
+                        <code>@("{{" + placeholder + "}}")</code><text> </text>
+                    }
+                    <code>{{Logo}}</code>
+                </span>
+            </div>
+            <button type="submit" class="btn-primary btn-sm">Create template</button>
+        </form>
+    </div>
 }
 
 @section Head {

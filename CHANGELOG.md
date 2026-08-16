@@ -8,6 +8,22 @@ that window, or immediately if it's phase-numbered work already summarized in "C
 design rationale for any entry still lives in its linked `/docs/*.md` file, not here or in
 CLAUDE.md — this file, like CLAUDE.md's Change Log, is pointers only.
 
+- **One rule, one home: the duplicated candidate/session actions collapsed (2026-08-11).** Issues
+  #304/#244/#274. See `docs/action-outcomes.md`. Nine candidate actions were written out on both
+  `Detail` and `CandidateDetail`, four session actions on both `Detail` and the session list,
+  identical down to the punctuation — and **two of them had already drifted**: a `SessionNotFound`
+  told the user the session was *already marked submitted*, and the roster offered "Send youth
+  program instructions" for VECs with no youth program, where its only outcome was an error naming an
+  internal enum. Two new types in Web own what actually drifted — `ActionOutcomes` (result → sentence)
+  and `CandidateCapabilities` (is this action applicable). **The handlers themselves stay duplicated
+  on purpose**: each is ~4 lines of authorization, ownership re-check and redirect, and all three
+  genuinely differ per page — collapsing them trades a real duplication for a fake abstraction and
+  hides the IDOR guard. Exhaustiveness came free once each mapping had one home, which is how the
+  email actions stopped rendering `$"…: {result}."` at the user. **The guard is a source scan, and it
+  had to be** — two copies agreeing is the normal state right until someone fixes one, so no
+  behavioural test of either copy can see the gap; what is checkable is "one string, one home", and
+  it reported 19 offenders before the refactor.
+
 - **Nine-agent full-codebase audit, and the first six waves of fixes (2026-08-11).** See
   `docs/audit-2026-08-11-report.md` (narrative, cross-cutting themes, and — most valuable — what was
   *verified clean*, so it does not get re-audited) and `docs/audit-2026-08-11-tasks.md` (every

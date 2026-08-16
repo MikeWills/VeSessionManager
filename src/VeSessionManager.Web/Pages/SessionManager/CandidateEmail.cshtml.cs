@@ -170,15 +170,23 @@ public class CandidateEmailModel(
         Session = session;
 
         var templates = await dbContext.EmailTemplates
-            .Where(t => t.TeamId == session.TeamId && ComposableKeys.Contains(t.Key))
-            .Select(t => t.Key)
+            .Where(t => t.TeamId == session.TeamId && (t.IsUserDefined || ComposableKeys.Contains(t.Key)))
+            .Select(t => new { t.Key, t.IsUserDefined, t.DisplayName })
             .ToListAsync(HttpContext.RequestAborted);
 
-        // Ordered by ComposableKeys rather than by what the database returned, so the picker's first
-        // real entry is the one this screen was built for.
-        Templates = [.. ComposableKeys
-            .Where(templates.Contains)
-            .Select(key => new TemplateChoice(key, EmailTemplateLabels.For(key)))];
+        // Shipped ones first, in ComposableKeys order rather than the database's, so the picker opens
+        // with the one this screen was built for; then the team's own, alphabetically, since nothing
+        // ranks them.
+        Templates =
+        [
+            .. ComposableKeys
+                .Where(key => templates.Any(t => t.Key == key))
+                .Select(key => new TemplateChoice(key, EmailTemplateLabels.For(key))),
+            .. templates
+                .Where(t => t.IsUserDefined)
+                .Select(t => new TemplateChoice(t.Key, t.DisplayName ?? EmailTemplateLabels.For(t.Key)))
+                .OrderBy(t => t.Label)
+        ];
 
         var candidates = await dbContext.Candidates
             .Where(c => c.SessionId == Id)
@@ -187,7 +195,9 @@ public class CandidateEmailModel(
 
         // One query for the whole roster rather than one per candidate. Only the chosen template's
         // sends count: "already had one" is a question about this message, not about email in general.
-        var label = string.IsNullOrEmpty(SelectedTemplateKey) ? CustomMessageLabel : EmailTemplateLabels.For(SelectedTemplateKey);
+        // Read off Templates, not EmailTemplateLabels: a team-defined template's name lives on its own
+        // row, and the registry fallback would answer with the generated key instead.
+        var label = Templates.FirstOrDefault(t => t.Key == SelectedTemplateKey)?.Label ?? CustomMessageLabel;
         var lastSent = await dbContext.CandidateEmailSends
             .Where(s => s.Candidate.SessionId == Id && s.TemplateLabel == label)
             .GroupBy(s => s.CandidateId)

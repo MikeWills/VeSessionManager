@@ -41,6 +41,15 @@ public static class EmailTemplatePlaceholders
 
     public static IReadOnlyList<string> For(string key) => ByKey.TryGetValue(key, out var list) ? list : [];
 
+    /// <summary>
+    /// What a <b>team-defined</b> template can use (#144). There is no send-site dictionary to read
+    /// this off, because nothing in the code sends one — a person picks it on the Email candidates
+    /// screen, which resolves <see cref="CandidatePlaceholderValues"/> for every draft. So that list
+    /// is the honest answer for any template somebody invents, and the same one the getting-started
+    /// key advertises.
+    /// </summary>
+    public static IReadOnlyList<string> ForUserDefined() => [.. CandidatePlaceholderValues.Names];
+
     /// <summary>What the Email Templates admin page offers as insertable chips — the caller-provided tokens for this Key plus the universal ones.</summary>
     public static IReadOnlyList<string> ForEditor(string key) => [.. For(key), .. Universal];
 }

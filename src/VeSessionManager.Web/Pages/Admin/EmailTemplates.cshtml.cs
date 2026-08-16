@@ -52,11 +52,83 @@ public class EmailTemplatesModel(AppDbContext dbContext, UserManager<User> userM
         Templates = await dbContext.EmailTemplates
             .Where(t => t.TeamId == effectiveTeamId.Value)
             .OrderBy(t => t.Key)
-            .Select(t => new TemplateRow(t.Id, t.Key, t.Subject, t.Body, t.UpdatedUtc))
+            .Select(t => new TemplateRow(t.Id, t.Key, t.Subject, t.Body, t.UpdatedUtc, t.IsUserDefined, t.DisplayName))
             .ToListAsync(HttpContext.RequestAborted);
 
         return Page();
     }
+
+    /// <summary>
+    /// Creates a template this team wrote for itself (#144). Authorized against the posted team,
+    /// which is the only id available — there is no existing row to check against, so
+    /// <c>CanManageTeam</c> is the whole guard here.
+    /// </summary>
+    public async Task<IActionResult> OnPostCreateAsync(int teamId, string name, string subject, string body)
+    {
+        var user = await userManager.GetUserWithManagerAsync(dbContext, User);
+        if (user is null || !adminAccessScope.CanManageTeam(user, teamId))
+        {
+            return Forbid();
+        }
+
+        var result = await emailTemplateAdminService.CreateAsync(teamId, name, subject, body, user.Id, CancellationToken.None);
+        TempData[result == EmailTemplateActionResult.Success ? "StatusMessage" : "ErrorMessage"] = Describe(result, "created");
+        return RedirectToPage(new { teamId });
+    }
+
+    public async Task<IActionResult> OnPostRenameAsync(int templateId, string name)
+    {
+        var authorized = await AuthorizeTemplateAsync(templateId);
+        if (authorized is null) return Forbid();
+
+        var result = await emailTemplateAdminService.RenameAsync(templateId, name, authorized.Value.UserId, CancellationToken.None);
+        TempData[result == EmailTemplateActionResult.Success ? "StatusMessage" : "ErrorMessage"] = Describe(result, "renamed");
+        return RedirectToPage(new { teamId = authorized.Value.TeamId });
+    }
+
+    public async Task<IActionResult> OnPostDeleteAsync(int templateId)
+    {
+        var authorized = await AuthorizeTemplateAsync(templateId);
+        if (authorized is null) return Forbid();
+
+        var result = await emailTemplateAdminService.DeleteAsync(templateId, authorized.Value.UserId, CancellationToken.None);
+        TempData[result == EmailTemplateActionResult.Success ? "StatusMessage" : "ErrorMessage"] = Describe(result, "deleted");
+        return RedirectToPage(new { teamId = authorized.Value.TeamId });
+    }
+
+    /// <summary>
+    /// The IDOR re-check the update handler already does, shared by the two new handlers: authorize
+    /// against the template's <b>own</b> team, never a client-supplied one, or a TeamAdmin can post
+    /// their own valid teamId alongside another team's templateId.
+    /// </summary>
+    private async Task<(int UserId, int TeamId)?> AuthorizeTemplateAsync(int templateId)
+    {
+        var user = await userManager.GetUserWithManagerAsync(dbContext, User);
+        if (user is null)
+        {
+            return null;
+        }
+
+        var template = await dbContext.EmailTemplates.FirstOrDefaultAsync(t => t.Id == templateId);
+        if (template is null || !adminAccessScope.CanManageTeam(user, template.TeamId))
+        {
+            return null;
+        }
+
+        return (user.Id, template.TeamId);
+    }
+
+    private static string Describe(EmailTemplateActionResult result, string verb) => result switch
+    {
+        EmailTemplateActionResult.Success => $"Template {verb}.",
+        EmailTemplateActionResult.NameRequired => "A template needs a name.",
+        EmailTemplateActionResult.ContentRequired => "A template needs both a subject and a body.",
+        // The one worth spelling out: it is not a permission problem, it is that something in the app
+        // sends this template and has no other way to find it.
+        EmailTemplateActionResult.NotUserDefined =>
+            "That is one of the app's own templates — it can be edited, but not renamed or deleted, because a background job sends it by name.",
+        _ => "Template not found."
+    };
 
     public async Task<IActionResult> OnPostUpdateAsync(int templateId, int teamId, string subject, string body)
     {
@@ -97,24 +169,34 @@ public class EmailTemplatesModel(AppDbContext dbContext, UserManager<User> userM
         return RedirectToPage(new { teamId = existingTemplate.TeamId });
     }
 
-    public static IReadOnlyList<string> PlaceholdersFor(string key) => EmailTemplatePlaceholders.ForEditor(key);
+    public static IReadOnlyList<string> PlaceholdersFor(string key) =>
+        // A team-defined key has no registry entry, and falling through to the empty list would leave
+        // its editor with no chips at all — the one template most likely to need them.
+        key.StartsWith(EmailTemplateAdminService.UserDefinedKeyPrefix, StringComparison.Ordinal)
+            ? [.. EmailTemplatePlaceholders.ForUserDefined(), .. EmailTemplatePlaceholders.Universal]
+            : EmailTemplatePlaceholders.ForEditor(key);
+
     /// <summary>
     /// Templates grouped by where they fall in a session's life, in the order those things happen.
-    /// A Key with no trigger registry entry falls into a trailing "Other" group rather than being
-    /// dropped — an unrecognized template must still be editable.
+    /// A Key with no trigger registry entry falls into a trailing group rather than being dropped —
+    /// an unrecognized template must still be editable.
+    ///
+    /// <para>Team-defined templates land in that trailing group by construction, since nothing
+    /// registers a trigger for them. That is the honest place for them: they belong to no phase
+    /// because nothing sends them on a schedule.</para>
     /// </summary>
     public IReadOnlyList<TemplateGroup> GroupedTemplates => [.. Templates
         .GroupBy(t => EmailTemplateTriggers.For(t.Key)?.Phase)
         // null (unknown Key) sorts last; otherwise enum declaration order is display order.
         .OrderBy(g => g.Key is null ? int.MaxValue : (int)g.Key)
         .Select(g => new TemplateGroup(
-            g.Key?.Label() ?? "Other",
+            g.Key?.Label() ?? "Your own templates",
             g.Key switch
             {
                 EmailTemplatePhase.AtRegistration => "Sent around the point someone signs up for a session.",
                 EmailTemplatePhase.PreSession => "Sent between registration and the session itself.",
                 EmailTemplatePhase.PostSession => "Sent after the exam has been sat — including everything waiting on the FCC, which always comes afterwards.",
-                _ => "No trigger recorded for these yet."
+                _ => "Nothing sends these on its own. Pick one on a session's \"Email candidates\" screen, edit it, and send it to whoever you choose."
             },
             [.. g]))];
 
@@ -130,5 +212,9 @@ public class EmailTemplatesModel(AppDbContext dbContext, UserManager<User> userM
     /// </summary>
     public static bool IsRetired(string key) => EmailTemplateTriggers.IsRetired(key);
 
-    public record TemplateRow(int Id, string Key, string Subject, string Body, DateTime? UpdatedUtc);
+    /// <param name="DisplayName">Set only for a team's own template; the shipped ones take their label from <c>EmailTemplateLabels</c>, so a name lives in one place rather than in every team's row.</param>
+    public record TemplateRow(int Id, string Key, string Subject, string Body, DateTime? UpdatedUtc, bool IsUserDefined, string? DisplayName)
+    {
+        public string Label => DisplayName ?? EmailTemplateLabels.For(Key);
+    }
 }
