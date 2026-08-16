@@ -126,6 +126,22 @@ would be pure duplication — and goes straight to `CHANGELOG.md` instead. Non-p
 redesigns, hardening passes) start here and move to `CHANGELOG.md` once the section is at/over the
 cap and a newer entry needs to be added; oldest goes first.
 
+- **A TeamAdmin could not see anything the background jobs did (2026-08-15).** Issue #86, part 3 and
+  the last of it. See `docs/audit-log.md`. `AuditLog.UserId` is null whenever a job wrote the row, and
+  `ScopeAuditLog` narrowed a TeamAdmin to "actions taken by users on my team" — so every automated
+  entry (candidates withdrawn from the feed, PII purged, Zoom/Discord cancellations, results
+  auto-marked) matched nothing and was **invisible, with nothing on the page to say so**. Not filtered
+  out as a decision: unreachable, because the row carried nothing to filter on. New nullable
+  `AuditLog.TeamId`, set at the background call sites only — a user-attributed row already scopes
+  through the person who acted, and filling both would make one question answerable two ways. Three
+  things worth carrying forward: **null means "not attributable", not "no team"** — anything acting on
+  a `VolunteerExaminer` stays null on purpose, since a VE is global here and belongs to no single
+  team; **the backfill is the difference between fixing this and fixing it going forward**, because
+  the entries anyone wants to review are already written, so the migration resolves a team for old
+  Session/Candidate/Payment rows in SQL; and **that SQL is invisible to both the compiler and EF
+  InMemory** — a backfill that resolves nothing looks exactly like one with nothing to do, which is
+  why it is driven against real SQLite. Parts 1 and 2 (the 200-row window, retention) landed in #367.
+
 - **Refunds are issued from the app now, not the Square dashboard (2026-08-15).** Issue #375. See
   `docs/square-refunds.md`. Full or partial, from a candidate's payment and from Unmatched Payments —
   where the dismiss modal's bold "this does not refund the payment" finally has an alternative to
@@ -274,23 +290,6 @@ cap and a newer entry needs to be added; oldest goes first.
   row and candidate page both show "declared a disclosure, instructions not sent", since a count in a
   one-off status message is gone on the next click. `SessionCompletionResult` reports how many are
   still waiting rather than how many emails it sent, which is now always zero.
-
-- **The 5-day reminder chased the wrong fee (2026-08-11).** Issues #219/#218. See
-  `docs/payment-reminders.md`. Found by *sending one and reading it* — the first candidate-facing
-  email this app produced end to end. It fired on an unpaid Square `Payment`, the team's **exam
-  fee** — money collected before or at the session, so by the time the trigger could fire (FCC
-  receives the application, plus five days) it had been in hand for over a week, and the email
-  carried a Square link for a bill already settled. **What is actually outstanding then is FCC's own
-  application fee, paid at CORES**, and the signal was already being collected and read by nothing
-  but a display column: `UlsWatcherService` maps ULS `FVPOFF` to `FccPaymentStatus =
-  PendingVerification` twice daily. Three consequences that each look like an omission otherwise:
-  the tracking stamp **moved from `Payment` to `Candidate`** (a team that collects no fees has no
-  Payment row, and its candidates still owe the FCC), the template carries **no payment link and no
-  placeholder that could become one** — which disposes of #218 by construction rather than by patch
-  — and the retest branch went with the payment it hung off. `PaymentReminder5Day` is **retired, not
-  deleted**: seeding never removes rows, so `EmailTemplateTriggers.Retired` exists and the admin page
-  labels it "No longer sent". **Still open: whether the 10-day pass means anything now** — it expires
-  a Square payment, but if day 10 is FCC's dismissal deadline the meaningful event is a different one.
 
 Everything through Phase 0-10's initial build (ExamTools ingestion, Zoom/Discord, Square, email
 notifications, FCC ULS watcher, payment reminders, VE tracking, VEC submission tracker, admin
