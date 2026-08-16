@@ -1,4 +1,4 @@
-﻿using Microsoft.Data.Sqlite;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
@@ -188,7 +188,10 @@ public class PaymentUniqueIndexSqliteTests
     /// same trick as <see cref="SeedTeamViaSqlAsync"/>. EF would insert every column the current
     /// model has, which fails on a schema deliberately held at an older migration.
     /// </summary>
-    private static async Task<int> SeedUserViaSqlAsync(AppDbContext dbContext, string email)
+    /// <remarks>internal so AuditLogTeamBackfillSqliteTests can reuse it — these three seeders solve
+    /// the "insert against a schema pinned to an older migration" problem once, and a second copy
+    /// would drift the moment a column is added.</remarks>
+    internal static async Task<int> SeedUserViaSqlAsync(AppDbContext dbContext, string email)
     {
         await dbContext.Database.ExecuteSqlRawAsync(
             """
@@ -210,7 +213,7 @@ public class PaymentUniqueIndexSqliteTests
     /// "table Sessions has no column named VeRosterFinalSyncedUtc", because EF's INSERT always
     /// reflects the current model while the schema here is deliberately held in the past.
     /// </summary>
-    private static async Task<int> SeedSessionViaSqlAsync(AppDbContext dbContext, string applicantId, int teamId, int userId)
+    internal static async Task<int> SeedSessionViaSqlAsync(AppDbContext dbContext, string applicantId, int teamId, int userId)
     {
         await dbContext.Database.ExecuteSqlRawAsync(
             "INSERT INTO Vecs (Name, SupportsYouthProgram) VALUES ({0}, 0)", $"VEC-{applicantId}");
@@ -243,7 +246,7 @@ public class PaymentUniqueIndexSqliteTests
     /// <c>Candidate.FccFeeReminderSentUtc</c> did it again in #219 — the Candidate was the last seed
     /// still going through EF.
     /// </summary>
-    private static async Task<int> SeedCandidateViaSqlAsync(AppDbContext dbContext, string applicantId, int sessionId)
+    internal static async Task<int> SeedCandidateViaSqlAsync(AppDbContext dbContext, string applicantId, int sessionId)
     {
         await dbContext.Database.ExecuteSqlRawAsync(
             """

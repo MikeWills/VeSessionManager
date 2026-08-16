@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using VeSessionManager.Core.Data;
@@ -169,9 +169,14 @@ public class SessionIngestionService(
     /// match a real license during an earlier run, that candidate is already terminal and is left
     /// exactly as it is, call sign and grant date intact.
     ///
-    /// No per-candidate audit entry, on purpose: an import writes thousands of these at once and the
-    /// audit log is a fixed 200-row window with no filtering (issue #86). The aggregate count is
-    /// reported in the import's own result and log line instead.
+    /// No per-candidate audit entry, on purpose: an import writes thousands of these at once, and
+    /// thousands of identical rows recording one operation is noise in a log whose value is that a
+    /// human can read it. The aggregate count is reported in the import's own result and log line
+    /// instead.
+    ///
+    /// <para>This used to cite issue #86's fixed 200-row display window as the reason. That window is
+    /// gone — #367 added filtering, a date range and server-side paging — but the reasoning above
+    /// survives it, which is why the note stays and the citation does not.</para>
     /// </summary>
     private static void MarkHistoricalCandidatesGranted(Session session, IngestionResult result)
     {
@@ -669,7 +674,7 @@ public class SessionIngestionService(
         // userId null = system action, not a person.
         dbContext.AddAuditLog(null, "RescheduleFlaggedForReview", nameof(Session), local.Id,
             $"ExamTools session {local.ExamToolsSessionId} moved from {local.ScheduledStartUtc:u} to {remote.Date:u} while it has registered candidates; stored time left unchanged pending review.",
-            now);
+            now, teamId: local.TeamId);
         result.SessionsFlaggedForReview++;
         logger.LogWarning("Session {ExamToolsSessionId} rescheduled {OldStart:u} -> {NewStart:u} but has candidates — flagged for review, stored time unchanged",
             local.ExamToolsSessionId, local.ScheduledStartUtc, remote.Date);
@@ -802,7 +807,7 @@ public class SessionIngestionService(
 
             dbContext.AddAuditLog(null, "CandidateWithdrawnFromFeed", nameof(Candidate), candidate.Id,
                 $"Candidate {candidate.Id} no longer in ExamTools' applicant list for session {local.ExamToolsSessionId} — marked NotTested (withdrew) and PII cleared. Payments left for manual handling.",
-                now);
+                now, teamId: local.TeamId);
             result.CandidatesWithdrawn++;
             logger.LogInformation("Candidate {CandidateId} withdrew from session {ExamToolsSessionId} (gone from ExamTools' applicant list) — marked NotTested, PII cleared, {PaymentCount} payment(s) left untouched",
                 candidate.Id, local.ExamToolsSessionId, candidate.Payments.Count);

@@ -8,6 +8,22 @@ that window, or immediately if it's phase-numbered work already summarized in "C
 design rationale for any entry still lives in its linked `/docs/*.md` file, not here or in
 CLAUDE.md — this file, like CLAUDE.md's Change Log, is pointers only.
 
+- **The 5-day reminder chased the wrong fee (2026-08-11).** Issues #219/#218. See
+  `docs/payment-reminders.md`. Found by *sending one and reading it* — the first candidate-facing
+  email this app produced end to end. It fired on an unpaid Square `Payment`, the team's **exam
+  fee** — money collected before or at the session, so by the time the trigger could fire (FCC
+  receives the application, plus five days) it had been in hand for over a week, and the email
+  carried a Square link for a bill already settled. **What is actually outstanding then is FCC's own
+  application fee, paid at CORES**, and the signal was already being collected and read by nothing
+  but a display column: `UlsWatcherService` maps ULS `FVPOFF` to `FccPaymentStatus =
+  PendingVerification` twice daily. Three consequences that each look like an omission otherwise:
+  the tracking stamp **moved from `Payment` to `Candidate`** (a team that collects no fees has no
+  Payment row, and its candidates still owe the FCC), the template carries **no payment link and no
+  placeholder that could become one** — which disposes of #218 by construction rather than by patch
+  — and the retest branch went with the payment it hung off. `PaymentReminder5Day` is **retired, not
+  deleted**: seeding never removes rows, so `EmailTemplateTriggers.Retired` exists and the admin page
+  labels it "No longer sent". **Still open: whether the 10-day pass means anything now** — it expires
+  a Square payment, but if day 10 is FCC's dismissal deadline the meaningful event is a different one.
 - **A login and a VE record are the same person (2026-08-11).** Issues #224/#226. See
   `docs/ve-self-service.md`. `User` and `VolunteerExaminer` had **no FK in either direction** — an
   absence, not a decision: the *authentication* separation is deliberate and documented, and the

@@ -177,7 +177,7 @@ public class PiiPurgeService(
         {
             var originalPurgedUtc = candidate.PiiPurgedUtc!.Value;
             CandidatePiiFields.Clear(candidate, originalPurgedUtc);
-            AddAudit(candidate.Id, "PII re-cleared: fields added to the purge definition after this candidate was originally purged.", now);
+            AddAudit(candidate.Id, "PII re-cleared: fields added to the purge definition after this candidate was originally purged.", now, candidate.Session.TeamId);
             await dbContext.SaveChangesAsync(cancellationToken);
         }
 
@@ -213,7 +213,7 @@ public class PiiPurgeService(
             var reason = candidate.LicenseGrantPredatesSession()
                 ? $"pre-existing license held since {candidate.LicenseGrantDateUtc:d}, anchored on session date {candidate.Session.ScheduledStartUtc:d} instead"
                 : $"license granted {candidate.LicenseGrantDateUtc:d}";
-            AddAudit(candidate.Id, $"PII purged (Trigger A: {reason}, {retentionWindowDays}-day retention window elapsed).", now);
+            AddAudit(candidate.Id, $"PII purged (Trigger A: {reason}, {retentionWindowDays}-day retention window elapsed).", now, candidate.Session.TeamId);
             await dbContext.SaveChangesAsync(cancellationToken);
         }
 
@@ -233,7 +233,7 @@ public class PiiPurgeService(
         foreach (var candidate in candidates)
         {
             PurgeCandidate(candidate, now);
-            AddAudit(candidate.Id, $"PII purged (Trigger B: exam date {candidate.Session.ScheduledStartUtc:d}, {retentionWindowDays}-day retention window elapsed).", now);
+            AddAudit(candidate.Id, $"PII purged (Trigger B: exam date {candidate.Session.ScheduledStartUtc:d}, {retentionWindowDays}-day retention window elapsed).", now, candidate.Session.TeamId);
             await dbContext.SaveChangesAsync(cancellationToken);
         }
 
@@ -247,6 +247,12 @@ public class PiiPurgeService(
     // action, not a status change.
     private static void PurgeCandidate(Candidate candidate, DateTime now) => CandidatePiiFields.Clear(candidate, now);
 
-    private void AddAudit(int candidateId, string details, DateTime now) =>
-        dbContext.AddAuditLog(null, "CandidatePiiPurged", nameof(Candidate), candidateId, details, now); // system action, not a person
+    /// <param name="teamId">
+    /// The candidate's session's team, so a TeamAdmin can see their own team's purges (#86 part 3) —
+    /// before this, every entry here was invisible to anyone but a SystemAdmin, because a job has no
+    /// acting user to scope through. Every caller has <c>candidate.Session</c> loaded.
+    /// </param>
+    private void AddAudit(int candidateId, string details, DateTime now, int teamId) =>
+        dbContext.AddAuditLog(null, "CandidatePiiPurged", nameof(Candidate), candidateId, details, now,
+            teamId: teamId); // userId null: system action, not a person
 }

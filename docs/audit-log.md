@@ -98,3 +98,43 @@ complete.
 
 Since #265, `AuditLog.SourceIpAddress` is populated for authentication events and PII export only.
 See `AuditLog`'s own remarks for why it is deliberately absent from the ~175 ordinary call sites.
+
+## Team attribution, and who can see a background job's work
+
+`AuditLog.TeamId` exists so a **TeamAdmin can see what the background jobs did** (#86 part 3, closed
+2026-08-15).
+
+**The bug.** `AuditLog.UserId` is null whenever a job wrote the row rather than a person, and
+`AdminAccessScope.ScopeAuditLog` narrowed a TeamAdmin to "actions taken by users on my team". A
+null-user row matched nothing, so every automated entry — candidates withdrawn from the ExamTools
+feed, PII purged, Zoom/Discord cancellations, exam results auto-marked — was invisible to them. Not
+filtered out as a decision: simply unreachable, because there was nothing on the row to filter on.
+A SystemAdmin saw all of it. The page gave no sign anything was missing.
+
+**The rule now.** An entry reaches a scoped admin two ways: through the acting user's team
+memberships (as before), or through `TeamId` matching one of their teams. A SystemAdmin is still
+unfiltered.
+
+**`TeamId` is set on background call sites only** — the ones passing a null `userId`. A
+user-attributed row already scopes correctly through the person who acted, and populating both would
+make one question answerable two ways, which is how the duplications this codebase keeps paying for
+start. `AuditLogExtensions.AddAuditLog` takes it as a trailing optional parameter for the same reason
+`sourceIpAddress` is optional: adding it to a call site is a deliberate act.
+
+**Null means "not attributable", not "no team"**, and two cases stay null on purpose:
+
+- Anything acting on a `VolunteerExaminer`. A VE is global here — one person can sit on several
+  teams' rosters (see `docs/ve-management.md`) — so a VE PII purge or a self-service email change
+  genuinely belongs to no single team. Picking one would show it to a TeamAdmin with no claim on it.
+- Rows the backfill could not resolve: an entity since deleted, or an entity type with no path to a
+  team.
+
+Both stay SystemAdmin-only, which is exactly where they were before this column existed.
+
+**Existing history was backfilled**, in the `AuditLogTeamAttribution` migration — three statements
+resolving a team for null-user rows about a `Session`, a `Candidate` (via its session) or a `Payment`
+(via its candidate's session). Without it the fix would only have reached rows written from that day
+on, while the entries anyone wants to review are the ones already there. The backfill is raw SQL and
+therefore invisible to the compiler and to EF InMemory, so `AuditLogTeamBackfillSqliteTests` drives
+the real migration against real SQLite — a backfill that silently resolves nothing looks identical to
+one with nothing to do.

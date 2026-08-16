@@ -217,7 +217,7 @@ public class AdminAccessScopeTests
     }
 
     [Fact]
-    public async Task ScopeAuditLog_TeamAdmin_SeesOnlyOwnTeamsUserActions_NotUnattributedEntries()
+    public async Task ScopeAuditLog_TeamAdmin_SeesOnlyOwnTeamsUserActions()
     {
         await using var dbContext = CreateContext();
         var teamA = await SeedTeamAsync(dbContext, "TEAMA");
@@ -228,7 +228,6 @@ public class AdminAccessScopeTests
         await dbContext.SaveChangesAsync();
         dbContext.AuditLogs.Add(new AuditLog { User = teamAUser, Action = "TeamAAction", EntityType = "Test", EntityId = 1, TimestampUtc = Now });
         dbContext.AuditLogs.Add(new AuditLog { User = teamBUser, Action = "TeamBAction", EntityType = "Test", EntityId = 2, TimestampUtc = Now });
-        dbContext.AuditLogs.Add(new AuditLog { UserId = null, Action = "JobAction", EntityType = "Test", EntityId = 3, TimestampUtc = Now });
         await dbContext.SaveChangesAsync();
         var teamAdmin = NewUser("Team Admin", UserRole.TeamAdmin, teamA.Id);
 
@@ -236,6 +235,88 @@ public class AdminAccessScopeTests
 
         var entry = Assert.Single(visible);
         Assert.Equal("TeamAAction", entry.Action);
+    }
+
+    // ---- #86 part 3: background-job entries were invisible to a TeamAdmin -------------------
+
+    /// <summary>
+    /// The bug this closes. <c>AuditLog.UserId</c> is null for anything a background job did, and the
+    /// TeamAdmin filter matched on "a user on my team took this action" — so every automated entry
+    /// (candidates withdrawn from the feed, PII purged, Zoom/Discord cancellations, exam results
+    /// auto-marked) matched nothing and was silently absent. A TeamAdmin reviewing their team's
+    /// history saw only what humans had done, with nothing indicating the rest existed.
+    /// </summary>
+    [Fact]
+    public async Task ScopeAuditLog_TeamAdmin_SeesBackgroundJobEntriesForTheirOwnTeam()
+    {
+        await using var dbContext = CreateContext();
+        var teamA = await SeedTeamAsync(dbContext, "TEAMA");
+        dbContext.AuditLogs.Add(new AuditLog
+        {
+            UserId = null, TeamId = teamA.Id,
+            Action = "CandidateWithdrawnFromFeed", EntityType = "Candidate", EntityId = 1, TimestampUtc = Now
+        });
+        await dbContext.SaveChangesAsync();
+        var teamAdmin = NewUser("Team Admin", UserRole.TeamAdmin, teamA.Id);
+
+        var visible = Scope.ScopeAuditLog(dbContext.AuditLogs, teamAdmin).ToList();
+
+        Assert.Equal("CandidateWithdrawnFromFeed", Assert.Single(visible).Action);
+    }
+
+    /// <summary>Team attribution has to cut both ways, or the fix would hand every TeamAdmin the whole deployment's automated history.</summary>
+    [Fact]
+    public async Task ScopeAuditLog_TeamAdmin_DoesNotSeeAnotherTeamsBackgroundJobEntries()
+    {
+        await using var dbContext = CreateContext();
+        var teamA = await SeedTeamAsync(dbContext, "TEAMA");
+        var teamB = await SeedTeamAsync(dbContext, "TEAMB");
+        dbContext.AuditLogs.Add(new AuditLog
+        {
+            UserId = null, TeamId = teamB.Id,
+            Action = "CandidatePiiPurged", EntityType = "Candidate", EntityId = 1, TimestampUtc = Now
+        });
+        await dbContext.SaveChangesAsync();
+        var teamAdmin = NewUser("Team Admin", UserRole.TeamAdmin, teamA.Id);
+
+        Assert.Empty(Scope.ScopeAuditLog(dbContext.AuditLogs, teamAdmin));
+    }
+
+    /// <summary>
+    /// A background entry with no team attribution at all stays SystemAdmin-only, deliberately.
+    /// <c>VolunteerExaminer</c> is a global entity here — a VE can be on several teams' rosters — so
+    /// a VE PII purge or a self-service email change genuinely belongs to no single team, and
+    /// guessing one would show it to a TeamAdmin who has no claim on it. Documented in
+    /// docs/audit-log.md rather than left as a surprising blank.
+    /// </summary>
+    [Fact]
+    public async Task ScopeAuditLog_TeamAdmin_StillDoesNotSeeUnattributableBackgroundEntries()
+    {
+        await using var dbContext = CreateContext();
+        var teamA = await SeedTeamAsync(dbContext, "TEAMA");
+        dbContext.AuditLogs.Add(new AuditLog
+        {
+            UserId = null, TeamId = null,
+            Action = "VolunteerExaminerPiiPurged", EntityType = "VolunteerExaminer", EntityId = 1, TimestampUtc = Now
+        });
+        await dbContext.SaveChangesAsync();
+        var teamAdmin = NewUser("Team Admin", UserRole.TeamAdmin, teamA.Id);
+
+        Assert.Empty(Scope.ScopeAuditLog(dbContext.AuditLogs, teamAdmin));
+    }
+
+    /// <summary>A SystemAdmin is unfiltered, so team attribution must not narrow what they see either.</summary>
+    [Fact]
+    public async Task ScopeAuditLog_SystemAdmin_SeesBackgroundEntriesWithAndWithoutATeam()
+    {
+        await using var dbContext = CreateContext();
+        var teamA = await SeedTeamAsync(dbContext, "TEAMA");
+        dbContext.AuditLogs.Add(new AuditLog { UserId = null, TeamId = teamA.Id, Action = "Attributed", EntityType = "Test", EntityId = 1, TimestampUtc = Now });
+        dbContext.AuditLogs.Add(new AuditLog { UserId = null, TeamId = null, Action = "Unattributed", EntityType = "Test", EntityId = 2, TimestampUtc = Now });
+        await dbContext.SaveChangesAsync();
+        var sysAdmin = new User { Name = "Sys Admin", Role = UserRole.SystemAdmin };
+
+        Assert.Equal(2, Scope.ScopeAuditLog(dbContext.AuditLogs, sysAdmin).Count());
     }
 
     [Fact]
