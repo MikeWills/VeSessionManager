@@ -35,6 +35,22 @@ public class EmailTemplate
     /// </summary>
     public string? DisplayName { get; set; }
 
+    /// <summary>
+    /// Who a user-defined template is written to (#191), which decides both the placeholders it can
+    /// use and which compose screen offers it.
+    ///
+    /// <para><b>It cannot be inferred, and getting it wrong is visible to the recipient.</b> The two
+    /// audiences have different tokens — a candidate template's <c>{{CandidateFirstName}}</c> resolves
+    /// to nothing for a VE, and the renderer deliberately leaves an unknown token as literal
+    /// <c>{{CandidateFirstName}}</c> text rather than a silent blank. So it is asked once, at
+    /// creation, instead of guessed from the body.</para>
+    ///
+    /// <para>Meaningless for a shipped template, which is why the default is
+    /// <see cref="EmailTemplateAudience.Candidates"/>: every one of them is candidate-facing, and the
+    /// existing rows keep that value on migration.</para>
+    /// </summary>
+    public EmailTemplateAudience Audience { get; set; } = EmailTemplateAudience.Candidates;
+
     public required string Subject { get; set; }
 
     /// <summary>Plain text/HTML with {{PlaceholderKeyword}} tokens, substituted at send time.</summary>
@@ -42,6 +58,24 @@ public class EmailTemplate
 
     // Null until an Admin edits the seeded default content.
     public int? UpdatedByUserId { get; set; }
+
     public User? UpdatedByUser { get; set; }
     public DateTime? UpdatedUtc { get; set; }
+}
+
+/// <summary>
+/// Who a template is written to (#191).
+///
+/// <para><b>Persisted as an integer, so these values are pinned and must keep their numbers</b> — the
+/// rule stated in <c>Enums.cs</c>. Append new members, never insert: renumbering would silently
+/// re-point every existing template at a different audience, which reads as a template that has
+/// vanished from one picker and appeared in another.</para>
+/// </summary>
+public enum EmailTemplateAudience
+{
+    /// <summary>People sitting exams. Every shipped template is this, which is why it is the default and what existing rows keep.</summary>
+    Candidates = 0,
+
+    /// <summary>The team's volunteer examiners.</summary>
+    VolunteerExaminers = 1
 }

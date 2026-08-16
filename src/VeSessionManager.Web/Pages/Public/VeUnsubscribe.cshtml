@@ -1,0 +1,53 @@
+@page "/ve/unsubscribe/{token}"
+@model VeSessionManager.Web.Pages.Public.VeUnsubscribeModel
+@{
+    ViewData["Title"] = "Email preferences";
+    Layout = "_PublicLayout";
+}
+
+<div class="auth-wrap">
+    <div class="auth-card">
+        <h1>Email preferences</h1>
+
+        @if (Model.IsUnsubscribed is null)
+        {
+            @* Deliberately says nothing about whether the token exists — this page is reachable by
+               anyone holding a link, and "no such token" and "already handled" are the same sentence
+               here on purpose. *@
+            <p>This link is not valid. It may have been replaced by a newer message.</p>
+            <p class="session-sub">If you want to stop receiving email, reply to any message from us and ask.</p>
+        }
+        else if (Model.IsUnsubscribed == true)
+        {
+            <p>
+                @(Model.Saved ? "Done — you have been unsubscribed." : "You are currently unsubscribed.")
+                We will not send you email@(Model.Name is null ? "" : $", {Model.Name}").
+            </p>
+            @* Stated plainly, because it is the part with a real cost: this stops session invitations
+               too, so somebody has to telephone them about a session instead. *@
+            <p class="session-sub">
+                That includes invitations to work exam sessions, so your team will need to reach you
+                another way.
+            </p>
+            <form method="post">
+                <input type="hidden" name="resubscribe" value="true" />
+                <button type="submit" class="btn-primary">Start receiving email again</button>
+            </form>
+        }
+        else
+        {
+            <p>
+                @(Model.Name is null ? "You are" : $"{Model.Name}, you are") currently receiving email
+                from your VE team — session invitations and occasional messages.
+            </p>
+            <form method="post">
+                <input type="hidden" name="resubscribe" value="false" />
+                <button type="submit" class="btn-danger">Unsubscribe from all email</button>
+            </form>
+            <p class="session-sub" style="margin-top:12px;">
+                This stops everything, including invitations to work exam sessions. You can turn it
+                back on from this same link at any time.
+            </p>
+        }
+    </div>
+</div>

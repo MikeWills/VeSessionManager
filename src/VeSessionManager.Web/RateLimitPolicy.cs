@@ -37,6 +37,10 @@ public static class RateLimitPolicy
 
     public static Bucket For(PathString path) =>
         path.StartsWithSegments("/webhooks") ? Bucket.Webhook
-        : path.StartsWithSegments("/Account") || path.StartsWithSegments("/VeSelfService") ? Bucket.Interactive
+        // /ve carries the unsubscribe page (#191): anonymous, and it takes a token from the URL and
+        // hits the database to resolve it. Exactly the shape #264 was about, so it is bucketed
+        // deliberately rather than left to fall through to no limit at all.
+        : path.StartsWithSegments("/Account") || path.StartsWithSegments("/VeSelfService") || path.StartsWithSegments("/ve")
+            ? Bucket.Interactive
         : Bucket.Unlimited;
 }

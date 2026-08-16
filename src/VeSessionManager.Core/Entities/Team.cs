@@ -178,6 +178,22 @@ public class Team
     public bool EmailEnabled { get; set; } = true;
 
     /// <summary>
+    /// Whether VEs on this team may subscribe to hear about its sessions (#191). Off by default, and
+    /// off is the honest setting for most teams.
+    ///
+    /// <para><b>It gates the offer, not the sending.</b> Mike's reason for asking: one of his teams
+    /// emails every VE about every session, and the other does not — so a subscribe box on the VE's
+    /// own details page would, for that second team, promise notifications nobody sends. A VE who
+    /// ticked it would sit waiting rather than checking the schedule, which is worse than never
+    /// having been offered.</para>
+    ///
+    /// <para>Turning it off later leaves existing <c>VeTeamMembership.EmailSubscribed</c> values
+    /// alone rather than clearing them: it is a decision about what to offer, and a team that turns
+    /// it back on should find its volunteers' answers still there.</para>
+    /// </summary>
+    public bool VeEmailSubscriptionsEnabled { get; set; }
+
+    /// <summary>
     /// Whether an integration is switched on for this team. <b>Not</b> a configuration check — see
     /// the IsXConfigured members above, which answer a different question and want the opposite
     /// retry behavior.

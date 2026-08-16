@@ -46,6 +46,11 @@ public class TeamConfiguration : IEntityTypeConfiguration<Team>
         b.Property(t => t.DiscordEnabled).HasDefaultValue(true);
         b.Property(t => t.SquareEnabled).HasDefaultValue(true);
         b.Property(t => t.EmailEnabled).HasDefaultValue(true);
+        // Declared on the model, not only in the migration: a schema built by EnsureCreated takes its
+        // columns from here, so a default set only in the migration leaves those NOT NULL with no
+        // DEFAULT and every raw INSERT that omits the column fails. That is what the
+        // DeclareColumnDefaultsOnModel migration was about, and this is the same trap (#191).
+        b.Property(t => t.VeEmailSubscriptionsEnabled).HasDefaultValue(false);
 
         // Encrypted at rest (2026-07-30 security review) — genuine bearer secrets only, not the
         // usernames/ids/URLs alongside them (those stay plaintext, useful to read at a glance).

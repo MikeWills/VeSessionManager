@@ -59,7 +59,7 @@ public partial class EmailTemplateAdminService(AppDbContext dbContext, TimeProvi
 
     /// <summary>Creates a template a team wrote for itself (#144). Nothing sends it; it exists to be picked as the starting text on the Email candidates screen.</summary>
     public async Task<EmailTemplateActionResult> CreateAsync(
-        int teamId, string name, string subject, string body, int userId, CancellationToken cancellationToken)
+        int teamId, string name, string subject, string body, EmailTemplateAudience audience, int userId, CancellationToken cancellationToken)
     {
         var trimmedName = name?.Trim() ?? "";
         if (trimmedName.Length == 0)
@@ -78,6 +78,10 @@ public partial class EmailTemplateAdminService(AppDbContext dbContext, TimeProvi
             Key = await GenerateKeyAsync(teamId, trimmedName, cancellationToken),
             DisplayName = trimmedName,
             IsUserDefined = true,
+            // Asked once, at creation, rather than inferred from the body: the two audiences have
+            // different tokens, and a candidate template used on VEs reaches them with a literal
+            // {{CandidateFirstName}} in the text.
+            Audience = audience,
             Subject = subject,
             Body = body
         };
@@ -88,7 +92,7 @@ public partial class EmailTemplateAdminService(AppDbContext dbContext, TimeProvi
         template.UpdatedUtc = now;
 
         dbContext.AddAuditLog(userId, "EmailTemplateCreated", nameof(EmailTemplate), template.Id,
-            $"Team {teamId} template '{trimmedName}' created.", now);
+            $"Team {teamId} template '{trimmedName}' created for {audience}.", now);
         await dbContext.SaveChangesAsync(cancellationToken);
         return EmailTemplateActionResult.Success;
     }

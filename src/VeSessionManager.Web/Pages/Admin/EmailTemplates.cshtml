@@ -49,6 +49,10 @@ else
             <div class="section-head">
                 <div>
                     <h2 class="mono">@template.Label</h2>
+                    @if (template.IsUserDefined)
+                    {
+                        <span class="chip chip-neutral">@(template.Audience == VeSessionManager.Core.Entities.EmailTemplateAudience.VolunteerExaminers ? "To VEs" : "To candidates")</span>
+                    }
                     @if (template.UpdatedUtc is not null)
                     {
                         <span class="session-sub">Last updated @EasternTimeFormatter.Format(template.UpdatedUtc.Value, "MMM d, yyyy h:mm tt")</span>
@@ -117,7 +121,7 @@ else
                hand is the easiest thing to get wrong here, and a typo only surfaces as a Worker log
                warning after a real send. Rendered as buttons so they're keyboard-reachable. *@
             <div class="roster-list" style="margin-bottom:12px;">
-                @foreach (var placeholder in VeSessionManager.Web.Pages.Admin.EmailTemplatesModel.PlaceholdersFor(template.Key))
+                @foreach (var placeholder in VeSessionManager.Web.Pages.Admin.EmailTemplatesModel.PlaceholdersFor(template))
                 {
                     <button type="button" class="chip chip-neutral placeholder-chip" data-token="{{@placeholder}}"
                             title="Insert this placeholder">{{@placeholder}}</button>
@@ -169,6 +173,15 @@ else
                 <label for="new-template-name">Name</label>
                 <input id="new-template-name" name="name" required placeholder="e.g. Field Day invite" />
                 <span class="session-sub">Only you see this — it is how the template is listed when you pick one.</span>
+            </div>
+            @* Asked at creation because it decides the placeholders: a candidate template used on
+               VEs would reach them with a literal {{CandidateFirstName}} in the text. *@
+            <div class="field" style="max-width:320px;">
+                <label for="new-template-audience">Who is this written to?</label>
+                <select id="new-template-audience" name="audience" class="filter-select">
+                    <option value="@((int)VeSessionManager.Core.Entities.EmailTemplateAudience.Candidates)">Candidates</option>
+                    <option value="@((int)VeSessionManager.Core.Entities.EmailTemplateAudience.VolunteerExaminers)">Volunteer examiners</option>
+                </select>
             </div>
             <div class="field">
                 <label for="new-template-subject">Subject</label>

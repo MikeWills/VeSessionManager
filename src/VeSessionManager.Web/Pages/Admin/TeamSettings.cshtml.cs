@@ -116,6 +116,19 @@ public class TeamSettingsModel(AppDbContext dbContext, UserManager<User> userMan
         return RedirectToPage(new { teamId = auth.Value.Team.Id });
     }
 
+    public async Task<IActionResult> OnPostUpdateVeEmailAsync(bool veEmailSubscriptionsEnabled)
+    {
+        var auth = await AuthorizeAsync();
+        if (auth is null) return Forbid();
+
+        var result = await teamSettingsService.UpdateVeEmailSettingsAsync(
+            auth.Value.Team.Id, veEmailSubscriptionsEnabled, auth.Value.User.Id, CancellationToken.None);
+        SetStatus(result, veEmailSubscriptionsEnabled
+            ? "VEs can now subscribe to session email for this team."
+            : "VEs can no longer subscribe to session email for this team.");
+        return RedirectToPage(new { teamId = auth.Value.Team.Id });
+    }
+
     public async Task<IActionResult> OnPostUpdateDiscordAsync(ulong? guildId)
     {
         var auth = await AuthorizeAsync();

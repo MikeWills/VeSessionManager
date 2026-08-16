@@ -118,6 +118,7 @@ public class VeInviteModel(
         var message = $"Sent {result.Sent} invitation(s).";
         if (result.Failed > 0) message += $" {result.Failed} failed to send.";
         if (result.NoEmailAddress > 0) message += $" {result.NoEmailAddress} had no email address on file.";
+        if (result.Unsubscribed > 0) message += $" {result.Unsubscribed} have unsubscribed from email and were not invited.";
         if (result.TextOnlySkipped > 0) message += $" {result.TextOnlySkipped} are set to text only, which isn't available yet.";
 
         TempData[result.Sent > 0 ? "StatusMessage" : "ErrorMessage"] = message;

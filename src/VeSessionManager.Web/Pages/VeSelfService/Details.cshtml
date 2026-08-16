@@ -77,6 +77,42 @@
     </form>
 </div>
 
+@if (Model.Subscriptions.Count > 0 || Model.Person.EmailUnsubscribedUtc is not null)
+{
+    <div class="ve-panel">
+        <h2>Email preferences</h2>
+
+        @if (Model.Person.EmailUnsubscribedUtc is { } unsubscribed)
+        {
+            @* An unsubscribe overrides everything, so saying so here is the difference between a VE
+               understanding why they hear nothing and assuming the app is broken. *@
+            <div class="vesm-alert error">
+                You unsubscribed from email on @EasternTimeFormatter.Format(unsubscribed, "MMM d, yyyy").
+                We are not sending you anything, including invitations to work sessions. Use the
+                unsubscribe link in any earlier message to start receiving email again.
+            </div>
+        }
+
+        @if (Model.Subscriptions.Count > 0)
+        {
+            <p class="session-sub">
+                These teams email their VEs about upcoming sessions. Tick the ones you want to hear from.
+            </p>
+            <form method="post" asp-page-handler="Subscriptions">
+                @foreach (var subscription in Model.Subscriptions)
+                {
+                    <label class="switch-row">
+                        <input type="checkbox" name="subscribedTeamIds" value="@subscription.TeamId"
+                               checked="@subscription.Subscribed" style="width:auto;" />
+                        <span>Email me about @subscription.TeamName sessions</span>
+                    </label>
+                }
+                <button type="submit" class="btn-secondary btn-sm" style="margin-top:12px;">Save email preferences</button>
+            </form>
+        }
+    </div>
+}
+
 <div class="ve-panel">
     <h2>VEC accreditations</h2>
     <p class="session-sub">

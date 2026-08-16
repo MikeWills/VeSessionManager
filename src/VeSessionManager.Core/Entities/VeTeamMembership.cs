@@ -25,6 +25,22 @@ public class VeTeamMembership
     public Team Team { get; set; } = null!;
 
     /// <summary>
+    /// This VE has asked to hear from this team about its sessions (#191). Per membership rather than
+    /// per person, because it is a different answer for each team somebody serves — which is the
+    /// whole reason Mike asked for it: one of his teams emails every VE about every session, and the
+    /// other does not work that way at all.
+    ///
+    /// <para><b>Only offered when the team allows it</b> — see
+    /// <c>Team.VeEmailSubscriptionsEnabled</c>. A team that does not notify per session must not show
+    /// a box implying it does; somebody ticking it would be waiting for mail that is never coming.</para>
+    ///
+    /// <para>Distinct from <see cref="VolunteerExaminer.EmailUnsubscribedUtc"/>, which is a refusal
+    /// that overrides everything. Subscribing is opting <i>in</i> to more; unsubscribing is opting out
+    /// of all of it, and the unsubscribe wins wherever both are set.</para>
+    /// </summary>
+    public bool EmailSubscribed { get; set; }
+
+    /// <summary>
     /// False once an admin retires this VE from the team. <b>There is no delete.</b> A person can be
     /// on another team, and session history references them by id — a removed row would either
     /// orphan that history or quietly rewrite who ran a past session.

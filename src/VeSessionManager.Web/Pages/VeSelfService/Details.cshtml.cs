@@ -50,6 +50,15 @@ public class DetailsModel(
     public VolunteerExaminer Person { get; private set; } = null!;
     public IReadOnlyList<string> Teams { get; private set; } = [];
 
+    /// <summary>
+    /// The teams this VE is on that <b>allow</b> subscribing (#191), with their current answer. A
+    /// team that does not email its VEs about every session shows nothing here, because a box
+    /// implying otherwise would leave somebody waiting for mail nobody sends.
+    /// </summary>
+    public IReadOnlyList<SubscriptionOption> Subscriptions { get; private set; } = [];
+
+    public record SubscriptionOption(int TeamId, string TeamName, bool Subscribed);
+
     /// <summary>Every VEC, for the add picker. Already-held ones are filtered out in the view so the list cannot offer a duplicate.</summary>
     public IReadOnlyList<Vec> AllVecs { get; private set; } = [];
 
@@ -106,6 +115,33 @@ public class DetailsModel(
             HttpContext.RequestAborted);
 
         TempData["StatusMessage"] = "Your details have been saved. Thank you.";
+        return RedirectToPage();
+    }
+
+    /// <summary>
+    /// The VE's own answer to "email me about this team's sessions" (#191).
+    ///
+    /// <para>Scoped to their own memberships and to teams that allow it, both re-checked here: the
+    /// team ids arrive from a posted form, and this page authenticates a VE rather than an admin, so
+    /// neither the list it rendered nor the team's own switch can be taken on trust.</para>
+    /// </summary>
+    public async Task<IActionResult> OnPostSubscriptionsAsync(int[] subscribedTeamIds)
+    {
+        var loaded = await LoadAsync();
+        if (loaded is not null) return loaded;
+
+        var memberships = await dbContext.VeTeamMemberships
+            .Include(m => m.Team)
+            .Where(m => m.VolunteerExaminerId == Person.Id && m.IsActive)
+            .ToListAsync(HttpContext.RequestAborted);
+
+        foreach (var membership in memberships.Where(m => m.Team.VeEmailSubscriptionsEnabled))
+        {
+            membership.EmailSubscribed = subscribedTeamIds.Contains(membership.TeamId);
+        }
+
+        await dbContext.SaveChangesAsync(HttpContext.RequestAborted);
+        TempData["StatusMessage"] = "Your email preferences have been saved.";
         return RedirectToPage();
     }
 
@@ -201,6 +237,10 @@ public class DetailsModel(
 
         Person = person;
         Teams = [.. person.TeamMemberships.Where(m => m.IsActive).Select(m => m.Team.Name).OrderBy(n => n)];
+        Subscriptions = [.. person.TeamMemberships
+            .Where(m => m.IsActive && m.Team.VeEmailSubscriptionsEnabled)
+            .Select(m => new SubscriptionOption(m.TeamId, m.Team.Name, m.EmailSubscribed))
+            .OrderBy(o => o.TeamName)];
         AllVecs = await dbContext.Vecs.OrderBy(v => v.Name).ToListAsync(HttpContext.RequestAborted);
         return null;
     }

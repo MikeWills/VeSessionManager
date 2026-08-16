@@ -172,6 +172,17 @@ public class VeSessionInvitationService(
                 continue;
             }
 
+            // An unsubscribe stops session invitations too (#191). That is a real operational cost —
+            // somebody has to be telephoned about Saturday — and it is the deliberate reading:
+            // a person who clicked "stop emailing me" and then received an invitation has not been
+            // unsubscribed, they have been filtered. The compose screen shows the state so the team
+            // knows to reach them another way.
+            if (recipient.EmailUnsubscribedUtc is not null)
+            {
+                result.Unsubscribed++;
+                continue;
+            }
+
             // Text-only exists in the model but nothing can set it while SMS is unbuilt. Honoured
             // anyway, so that when SMS arrives this loop does not need remembering.
             if (recipient.ContactPreference == VeContactPreference.Text)
@@ -210,9 +221,7 @@ public class VeSessionInvitationService(
         }
 
         dbContext.AddAuditLog(userId, "VeSessionInvitationsSent", nameof(Session), session.Id,
-            $"Invitations for session {session.ExamToolsSessionId}: {result.Sent} sent, {result.Failed} failed, " +
-            $"{result.NoEmailAddress} with no address, {result.TextOnlySkipped} text-only, " +
-            $"{result.NotOnTeam} not on the team.", now);
+            $"Invitations for session {session.ExamToolsSessionId}: {result}.", now);
         await dbContext.SaveChangesAsync(cancellationToken);
 
         logger.LogInformation("Session invitations for session {SessionId}: {Result}", session.Id, result);
@@ -267,6 +276,9 @@ public record VeInvitationCandidate(
     VeEligibility Eligibility)
 {
     public bool HasEmail => !string.IsNullOrWhiteSpace(VolunteerExaminer.Email);
+
+    /// <summary>Asked to stop receiving email (#191). Shown rather than silently unselectable: the team needs to know to telephone them.</summary>
+    public bool IsUnsubscribed => VolunteerExaminer.EmailUnsubscribedUtc is not null;
 }
 
 public class VeInvitationResult
@@ -280,6 +292,9 @@ public class VeInvitationResult
     /// <summary>Selected but text-only. Unreachable until SMS exists.</summary>
     public int TextOnlySkipped { get; set; }
 
+    /// <summary>Selected but has asked to stop receiving email (#191). Counted and reported, so the team knows to reach them another way rather than assuming the invitation landed.</summary>
+    public int Unsubscribed { get; set; }
+
     /// <summary>
     /// Requested but not an active member of the session's team, so never contacted (#238). Normally
     /// zero. A non-zero value from an ordinary send means a membership changed while the compose
@@ -291,5 +306,5 @@ public class VeInvitationResult
 
     public override string ToString() =>
         $"{Sent} sent, {Failed} failed, {NoEmailAddress} with no address, {TextOnlySkipped} text-only, " +
-        $"{NotOnTeam} not on the team";
+        $"{Unsubscribed} unsubscribed, {NotOnTeam} not on the team";
 }

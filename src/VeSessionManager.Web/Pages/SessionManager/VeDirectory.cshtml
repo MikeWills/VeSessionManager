@@ -24,9 +24,15 @@
        explicitly rather than inherited from the current URL. And because the tag helper generates
        the action itself, it emits the antiforgery token automatically; an explicit action= would
        silently drop it. *@
-    <form method="post" asp-page-handler="Export" asp-all-route-data="@Model.FilterRoute" class="inline-form">
-        <button type="submit" class="btn-secondary btn-sm">Export CSV</button>
-    </form>
+    <span style="display:inline-flex; gap:8px; align-items:center;">
+        @* A link, not a form: nothing sends until the draft has been read (#191). *@
+        <a class="btn-secondary btn-sm" asp-page="/SessionManager/VeEmail" asp-route-teamId="@Model.TeamId">
+            <i class="bi bi-envelope" aria-hidden="true"></i> Email VEs
+        </a>
+        <form method="post" asp-page-handler="Export" asp-all-route-data="@Model.FilterRoute" class="inline-form">
+            <button type="submit" class="btn-secondary btn-sm">Export CSV</button>
+        </form>
+    </span>
 </div>
 
 <form method="get" class="filters" style="margin-bottom:20px; align-items:flex-start;">
@@ -202,6 +208,7 @@ else
                 <th>Name</th>
                 <th>Teams</th>
                 <th>Tags</th>
+                <th>Contact</th>
                 <th>License</th>
                 <th>Last worked</th>
                 <th></th>
@@ -210,7 +217,7 @@ else
         <tbody>
             @if (Model.Rows.Count == 0)
             {
-                <tr><td colspan="7">
+                <tr><td colspan="8">
                     @(string.IsNullOrWhiteSpace(Model.Search)
                         ? "No VEs on this team's directory yet. They appear automatically once they work a session."
                         : $"No VEs match \"{Model.Search}\".")
@@ -259,6 +266,28 @@ else
                                another is still someone this deployment can call on, so the per-team
                                state shows in the Teams column instead. *@
                             <span class="chip chip-brick">Retired</span>
+                        }
+                    </td>
+                    @* Whether there is contact info, never what it is (Mike, 2026-08-16). What this
+                       answers is "can this person be reached", which is worth seeing at a glance
+                       before picking recipients; the addresses themselves stay on the VE's own page
+                       and in the CSV export. Icons rather than a bare "Y/N" so the row scans, and
+                       Bootstrap Icons rather than a Unicode symbol — a bare glyph renders as a tofu
+                       box on whichever device lacks the font, which this app has already shipped once. *@
+                    <td data-sort-value="@((row.HasEmail ? 2 : 0) + (row.HasPhone ? 1 : 0))">
+                        @if (row.HasEmail)
+                        {
+                            <i class="bi bi-envelope-fill" title="Email on file" aria-hidden="true"></i>
+                            <span class="visually-hidden">Email on file.</span>
+                        }
+                        @if (row.HasPhone)
+                        {
+                            <i class="bi bi-telephone-fill" title="Phone on file" aria-hidden="true"></i>
+                            <span class="visually-hidden">Phone on file.</span>
+                        }
+                        @if (!row.HasEmail && !row.HasPhone)
+                        {
+                            <span class="session-sub" title="No way to contact this VE from the app">none</span>
                         }
                     </td>
                     @{

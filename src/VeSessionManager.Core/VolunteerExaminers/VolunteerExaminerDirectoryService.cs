@@ -389,6 +389,20 @@ public record VeDirectoryRow(
 {
     public bool IsGuest => Tags.Count == 0;
 
+    /// <summary>
+    /// Whether there is an address on file — <b>not what it is</b> (Mike, 2026-08-16). The directory
+    /// shows the flag so it is obvious who cannot be reached, and the value stays on the VE's own page
+    /// and the CSV export. Same reasoning the VE invitation screen already applies: it lists names,
+    /// tags and eligibility and deliberately shows no contact details.
+    ///
+    /// <para>Both go false once the retention purge clears a VE's contact details (#313), which is
+    /// correct — they genuinely cannot be reached any more.</para>
+    /// </summary>
+    public bool HasEmail => !string.IsNullOrWhiteSpace(VolunteerExaminer.Email);
+
+    /// <inheritdoc cref="HasEmail"/>
+    public bool HasPhone => !string.IsNullOrWhiteSpace(VolunteerExaminer.Phone);
+
     /// <summary>Active somewhere in scope. Someone retired from one team but serving another is still a VE this team can call on.</summary>
     public bool IsActive => Teams.Any(t => t.IsActive);
 

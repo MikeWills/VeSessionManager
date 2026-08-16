@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using VeSessionManager.Core.Data;
 
@@ -10,9 +11,11 @@ using VeSessionManager.Core.Data;
 namespace VeSessionManager.Core.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260816185232_EmailTemplateAudience")]
+    partial class EmailTemplateAudience
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.10");
@@ -999,11 +1002,6 @@ namespace VeSessionManager.Core.Migrations
                     b.Property<string>("SquareWebhookSignatureKey")
                         .HasColumnType("TEXT");
 
-                    b.Property<bool>("VeEmailSubscriptionsEnabled")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("INTEGER")
-                        .HasDefaultValue(false);
-
                     b.Property<string>("ZoomAccountId")
                         .HasColumnType("TEXT");
 
@@ -1364,11 +1362,6 @@ namespace VeSessionManager.Core.Migrations
                     b.Property<DateTime>("CreatedUtc")
                         .HasColumnType("TEXT");
 
-                    b.Property<bool>("EmailSubscribed")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("INTEGER")
-                        .HasDefaultValue(false);
-
                     b.Property<DateTime?>("InactivatedUtc")
                         .HasColumnType("TEXT");
 
@@ -1480,9 +1473,6 @@ namespace VeSessionManager.Core.Migrations
                         .HasColumnType("TEXT")
                         .UseCollation("NOCASE");
 
-                    b.Property<DateTime?>("EmailUnsubscribedUtc")
-                        .HasColumnType("TEXT");
-
                     b.Property<string>("Frn")
                         .HasColumnType("TEXT");
 
@@ -1527,9 +1517,6 @@ namespace VeSessionManager.Core.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<string>("State")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("UnsubscribeToken")
                         .HasColumnType("TEXT");
 
                     b.Property<DateTime?>("UpdatedUtc")

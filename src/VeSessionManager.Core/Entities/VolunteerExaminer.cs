@@ -67,6 +67,46 @@ public class VolunteerExaminer : ILicenseSnapshot
 
     public string? Email { get; set; }
     public string? Phone { get; set; }
+
+    /// <summary>
+    /// When this VE asked to stop receiving email from the app, or null if they have not (#191).
+    /// Set by them, from a link in the message itself — never by an admin, which is the point of an
+    /// unsubscribe.
+    ///
+    /// <para><b>It stops every email this app sends them, not only bulk messages.</b> A partly-honoured
+    /// unsubscribe is worse than none: somebody who clicks it has said stop, and continuing to send
+    /// session invitations because those are arguably "transactional" is the reading that gets people
+    /// marked as spam. The operational cost is real and deliberate — an unsubscribed VE has to be
+    /// telephoned about a session — so both the directory and the invitation screen show the state
+    /// rather than silently dropping them.</para>
+    ///
+    /// <para>The two account-flow emails a VE triggers themselves (a self-service sign-in link, an
+    /// email-change confirmation) are unaffected: they are replies to an action taken seconds earlier,
+    /// and suppressing them would break the only route a VE has back to their own details.</para>
+    /// </summary>
+    public DateTime? EmailUnsubscribedUtc { get; set; }
+
+    /// <summary>
+    /// This VE's unsubscribe token, minted the first time one is needed and then stable for the life
+    /// of the record.
+    ///
+    /// <para><b>Deliberately not a <see cref="VeSelfServiceToken"/>.</b> Those are single-use and
+    /// short-lived, which is right for something that authenticates. An unsubscribe link is the
+    /// opposite: it has to work whenever the recipient gets round to it — CAN-SPAM requires the
+    /// mechanism to keep working for at least 30 days after the message, and in practice people click
+    /// one in a months-old email — and clicking it twice must not fail.</para>
+    ///
+    /// <para><b>Stored in the clear, which is a deliberate exception to the hash-at-rest convention
+    /// every other token here follows.</b> That convention protects tokens that <i>authenticate</i>:
+    /// a leaked one reaches a person's contact details or confirms a change of address. Only a hash
+    /// can be stored for those because they are short-lived and re-issued on demand. This one is
+    /// neither — it must stay valid indefinitely and cannot be re-derived from a digest, so a stored
+    /// hash would force re-minting on every send and break the link in every message already
+    /// delivered. What it grants is correspondingly tiny: stop, or resume, email to this one person.
+    /// It exposes no name, address or history, and anyone holding a leaked database already has the
+    /// email address it would be used against.</para>
+    /// </summary>
+    public string? UnsubscribeToken { get; set; }
     public string? AddressLine1 { get; set; }
     public string? AddressLine2 { get; set; }
     public string? City { get; set; }

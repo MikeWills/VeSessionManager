@@ -48,6 +48,7 @@ public class TeamDefinedTemplatePageTests
             client, $"{AdminUrl}?handler=Create&teamId={factory.Seeded.TeamId}", $"{AdminUrl}?teamId={factory.Seeded.TeamId}",
             ("teamId", factory.Seeded.TeamId.ToString()),
             ("name", "Field Day invite"),
+            ("audience", "0"),
             ("subject", "Come to Field Day"),
             ("body", "<p>Hi {{CandidateFirstName}}</p>"));
 
@@ -73,6 +74,7 @@ public class TeamDefinedTemplatePageTests
             client, $"{AdminUrl}?handler=Create&teamId={factory.Seeded.TeamId}", $"{AdminUrl}?teamId={factory.Seeded.TeamId}",
             ("teamId", factory.Seeded.TeamId.ToString()),
             ("name", "Field Day invite"),
+            ("audience", "0"),
             ("subject", "Come to Field Day"),
             ("body", "<p>Hi {{CandidateFirstName}}</p>"));
 
@@ -93,6 +95,7 @@ public class TeamDefinedTemplatePageTests
             client, $"{AdminUrl}?handler=Create&teamId={factory.Seeded.TeamId}", $"{AdminUrl}?teamId={factory.Seeded.TeamId}",
             ("teamId", factory.Seeded.TeamId.ToString()),
             ("name", "Field Day invite"),
+            ("audience", "0"),
             ("subject", "Come to Field Day"),
             ("body", "<p>Talk-in on 146.52</p>"));
 

@@ -8,6 +8,22 @@ that window, or immediately if it's phase-numbered work already summarized in "C
 design rationale for any entry still lives in its linked `/docs/*.md` file, not here or in
 CLAUDE.md — this file, like CLAUDE.md's Change Log, is pointers only.
 
+- **Every Worker job now has its tick driven by a test (2026-08-11).** Issue #325. See
+  `docs/worker-job-tests.md`. The Worker had **no test project at all** — nine background jobs running
+  unattended on the deploy box, none of which had ever been executed. Each job's tick is now
+  `internal RunTickAsync`, driven directly by `WorkerTickHarness` over real SQLite (InMemory cannot
+  see transactions, `ExecuteUpdateAsync`, or the scope/change-tracker behaviour that most of these
+  tests are *about*). **Every one was checked by breaking the thing it guards** — seven mutations,
+  each failing exactly one test — and one did not discriminate on the first attempt: the deleted-team
+  test deleted the team *before* the tick, where it simply never enters the list, so it passed with
+  the guard removed. `JobCoverageCompletenessTests` is what stops this decaying: a new job fails the
+  build until some test runs it. Three things worth knowing are in the doc — `UlsWatcherJob` needed
+  its own slot-guard tests despite sharing a schedule with `LicenseWatchJob` (they share the anchor
+  and nothing else, which is what #288 was), a wrong schedule key on a `PerTeamDailyJob` subclass
+  misfiles history *and* misreports the page *and* reads the wrong config key, and
+  `JobRunHistoryLogger.RunAsync`'s overload resolution is load-bearing — the void one leaves every
+  `ResultSummary` silently null.
+
 - **One rule, one home: the duplicated candidate/session actions collapsed (2026-08-11).** Issues
   #304/#244/#274. See `docs/action-outcomes.md`. Nine candidate actions were written out on both
   `Detail` and `CandidateDetail`, four session actions on both `Detail` and the session list,
