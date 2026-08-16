@@ -62,6 +62,21 @@ internal class ZoomMeetingWireBreakoutRoom
 internal class ZoomMeetingWireBreakoutRoomEntry
 {
     public string Name { get; set; } = "";
+
+    /// <summary>
+    /// Never assigned, so every create-meeting request ships <c>"participants": []</c>.
+    ///
+    /// <para><b>Kept deliberately</b> (#360, closed 2026-08-16). It is a pre-assignment list — this
+    /// app creates empty breakout rooms and lets the host move people at test time — so on the face
+    /// of it the property does nothing and a dead-code sweep has flagged it once already.</para>
+    ///
+    /// <para>Removing it is not free: it changes an outbound payload, and an empty array and an
+    /// absent key are not always the same thing to an API. This one creates the breakout rooms a
+    /// session actually runs in, so the failure mode is rooms with the wrong structure, discovered
+    /// by a VE on exam day. The current shape demonstrably works. Deleting it would need checking
+    /// against Zoom's schema or a real test meeting, to save one line — so it stays, and this note
+    /// exists so the next sweep does not re-derive the same answer.</para>
+    /// </summary>
     public List<string> Participants { get; set; } = [];
 }
 

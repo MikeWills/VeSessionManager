@@ -117,6 +117,12 @@ builder.Services.AddScoped<NavBadgeCountService>();
 // its next tick. Registrations below mirror VeSessionManager.Worker/Program.cs's own (same
 // singleton-vs-scoped reasoning in each comment there).
 builder.Services.Configure<ExamToolsOptions>(builder.Configuration.GetSection(ExamToolsOptions.SectionName));
+// ---------------------------------------------------------------------------------------------
+// Some of the registrations below are resolved only by the Worker, and that is fine — see the same
+// note in VeSessionManager.Worker/Program.cs for the reasoning (#360). Short version: both hosts
+// build the same Core service graph, an unused scoped registration costs nothing at runtime, and a
+// missing one fails at resolution time in production.
+// ---------------------------------------------------------------------------------------------
 builder.Services.AddSingleton<IExamToolsClient, ExamToolsClient>();
 builder.Services.AddScoped<SessionIngestionService>();
 builder.Services.AddScoped<VolunteerExaminerSyncService>();
