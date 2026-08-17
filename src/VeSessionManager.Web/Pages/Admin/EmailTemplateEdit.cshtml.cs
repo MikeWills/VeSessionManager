@@ -8,6 +8,7 @@ using VeSessionManager.Core.Authorization;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Email;
 using VeSessionManager.Core.Entities;
+using VeSessionManager.Core.Messaging;
 
 namespace VeSessionManager.Web.Pages.Admin;
 
@@ -44,6 +45,9 @@ public class EmailTemplateEditModel(
     public string Label => Template.DisplayName ?? EmailTemplateLabels.For(Template.Key);
 
     public EmailTemplateTrigger? Trigger => EmailTemplateTriggers.For(Template.Key);
+
+    /// <summary>This team's rules that send this template, so the editor can say what it is for without restating a condition that is now a team's own (#401 PR2).</summary>
+    public IReadOnlyList<EmailTemplatesModel.SendingRule> SendingRules { get; private set; } = [];
 
     public bool IsRetired => EmailTemplateTriggers.IsRetired(Template.Key);
 
@@ -145,6 +149,19 @@ public class EmailTemplateEditModel(
         }
 
         Template = template;
+        // Materialized first: the labels are lookups, not expressions EF can translate.
+        var rules = await dbContext.MessageRules
+            .AsNoTracking()
+            .Where(r => r.TeamId == template.TeamId && r.TemplateKey == template.Key)
+            .OrderBy(r => r.Id)
+            .Select(r => new { r.Name, r.Trigger, r.ParameterHours, r.IsEnabled })
+            .ToListAsync(HttpContext.RequestAborted);
+
+        SendingRules = [.. rules.Select(r => new EmailTemplatesModel.SendingRule(
+            r.Name,
+            MessageTriggerLabels.Label(r.Trigger),
+            MessageTriggerLabels.DescribeHours(r.ParameterHours),
+            r.IsEnabled))];
         return null;
     }
 }

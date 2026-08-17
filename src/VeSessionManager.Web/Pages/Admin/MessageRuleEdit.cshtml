@@ -1,0 +1,72 @@
+@page "{id:int}"
+@using VeSessionManager.Core.Messaging
+@model VeSessionManager.Web.Pages.Admin.MessageRuleEditModel
+@{
+    ViewData["Title"] = "Edit Rule";
+    ViewData["ActiveNav"] = "AdminMessageRules";
+    Layout = "_AppLayout";
+}
+
+<div class="page-head">
+    <div>
+        <partial name="_ParentCrumb" model='new ParentCrumb("./MessageRules", "Message Rules", "Per team", RoleGroups.Admins)' />
+        <h1>@Model.Rule.Name</h1>
+        <p class="session-sub">@Model.TriggerLabel — @Model.TriggerBlurb</p>
+    </div>
+</div>
+
+<div class="session-panel" style="display:block; max-width:640px;">
+    <form method="post">
+        <input type="hidden" asp-for="Id" />
+        <div class="field">
+            <label asp-for="Name">Name</label>
+            <input asp-for="Name" required />
+            <span class="session-sub">What the run log records. Only you see it.</span>
+        </div>
+
+        @if (Model.TakesParameter)
+        {
+            <div class="field" style="max-width:260px;">
+                <label asp-for="ParameterHours">@Model.ParameterPrompt</label>
+                <input asp-for="ParameterHours" type="number" min="1"
+                       max="@VeSessionManager.Core.Admin.MessageRuleAdminService.MaxParameterHours" required />
+                <span class="session-sub">Hours, not days — 24 is a day, 120 is five days.</span>
+                @if (MessageTriggerLabels.ParameterCeilingNote(Model.Rule.Trigger) is { } ceiling)
+                {
+                    <span class="session-sub">@ceiling</span>
+                }
+            </div>
+        }
+
+        <div class="field" style="max-width:320px;">
+            <label asp-for="Recipient">Who receives it</label>
+            <select asp-for="Recipient" class="filter-select">
+                @foreach (var recipient in Model.Definition.LegalRecipients)
+                {
+                    <option value="@((int)recipient)">@MessageTriggerLabels.Label(recipient)</option>
+                }
+            </select>
+        </div>
+
+        <div class="field" style="max-width:420px;">
+            <label asp-for="TemplateKey">Template</label>
+            <select asp-for="TemplateKey" class="filter-select" required>
+                @foreach (var template in Model.Templates)
+                {
+                    <option value="@template.Key">@template.Label</option>
+                }
+            </select>
+            <span class="session-sub">Edit the wording on the Email Templates page.</span>
+        </div>
+
+        <button type="submit" class="btn-primary btn-sm">Save</button>
+    </form>
+</div>
+
+@* Stated where the change is made, because both are surprising in the same direction — an edit does
+   less than it looks like it does, which is the safe direction and the one worth saying out loud. *@
+<p class="session-sub" style="max-width:640px; margin-top:16px;">
+    Changing the hours does not re-open anybody already sent to: widening a 24-hour reminder to 48
+    reaches people not yet reminded, never people who already were. And this rule still never fires for
+    anyone whose moment passed before it was created.
+</p>

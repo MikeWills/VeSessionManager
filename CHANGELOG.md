@@ -8,6 +8,41 @@ that window, or immediately if it's phase-numbered work already summarized in "C
 design rationale for any entry still lives in its linked `/docs/*.md` file, not here or in
 CLAUDE.md — this file, like CLAUDE.md's Change Log, is pointers only.
 
+- **Nineteen audit findings closed, and two retention questions finally answered (2026-08-14).** See
+  `docs/audit-log.md` and `docs/ve-retention.md` (both new), plus issues #238-#240, #243, #257,
+  #260-#262, #264, #265, #312, #313. Three themes, and each had one shape. **VE scope**: an id posted
+  from a form was checked for existence but never against what the actor could reach — the worst sent
+  attacker-authored mail *from the team's own SMTP* to any VE on the deployment. **Silent failure**:
+  the key-ring guard iterated `Teams` and so missed the sixth encrypted column, on a different
+  entity, exactly as its own doc comment predicted; a deployment with zero teams verified nothing and
+  logged success. **Nothing was watching**: sign-ins were not audited at all, success or failure, so
+  a stuffing run left no trace — now `SignedIn`/`SignInFailed`/`SignInLockedOut` with a source
+  address, deliberately *not* on the ~175 ordinary audit sites, which would make an activity log into
+  a movement record. #313 was a decision, not a bug: **audit append-only is a convention enforced by
+  absence, not by the database** (written down, and guarded by a source scan so a delete path cannot
+  reappear quietly), and **VE contact details now age out** after a configurable inactivity window —
+  off until an admin sets it, keeping name/call sign/accreditations because those are the
+  accreditation trail. Two things worth carrying forward: **`[Required]` on a non-nullable `int` is
+  client-side-only**, the same trap already recorded for `bool`; and **an unreachable branch cannot be
+  tested** — the L-14 fix ships with no test because both routes to it are intercepted upstream, a
+  test was written and passed with the fix reverted, so it was deleted rather than kept as false
+  comfort.
+
+- **Dark mode follows the OS, then follows you (2026-08-13).** See `docs/theme-preference.md`. The
+  theme was `localStorage.getItem(key) || "light"` — OS-blind, per browser, and resolved at the
+  *bottom* of `<body>`, so it repainted after the page had already drawn. New
+  `User.ThemePreference` (`System`/`Light`/`Dark`) is rendered onto `<html>` by the layout;
+  `theme.js` resolves the rest in `<head>`, render-blocking, in the order server → localStorage →
+  `prefers-color-scheme` → light. **`System` must render no `data-theme` at all** — it is the
+  default, so every pre-existing account is in it, and emitting `light` there looks perfect to a
+  light-mode user while silently pinning everyone else. Razor renders a null attribute value as
+  `data-theme=""`, not as nothing, which is one `!== null` away from exactly that. Three things
+  worth knowing: an inline script is unavailable (CSP `script-src 'self'` — it renders and never
+  runs), `MapStaticAssets` makes `asp-append-version` emit a **fingerprinted filename** rather than
+  a `?v=` query so an asset-URL assertion on the literal name finds nothing, and the app's first
+  `fetch()` needed **no** antiforgery config — `RequestVerificationToken` is already
+  `HeaderName`'s default, proven by a mutation test that deleted the line and stayed green.
+
 - **The phone logged out constantly and the desktop did not (2026-08-13).** Issue #340. See
   `docs/remember-me.md`. Every sign-in passed `isPersistent: false`, so the cookie had no `Expires`
   and lived only as long as the browser *process* — a desktop browser runs for days, phones kill and

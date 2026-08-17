@@ -107,6 +107,10 @@ builder.Services.AddScoped<IMessageTriggerScanner, FccFeeOutstandingScanner>();
 builder.Services.AddScoped<IMessageTriggerScanner, PaymentUnpaidScanner>();
 builder.Services.AddScoped<MessageDispatchService>();
 builder.Services.AddScoped<MessageRuleService>();
+// Read by the Applicant Status page to colour its "days pending" column on the team's own
+// boundaries rather than a constant (#401 PR2), and by the admin screen that sets them.
+builder.Services.AddScoped<MessageThresholdService>();
+builder.Services.AddScoped<MessageRuleAdminService>();
 
 builder.Services.AddScoped<VecSubmissionService>();
 builder.Services.AddScoped<VolunteerExaminerReportService>();

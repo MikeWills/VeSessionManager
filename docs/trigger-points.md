@@ -1,7 +1,8 @@
 # Trigger points — configurable outbound messages
 
-Issue [#401](https://github.com/MikeWills/VeSessionManager/issues/401). **PR1 of four: the engine,
-with behaviour frozen.** The admin screen, the new triggers, Discord and the envelope fields follow.
+Issue [#401](https://github.com/MikeWills/VeSessionManager/issues/401). **PR1: the engine, with
+behaviour frozen. PR2: the admin screen, and the parameters become real.** New triggers, Discord and
+the envelope fields follow.
 
 ## Why
 
@@ -178,25 +179,113 @@ Both are raw SQL, invisible to the compiler and to EF InMemory — a backfill th
 looks exactly like one with nothing to do. `MessageRuleSqliteTests` drives them against real SQLite,
 the same way the `AuditLog.TeamId` backfill is (`docs/audit-log.md`).
 
-`EmailDefaultsSeeder` seeds the same four rules for teams created later, idempotent per
-(team, trigger). **A deleted rule is seeded again on the next Worker start** — same as a deleted
-template. Nothing in PR1 can delete one, but PR2's admin screen should disable rather than delete, or
-this guard needs a tombstone. Pinned by
-`ADeletedRule_IsSeededAgain_WhichIsWhyTheAdminScreenShouldDisableRatherThanDelete`.
+`EmailDefaultsSeeder` seeds the same four rules for teams created later. **Once per team, and it
+records that it has** (`Team.MessageRulesSeededUtc`) — unlike the templates beside it, which are
+checked row by row and so do come back if deleted. That difference is deliberate and is what makes
+deleting a rule stick; see the PR2 section below.
 
-## Left half-migrated on purpose
+---
 
-`PaymentReminderService.ReminderThresholdDays` / `ExpirationThresholdDays` still exist. The Applicant
-Status page colours its "days pending" column on both boundaries, and those colours are meant to
-*explain* what the app does. Once the hours are per-team, a page reading a constant shows a red row on
-a day nothing happens. PR2 makes the parameters editable and has to resolve that coupling in the same
-change — it is the one non-obvious dependency in the whole issue.
+# PR2 — the admin screen, and the parameters become real
+
+## Message Rules
+
+`Admin/MessageRules` lists every trigger point, each with its rules; `Admin/MessageRuleEdit` handles
+one. Same team-picker/lock as Team Settings and Email Templates, and deliberately no "All teams"
+option — this edits one team's configuration.
+
+**Every trigger point renders, including the ones with no rules.** A section that appears only once
+something is configured is one nobody discovers, and "we could email people at this moment and
+currently do not" is the most useful thing the page has to say. Same reasoning as the alerts bell
+rendering empty rather than disappearing (#339).
+
+**Switch off and delete are both offered, and they answer different questions.** Switching off is
+"not right now" — the rule keeps its name, hours and place on the screen, and switching it back on
+resumes from that moment. Deleting is "we do not do this", and it is a real delete.
+
+The first draft of this screen had only "switch off", because a delete would have been undone: the
+seeder asked "does this team have a rule for this trigger?" and added one if not, so a deleted rule
+reappeared on the next Worker start. Mike's response was the right one — *you cannot offer disable in
+place of delete* — so two things changed rather than the screen being narrowed to fit them:
+
+- **The seeder seeds once per team and records it** (`Team.MessageRulesSeededUtc`). Setting a new team
+  up is a one-time act, not an invariant to maintain, and a team that wants nothing sent at a trigger
+  point is entitled to have nothing there. Backfilled for existing teams by the `MessageRuleDeletion`
+  migration — without that line, the first Worker start after deploy hands every team a second full
+  set.
+- **`MessageRuleRun.MessageRuleId` became nullable, with `SetNull`.** The record that real people were
+  emailed outlives the rule that emailed them, which is what `RuleName` and `Trigger` were snapshotted
+  onto the row for in the first place. `Restrict` would also have protected the log — by refusing the
+  delete, which makes the log a reason an admin cannot tidy up their own configuration.
+
+An orphaned run guards nothing, and that is correct: it belongs to a rule that no longer exists. So
+re-creating a deleted rule starts clean, and **its own `CreatedUtc` is what stops that reaching
+anybody whose moment has passed** — "delete and re-add" cannot become a way to re-email everybody.
+
+**Nothing changes a rule's trigger.** The markers that stop a rule firing twice are keyed by rule, and
+their `SubjectId` means a candidate for one trigger and a payment for another — so moving a rule
+between triggers would reinterpret every marker it already has. Create a second rule instead.
+
+**An edit leaves `CreatedUtc` alone.** Refreshing it would mean a typo corrected an hour later
+silently skips everybody whose moment fell in between. The consequence, stated on the edit page
+itself: widening a 24-hour reminder to 48 reaches people not yet reminded, never people already
+reminded at 24.
+
+`MessageRuleAdminService` refuses four things, and each describes a rule that would look configured
+and do nothing: a blank name, a time-relative trigger with no hours (or hours outside 1…8760), a
+recipient the trigger cannot address, and a template key that does not exist on that team. The last
+two matter most — a registration confirmation addressed to the team's own inbox is a mistake rather
+than a configuration, and a rule pointing at a missing template records `Failed` every night with only
+a log line to show for it. The list page flags that case on the row if it happens anyway.
+
+## The coupling this PR had to resolve
+
+Two things outside the engine were reading the constants that became per-team data. Both are supposed
+to *agree* with what the app does, so both now read the same rows the scanners read, through
+`MessageThresholdService`:
+
+- **`ApplicantStatus`'s amber/red "days pending" colours.** These referenced
+  `PaymentReminderService.ReminderThresholdDays`/`ExpirationThresholdDays` rather than re-declaring
+  them, precisely so they could not drift. Once a team sets its own hours, a constant *is* the drift.
+  The page merges teams, so this is resolved per row. **A team with no enabled rule gets no colour at
+  all** — nothing is going to happen on any particular day, so there is no boundary to warn about.
+- **The payment-expiry write.** It stayed in `PaymentReminderService` (PR1), but a fixed 10 days
+  beside a notice a team set to 30 would mean telling somebody their link expired on a day it did
+  not. It reads the team's `PaymentUnpaid` hours, falling back to the trigger's default — which is
+  the number the constant held — when there is no rule, or the rule is switched off. Expiring is
+  bookkeeping and must keep happening either way; that is the whole reason the two were split.
+
+The two lookup methods differ in exactly one respect and it is deliberate: bookkeeping needs a number
+regardless (`HoursOrDefaultAsync`), a page must be told "no boundary" rather than handed a default it
+would then colour a row on (`ConfiguredHoursAsync`).
+
+## A ceiling the form cannot enforce
+
+Both money triggers are bounded by `PaymentEligibilityWindow` — 30 days from the session start —
+which exists so the historical import's backfilled candidates are never chased about payments for
+sessions they sat months ago. **A rule set past that simply stops firing**, and the form's own ceiling
+is a year.
+
+It is shown as a caution beside the hours field rather than refused, because there is no honest number
+to validate against: the real headroom is 30 days *minus* however long the FCC took to enter the
+application, which nobody knows in advance. Worth remembering when the window itself is next changed —
+it now bounds a value teams can set, not only one the code chose.
+
+## Email Templates stopped describing triggers
+
+`EmailTemplateTriggers` used to describe all seven templates, grouped into three hardcoded phases,
+with conditions in prose: "within the next 24 hours", "5 days", "10 days". It lied in two directions
+at once — "Pre-session" contained a template only a button sends, and the numbers were one
+deployment's defaults presented as the app's behaviour.
+
+The phase grouping is gone. The list now has two groups, read from the rules: **sent automatically**
+(with each rule's own schedule on the row) and **not sent by any rule**. What is left in the registry
+is only the three on-demand templates, which no rule can describe because a person decides. The
+`Retired` set stays — "nothing in the code sends this" is a different fact from "this team has no rule
+for it", and only the first is the app's to state.
 
 ## Still to come
 
-- **PR2** — the admin screen (trigger points, each expanding to its rules; `EmailTemplates`' phase
-  grouping deleted, since it lies — "Pre-session" contains a button), and `ParameterHours` becomes
-  editable.
 - **PR3** — `CandidateTested` and `LicenseGranted`, moving `GettingStartedLocally` and the ARRL youth
   email from button-only to optionally automatic. `FelonyDisclosureInstructions` gets a trigger too,
   **defaulting to off**: [#221](https://github.com/MikeWills/VeSessionManager/issues/221) deliberately

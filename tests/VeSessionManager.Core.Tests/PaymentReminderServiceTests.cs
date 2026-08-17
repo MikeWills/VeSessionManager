@@ -63,6 +63,7 @@ public class PaymentReminderServiceTests
         {
             var bookkeeping = await new PaymentReminderService(
                 dbContext,
+                new MessageThresholdService(dbContext),
                 new FixedTimeProvider(Now),
                 Options.Create(new PaymentReminderOptions { UnmatchedReviewWindowDays = unmatchedReviewWindowDays }),
                 NullLogger<PaymentReminderService>.Instance).RunAsync(team, cancellationToken);
@@ -847,6 +848,33 @@ public class PaymentReminderServiceTests
     }
 
     // ---- SMTP not configured ----
+
+    /// <summary>
+    /// The expiry follows the team's own <c>PaymentUnpaid</c> hours (#401 PR2), not a constant. It has
+    /// to: the notice quotes that number, and a fixed expiry would mean telling somebody their link
+    /// expired on a day it did not — or expiring one silently a week before anybody is told.
+    /// </summary>
+    [Fact]
+    public async Task Expiration_FollowsTheTeamsOwnRule_NotTheOldTenDayConstant()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        await SeedEmailSettingsAndTemplatesAsync(dbContext, team);
+        // The team pushed its notice out to 30 days. A payment 20 days in is past the old constant and
+        // well short of what this team actually does.
+        (await dbContext.MessageRules.SingleAsync(r => r.Trigger == MessageTrigger.PaymentUnpaid)).ParameterHours = 720;
+        await SeedCandidateWithPaymentAsync(dbContext, team, applicationDateEnteredUtc: Now.AddDays(-20));
+        await dbContext.SaveChangesAsync();
+        var sender = new FakeEmailSender();
+
+        var result = await CreateService(dbContext, sender).RunAsync(team, CancellationToken.None);
+
+        Assert.Equal(0, result.ExpirationsProcessed);
+        Assert.False((await dbContext.Payments.SingleAsync()).ExpiredUnpaid);
+        // The notice has not gone out either, which is the pair that has to stay together. The
+        // FCC-fee reminder is a separate rule on its own clock and legitimately has.
+        Assert.DoesNotContain(sender.SentMessages, m => m.ToAddress == "admin@example.org");
+    }
 
     /// <summary>
     /// <b>Expiring now happens without SMTP (#401), and that is a change.</b> The old code returned

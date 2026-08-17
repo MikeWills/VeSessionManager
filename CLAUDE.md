@@ -126,9 +126,21 @@ would be pure duplication — and goes straight to `CHANGELOG.md` instead. Non-p
 redesigns, hardening passes) start here and move to `CHANGELOG.md` once the section is at/over the
 cap and a newer entry needs to be added; oldest goes first.
 
+- **Teams set their own message rules now, from a screen (2026-08-17).** Issue #401, PR2 — see
+  `docs/trigger-points.md`. `Admin/MessageRules` lists every trigger point with its rules, and
+  `ParameterHours` is editable. Two things worth carrying forward: **a rule can be switched off *or*
+  deleted, and making delete real took two changes rather than one** — the seeder now seeds once per
+  team and records it (`Team.MessageRulesSeededUtc`), because a per-trigger check re-added a deleted
+  rule on the next Worker start, and `MessageRuleRun.MessageRuleId` became nullable with `SetNull` so
+  the record of what was sent outlives the rule that sent it (which is what its `RuleName`/`Trigger`
+  snapshots were always for); and **the two `PaymentReminderService` threshold constants
+  are gone**, because the Applicant Status colours and the payment-expiry write both have to agree
+  with what a team actually configured. They read `MessageThresholdService`, whose two methods differ
+  in one deliberate way: bookkeeping gets a number regardless, a page gets null and shows no boundary
+  at all.
+
 - **When each automatic email goes out is a per-team row now, not a constant (2026-08-16).** Issue
-  #401, PR1 of four — the engine, with behaviour frozen; the admin screen, new triggers, Discord and
-  the envelope fields follow. See `docs/trigger-points.md`. The four hardcoded sends are
+  #401, PR1 — the engine, with behaviour frozen. See `docs/trigger-points.md`. The four hardcoded sends are
   `MessageRule`s against four trigger points, their thresholds expressed in **hours** so no calendar
   date exists to get wrong (#220 made structural), and `MessageRuleRun` replaces the
   `Candidate.*SentUtc` columns as both marker and log — which is what closes #396, since a muted send
@@ -249,45 +261,10 @@ cap and a newer entry needs to be added; oldest goes first.
   **"sign out other devices" needs no extra call** — Identity registers its stamp validator on the
   two-factor cookie too, while `ForgetTwoFactorClientAsync` would clear the wrong device entirely.
 
-- **Nineteen audit findings closed, and two retention questions finally answered (2026-08-14).** See
-  `docs/audit-log.md` and `docs/ve-retention.md` (both new), plus issues #238-#240, #243, #257,
-  #260-#262, #264, #265, #312, #313. Three themes, and each had one shape. **VE scope**: an id posted
-  from a form was checked for existence but never against what the actor could reach — the worst sent
-  attacker-authored mail *from the team's own SMTP* to any VE on the deployment. **Silent failure**:
-  the key-ring guard iterated `Teams` and so missed the sixth encrypted column, on a different
-  entity, exactly as its own doc comment predicted; a deployment with zero teams verified nothing and
-  logged success. **Nothing was watching**: sign-ins were not audited at all, success or failure, so
-  a stuffing run left no trace — now `SignedIn`/`SignInFailed`/`SignInLockedOut` with a source
-  address, deliberately *not* on the ~175 ordinary audit sites, which would make an activity log into
-  a movement record. #313 was a decision, not a bug: **audit append-only is a convention enforced by
-  absence, not by the database** (written down, and guarded by a source scan so a delete path cannot
-  reappear quietly), and **VE contact details now age out** after a configurable inactivity window —
-  off until an admin sets it, keeping name/call sign/accreditations because those are the
-  accreditation trail. Two things worth carrying forward: **`[Required]` on a non-nullable `int` is
-  client-side-only**, the same trap already recorded for `bool`; and **an unreachable branch cannot be
-  tested** — the L-14 fix ships with no test because both routes to it are intercepted upstream, a
-  test was written and passed with the fix reverted, so it was deleted rather than kept as false
-  comfort.
-
-- **Dark mode follows the OS, then follows you (2026-08-13).** See `docs/theme-preference.md`. The
-  theme was `localStorage.getItem(key) || "light"` — OS-blind, per browser, and resolved at the
-  *bottom* of `<body>`, so it repainted after the page had already drawn. New
-  `User.ThemePreference` (`System`/`Light`/`Dark`) is rendered onto `<html>` by the layout;
-  `theme.js` resolves the rest in `<head>`, render-blocking, in the order server → localStorage →
-  `prefers-color-scheme` → light. **`System` must render no `data-theme` at all** — it is the
-  default, so every pre-existing account is in it, and emitting `light` there looks perfect to a
-  light-mode user while silently pinning everyone else. Razor renders a null attribute value as
-  `data-theme=""`, not as nothing, which is one `!== null` away from exactly that. Three things
-  worth knowing: an inline script is unavailable (CSP `script-src 'self'` — it renders and never
-  runs), `MapStaticAssets` makes `asp-append-version` emit a **fingerprinted filename** rather than
-  a `?v=` query so an asset-URL assertion on the literal name finds nothing, and the app's first
-  `fetch()` needed **no** antiforgery config — `RequestVerificationToken` is already
-  `HeaderName`'s default, proven by a mutation test that deleted the line and stayed green.
-
 Everything through Phase 0-10's initial build (ExamTools ingestion, Zoom/Discord, Square, email
 notifications, FCC ULS watcher, payment reminders, VE tracking, VEC submission tracker, admin
-auth/config/candidate-actions, PII purge), the public privacy page, and everything dated 2026-08-01
-or earlier has aged out to **`CHANGELOG.md`** — same one-line-pointer format, just the overflow.
+auth/config/candidate-actions, PII purge), the public privacy page, and everything older than the
+entries above has aged out to **`CHANGELOG.md`** — same one-line-pointer format, just the overflow.
 
 ## Environment
 
@@ -451,6 +428,7 @@ To pick up updates: `/plugin marketplace update claude-tools`
   `docs/square-refunds.md`.
 - **Square webhook subscriptions are separate per Sandbox/Production, each with its own signature key** — an existing subscription registered under one mode receives zero delivery attempts for events in the other (not a 401, no attempt at all), and reusing one mode's `WebhookSignatureKey` against the other mode's subscription makes every delivery fail signature verification (401) even though the URL/event config is otherwise correct. Found live 2026-07-25 testing Team 2 (MARC)'s payment flow — the "Ve Session Manager" subscription had been created under Production while all local testing used Sandbox credentials/payment links. Fix: add (or move) the subscription under the correct mode's tab in the Square dashboard, then set `Team.SquareWebhookSignatureKey` to *that* subscription's own signature key, not the other mode's. See `docs/square-payments.md`. **Which mode a team is in is now `Team.SquareEnvironment`, not a config value (2026-08-06)** — so this is per-team, and two teams on one deployment can legitimately be in different modes, each needing its own subscription. A team whose access token and environment disagree gets an auth failure from Square rather than a wrong-account charge.
 - **`Web` and `Worker` must register Data Protection with the exact same application name and key-ring path, or one process's writes silently become unreadable by the other.** `Team`'s credential columns (ExamTools/Zoom/Square/SMTP secrets) are encrypted at rest via `EncryptedStringConverter` (2026-07-30) — both `Program.cs` files call `AddDataProtection().SetApplicationName("VeSessionManager").PersistKeysToFileSystem(...)` with the same hardcoded app name and the same `DataProtection:KeyRingPath` config value. A drift here doesn't throw — `EncryptedStringConverter`'s legacy-plaintext fallback (needed for the migration path) means a value encrypted under a different key just looks like it was never migrated. See `docs/credential-encryption.md`. Also: **if the key-ring directory is ever lost, every encrypted credential becomes permanently unrecoverable** — it must be backed up with the same discipline as the DB file itself (see `docs/deployment.md`).
+- **`PaymentEligibilityWindow` (30 days from session start) silently caps two values a team can now set past it.** It bounds `FccFeeOutstanding` and `PaymentUnpaid` — the historical-import guard, and rightly so — but since #401 PR2 those triggers' hours are per-team with a one-year ceiling on the form. A rule set beyond the window never fires, and nothing fails: no send, no error, no marker. The Message Rules form shows a caution rather than refusing, because the real headroom is 30 days *minus* however long the FCC took to enter the application, which nobody knows in advance. **Changing the window now changes what a team's configuration is allowed to mean**, not just what the code does.
 - **A POST form on a filtered list page needs BOTH an explicit `action=` and `asp-antiforgery="true"` — each half fixes a bug the other half causes.** `asp-page-handler` builds the form action from the route only and **drops the query string**, so posting an action from a filtered/paged list silently redirects back to the unfiltered first page (found on the Sessions row-action menu, 2026-07-30). The fix is an explicit `action="@Model.BuildActionUrl("Handler")"`. But `FormTagHelper` only auto-emits the antiforgery token when *it* generated the action — with an explicit `action=` the token disappears, and every POST then 400s in the antiforgery middleware **before reaching the app, logging nothing server-side** (the symptom is a browser error page with a completely silent log, which reads like the request never happened). `asp-antiforgery="true"` restores it. Any future list page with row-level POST actions needs both, plus a `BuildActionUrl`-style helper so the redirect target keeps the same filter state.
 - **`wireless2.fcc.gov` (ULS's own web UI) returns Akamai "Access Denied" (HTTP 403) to automated requests, and has done so for at least one manual browser attempt too.** This is why `FccUlsLinks` ships the *license* deep link (`UlsSearch/license.jsp?licKey=…`, whose shape is verified — ExamTools links to exactly it) but deliberately **not** an application deep link: the `applView.jsp?applID=…` shape has never been confirmed against a working response, and an unverified link would send a Session Manager to a dead page. `exam.tools`' own ULS mirror is unaffected and is what the app actually calls.
 - **The FCC bulk-file constraints are historical as of 2026-07-31** — the weekly-snapshot staleness, the day-name publication schedule, the Sunday-file-is-empty trap, and the `AM.dat`/Grant-Date upgrade behaviour all described a subsystem this app no longer runs. They are preserved in `docs/fcc-uls-watcher.md` (marked as removed) because the *matching rules* they justify are still enforced in `UlsWatcherService`. The one that still bites day-to-day: **FCC's Grant Date does NOT advance on a class upgrade — the effective/last-action date does**, so any "did this exam produce a result?" check written against grant date is correct for a first-time licensee and permanently false for an upgrade. Confirming an upgrade needs the operator class matching `NewLicenseClass` **and** the effective date on/after the session; neither alone is sufficient. See `docs/uls-watcher.md`.

@@ -100,6 +100,22 @@ public class Team
     public DateTime CreatedUtc { get; set; }
 
     /// <summary>
+    /// When this team was given its starting set of <see cref="MessageRule"/>s, or null if it never
+    /// has been (#401 PR2).
+    ///
+    /// <para><b>A tombstone, and the thing that makes deleting a rule stick.</b> The seeder used to
+    /// ask "does this team have a rule for this trigger?" and add one if not — which is a sensible
+    /// question for a team that has just been created and the wrong one forever after: a rule somebody
+    /// deleted came back on the next Worker start, quietly resuming a send they had stopped. Seeding
+    /// is a one-time act of setting a team up, not an invariant to maintain, and this records that it
+    /// happened.</para>
+    ///
+    /// <para>Backfilled to the migration time for every team that already exists, since the PR1
+    /// migration seeded them.</para>
+    /// </summary>
+    public DateTime? MessageRulesSeededUtc { get; set; }
+
+    /// <summary>
     /// Tracks when SessionIngestionJob's per-team pipeline last actually ran for this team, so it
     /// can throttle to SystemSettings.SessionIngestionIntervalMinutes. See IngestionScheduleService.
     ///

@@ -33,10 +33,26 @@
 }
 else if (Model.Trigger is { } trigger)
 {
+    @* Only the templates a person sends by hand carry a written description now — anything a rule
+       sends is described by the rule, on Message Rules, where the numbers are actually true (#401). *@
     <div class="template-trigger">
-        <span class="chip @(trigger.Cadence == "Automatic" ? "chip-green" : "chip-neutral")">@trigger.Cadence</span>
+        <span class="chip chip-neutral">By hand</span>
         <span class="chip chip-neutral">@trigger.Recipient</span>
         <p>@trigger.Description</p>
+    </div>
+}
+else if (Model.SendingRules.Count > 0)
+{
+    <div class="template-trigger">
+        @foreach (var rule in Model.SendingRules)
+        {
+            <span class="chip @(rule.IsEnabled ? "chip-green" : "chip-neutral")">@rule.When</span>
+        }
+        <p>
+            Sent by @(Model.SendingRules.Count == 1 ? "a rule" : "rules") on
+            <a asp-page="/Admin/MessageRules" asp-route-teamId="@Model.Template.TeamId">Message Rules</a>,
+            which is where when and who are set.
+        </p>
     </div>
 }
 

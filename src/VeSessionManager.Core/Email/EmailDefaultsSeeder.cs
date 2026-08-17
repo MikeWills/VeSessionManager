@@ -203,37 +203,42 @@ public static class EmailDefaultsSeeder
     /// <c>MessageRuleRun</c> per already-sent message is the second, independent guard against the
     /// same thing; either alone would do, which is the point.</para>
     ///
-    /// <para>Idempotent the same way the templates are: one rule per (team, trigger), checked
-    /// individually, so a team that has deleted or re-tuned one is never handed it back.</para>
+    /// <para><b>Once per team, ever</b> — recorded by <see cref="Team.MessageRulesSeededUtc"/>, unlike
+    /// the templates above which are checked row by row. That difference is load-bearing (#401 PR2):
+    /// a per-trigger check re-adds a rule somebody deleted on the very next Worker start, quietly
+    /// resuming a send they had stopped. Setting a new team up is a one-time act, not an invariant to
+    /// maintain, and a team that wants no rule at a trigger point is entitled to have none.</para>
     /// </summary>
     private static async Task SeedMessageRulesAsync(AppDbContext dbContext, ILogger logger, Team team)
     {
-        var createdUtc = DateTime.UtcNow;
-
-        await SeedRuleIfMissingAsync(dbContext, logger, team, MessageTrigger.CandidateRegistered,
-            "Registration confirmation", "RegistrationConfirmation", parameterHours: null, MessageRecipient.Candidate, createdUtc);
-
-        await SeedRuleIfMissingAsync(dbContext, logger, team, MessageTrigger.BeforeSessionStart,
-            "Reminder 24 hours before the session", "DayBeforeReminder", parameterHours: 24, MessageRecipient.Candidate, createdUtc);
-
-        await SeedRuleIfMissingAsync(dbContext, logger, team, MessageTrigger.FccFeeOutstanding,
-            "FCC fee reminder after 5 days", "FccFeeReminder5Day", parameterHours: 120, MessageRecipient.Candidate, createdUtc);
-
-        // The one that never went to a candidate: it tells the Session Manager a payment link has
-        // gone stale. That used to be a special case inside the send path; it is a field now.
-        await SeedRuleIfMissingAsync(dbContext, logger, team, MessageTrigger.PaymentUnpaid,
-            "Unpaid payment notice after 10 days", "PaymentExpirationNotice", parameterHours: 240, MessageRecipient.TeamAdminAddress, createdUtc);
-    }
-
-    private static async Task SeedRuleIfMissingAsync(
-        AppDbContext dbContext, ILogger logger, Team team, MessageTrigger trigger, string name, string templateKey,
-        int? parameterHours, MessageRecipient recipient, DateTime createdUtc)
-    {
-        if (await dbContext.MessageRules.AnyAsync(r => r.TeamId == team.Id && r.Trigger == trigger))
+        if (team.MessageRulesSeededUtc is not null)
         {
             return;
         }
 
+        var createdUtc = DateTime.UtcNow;
+
+        SeedRule(dbContext, logger, team, MessageTrigger.CandidateRegistered,
+            "Registration confirmation", "RegistrationConfirmation", parameterHours: null, MessageRecipient.Candidate, createdUtc);
+
+        SeedRule(dbContext, logger, team, MessageTrigger.BeforeSessionStart,
+            "Reminder 24 hours before the session", "DayBeforeReminder", parameterHours: 24, MessageRecipient.Candidate, createdUtc);
+
+        SeedRule(dbContext, logger, team, MessageTrigger.FccFeeOutstanding,
+            "FCC fee reminder after 5 days", "FccFeeReminder5Day", parameterHours: 120, MessageRecipient.Candidate, createdUtc);
+
+        // The one that never went to a candidate: it tells the Session Manager a payment link has
+        // gone stale. That used to be a special case inside the send path; it is a field now.
+        SeedRule(dbContext, logger, team, MessageTrigger.PaymentUnpaid,
+            "Unpaid payment notice after 10 days", "PaymentExpirationNotice", parameterHours: 240, MessageRecipient.TeamAdminAddress, createdUtc);
+
+        team.MessageRulesSeededUtc = createdUtc;
+    }
+
+    private static void SeedRule(
+        AppDbContext dbContext, ILogger logger, Team team, MessageTrigger trigger, string name, string templateKey,
+        int? parameterHours, MessageRecipient recipient, DateTime createdUtc)
+    {
         dbContext.MessageRules.Add(new MessageRule
         {
             TeamId = team.Id,

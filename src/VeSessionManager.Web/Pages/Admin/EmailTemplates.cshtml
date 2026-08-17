@@ -33,11 +33,17 @@ else
        placeholder chips, subject field and Quill editor on this one page — so finding the one you
        wanted meant scrolling past all the others, and the page grew with every template added. The
        editor moved to a page of its own; this answers "what have we got" and nothing else. *@
-    @foreach (var group in Model.GroupedTemplates)
+    @foreach (var group in Model.GroupedTemplates.Where(g => g.Templates.Count > 0))
     {
         <div class="template-phase">
             <h2>@group.Label</h2>
-            <p class="session-sub">@group.Blurb</p>
+            <p class="session-sub">
+                @group.Blurb
+                @if (group.Label == "Sent automatically")
+                {
+                    <a asp-page="/Admin/MessageRules" asp-route-teamId="@Model.TeamId">Message Rules</a><text>.</text>
+                }
+            </p>
         </div>
 
         <div class="table-scroll" style="margin-bottom:24px;">
@@ -67,9 +73,18 @@ else
                                 <div class="session-sub">@template.Subject</div>
                             </td>
                             <td>
+                                @* Read off this team's rules, so it says what will actually happen
+                                   rather than what the app's defaults once were. *@
+                                @foreach (var rule in Model.RulesFor(template.Key))
+                                {
+                                    <div>
+                                        <span class="chip @(rule.IsEnabled ? "chip-green" : "chip-neutral")">@rule.When</span>
+                                        <span class="session-sub">@rule.TriggerLabel@(rule.IsEnabled ? "" : " — switched off")</span>
+                                    </div>
+                                }
                                 @if (VeSessionManager.Web.Pages.Admin.EmailTemplatesModel.TriggerFor(template.Key) is { } trigger)
                                 {
-                                    <span class="chip @(trigger.Cadence == "Automatic" ? "chip-green" : "chip-neutral")">@trigger.Cadence</span>
+                                    <span class="chip chip-neutral">By hand</span>
                                     <div class="session-sub">@trigger.Recipient</div>
                                 }
                                 else if (template.IsUserDefined)

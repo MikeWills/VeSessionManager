@@ -170,6 +170,79 @@ public class MessageRuleSqliteTests
         await Assert.ThrowsAsync<DbUpdateException>(() => dbContext.SaveChangesAsync());
     }
 
+    /// <summary>
+    /// The database itself drops the link and keeps the row (#401 PR2). <c>MessageRuleAdminService</c>
+    /// also nulls the FK by hand — deliberately, so the behaviour is identical on EF InMemory, which
+    /// has no referential actions at all — and that belt-and-braces is exactly why this needs pinning
+    /// here: with the explicit nulling in place, nothing else would notice if the migration had
+    /// emitted <c>Restrict</c> or <c>Cascade</c>. One deletes the evidence, the other refuses the
+    /// delete; both are silent until somebody deletes a rule by another route.
+    /// </summary>
+    [Fact]
+    public async Task DeletingARule_LeavesItsRunsBehind_WithTheirRuleNameIntact()
+    {
+        await using var connection = new SqliteConnection("DataSource=:memory:");
+        await using var dbContext = await OpenAsync(connection);
+
+        await dbContext.Database.MigrateAsync();
+        var seed = await SeedAsync(dbContext);
+
+        var rule = new MessageRule
+        {
+            TeamId = seed.TeamId, Name = "Reminder we stopped sending", Trigger = MessageTrigger.BeforeSessionStart,
+            ParameterHours = 24, TemplateKey = "DayBeforeReminder", CreatedUtc = Now
+        };
+        dbContext.MessageRules.Add(rule);
+        await dbContext.SaveChangesAsync();
+
+        dbContext.MessageRuleRuns.Add(NewRun(seed.TeamId, rule, seed.CandidateId));
+        await dbContext.SaveChangesAsync();
+
+        // Raw SQL, so the database's own referential action is what runs — not EF's fixup, and not
+        // the service's explicit nulling.
+        await dbContext.Database.ExecuteSqlRawAsync("DELETE FROM MessageRules WHERE Id = {0}", rule.Id);
+        dbContext.ChangeTracker.Clear();
+
+        var run = await dbContext.MessageRuleRuns.AsNoTracking().SingleAsync();
+        Assert.Null(run.MessageRuleId);
+        Assert.Equal("Reminder we stopped sending", run.RuleName);
+        Assert.Equal(MessageTrigger.BeforeSessionStart, run.Trigger);
+    }
+
+    /// <summary>
+    /// And several orphans coexist. The unique index still spans <c>(MessageRuleId, SubjectId)</c>,
+    /// and SQLite treats NULLs as distinct — which is the behaviour wanted rather than one tolerated:
+    /// these rows describe rules that no longer exist, so they have nothing left to make unique.
+    /// </summary>
+    [Fact]
+    public async Task SeveralOrphanedRunsForTheSameSubject_Coexist()
+    {
+        await using var connection = new SqliteConnection("DataSource=:memory:");
+        await using var dbContext = await OpenAsync(connection);
+
+        await dbContext.Database.MigrateAsync();
+        var seed = await SeedAsync(dbContext);
+
+        foreach (var name in new[] { "First rule", "Second rule" })
+        {
+            var rule = new MessageRule
+            {
+                TeamId = seed.TeamId, Name = name, Trigger = MessageTrigger.BeforeSessionStart,
+                ParameterHours = 24, TemplateKey = "DayBeforeReminder", CreatedUtc = Now
+            };
+            dbContext.MessageRules.Add(rule);
+            await dbContext.SaveChangesAsync();
+
+            dbContext.MessageRuleRuns.Add(NewRun(seed.TeamId, rule, seed.CandidateId));
+            await dbContext.SaveChangesAsync();
+
+            await dbContext.Database.ExecuteSqlRawAsync("DELETE FROM MessageRules WHERE Id = {0}", rule.Id);
+            dbContext.ChangeTracker.Clear();
+        }
+
+        Assert.Equal(2, await dbContext.MessageRuleRuns.CountAsync());
+    }
+
     private static MessageRuleRun NewRun(int teamId, MessageRule rule, int subjectId) => new()
     {
         TeamId = teamId,

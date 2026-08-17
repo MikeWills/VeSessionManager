@@ -29,8 +29,21 @@ public class MessageRuleRun
     public int TeamId { get; set; }
     public Team Team { get; set; } = null!;
 
-    public int MessageRuleId { get; set; }
-    public MessageRule MessageRule { get; set; } = null!;
+    /// <summary>
+    /// The rule that fired, or null once that rule has been deleted (#401 PR2).
+    ///
+    /// <para><b>Null is the row outliving its rule, not a broken reference.</b> A rule can be deleted
+    /// from the admin screen, and the record of what it sent to real people must survive that — which
+    /// is exactly why <see cref="RuleName"/> and <see cref="Trigger"/> are snapshots rather than reads
+    /// through this FK. The relationship is <c>SetNull</c> for the same reason it is not
+    /// <c>Cascade</c>.</para>
+    ///
+    /// <para>A consequence worth knowing: an orphaned row no longer participates in idempotency —
+    /// nothing scans for a rule that does not exist. So re-creating a deleted rule starts clean, and
+    /// its own <c>CreatedUtc</c> is what stops that reaching anybody whose moment has passed.</para>
+    /// </summary>
+    public int? MessageRuleId { get; set; }
+    public MessageRule? MessageRule { get; set; }
 
     /// <summary>
     /// The rule's name as it was when this fired. A snapshot string, not a read through the FK: a

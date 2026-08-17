@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using VeSessionManager.Core.Authorization;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Entities;
+using VeSessionManager.Core.Messaging;
 using VeSessionManager.Core.Navigation;
 using VeSessionManager.Core.Payments;
 
@@ -32,26 +33,30 @@ public class ApplicantStatusModel(
     UserManager<User> userManager,
     SessionAccessScope accessScope,
     NavBadgeCountService badgeCounts,
+    MessageThresholdService thresholds,
     TimeProvider timeProvider) : PageModel
 {
     internal const int RecentlyIssuedWindowDays = 7;
 
     /// <summary>
-    /// The days-pending column is a countdown against PaymentReminderService's own two passes, not
-    /// an arbitrary UI scale — both are anchored on ApplicationDateEnteredUtc, the same field this
-    /// page counts from, so the boundaries line up exactly:
+    /// The days-pending column is a countdown against what this team's own rules actually do, not an
+    /// arbitrary UI scale — amber once its FCC-fee reminder is due, red once its unpaid-payment notice
+    /// is. Both are anchored on ApplicationDateEnteredUtc, the same field this page counts from, so
+    /// the boundaries line up exactly.
     ///
-    ///   - <see cref="PaymentReminderService.ReminderThresholdDays"/> (5): the nightly job sends the
-    ///     candidate an FccFeeReminder5Day email — about FCC's own application fee, not the team's
-    ///     (#219), so the amber row means "FCC is still waiting to be paid".
-    ///   - <see cref="PaymentReminderService.ExpirationThresholdDays"/> (10): the nightly job sets
-    ///     Payment.ExpiredUnpaid and notifies the Session Manager.
+    /// <para><b>Read per team, not from a constant (#401 PR2).</b> These were
+    /// <c>PaymentReminderService.ReminderThresholdDays</c>/<c>ExpirationThresholdDays</c>, referenced
+    /// rather than re-declared precisely so the colours could not drift from the behaviour. Once a team
+    /// sets its own hours, a constant *is* the drift: it would show a red row on a day nothing happens.
+    /// This is the one non-obvious coupling in the whole of #401, and it is why the lookup below exists
+    /// rather than the page reading a number.</para>
     ///
-    /// Deliberately referenced rather than re-declared — a local copy would drift and start
-    /// colouring rows on days when nothing actually happens.
+    /// <para><b>A team with no enabled rule gets no colour at all</b>, which is the honest answer:
+    /// nothing is going to happen on any particular day, so there is no boundary to warn about. The
+    /// page merges teams, so this is resolved per row rather than once.</para>
     /// </summary>
-    internal const int DaysPendingWarningThreshold = PaymentReminderService.ReminderThresholdDays;
-    internal const int DaysPendingCriticalThreshold = PaymentReminderService.ExpirationThresholdDays;
+    private IReadOnlyDictionary<int, int> reminderHoursByTeam = new Dictionary<int, int>();
+    private IReadOnlyDictionary<int, int> expiryHoursByTeam = new Dictionary<int, int>();
 
     [BindProperty(SupportsGet = true)]
     public int? TeamId { get; set; }
@@ -121,6 +126,14 @@ public class ApplicantStatusModel(
             .Distinct()
             .ToListAsync()).ToHashSet();
 
+        // Only the teams actually on screen, so a SystemAdmin viewing one team does not read every
+        // team's rules to colour it.
+        var pendingTeamIds = pending.Select(c => c.Session.TeamId).Distinct().ToList();
+        reminderHoursByTeam = await thresholds.ConfiguredHoursByTeamAsync(
+            pendingTeamIds, MessageTrigger.FccFeeOutstanding, HttpContext.RequestAborted);
+        expiryHoursByTeam = await thresholds.ConfiguredHoursByTeamAsync(
+            pendingTeamIds, MessageTrigger.PaymentUnpaid, HttpContext.RequestAborted);
+
         Pending = pending.Select(c => ToPendingRow(c, now, candidatesWithUnpaid.Contains(c.Id))).ToList();
 
         var cutoffUtc = now.AddDays(-RecentlyIssuedWindowDays);
@@ -164,7 +177,7 @@ public class ApplicantStatusModel(
             FccStatusLabel(c),
             FccFeeLabel(c),
             daysPending,
-            DaysPendingCssClass(daysPending, hasUnpaidPayment),
+            DaysPendingCssClass(daysPending, hasUnpaidPayment, c.Session.TeamId),
             FccUlsLinks.License(c.FccUlsLicenseKey));
     }
 
@@ -185,17 +198,28 @@ public class ApplicantStatusModel(
 
     /// <summary>
     /// Takes the unpaid flag rather than reading candidate.Payments — the page no longer loads them,
-    /// see the id query in OnGetAsync.
+    /// see the id query in OnGetAsync — and the team id, because the boundaries are that team's rules
+    /// now rather than two constants.
+    ///
+    /// <para>Compared in hours rather than converting a rule to whole days: a team is free to set 36
+    /// hours, and rounding that to a day would put the colour on the wrong side of the boundary for
+    /// half of every such rule.</para>
     /// </summary>
-    private static string DaysPendingCssClass(int? daysPending, bool hasUnpaidPayment)
+    private string DaysPendingCssClass(int? daysPending, bool hasUnpaidPayment, int teamId)
     {
         if (daysPending is not { } days || !hasUnpaidPayment)
         {
             return string.Empty;
         }
 
-        return days >= DaysPendingCriticalThreshold ? "days-critical"
-            : days >= DaysPendingWarningThreshold ? "days-warning"
+        var hoursPending = days * 24;
+        if (expiryHoursByTeam.TryGetValue(teamId, out var expiryHours) && hoursPending >= expiryHours)
+        {
+            return "days-critical";
+        }
+
+        return reminderHoursByTeam.TryGetValue(teamId, out var reminderHours) && hoursPending >= reminderHours
+            ? "days-warning"
             : string.Empty;
     }
 

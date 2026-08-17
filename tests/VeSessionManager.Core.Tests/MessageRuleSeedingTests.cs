@@ -101,18 +101,16 @@ public class MessageRuleSeedingTests
     }
 
     /// <summary>
-    /// <b>A deleted rule comes back on the next Worker start</b>, because the guard asks whether the
-    /// team has a rule for that trigger and a deleted one does not exist. Pinned rather than fixed:
-    /// it is exactly how the seeded templates beside it behave, and PR1 ships no way to delete a rule,
-    /// so nothing can hit it yet.
+    /// <b>A deleted rule stays deleted.</b> This is the tombstone earning its keep: the seeder used to
+    /// ask "does this team have a rule for this trigger?", which is the right question for a team
+    /// being set up and the wrong one forever after — a rule somebody deleted came back on the next
+    /// Worker start, quietly resuming a send they had stopped.
     ///
-    /// <para>It does become reachable the moment the admin screen in PR2 offers a delete, and
-    /// resurrecting a rule a team switched off by deleting it means quietly resuming a send they
-    /// stopped. <c>IsEnabled</c> is the mechanism that survives reseeding (see the test above), so
-    /// that screen should disable rather than delete — or this guard needs a tombstone.</para>
+    /// <para>A team that wants nothing sent at a trigger point is entitled to have nothing there, and
+    /// the seeder is not the authority on that after day one.</para>
     /// </summary>
     [Fact]
-    public async Task ADeletedRule_IsSeededAgain_WhichIsWhyTheAdminScreenShouldDisableRatherThanDelete()
+    public async Task ADeletedRule_IsNotSeededAgain()
     {
         await using var dbContext = CreateContext();
         var team = await SeedTeamAsync(dbContext);
@@ -125,7 +123,48 @@ public class MessageRuleSeedingTests
         await EmailDefaultsSeeder.SeedForTeamAsync(dbContext, NullLogger.Instance, team);
         await dbContext.SaveChangesAsync();
 
-        Assert.Contains(await dbContext.MessageRules.ToListAsync(), r => r.Trigger == MessageTrigger.PaymentUnpaid);
+        var rules = await dbContext.MessageRules.ToListAsync();
+        Assert.DoesNotContain(rules, r => r.Trigger == MessageTrigger.PaymentUnpaid);
+        Assert.Equal(3, rules.Count);
+    }
+
+    /// <summary>Deleting every one of them is an answer too — "we send nothing automatically" must survive a restart.</summary>
+    [Fact]
+    public async Task ATeamThatDeletesEveryRule_GetsNoneBack()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        await EmailDefaultsSeeder.SeedForTeamAsync(dbContext, NullLogger.Instance, team);
+        await dbContext.SaveChangesAsync();
+
+        dbContext.MessageRules.RemoveRange(dbContext.MessageRules);
+        await dbContext.SaveChangesAsync();
+
+        await EmailDefaultsSeeder.SeedForTeamAsync(dbContext, NullLogger.Instance, team);
+        await dbContext.SaveChangesAsync();
+
+        Assert.Empty(dbContext.MessageRules);
+    }
+
+    /// <summary>
+    /// The tombstone is stamped by the seeding run itself, and it is what every later run reads. A
+    /// team left unstamped would be re-seeded on the next Worker start and end up with two of
+    /// everything.
+    /// </summary>
+    [Fact]
+    public async Task SeedingStampsTheTeam_AndASecondRunAddsNothing()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+
+        await EmailDefaultsSeeder.SeedForTeamAsync(dbContext, NullLogger.Instance, team);
+        await dbContext.SaveChangesAsync();
+        Assert.NotNull(team.MessageRulesSeededUtc);
+
+        await EmailDefaultsSeeder.SeedForTeamAsync(dbContext, NullLogger.Instance, team);
+        await dbContext.SaveChangesAsync();
+
+        Assert.Equal(4, await dbContext.MessageRules.CountAsync());
     }
 
     /// <summary>Rules are per team, like the credentials that send them.</summary>
