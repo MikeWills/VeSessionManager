@@ -229,7 +229,7 @@ public class ExamResultSyncService(
 
         if (passedElements.Count == 0)
         {
-            candidate.Tested = true;
+            candidate.MarkTested(now);
 
             // Already Failed, still failing: say nothing. Re-auditing and re-counting an unchanged
             // verdict every poll for 14 days would bury the real entries under noise — the price of
@@ -248,7 +248,7 @@ public class ExamResultSyncService(
         else
         {
             var wasAlreadyTested = candidate.Tested;
-            candidate.Tested = true;
+            candidate.MarkTested(now);
 
             if (wasAutoFailed)
             {

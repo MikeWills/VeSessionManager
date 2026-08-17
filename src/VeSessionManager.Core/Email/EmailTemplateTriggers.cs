@@ -11,11 +11,17 @@ namespace VeSessionManager.Core.Email;
 /// answered by the Message Rules page, which reads the rules themselves and therefore cannot be
 /// wrong.</para>
 ///
-/// <para>What is left is genuinely not a rule: somebody opens a screen, picks people, and sends. No
-/// row anywhere records when that happens or to whom by default, so a hand-maintained description is
-/// the only thing that can explain it — with the same hazard as before, that changing the button
-/// means changing this text. <c>EmailTemplateTriggersTests</c> can only check an entry exists, never
-/// that its prose is still true.</para>
+/// <para>What is left describes a button: somebody opens a screen, picks people, and sends. No row
+/// anywhere records when that happens or to whom by default, so a hand-maintained description is the
+/// only thing that can explain it — with the same hazard as before, that changing the button means
+/// changing this text. <c>EmailTemplateTriggersTests</c> can only check an entry exists, never that
+/// its prose is still true.</para>
+///
+/// <para><b>"By hand" no longer means "only by hand" (#401 PR3).</b> All three of these can also be
+/// put on a rule now — <c>LicenseGranted</c> for the getting-started email, and so on. So the text
+/// describes the button rather than claiming exclusivity, and the page shows any rules alongside it.
+/// The youth-program entry carries the warning worth carrying: its button checks that the session's
+/// VEC runs a youth program and a rule does not.</para>
 /// </summary>
 public static class EmailTemplateTriggers
 {
@@ -25,17 +31,18 @@ public static class EmailTemplateTriggers
         // someone about an extra FCC step at the point they could no longer easily ask about it.
         ["FelonyDisclosureInstructions"] = new(
             "To the candidate",
-            "Only when someone chooses \"Send felony disclosure instructions\" on a candidate's row. Available for any candidate who declared a " +
+            "By hand, when someone chooses \"Send felony disclosure instructions\" on a candidate's row. Available for any candidate who declared a " +
             "felony disclosure, whether or not they have tested yet — it is usually worth sending before the session, while they can still ask questions. " +
-            "Until 2026-08-11 this was sent automatically on marking a session completed."),
+            "Until 2026-08-11 this was sent automatically on marking a session completed, which meant it always arrived too late to ask about."),
 
         ["ArrlYouthProgramInstructions"] = new(
             "To the candidate",
-            "Only when someone chooses \"Send youth program instructions\" on a candidate's row. Available only if the session's VEC runs a youth program."),
+            "By hand, when someone chooses \"Send youth program instructions\" on a candidate's row. That button appears only if the session's VEC runs a " +
+            "youth program — worth knowing before putting this template on a rule, since a rule has no such check and would send it to everybody."),
 
         ["GettingStartedLocally"] = new(
             "To the candidate",
-            "Never sent automatically. Open a session, choose \"Email candidates\", pick who should get it, and edit the message before sending — " +
+            "By hand: open a session, choose \"Email candidates\", pick who should get it, and edit the message before sending — " +
             "what goes out is your edited draft, and nothing is written back to this template. " +
             "Note {{CallSign}} is blank until the FCC grants the license, which is usually a few days after the session; the compose screen warns you when that applies to anyone you have picked."),
     };

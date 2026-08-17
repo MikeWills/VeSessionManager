@@ -126,6 +126,15 @@ would be pure duplication — and goes straight to `CHANGELOG.md` instead. Non-p
 redesigns, hardening passes) start here and move to `CHANGELOG.md` once the section is at/over the
 cap and a newer entry needs to be added; oldest goes first.
 
+- **Three new trigger points, none of them seeded (2026-08-17).** Issue #401, PR3 — see
+  `docs/trigger-points.md`. `CandidateTested`, `LicenseGranted` and `FelonyDisclosureDeclared`, all
+  opt-in, so no existing team's mail changes. The one to carry forward: **a state trigger is only
+  implementable if something records *when* the state changed**, and `Candidate.Tested` was a bool
+  written from four places — so `Candidate.TestedUtc` exists, set through the one `MarkTested(now)`
+  helper, guarded by a source scan, and deliberately not backfilled (null means "tested before this
+  existed", which excludes imported history for free). `LicenseGranted` could reuse FCC's own grant
+  date, and skips an upgrader whose license predates the session, who earned no call sign here.
+
 - **Teams set their own message rules now, from a screen (2026-08-17).** Issue #401, PR2 — see
   `docs/trigger-points.md`. `Admin/MessageRules` lists every trigger point with its rules, and
   `ParameterHours` is editable. Two things worth carrying forward: **a rule can be switched off *or*

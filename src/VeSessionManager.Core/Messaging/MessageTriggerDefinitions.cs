@@ -88,7 +88,36 @@ public static class MessageTriggerDefinitions
             // that a payment link has gone stale. Candidate is legal too — a team may reasonably want
             // to chase the candidate instead of, or as well as, telling itself.
             LegalRecipients: [MessageRecipient.TeamAdminAddress, MessageRecipient.Candidate],
-            Placeholders: ["CandidateName", "SessionDate", "PaymentAmount"])
+            Placeholders: ["CandidateName", "SessionDate", "PaymentAmount"]),
+
+        // --- Added in PR3. None of these is seeded: they are things this app could not do before,
+        // not reproductions of prior behaviour, so a team opts in by creating a rule. ---
+
+        new(MessageTrigger.CandidateTested,
+            MessageTriggerMechanism.State,
+            MessageSubjectType.Candidate,
+            DefaultParameterHours: null,
+            LegalRecipients: [MessageRecipient.Candidate, MessageRecipient.TeamAdminAddress],
+            Placeholders: ["CandidateName", "CandidateFirstName", "SessionDate", "CallSign"]),
+
+        new(MessageTrigger.LicenseGranted,
+            MessageTriggerMechanism.State,
+            MessageSubjectType.Candidate,
+            DefaultParameterHours: null,
+            LegalRecipients: [MessageRecipient.Candidate, MessageRecipient.TeamAdminAddress],
+            // The first trigger where CallSign resolves to anything — the FCC has issued it by
+            // definition. Everywhere earlier it renders blank, which is what the compose screen warns
+            // about (#144).
+            Placeholders: ["CandidateName", "CandidateFirstName", "SessionDate", "CallSign", "TeamName"]),
+
+        new(MessageTrigger.FelonyDisclosureDeclared,
+            MessageTriggerMechanism.State,
+            MessageSubjectType.Candidate,
+            DefaultParameterHours: null,
+            // Candidate only. This one says "the FCC requires extra steps of you", which is not news
+            // to send anywhere but the person it is about.
+            LegalRecipients: [MessageRecipient.Candidate],
+            Placeholders: ["CandidateName", "CandidateFirstName", "SessionDate"])
     ];
 
     public static MessageTriggerDefinition For(MessageTrigger trigger) =>

@@ -1,8 +1,8 @@
 # Trigger points — configurable outbound messages
 
 Issue [#401](https://github.com/MikeWills/VeSessionManager/issues/401). **PR1: the engine, with
-behaviour frozen. PR2: the admin screen, and the parameters become real.** New triggers, Discord and
-the envelope fields follow.
+behaviour frozen. PR2: the admin screen, and the parameters become real. PR3: three new trigger
+points.** Discord and the envelope fields follow in PR4.
 
 ## Why
 
@@ -284,13 +284,72 @@ is only the three on-demand templates, which no rule can describe because a pers
 `Retired` set stays — "nothing in the code sends this" is a different fact from "this team has no rule
 for it", and only the first is the app's to state.
 
+---
+
+# PR3 — three new trigger points
+
+`CandidateTested`, `LicenseGranted` and `FelonyDisclosureDeclared`. These reproduce nothing: they are
+moments the app could not act on before, so **none of them is seeded** and an existing team's outgoing
+mail is unchanged until somebody creates a rule. A team set up after PR3 gets the same four rules a
+team set up before it has.
+
+## Each one needed a moment it could be bounded by
+
+`MessageRule.CreatedUtc` bounds every scan, so a state trigger is only implementable if something
+records *when* the state changed. That question had three different answers here.
+
+**`CandidateTested` needed a new column.** `Candidate.Tested` is a bool written from four places —
+marking a session completed, marking one candidate failed, and both branches of the automatic
+exam-result sync — so there was no answer to "when did this become true". The nearest existing
+candidates were each some other moment wearing this one's name: `ResultMarkedUtc` is only set by a
+Session Manager's explicit result, never the automatic path, and the session's own start is hours to
+days before grading actually happens. `Candidate.TestedUtc` records it, set through
+`Candidate.MarkTested(now)` — one helper rather than two assignments at four sites, because a site
+that sets the bool and forgets the timestamp leaves a candidate this trigger can never see and
+*nothing fails*. `NoRawTestedAssignmentTests` fails the build if a raw assignment reappears.
+
+It is **deliberately not backfilled**. Everyone already tested holds null and is never returned, which
+is the same direction of safety as `CreatedUtc` itself and removes the need for an age window on this
+trigger at all.
+
+**`LicenseGranted` uses FCC's own grant date**, which already exists. One consequence worth knowing:
+that date is date-only, stamped at UTC midnight, so a rule created at 2pm today will not fire for a
+license FCC dated today — its moment reads as this morning. A day of the safe direction, and the
+alternative was a second column recording when the watcher noticed.
+
+**`FelonyDisclosureDeclared` uses registration**, because the disclosure arrives with the application
+and the answer does not change afterwards.
+
+## The guards each one owes
+
+- **`LicenseGranted` skips an upgrader whose license predates the session** — they did not earn a call
+  sign here, and "congratulations on your new call sign" is wrong for them. Checked in memory, since
+  `LicenseGrantPredatesSession` needs the session loaded. It also requires a call sign to exist at
+  all: `{{CallSign}}` is the reason this trigger exists, and this is the only point at which it
+  resolves to anything.
+- **`CandidateTested` skips a withdrawn candidate** (`ApplicationStatus.NotTested`), who never sat
+  anything whatever a bulk "mark session completed" left on the row. And note what this trigger does
+  *not* mean: the exam was sat, not passed — the result is often unknown for days.
+- **`FelonyDisclosureDeclared` requires `HasFelonyDisclosure == true`**, not merely non-false. Null
+  means ExamTools told us nothing, and telling the wrong person their felony disclosure needs FCC
+  paperwork is the mistake worth guarding twice — the button's own handler already does. It carries
+  the same recent-session bound as the registration confirmation, because the advice is only useful
+  while there is still someone to ask.
+
+## Where this leaves the buttons
+
+The three on-demand sends stay exactly as they are; a rule is an addition, not a replacement.
+`EmailTemplateTriggers` still describes each button, but its wording no longer claims exclusivity —
+"never sent automatically" stopped being true the moment a team could put `GettingStartedLocally` on
+`LicenseGranted`.
+
+**One asymmetry to know before putting the ARRL youth email on a rule:** the button checks that the
+session's VEC runs a youth program and refuses otherwise. A rule has no such check, because rules
+carry no conditions of their own beyond their trigger (Mike, Q3) — so a rule sends it to everyone
+granted a license. The template registry says so where somebody choosing it will read it.
+
 ## Still to come
 
-- **PR3** — `CandidateTested` and `LicenseGranted`, moving `GettingStartedLocally` and the ARRL youth
-  email from button-only to optionally automatic. `FelonyDisclosureInstructions` gets a trigger too,
-  **defaulting to off**: [#221](https://github.com/MikeWills/VeSessionManager/issues/221) deliberately
-  took it off an automatic path because it always arrived after the exam, when the candidate could no
-  longer ask anyone — so its trigger is *declaration*, not completion.
 - **PR4** — Discord channel posts (`FanOut = PerSubject`; the unsubscribe and CAN-SPAM footer are
   per-person concepts and must not reach a channel post), and the envelope: `From` constrained to the
   sending domain (SPF/DKIM/DMARC), `Reply-To` resolvable to the session lead, `Cc`/`Bcc` with a

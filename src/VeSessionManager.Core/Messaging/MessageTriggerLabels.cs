@@ -21,6 +21,9 @@ public static class MessageTriggerLabels
         MessageTrigger.BeforeSessionStart => "Before a session starts",
         MessageTrigger.FccFeeOutstanding => "While the FCC is waiting for its fee",
         MessageTrigger.PaymentUnpaid => "While an exam fee is unpaid",
+        MessageTrigger.CandidateTested => "When a candidate has tested",
+        MessageTrigger.LicenseGranted => "When the FCC grants a license",
+        MessageTrigger.FelonyDisclosureDeclared => "When a felony disclosure is declared",
         _ => trigger.ToString()
     };
 
@@ -35,6 +38,15 @@ public static class MessageTriggerLabels
             + "The clock starts from the date the FCC entered the application, which is often not the day they actually received it. That is why this is yours to set.",
         MessageTrigger.PaymentUnpaid =>
             "Fires once an exam fee has gone unpaid for the set time. The payment link is marked expired on the same clock, so changing this changes both.",
+        MessageTrigger.CandidateTested =>
+            "Fires once a candidate has sat their exam — either when you mark the session completed, or automatically when the graded result arrives from ExamTools, whichever happens first. "
+            + "Note this says nothing about whether they passed; the result is often not known yet.",
+        MessageTrigger.LicenseGranted =>
+            "Fires once the FCC has granted a license from this session. The only point at which {{CallSign}} resolves to anything — everywhere earlier it renders blank. "
+            + "A candidate who was already licensed walking in does not fire this: their grant date predates the session.",
+        MessageTrigger.FelonyDisclosureDeclared =>
+            "Fires for a candidate who declared a felony conviction on their application, telling them the FCC requires an explanation. "
+            + "Worth sending before the session, while there is still someone to ask — which is exactly why it is no longer tied to marking a session completed.",
         _ => ""
     };
 

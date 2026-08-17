@@ -29,7 +29,10 @@ public static class MessageRuleTestHarness
             new CandidateRegisteredScanner(dbContext, appOptions, NullLogger<CandidateRegisteredScanner>.Instance),
             new BeforeSessionStartScanner(dbContext),
             new FccFeeOutstandingScanner(dbContext),
-            new PaymentUnpaidScanner(dbContext)
+            new PaymentUnpaidScanner(dbContext),
+            new CandidateTestedScanner(dbContext),
+            new LicenseGrantedScanner(dbContext, NullLogger<LicenseGrantedScanner>.Instance),
+            new FelonyDisclosureDeclaredScanner(dbContext, NullLogger<FelonyDisclosureDeclaredScanner>.Instance)
         ];
 
         var dispatch = new MessageDispatchService(

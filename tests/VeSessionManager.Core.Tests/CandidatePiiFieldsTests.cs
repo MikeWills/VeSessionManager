@@ -56,6 +56,11 @@ public class CandidatePiiFieldsTests
         // once Name/FirstName/Email are gone.
         nameof(Candidate.ApplicationStatus),
         nameof(Candidate.Tested),
+        // Retained for the same reason as Tested, which it is the timestamp of: "an exam was sat, on
+        // this date" says nothing about a person once their name and address are gone. Clearing it
+        // would also un-settle the CandidateTested trigger for a purged candidate, which is the
+        // ...SentUtc hazard the group below this one exists for.
+        nameof(Candidate.TestedUtc),
         nameof(Candidate.InitialLicenseClass),
         nameof(Candidate.NewLicenseClass),
         nameof(Candidate.ResultMarkedByUserId),

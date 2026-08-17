@@ -218,7 +218,31 @@ public enum MessageTrigger
     FccFeeOutstanding = 2,
 
     /// <summary>Time-relative, after the application/result anchor, while a Square payment is still unpaid. Replaces the 10-day PaymentExpirationNotice.</summary>
-    PaymentUnpaid = 3
+    PaymentUnpaid = 3,
+
+    /// <summary>
+    /// A candidate has sat their exam — <c>Candidate.Tested</c>, from either the Session Manager
+    /// marking a session completed or the automatic exam-result sync (#401 PR3). New: nothing sent
+    /// here before, and no rule is seeded for it.
+    /// </summary>
+    CandidateTested = 4,
+
+    /// <summary>
+    /// The FCC has granted a license from this session — the natural home for a welcome email, and
+    /// the first trigger where <c>{{CallSign}}</c> resolves to anything (#401 PR3).
+    /// </summary>
+    LicenseGranted = 5,
+
+    /// <summary>
+    /// A candidate declared a felony disclosure on their application (#401 PR3).
+    ///
+    /// <para><b>Declaration, not completion, and no rule is seeded.</b> #221 deliberately took this
+    /// email <i>off</i> an automatic path because riding along with "mark session completed" meant it
+    /// could only ever arrive after the exam — the point at which the candidate can no longer easily
+    /// ask anyone about it. Offering it here as an opt-in fixes the timing rather than reinstating
+    /// the mistake; a team that wants it automatic gets it before the session, not after.</para>
+    /// </summary>
+    FelonyDisclosureDeclared = 6
 }
 
 /// <summary>How a <see cref="MessageRule"/> delivers. Discord is declared but not yet dispatchable — see <see cref="MessageRecipient"/>.</summary>

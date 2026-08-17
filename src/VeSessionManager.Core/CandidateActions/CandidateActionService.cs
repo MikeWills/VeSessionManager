@@ -60,7 +60,7 @@ public class CandidateActionService(
 
         var now = timeProvider.GetUtcNow().UtcDateTime;
         candidate.ApplicationStatus = CandidateApplicationStatus.Failed;
-        candidate.Tested = true;
+        candidate.MarkTested(now);
         candidate.ResultMarkedByUserId = userId;
         candidate.ResultMarkedUtc = now;
 

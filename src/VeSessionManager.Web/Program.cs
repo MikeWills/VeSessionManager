@@ -105,6 +105,10 @@ builder.Services.AddScoped<IMessageTriggerScanner, CandidateRegisteredScanner>()
 builder.Services.AddScoped<IMessageTriggerScanner, BeforeSessionStartScanner>();
 builder.Services.AddScoped<IMessageTriggerScanner, FccFeeOutstandingScanner>();
 builder.Services.AddScoped<IMessageTriggerScanner, PaymentUnpaidScanner>();
+// PR3's three, none of them seeded — a team opts in by creating a rule.
+builder.Services.AddScoped<IMessageTriggerScanner, CandidateTestedScanner>();
+builder.Services.AddScoped<IMessageTriggerScanner, LicenseGrantedScanner>();
+builder.Services.AddScoped<IMessageTriggerScanner, FelonyDisclosureDeclaredScanner>();
 builder.Services.AddScoped<MessageDispatchService>();
 builder.Services.AddScoped<MessageRuleService>();
 // Read by the Applicant Status page to colour its "days pending" column on the team's own

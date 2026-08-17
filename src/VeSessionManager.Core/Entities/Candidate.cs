@@ -44,7 +44,45 @@ public class Candidate
     public CandidateApplicationStatus ApplicationStatus { get; set; } = CandidateApplicationStatus.Unmatched;
 
     /// <summary>Flips to true when the Session Manager marks the whole session as completed, or automatically once ExamResultSyncService sees a graded exam result for this candidate — whichever happens first. Intentionally separate from ApplicationStatus.</summary>
+    /// <remarks>Set through <see cref="MarkTested"/>, never assigned directly — see there.</remarks>
     public bool Tested { get; set; }
+
+    /// <summary>
+    /// When <see cref="Tested"/> first became true, or null for a candidate who has not tested — and
+    /// for every candidate who tested before this field existed (#401 PR3).
+    ///
+    /// <para><b>Added because a bool cannot be a trigger point.</b> <c>MessageTrigger.CandidateTested</c>
+    /// needs the moment the state changed, both to bound itself by the rule's own creation and to
+    /// avoid reaching a year of backfilled history. The nearest existing candidates were
+    /// <c>ResultMarkedUtc</c> — which only a Session Manager's explicit result sets, not the automatic
+    /// path — and the session's own start, which is hours to days before grading actually happens.
+    /// Neither answers "when did this become true".</para>
+    ///
+    /// <para><b>Deliberately not backfilled.</b> Everyone already tested keeps a null here, so a rule
+    /// created later never fires for them. That is the same direction of safety as
+    /// <c>MessageRule.CreatedUtc</c> itself, arrived at for free rather than by a second guard.</para>
+    /// </summary>
+    public DateTime? TestedUtc { get; set; }
+
+    /// <summary>
+    /// Marks this candidate as having tested, recording when. <b>The one place <see cref="Tested"/> is
+    /// set</b>, called by all four paths that flip it — marking a session completed, marking one
+    /// candidate failed, and both branches of the automatic exam-result sync.
+    ///
+    /// <para>A helper rather than two assignments at four call sites because the pair has to stay
+    /// together: a site that sets the bool and forgets the timestamp leaves a candidate the
+    /// <c>CandidateTested</c> trigger can never see, and nothing fails — they simply never get the
+    /// email. <c>NoRawTestedAssignmentTests</c> fails the build if a raw assignment reappears.</para>
+    ///
+    /// <para><b>Idempotent on purpose.</b> The timestamp records the <i>first</i> time, so a second
+    /// call — the result sync re-seeing an already-tested candidate on the next poll — leaves it
+    /// alone. Refreshing it would let a rule fire for somebody whose real moment was months ago.</para>
+    /// </summary>
+    public void MarkTested(DateTime nowUtc)
+    {
+        TestedUtc ??= nowUtc;
+        Tested = true;
+    }
 
     /// <summary>From ULS HD status date — only applies to the Received/Granted path.</summary>
     public DateTime? ApplicationDateEnteredUtc { get; set; }
