@@ -296,6 +296,48 @@ is only the three on-demand templates, which no rule can describe because a pers
 `Retired` set stays — "nothing in the code sends this" is a different fact from "this team has no rule
 for it", and only the first is the app's to state.
 
+## Attaching a rule from the template (#409)
+
+Two objects — a template holds the wording, a rule holds the timing — read as two *steps*, and the
+step people got stuck on was the second one. Mike, on first use:
+
+> "Rather than treat a template go to a whole new page. Find that template in a list of 30 of them and
+> create the rule."
+
+The model stays. It is what lets one message go out at five days and again the day before, and what
+lets a template exist with no schedule at all for hand-sending. What changed is that the template is
+now where you attach from: **Add a rule** on both the list and the editor, carrying the template into
+the create form, and present whether the template has no rules or three — before this it appeared only
+at zero, so there was no path to a second rule that did not go through Message Rules and a search.
+
+The one-rule case on the editor is untouched. That schedule panel is editable in place, and it is the
+case where the wording and its timing genuinely are one job.
+
+**The link carries the template's `Id`, not its `Key`.** The generated `Custom.<slug>` key is
+deliberately never rendered — it is the mechanism keeping team-defined templates from colliding with
+the ones code looks up by name — and a query string is as public as a table cell. A test asserting
+that the key never reaches the page is what caught the first attempt.
+
+### A rule can only send a candidate template
+
+`ValidateAsync` checked that a template existed on the team and nothing else, so a
+`VolunteerExaminers` template could be attached to a candidate trigger. Every scanner's subject is a
+candidate or a payment, so `MessageSubject.Placeholders` only ever carries candidate tokens: the
+message would render with every one of its VE tokens blank and **send successfully**. Now
+`TemplateAudienceMismatch`, refused in the service and not offered in either picker, with no "Add a
+rule" on a VE template at all — an affordance leading straight to a refusal is worse than none.
+
+Refused rather than supported. A rule addressing the session lead with VE wording is a coherent thing
+to want, but nothing renders those placeholders yet, and building it here would have been a second
+feature hiding inside a wiring change.
+
+### One Razor trap worth keeping
+
+`@(cond ? "Add a rule…" : "Add another rule…")` renders the ellipsis as `&#x2026;` — Razor
+HTML-encodes the *result of an expression*, while the same character sitting in literal markup is
+written through untouched. Harmless in a browser and invisible to a reader, but it silently breaks any
+test asserting on the text, which is how it was found. Two literal branches instead of a ternary.
+
 ---
 
 # PR3 — three new trigger points

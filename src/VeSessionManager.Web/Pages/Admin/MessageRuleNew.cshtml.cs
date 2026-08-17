@@ -47,6 +47,16 @@ public class MessageRuleNewModel(
     public string TemplateKey { get; set; } = "";
 
     /// <summary>
+    /// A template to arrive already pointing at (#409), so a link from a template does not land you in
+    /// a picker holding thirty of them. Its <b>id</b> rather than its key: the generated
+    /// <c>Custom.&lt;slug&gt;</c> key is deliberately never rendered anywhere — it is the mechanism
+    /// keeping team-defined templates from colliding with the ones code looks up by name, and a query
+    /// string is as public as a table cell. Resolved to a key in <see cref="OnGetAsync"/>.
+    /// </summary>
+    [BindProperty(SupportsGet = true)]
+    public int? TemplateId { get; set; }
+
+    /// <summary>
     /// Days, converted to hours on the way in — see <see cref="MessageDelay"/> for why the form and the
     /// column disagree on the unit. Half-days are legal, so this cannot be an <c>int</c>.
     /// </summary>
@@ -92,6 +102,19 @@ public class MessageRuleNewModel(
 
         await LoadTemplatesAsync();
 
+        // Resolved against the templates this page is already offering, so a stale link, another
+        // team's id, or a VE template all select nothing rather than being honoured. Not the security
+        // control — CreateAsync re-checks and is team-scoped — but silently pre-selecting nothing
+        // reads as a broken field, and pre-selecting something illegal reads as an offer.
+        if (TemplateId is { } templateId)
+        {
+            TemplateKey = await dbContext.EmailTemplates
+                .AsNoTracking()
+                .Where(t => t.Id == templateId && t.TeamId == TeamId && t.Audience == EmailTemplateAudience.Candidates)
+                .Select(t => t.Key)
+                .FirstOrDefaultAsync(HttpContext.RequestAborted) ?? "";
+        }
+
         // Whatever the chosen trigger's default is, so the delay box is never blank on arrival.
         ParameterDays = DefaultDays(Trigger);
         return Page();
@@ -128,6 +151,8 @@ public class MessageRuleNewModel(
             MessageRuleActionResult.ParameterOutOfRange => MessageDelayField.RangeMessage,
             MessageRuleActionResult.RecipientNotLegal => "That trigger cannot send to that recipient.",
             MessageRuleActionResult.TemplateNotFound => "Pick a template that exists on this team.",
+            MessageRuleActionResult.TemplateAudienceMismatch =>
+                "That template is written for VEs. A rule can only send one written for candidates — its VE placeholders would all come out blank.",
             MessageRuleActionResult.DiscordChannelRequired => "A Discord rule needs a channel id — without one it would post nowhere.",
             MessageRuleActionResult.DigestNeedsAChannel =>
                 "A single digest only makes sense on a channel. On email it would mean one message to one address listing everybody else.",
@@ -136,10 +161,13 @@ public class MessageRuleNewModel(
         return RedirectToPage(new { teamId = TeamId, trigger = Trigger });
     }
 
+    // Candidate-audience only (#409). Every scanner's subject is a candidate or a payment, so a VE
+    // template rendered through a rule comes out with every one of its tokens blank — and the send
+    // succeeds. Refused in MessageRuleAdminService.ValidateAsync too; this is so it is never offered.
     private async Task LoadTemplatesAsync() =>
         Templates = await dbContext.EmailTemplates
             .AsNoTracking()
-            .Where(t => t.TeamId == TeamId)
+            .Where(t => t.TeamId == TeamId && t.Audience == EmailTemplateAudience.Candidates)
             .OrderBy(t => t.Key)
             .Select(t => new MessageRulesModel.TemplateOption(t.Key, t.DisplayName))
             .ToListAsync(HttpContext.RequestAborted);

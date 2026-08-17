@@ -372,10 +372,28 @@ public class MessageRuleAdminService(AppDbContext dbContext, TimeProvider timePr
 
         // Checked against this team's own templates, and it has to be: a rule pointing at a key that
         // does not exist records Failed on every tick, forever, and the only sign is a log line.
-        if (string.IsNullOrWhiteSpace(templateKey)
-            || !await dbContext.EmailTemplates.AnyAsync(t => t.TeamId == teamId && t.Key == templateKey, cancellationToken))
+        if (string.IsNullOrWhiteSpace(templateKey))
         {
             return MessageRuleActionResult.TemplateNotFound;
+        }
+
+        var template = await dbContext.EmailTemplates
+            .AsNoTracking()
+            .Where(t => t.TeamId == teamId && t.Key == templateKey)
+            .Select(t => new { t.Audience })
+            .FirstOrDefaultAsync(cancellationToken);
+        if (template is null)
+        {
+            return MessageRuleActionResult.TemplateNotFound;
+        }
+
+        // A rule can only send a template written for candidates (#409). Every scanner's subject is a
+        // candidate or a payment, so MessageSubject.Placeholders only ever carries candidate tokens —
+        // a VE template rendered through this path comes out with every {{VeName}}-shaped token blank,
+        // and the send *succeeds*, which is the worst available outcome.
+        if (template.Audience != EmailTemplateAudience.Candidates)
+        {
+            return MessageRuleActionResult.TemplateAudienceMismatch;
         }
 
         return ValidateEnvelope(channel, recipient, envelope);
@@ -447,6 +465,13 @@ public enum MessageRuleActionResult
 
     /// <summary>No template with that key on this team. A rule pointing at nothing records Failed on every tick with only a log line to show for it.</summary>
     TemplateNotFound,
+
+    /// <summary>
+    /// The template is written for VEs, and a rule can only send one written for candidates (#409).
+    /// Nothing in the dispatch path supplies VE placeholders, so the message would send successfully
+    /// with every one of its tokens blank.
+    /// </summary>
+    TemplateAudienceMismatch,
 
     /// <summary>A Discord rule arrived with no channel id. It would post nowhere, forever, while looking configured (#401 PR4).</summary>
     DiscordChannelRequired,

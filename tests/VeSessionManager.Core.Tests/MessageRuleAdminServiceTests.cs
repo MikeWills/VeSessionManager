@@ -167,6 +167,55 @@ public class MessageRuleAdminServiceTests
             await CreateReminderAsync(dbContext, team, userId, templateKey: "NoSuchTemplate"));
     }
 
+    /// <summary>
+    /// <b>A rule cannot send a template written for VEs (#409).</b> Every scanner's subject is a
+    /// candidate or a payment, so <c>MessageSubject.Placeholders</c> only ever carries candidate
+    /// tokens — attach a VE template to a rule and the dispatcher renders a message written entirely
+    /// around <c>{{VeName}}</c>-shaped tokens with every one of them blank.
+    ///
+    /// <para>Refused rather than supported. A rule addressing the session lead with VE wording is a
+    /// coherent thing to want, but nothing renders those placeholders yet, and the failure mode
+    /// meanwhile is mail that sends successfully and says nothing.</para>
+    /// </summary>
+    [Fact]
+    public async Task Create_PointingAtAVeTemplate_IsRefused()
+    {
+        await using var dbContext = CreateContext();
+        var (team, userId) = await SeedAsync(dbContext);
+        dbContext.EmailTemplates.Add(new EmailTemplate
+        {
+            TeamId = team.Id, Key = "Custom.ve-callout", Subject = "Can you cover", Body = "Hi {{VeName}}",
+            Audience = EmailTemplateAudience.VolunteerExaminers, IsUserDefined = true
+        });
+        await dbContext.SaveChangesAsync();
+
+        Assert.Equal(MessageRuleActionResult.TemplateAudienceMismatch,
+            await CreateReminderAsync(dbContext, team, userId, templateKey: "Custom.ve-callout"));
+        Assert.Empty(dbContext.MessageRules);
+    }
+
+    /// <summary>Editing an existing rule onto a VE template is the same mistake arriving later.</summary>
+    [Fact]
+    public async Task Update_MovingARuleOntoAVeTemplate_IsRefused()
+    {
+        await using var dbContext = CreateContext();
+        var (team, userId) = await SeedAsync(dbContext);
+        dbContext.EmailTemplates.Add(new EmailTemplate
+        {
+            TeamId = team.Id, Key = "Custom.ve-callout", Subject = "Can you cover", Body = "Hi {{VeName}}",
+            Audience = EmailTemplateAudience.VolunteerExaminers, IsUserDefined = true
+        });
+        await dbContext.SaveChangesAsync();
+        await CreateReminderAsync(dbContext, team, userId);
+        var rule = await dbContext.MessageRules.SingleAsync();
+
+        var result = await CreateService(dbContext).UpdateAsync(
+            rule.Id, rule.Name, "Custom.ve-callout", 24, MessageRecipient.Candidate, userId, CancellationToken.None);
+
+        Assert.Equal(MessageRuleActionResult.TemplateAudienceMismatch, result);
+        Assert.Equal("DayBeforeReminder", (await dbContext.MessageRules.SingleAsync()).TemplateKey);
+    }
+
     /// <summary>And a template belonging to a <b>different</b> team is no more usable than one that does not exist.</summary>
     [Fact]
     public async Task Create_PointingAtAnotherTeamsTemplate_IsRefused()

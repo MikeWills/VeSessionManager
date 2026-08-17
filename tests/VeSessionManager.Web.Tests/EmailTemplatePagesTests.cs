@@ -108,8 +108,10 @@ public class EmailTemplatePagesTests
 
         var html = await client.GetStringAsync($"/Admin/EmailTemplates?teamId={factory.Seeded.TeamId}");
 
+        // #409: it carries the template now, rather than dropping you on Message Rules to find it
+        // again among thirty others.
         Assert.Contains("Add a rule…", html);
-        Assert.Contains($"/Admin/MessageRules?teamId={factory.Seeded.TeamId}", html);
+        Assert.Matches("MessageRuleNew[^\"]*templateId=", html);
     }
 
     [Fact]

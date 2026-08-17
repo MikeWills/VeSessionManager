@@ -47,6 +47,127 @@ public class MessageRulePageTests
         return rule.Id;
     }
 
+    /// <summary>
+    /// <b>#409: arriving from a template must not mean finding it again.</b> The whole complaint was
+    /// leaving the template, going to Message Rules, and picking that template out of a list of
+    /// thirty — so the link carries it and the picker opens on it.
+    /// </summary>
+    [Fact]
+    public async Task ArrivingWithATemplateKey_PreselectsThatTemplate()
+    {
+        using var factory = new WebAppFactory();
+        await SeedRuleAsync(factory);
+        var client = factory.CreateClientAs(UserRole.SystemAdmin);
+
+        int templateId;
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            templateId = await db.EmailTemplates
+                .Where(t => t.Key == "DayBeforeReminder").Select(t => t.Id).FirstAsync();
+        }
+
+        var html = await client.GetStringAsync(
+            $"/Admin/MessageRuleNew?teamId={factory.Seeded.TeamId}&templateId={templateId}");
+
+        Assert.Matches("value=\"DayBeforeReminder\"[^>]*selected", html);
+    }
+
+    /// <summary>
+    /// An id that is not one of this team's candidate templates selects nothing rather than being
+    /// honoured. Not the security control — create is validated server-side and team-scoped — but a
+    /// stale link silently pre-selecting nothing looks like the field is broken.
+    /// </summary>
+    [Fact]
+    public async Task ArrivingWithATemplateIdThatIsNotOurs_SelectsNothing()
+    {
+        using var factory = new WebAppFactory();
+        await SeedRuleAsync(factory);
+        var client = factory.CreateClientAs(UserRole.SystemAdmin);
+
+        var html = await client.GetStringAsync(
+            $"/Admin/MessageRuleNew?teamId={factory.Seeded.TeamId}&templateId=99999");
+
+        // Scoped to the template picker: Recipient and the channel radios always have a selection,
+        // so a bare "nothing is selected" assertion would pass for the wrong reason.
+        Assert.DoesNotMatch("value=\"DayBeforeReminder\"[^>]*selected", html);
+    }
+
+    /// <summary>
+    /// The link has to be there when the template <i>already</i> has a rule — that is the "and again a
+    /// week earlier" case, and before #409 the offer appeared only at zero rules, so a second one
+    /// meant going back to Message Rules and hunting.
+    /// </summary>
+    [Fact]
+    public async Task TheTemplatesList_OffersToAddARule_CarryingTheTemplate_EvenWhenOneExists()
+    {
+        using var factory = new WebAppFactory();
+        await SeedRuleAsync(factory, templateKey: "DayBeforeReminder");
+        var client = factory.CreateClientAs(UserRole.SystemAdmin);
+
+        var html = await client.GetStringAsync($"/Admin/EmailTemplates?teamId={factory.Seeded.TeamId}");
+
+        Assert.Matches("MessageRuleNew[^\"]*templateId=", html);
+        Assert.Contains("Add another rule", html);
+    }
+
+    /// <summary>A template nothing sends is where somebody most needs the offer, so the zero case links in-place too rather than out to the list.</summary>
+    [Fact]
+    public async Task TheTemplateEditor_WithNoRule_LinksStraightToTheCreateForm()
+    {
+        using var factory = new WebAppFactory();
+        int templateId;
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var template = new EmailTemplate
+            {
+                TeamId = factory.Seeded.TeamId, Key = "Custom.unscheduled",
+                Subject = "s", Body = "b", IsUserDefined = true, DisplayName = "Unscheduled"
+            };
+            db.EmailTemplates.Add(template);
+            await db.SaveChangesAsync();
+            templateId = template.Id;
+        }
+        var client = factory.CreateClientAs(UserRole.SystemAdmin);
+
+        var html = await client.GetStringAsync($"/Admin/EmailTemplateEdit/{templateId}");
+
+        Assert.Matches($"MessageRuleNew[^\"]*templateId={templateId}", html);
+    }
+
+    /// <summary>
+    /// A VE template cannot be attached to a rule at all (#409), so the offer must not appear on one —
+    /// an affordance leading straight to a refusal is worse than none.
+    /// </summary>
+    [Fact]
+    public async Task AVeTemplate_IsNotOfferedARule()
+    {
+        using var factory = new WebAppFactory();
+        int templateId;
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var template = new EmailTemplate
+            {
+                TeamId = factory.Seeded.TeamId, Key = "Custom.ve-callout", Subject = "s", Body = "b",
+                IsUserDefined = true, DisplayName = "VE callout",
+                Audience = EmailTemplateAudience.VolunteerExaminers
+            };
+            db.EmailTemplates.Add(template);
+            await db.SaveChangesAsync();
+            templateId = template.Id;
+        }
+        var client = factory.CreateClientAs(UserRole.SystemAdmin);
+
+        var editor = await client.GetStringAsync($"/Admin/EmailTemplateEdit/{templateId}");
+        var newRule = await client.GetStringAsync($"/Admin/MessageRuleNew?teamId={factory.Seeded.TeamId}");
+
+        Assert.DoesNotContain("MessageRuleNew", editor);
+        // Nor offered in the picker, which is the other half of the same rule.
+        Assert.DoesNotContain("Custom.ve-callout", newRule);
+    }
+
     [Fact]
     public async Task EveryTriggerPointRenders_EvenWithNoRulesOnIt()
     {

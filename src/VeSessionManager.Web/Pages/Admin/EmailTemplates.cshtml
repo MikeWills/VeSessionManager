@@ -78,6 +78,13 @@ else
                                 {
                                     <span class="chip chip-brick">No longer sent</span>
                                 }
+                                @* A count as well as the chips opposite (#409): the chips answer "how
+                                   many" when there are one or two, and stop answering it when you are
+                                   scanning thirty rows for the one you changed. *@
+                                @if (Model.RulesFor(template.Key).Count is var ruleCount && ruleCount > 0)
+                                {
+                                    <span class="chip chip-neutral">@ruleCount @(ruleCount == 1 ? "rule" : "rules")</span>
+                                }
                                 <div class="session-sub">@template.Subject</div>
                             </td>
                             <td>
@@ -105,13 +112,36 @@ else
                                     <span class="chip chip-neutral">By hand</span>
                                 }
 
-                                @* The way in to making this automatic. Without it the answer to "how do
-                                   I get this sent on a schedule" is a page you have to already know
-                                   about. *@
-                                @if (Model.RulesFor(template.Key).Count == 0 && !VeSessionManager.Web.Pages.Admin.EmailTemplatesModel.IsRetired(template.Key))
+                                @* The way in to making this automatic, carrying the template with it
+                                   (#409). It used to link at Message Rules with nothing but the team,
+                                   so the next step was finding this same template again in a list of
+                                   thirty — and it only appeared at zero rules, which left no path at
+                                   all to a second one. Both fixed here.
+
+                                   Withheld from a retired template (nothing sends it, so scheduling it
+                                   is a trap) and from a VE one (a rule cannot send it at all — see
+                                   MessageRuleAdminService.ValidateAsync). An affordance that leads
+                                   straight to a refusal is worse than no affordance. *@
+                                @if (!VeSessionManager.Web.Pages.Admin.EmailTemplatesModel.IsRetired(template.Key)
+                                     && template.Audience == VeSessionManager.Core.Entities.EmailTemplateAudience.Candidates)
                                 {
                                     <div class="session-sub">
-                                        <a asp-page="/Admin/MessageRules" asp-route-teamId="@Model.TeamId">Add a rule…</a>
+                                        @* Two literal branches rather than a ternary: Razor HTML-encodes
+                                           the result of a C# expression, so an ellipsis returned from
+                                           one renders as &#x2026; — fine in a browser, invisible to any
+                                           test asserting on the text, and the same would go for a
+                                           non-ASCII character anywhere else in this file's expressions. *@
+                                        <a asp-page="/Admin/MessageRuleNew" asp-route-teamId="@Model.TeamId"
+                                           asp-route-templateId="@template.Id">
+                                            @if (Model.RulesFor(template.Key).Count == 0)
+                                            {
+                                                <text>Add a rule…</text>
+                                            }
+                                            else
+                                            {
+                                                <text>Add another rule…</text>
+                                            }
+                                        </a>
                                     </div>
                                 }
                             </td>

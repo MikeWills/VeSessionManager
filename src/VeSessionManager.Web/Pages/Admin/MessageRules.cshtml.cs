@@ -205,6 +205,8 @@ public class MessageRulesModel(
             MessageRuleActionResult.ParameterOutOfRange => MessageDelayField.RangeMessage,
             MessageRuleActionResult.RecipientNotLegal => "That trigger cannot send to that recipient.",
             MessageRuleActionResult.TemplateNotFound => "Pick a template that exists on this team.",
+            MessageRuleActionResult.TemplateAudienceMismatch =>
+                "That template is written for VEs. A rule can only send one written for candidates.",
             MessageRuleActionResult.DiscordChannelRequired => "A Discord rule needs a channel id — without one it would post nowhere.",
             MessageRuleActionResult.DigestNeedsAChannel =>
                 "A single digest only makes sense on a channel. On email it would mean one message to one address listing everybody else.",

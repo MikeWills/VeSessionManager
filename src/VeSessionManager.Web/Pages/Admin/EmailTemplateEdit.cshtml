@@ -109,6 +109,13 @@ else if (Model.SendingRules.Count == 1)
                 <button type="submit" class="btn-secondary btn-sm">Save schedule</button>
             </div>
         </form>
+        @* One rule is the common case and its schedule is editable right here, but "and again a week
+           earlier" needs somewhere to go that is not Message Rules (#409). *@
+        <p class="session-sub" style="margin:12px 0 0;">
+            <a asp-page="/Admin/MessageRuleNew" asp-route-teamId="@Model.Template.TeamId"
+               asp-route-templateId="@Model.Template.Id">Add another rule</a>
+            to send this at a second moment as well.
+        </p>
     </div>
 }
 else if (Model.SendingRules.Count > 1)
@@ -125,6 +132,8 @@ else if (Model.SendingRules.Count > 1)
         <p>
             Sent by @Model.SendingRules.Count rules — pick one above, or see them all on
             <a asp-page="/Admin/MessageRules" asp-route-teamId="@Model.Template.TeamId">Message Rules</a>.
+            <a asp-page="/Admin/MessageRuleNew" asp-route-teamId="@Model.Template.TeamId"
+               asp-route-templateId="@Model.Template.Id">Add another rule</a>.
         </p>
     </div>
 }
@@ -132,11 +141,23 @@ else if (!Model.IsRetired)
 {
     <div class="template-trigger">
         <span class="chip chip-neutral">Not sent automatically</span>
-        <p>
-            Nothing sends this on a schedule. Add a rule on
-            <a asp-page="/Admin/MessageRules" asp-route-teamId="@Model.Template.TeamId">Message Rules</a>
-            to make it automatic.
-        </p>
+        @* Straight into the create form with this template already chosen (#409). It used to link at
+           Message Rules with only the team, which meant finding this same template again in a list of
+           thirty — the complaint that prompted the whole change. Withheld from a VE template: a rule
+           cannot send one, so the offer would lead to a refusal. *@
+        @if (Model.Template.Audience == VeSessionManager.Core.Entities.EmailTemplateAudience.Candidates)
+        {
+            <p>
+                Nothing sends this on a schedule.
+                <a asp-page="/Admin/MessageRuleNew" asp-route-teamId="@Model.Template.TeamId"
+                   asp-route-templateId="@Model.Template.Id">Add a rule</a>
+                to make it automatic.
+            </p>
+        }
+        else
+        {
+            <p>Written for VEs, so it is sent by hand from the VE Directory — a rule can only send a template written for candidates.</p>
+        }
     </div>
 }
 
