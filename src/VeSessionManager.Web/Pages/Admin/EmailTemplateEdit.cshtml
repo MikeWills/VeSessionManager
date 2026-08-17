@@ -68,6 +68,11 @@ else if (Model.SendingRules.Count == 1)
                 </div>
             </div>
 
+            @* align-items:flex-end lines up the *bottoms of the boxes*, which is only the same thing
+               as lining up the controls while every box ends in its control. A caption under the days
+               input, or a label wrapping to two lines, makes that box taller and drops the select and
+               the button to match it — which is exactly what happened. So the boxes hold label plus
+               control and nothing else, and the caption sits under the whole row. *@
             <div style="display:flex; gap:16px; flex-wrap:wrap; align-items:flex-end;">
                 @if (rule.TakesParameter)
                 {
@@ -78,11 +83,6 @@ else if (Model.SendingRules.Count == 1)
                                max="@MessageDelay.Format(MessageDelay.Maximum)"
                                step="@MessageDelay.Format(MessageDelay.Step)"
                                value="@rule.ParameterDaysText" required />
-                        @* Days on the form, hours in the column, and that is not a cosmetic split: a
-                           duration between two instants has no calendar date in it, so there is no
-                           timezone for an evening session to get wrong (#220). Halves keep "12 hours
-                           before" reachable. *@
-                        <span class="session-sub">Whole or half days — 0.5 is twelve hours.</span>
                     </div>
                 }
                 @if (rule.Channel == VeSessionManager.Core.Entities.MessageChannel.Email)
@@ -103,11 +103,24 @@ else if (Model.SendingRules.Count == 1)
                 {
                     <div class="field" style="margin:0;">
                         <span class="label-text">Posted to Discord</span>
-                        <span class="session-sub">Channel and fan-out are set on the rule.</span>
                     </div>
                 }
                 <button type="submit" class="btn-secondary btn-sm">Save schedule</button>
             </div>
+
+            @* Days on the form, hours in the column, and that is not a cosmetic split: a duration
+               between two instants has no calendar date in it, so there is no timezone for an evening
+               session to get wrong (#220). Halves keep "12 hours before" reachable. *@
+            <p class="session-sub" style="margin:8px 0 0;">
+                @if (rule.TakesParameter)
+                {
+                    <text>Whole or half days — 0.5 is twelve hours.</text>
+                }
+                @if (rule.Channel != VeSessionManager.Core.Entities.MessageChannel.Email)
+                {
+                    <text>Channel and fan-out are set on the rule.</text>
+                }
+            </p>
         </form>
         @* One rule is the common case and its schedule is editable right here, but "and again a week
            earlier" needs somewhere to go that is not Message Rules (#409). *@
