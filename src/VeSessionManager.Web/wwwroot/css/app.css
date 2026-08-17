@@ -283,7 +283,13 @@ tbody tr.row-highlight, tbody tr.row-highlight:hover { background: var(--amber-d
 .view-link:hover { text-decoration: underline; }
 
 /* Buttons */
-.vesm button, .vesm .btn { font-family: inherit; font-size: 14px; font-weight: 600; border-radius: 5px; padding: 11px 16px; cursor: pointer; border: 1px solid transparent; white-space: nowrap; display: inline-block; text-decoration: none; }
+/* The variant classes are listed here, not just `.btn`, because every anchor-button in this app is
+   written `<a class="btn-secondary btn-sm">` — 24 of them, none carrying `.btn`. Without this they
+   matched no base rule at all and rendered as plain inline text: weight 400, no border, no radius,
+   `display: inline`, sitting next to an identically-classed <button> that had all four. Measured in
+   a browser rather than reasoned about, because this is the `.vesm button` specificity trap
+   CLAUDE.md records and it had already been misread three times. */
+.vesm button, .vesm .btn, .vesm .btn-primary, .vesm .btn-secondary, .vesm .btn-danger { font-family: inherit; font-size: 14px; font-weight: 600; border-radius: 5px; padding: 11px 16px; cursor: pointer; border: 1px solid transparent; white-space: nowrap; display: inline-block; text-decoration: none; }
 .btn-primary { background: var(--panel); color: #fff; }
 .btn-primary:hover { background: var(--panel-2); }
 .btn-secondary { background: var(--surface); color: var(--ink); border-color: var(--line-strong); }
@@ -292,6 +298,9 @@ tbody tr.row-highlight, tbody tr.row-highlight:hover { background: var(--amber-d
    (0,1,0). The result was a white button on a white panel with no border at all — every secondary
    button in the app rendering as plain text. Same specificity trap as .nav-toggle and the anchor
    buttons, third instance. */
+/* Equal specificity to the base rule above now that the variants are named there, so these must
+   stay AFTER it — the border shorthand would otherwise leave every secondary button borderless
+   again, which is the exact regression the comment above this pair describes. */
 .vesm .btn-secondary { border-color: var(--line-strong); }
 .vesm .btn-danger { border-color: var(--brick-dim); }
 .btn-secondary:hover { border-color: var(--ink); }
@@ -705,7 +714,7 @@ footer.roster { margin-top: 28px; background: var(--surface); border: 1px solid 
   main.vesm-main.wide { padding: 32px 28px 100px; }
   .vesm-footer { padding: 0 28px 32px; }
 
-  .vesm button, .vesm .btn { font-size: 13px; padding: 9px 16px; }
+  .vesm button, .vesm .btn, .vesm .btn-primary, .vesm .btn-secondary, .vesm .btn-danger { font-size: 13px; padding: 9px 16px; }
   .btn-sm { padding: 6px 11px; font-size: 12px; }
   .kebab { padding: 6px 9px; }
 

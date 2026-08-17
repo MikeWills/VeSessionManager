@@ -59,14 +59,8 @@ public class CandidateEmailModel(
     /// <summary>Blank for most of a session's candidates most of the time — see <see cref="CallSignWarningCount"/>.</summary>
     public const string CallSignPlaceholder = "{{CallSign}}";
 
-    /// <summary>
-    /// Templates a hand-composed message can start from. Deliberately not every seeded key: the
-    /// felony-disclosure and youth-program emails carry per-candidate applicability rules (#221,
-    /// #274) and stay the single-candidate buttons they already are, and the payment-expiration
-    /// notice goes to the team's own admin address rather than to candidates.
-    /// </summary>
-    private static readonly string[] ComposableKeys =
-        ["GettingStartedLocally", "RegistrationConfirmation", "DayBeforeReminder"];
+    // Which templates can start one lives in ComposableEmailTemplates — the session's Email
+    // candidates menu offers the same list as shortcuts, and two copies would drift (#394 follow-up).
 
     /// <param name="LastSentDisplay">When this candidate last had the chosen template, or null. What makes a second pass over a session possible without sending twice.</param>
     /// <param name="CanReceive">From <see cref="CandidateCapabilities"/>, not computed here — that is the one home for "is this action applicable to this candidate" (#274).</param>
@@ -169,24 +163,8 @@ public class CandidateEmailModel(
 
         Session = session;
 
-        var templates = await dbContext.EmailTemplates
-            .Where(t => t.TeamId == session.TeamId && (t.IsUserDefined || ComposableKeys.Contains(t.Key)))
-            .Select(t => new { t.Key, t.IsUserDefined, t.DisplayName })
-            .ToListAsync(HttpContext.RequestAborted);
-
-        // Shipped ones first, in ComposableKeys order rather than the database's, so the picker opens
-        // with the one this screen was built for; then the team's own, alphabetically, since nothing
-        // ranks them.
-        Templates =
-        [
-            .. ComposableKeys
-                .Where(key => templates.Any(t => t.Key == key))
-                .Select(key => new TemplateChoice(key, EmailTemplateLabels.For(key))),
-            .. templates
-                .Where(t => t.IsUserDefined)
-                .Select(t => new TemplateChoice(t.Key, t.DisplayName ?? EmailTemplateLabels.For(t.Key)))
-                .OrderBy(t => t.Label)
-        ];
+        Templates = [.. (await ComposableEmailTemplates.LoadAsync(dbContext, session.TeamId, HttpContext.RequestAborted))
+            .Select(c => new TemplateChoice(c.Key, c.Label))];
 
         var candidates = await dbContext.Candidates
             .Where(c => c.SessionId == Id)
