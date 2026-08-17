@@ -21,6 +21,8 @@ using VeSessionManager.Core.ExamTools;
 using VeSessionManager.Core.Ingestion;
 using VeSessionManager.Core.Jobs;
 using VeSessionManager.Core.Navigation;
+using VeSessionManager.Core.Messaging;
+using VeSessionManager.Core.Messaging.Scanners;
 using VeSessionManager.Core.Notifications;
 using VeSessionManager.Core.Payments;
 using VeSessionManager.Core.Reporting;
@@ -96,6 +98,15 @@ builder.Services.AddScoped<RefundService>();
 builder.Services.AddScoped<IEmailSender, SmtpEmailSender>();
 builder.Services.AddScoped<EmailTemplateRenderer>();
 builder.Services.AddScoped<CandidateNotificationService>();
+
+// Trigger points (#401). Registered in both hosts: the Worker runs the daily pass, and Web reaches
+// the same engine through TeamPipeline's CandidateRegistered step when somebody presses Refresh.
+builder.Services.AddScoped<IMessageTriggerScanner, CandidateRegisteredScanner>();
+builder.Services.AddScoped<IMessageTriggerScanner, BeforeSessionStartScanner>();
+builder.Services.AddScoped<IMessageTriggerScanner, FccFeeOutstandingScanner>();
+builder.Services.AddScoped<IMessageTriggerScanner, PaymentUnpaidScanner>();
+builder.Services.AddScoped<MessageDispatchService>();
+builder.Services.AddScoped<MessageRuleService>();
 
 builder.Services.AddScoped<VecSubmissionService>();
 builder.Services.AddScoped<VolunteerExaminerReportService>();

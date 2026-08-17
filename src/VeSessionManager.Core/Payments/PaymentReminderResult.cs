@@ -1,12 +1,15 @@
 namespace VeSessionManager.Core.Payments;
 
+/// <summary>
+/// What one <c>PaymentReminderService</c> run did. Two counters since #401 — the "FCC fee reminders
+/// sent" and "failed" counts went with the two messages that moved onto trigger points, and are
+/// reported by <c>MessageRuleResult</c> now.
+/// </summary>
 public class PaymentReminderResult
 {
-    public int RemindersSent { get; set; }
     public int ExpirationsProcessed { get; set; }
     public int CandidatesFlaggedForReview { get; set; }
-    public int Failed { get; set; }
 
     public override string ToString() =>
-        $"FCC fee reminders sent {RemindersSent}, expirations processed {ExpirationsProcessed}, candidates flagged for review {CandidatesFlaggedForReview}, failed {Failed}";
+        $"expirations processed {ExpirationsProcessed}, candidates flagged for review {CandidatesFlaggedForReview}";
 }

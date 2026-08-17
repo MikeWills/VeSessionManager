@@ -1,5 +1,11 @@
 # Payment Reminder & Expiration Job (Phase 6)
 
+
+> **Superseded in part by `docs/trigger-points.md` (#401, 2026-08-16.)** The four messages this app
+> sent automatically are per-team `MessageRule` rows now, with their thresholds expressed in hours,
+> so "when does this go out" is no longer answered by the code described below. Everything here about
+> *what* each message says, who receives it and which placeholders resolve is still accurate.
+
 > See `docs/email-reference.md` for these two templates alongside all four of the app's other
 > outbound emails in one place (full placeholder tables, send pipeline, per-team config). This doc
 > remains the right place for the reminder/expiration *logic* detail below (thresholds, exclusions).

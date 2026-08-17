@@ -14,6 +14,8 @@ using VeSessionManager.Core.Uls;
 using VeSessionManager.Core.Ingestion;
 using VeSessionManager.Core.Integrations;
 using VeSessionManager.Core.Jobs;
+using VeSessionManager.Core.Messaging;
+using VeSessionManager.Core.Messaging.Scanners;
 using VeSessionManager.Core.Navigation;
 using VeSessionManager.Core.Notifications;
 using VeSessionManager.Core.Payments;
@@ -120,6 +122,16 @@ builder.Services.AddScoped<IEmailSender, SmtpEmailSender>();
 builder.Services.AddScoped<EmailTemplateRenderer>();
 builder.Services.AddScoped<CandidateNotificationService>();
 
+// Trigger points (#401). The scanners are registered as IMessageTriggerScanner rather than by their
+// own types: MessageRuleService resolves the set and matches on Trigger, so adding one is a
+// registration here plus a definition in MessageTriggerDefinitions, and nothing else changes.
+builder.Services.AddScoped<IMessageTriggerScanner, CandidateRegisteredScanner>();
+builder.Services.AddScoped<IMessageTriggerScanner, BeforeSessionStartScanner>();
+builder.Services.AddScoped<IMessageTriggerScanner, FccFeeOutstandingScanner>();
+builder.Services.AddScoped<IMessageTriggerScanner, PaymentUnpaidScanner>();
+builder.Services.AddScoped<MessageDispatchService>();
+builder.Services.AddScoped<MessageRuleService>();
+
 builder.Services.Configure<UlsLookupOptions>(builder.Configuration.GetSection(UlsLookupOptions.SectionName));
 // Singleton: owns its own HttpClient, same reasoning as the other API clients. No credentials, so
 // unlike Zoom/Square/Email this isn't an optional integration — it always runs.
@@ -152,7 +164,7 @@ builder.Services.AddScoped<TeamSecretsMigrationService>();
 
 builder.Services.AddScoped<JobRunHistoryLogger>();
 builder.Services.AddHostedService<SessionIngestionJob>();
-builder.Services.AddHostedService<DayBeforeReminderJob>();
+builder.Services.AddHostedService<MessageRuleJob>();
 builder.Services.AddHostedService<UlsWatcherJob>();
 builder.Services.AddHostedService<LicenseWatchJob>();
 builder.Services.AddHostedService<PaymentReminderJob>();

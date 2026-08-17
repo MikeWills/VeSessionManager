@@ -67,5 +67,5 @@ one-time gap for pre-existing rows only; every `Payment` created after that migr
   `HasDefaultValue` in `AppDbContext`, not just the C# property initializer), so a row inserted
   outside EF or updated by the migration itself for pre-existing teams still gets `30`, not `0`.
 - **`Jobs:SquareLinkPurgeIntervalHours`** (appsettings, default `24`) — global job cadence, same
-  24-hour `PeriodicTimer` idiom as `PaymentReminderJob`/`DayBeforeReminderJob`. Not pinned to a
+  24-hour `PeriodicTimer` idiom as `PaymentReminderJob`/`MessageRuleJob`. Not pinned to a
   specific wall-clock time; an extra same-day tick is a no-op thanks to `SquareLinkPurgedUtc`.

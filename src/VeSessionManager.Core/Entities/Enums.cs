@@ -196,3 +196,93 @@ public enum UserRole
     SessionManager = 2,
     TeamLead = 3
 }
+
+/// <summary>
+/// A moment when a condition first becomes true for a subject, and the thing a team hangs its own
+/// <see cref="MessageRule"/>s off (#401). See docs/trigger-points.md.
+///
+/// <para>Two mechanisms, and the difference decides how a scanner is written rather than being a
+/// label: a <b>state</b> trigger fires when a stored value changes (the moment is a stored
+/// timestamp), and a <b>time-relative</b> trigger fires a configurable number of hours either side of
+/// an anchor instant. <see cref="Messaging.MessageTriggerDefinitions"/> is where that is recorded.</para>
+/// </summary>
+public enum MessageTrigger
+{
+    /// <summary>A candidate appeared in ExamTools' feed. Replaces the hardcoded RegistrationConfirmation send.</summary>
+    CandidateRegistered = 0,
+
+    /// <summary>Time-relative, before <c>Session.ScheduledStartUtc</c>. Replaces the 24-hour DayBeforeReminder.</summary>
+    BeforeSessionStart = 1,
+
+    /// <summary>Time-relative, after <c>Candidate.ApplicationDateEnteredUtc</c>, while FCC still wants its own fee. Replaces the 5-day FccFeeReminder5Day.</summary>
+    FccFeeOutstanding = 2,
+
+    /// <summary>Time-relative, after the application/result anchor, while a Square payment is still unpaid. Replaces the 10-day PaymentExpirationNotice.</summary>
+    PaymentUnpaid = 3
+}
+
+/// <summary>How a <see cref="MessageRule"/> delivers. Discord is declared but not yet dispatchable — see <see cref="MessageRecipient"/>.</summary>
+public enum MessageChannel
+{
+    Email = 0,
+    Discord = 1
+}
+
+/// <summary>
+/// Who a <see cref="MessageRule"/> addresses. <see cref="TeamAdminAddress"/> replaces the
+/// PaymentExpirationNotice special case, which was the one hardcoded send that never went to a
+/// candidate.
+///
+/// <para><b>Two of these cannot yet be dispatched.</b> <see cref="SessionLead"/> and
+/// <see cref="DiscordChannel"/> are part of the agreed model and are declared here so the column
+/// never has to be widened, but <c>MessageDispatchService</c> refuses them outright rather than
+/// guessing. Nothing can create such a rule today — the seeder is the only writer.</para>
+/// </summary>
+public enum MessageRecipient
+{
+    Candidate = 0,
+    TeamAdminAddress = 1,
+    SessionLead = 2,
+    DiscordChannel = 3
+}
+
+/// <summary>
+/// Whether a rule produces one message per subject or one message covering them all.
+///
+/// <para>Named explicitly rather than derived from <see cref="MessageChannel"/>, because getting it
+/// wrong posts to a Discord room forty times or sends one email addressed to nobody.</para>
+/// </summary>
+public enum MessageFanOut
+{
+    PerRecipient = 0,
+    PerSubject = 1
+}
+
+/// <summary>
+/// What happened when a rule fired for one subject — recorded on <see cref="MessageRuleRun"/>.
+///
+/// <para><b>Only <see cref="Sent"/> and <see cref="Suppressed"/> are terminal</b>, and that
+/// distinction is the whole idempotency model: a scanner excludes subjects that already have a
+/// terminal run, and returns the others again. See <see cref="MessageRuleRun"/>.</para>
+/// </summary>
+public enum MessageRuleOutcome
+{
+    /// <summary>Handed to SMTP without error. Terminal.</summary>
+    Sent = 0,
+
+    /// <summary>The team has email switched off. Terminal — the settle-without-doing rule: nothing is queued while it is off, so re-enabling starts fresh from that moment rather than flushing a backlog.</summary>
+    Suppressed = 1,
+
+    /// <summary>There was no address to send to. <b>Not</b> terminal: an address added later should still get the message.</summary>
+    NoRecipient = 2,
+
+    /// <summary>The render or the send failed. <b>Not</b> terminal — retried on the next scan, exactly as a failed send has always been.</summary>
+    Failed = 3
+}
+
+/// <summary>What a <see cref="MessageRuleRun.SubjectId"/> points at. A trigger has exactly one subject type; see <see cref="Messaging.MessageTriggerDefinitions"/>.</summary>
+public enum MessageSubjectType
+{
+    Candidate = 0,
+    Payment = 1
+}

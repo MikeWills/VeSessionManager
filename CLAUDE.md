@@ -126,6 +126,21 @@ would be pure duplication — and goes straight to `CHANGELOG.md` instead. Non-p
 redesigns, hardening passes) start here and move to `CHANGELOG.md` once the section is at/over the
 cap and a newer entry needs to be added; oldest goes first.
 
+- **When each automatic email goes out is a per-team row now, not a constant (2026-08-16).** Issue
+  #401, PR1 of four — the engine, with behaviour frozen; the admin screen, new triggers, Discord and
+  the envelope fields follow. See `docs/trigger-points.md`. The four hardcoded sends are
+  `MessageRule`s against four trigger points, their thresholds expressed in **hours** so no calendar
+  date exists to get wrong (#220 made structural), and `MessageRuleRun` replaces the
+  `Candidate.*SentUtc` columns as both marker and log — which is what closes #396, since a muted send
+  can now record `Suppressed` instead of a timestamp claiming it was sent. Three things worth carrying
+  forward: **`MessageRule.CreatedUtc` bounds every scan**, which is the only thing standing between
+  adding a rule and mailing everyone already past its moment, and is why the seeded rules are stamped
+  at deploy time; **`PaymentUnpaidScanner` must not filter on `ExpiredUnpaid`** — that write stayed in
+  `PaymentReminderService` and is normally already true by the time the rule scans, so filtering on it
+  would silently stop the notice with nothing looking wrong; and **only `Sent`/`Suppressed` are
+  terminal**, so a failed send is logged *and* retried, with the retry updating the row rather than
+  inserting past the unique index.
+
 - **Candidates can be emailed by hand from a session now, from templates a team writes itself (2026-08-16).** Issue #144, both PRs.
   See `docs/candidate-email.md`. Pick candidates, start from a template, **edit the message**, send —
   which is a shape this app did not have: every other candidate email is composed by code. The issue
@@ -268,22 +283,6 @@ cap and a newer entry needs to be added; oldest goes first.
   a `?v=` query so an asset-URL assertion on the literal name finds nothing, and the app's first
   `fetch()` needed **no** antiforgery config — `RequestVerificationToken` is already
   `HeaderName`'s default, proven by a mutation test that deleted the line and stayed green.
-
-- **The phone logged out constantly and the desktop did not (2026-08-13).** Issue #340. See
-  `docs/remember-me.md`. Every sign-in passed `isPersistent: false`, so the cookie had no `Expires`
-  and lived only as long as the browser *process* — a desktop browser runs for days, phones kill and
-  restart theirs constantly. **Persistence alone would not have fixed it**, which is the part that
-  looks finished after the first half: `PasswordSignInAsync` takes only an `isPersistent` flag and
-  the resulting cookie still expires after `ExpireTimeSpan` (8h, deliberate, #159), so a
-  once-a-day phone goes from "every time" to "daily". The window has to be set explicitly as
-  `AuthenticationProperties.ExpiresUtc` — 30 days, opt-in, default off. Sliding expiration then
-  slides by the *ticket's own* duration, not `ExpireTimeSpan`. Shipped with **"Sign out other
-  devices"** because a 30-day session needs a way to end it; that is a security-stamp rotation, so
-  it is **not instant** (30-minute revalidation) and the page says so. Three things that are not
-  obvious: the password path checks and signs in as two steps so exactly *one* `Set-Cookie` is
-  written; the provider buttons had to move *inside* the credentials form for the checkbox to reach
-  the external round trip; and **ASP.NET Core writes `expires=`, not `max-age=`** — the first test
-  asserted on the wrong one and failed against a correct cookie.
 
 Everything through Phase 0-10's initial build (ExamTools ingestion, Zoom/Discord, Square, email
 notifications, FCC ULS watcher, payment reminders, VE tracking, VEC submission tracker, admin

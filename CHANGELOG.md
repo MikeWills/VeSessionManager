@@ -8,6 +8,22 @@ that window, or immediately if it's phase-numbered work already summarized in "C
 design rationale for any entry still lives in its linked `/docs/*.md` file, not here or in
 CLAUDE.md — this file, like CLAUDE.md's Change Log, is pointers only.
 
+- **The phone logged out constantly and the desktop did not (2026-08-13).** Issue #340. See
+  `docs/remember-me.md`. Every sign-in passed `isPersistent: false`, so the cookie had no `Expires`
+  and lived only as long as the browser *process* — a desktop browser runs for days, phones kill and
+  restart theirs constantly. **Persistence alone would not have fixed it**, which is the part that
+  looks finished after the first half: `PasswordSignInAsync` takes only an `isPersistent` flag and
+  the resulting cookie still expires after `ExpireTimeSpan` (8h, deliberate, #159), so a
+  once-a-day phone goes from "every time" to "daily". The window has to be set explicitly as
+  `AuthenticationProperties.ExpiresUtc` — 30 days, opt-in, default off. Sliding expiration then
+  slides by the *ticket's own* duration, not `ExpireTimeSpan`. Shipped with **"Sign out other
+  devices"** because a 30-day session needs a way to end it; that is a security-stamp rotation, so
+  it is **not instant** (30-minute revalidation) and the page says so. Three things that are not
+  obvious: the password path checks and signs in as two steps so exactly *one* `Set-Cookie` is
+  written; the provider buttons had to move *inside* the credentials form for the checkbox to reach
+  the external round trip; and **ASP.NET Core writes `expires=`, not `max-age=`** — the first test
+  asserted on the wrong one and failed against a correct cookie.
+
 - **Every Worker job now has its tick driven by a test (2026-08-11).** Issue #325. See
   `docs/worker-job-tests.md`. The Worker had **no test project at all** — nine background jobs running
   unattended on the deploy box, none of which had ever been executed. Each job's tick is now

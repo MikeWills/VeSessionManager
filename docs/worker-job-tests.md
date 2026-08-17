@@ -48,7 +48,7 @@ each test name its own dependencies is how you notice a tick reaching for someth
 | `ReconciliationJob` | `ReconciliationJobTests` | Per-team rows, the run summary, a team deleted mid-tick |
 | `HistoricalImportJob` | `QueueDrainAndPurgeJobTests` | Peek before logging; stale-`Running` resumption |
 | `PiiPurgeJob` | `QueueDrainAndPurgeJobTests` | One global run per tick, with a summary |
-| `DayBeforeReminderJob`, `PaymentReminderJob`, `SquareLinkPurgeJob` | `PerTeamDailyJobWiringTests` | Which schedule key and which service each subclass wires |
+| `MessageRuleJob`, `PaymentReminderJob`, `SquareLinkPurgeJob` | `PerTeamDailyJobWiringTests` | Which schedule key and which service each subclass wires |
 | all | `JobRegistrationTests` | Class ⇄ registration ⇄ descriptor |
 | all | `JobCoverageCompletenessTests` | A new job cannot be added without a test that runs it |
 | — | `JobTickTests` | The guard that stops a throw taking down the host |
@@ -84,7 +84,7 @@ production code and the suite re-run; each mutation failed **exactly one** test:
 | Bind reconciliation to the void `RunAsync` | `TheRunSummaryReachesTheHistoryRow` |
 | Remove the deleted-team guard | `ATeamDeletedBetweenTheListAndTheReRead_…` |
 | Remove `HistoricalImportJob`'s peek | `AnEmptyQueue_WritesNoHistoryRowAtAll` |
-| Give `DayBeforeReminderJob` the payment-reminder key | `DayBeforeReminder_FilesItsRunUnderItsOwnScheduleKey` |
+| Give `MessageRuleJob` the payment-reminder key | `MessageRule_FilesItsRunUnderItsOwnScheduleKey` |
 
 ### The one that did not discriminate at first
 

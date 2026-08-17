@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using VeSessionManager.Core.Entities;
 using VeSessionManager.Core.Jobs;
+using VeSessionManager.Core.Messaging;
 using VeSessionManager.Core.Notifications;
 using VeSessionManager.Core.Payments;
 
@@ -92,25 +93,25 @@ public class PerTeamDailyJobWiringTests
         return await verify.JobRunHistories.AsNoTracking().SingleAsync();
     }
 
-    // ---- DayBeforeReminderJob ------------------------------------------------------------------
+    // ---- MessageRuleJob ------------------------------------------------------------------
 
     [Fact]
-    public void DayBeforeReminder_ResolvesTheNotificationService()
+    public void MessageRule_ResolvesTheMessageRuleService()
     {
-        var job = new DayBeforeReminderJob(null!, null!, Quiet.Logger<DayBeforeReminderJob>());
-        Assert.Equal(typeof(CandidateNotificationService), ServiceResolvedBy(job));
+        var job = new MessageRuleJob(null!, null!, Quiet.Logger<MessageRuleJob>());
+        Assert.Equal(typeof(MessageRuleService), ServiceResolvedBy(job));
     }
 
     [Fact]
-    public async Task DayBeforeReminder_FilesItsRunUnderItsOwnScheduleKey()
+    public async Task MessageRule_FilesItsRunUnderItsOwnScheduleKey()
     {
         await using var harness = await CreateHarnessAsync();
 
         var row = await RunOneTeamAsync(
-            h => new DayBeforeReminderJob(h.ScopeFactory, h.Configuration, Quiet.Logger<DayBeforeReminderJob>()),
+            h => new MessageRuleJob(h.ScopeFactory, h.Configuration, Quiet.Logger<MessageRuleJob>()),
             harness);
 
-        Assert.Equal(JobSchedules.DayBeforeReminder, row.JobName);
+        Assert.Equal(JobSchedules.MessageRule, row.JobName);
     }
 
     // ---- PaymentReminderJob --------------------------------------------------------------------
@@ -167,7 +168,7 @@ public class PerTeamDailyJobWiringTests
     {
         PerTeamDailyJob[] jobs =
         [
-            new DayBeforeReminderJob(null!, null!, Quiet.Logger<DayBeforeReminderJob>()),
+            new MessageRuleJob(null!, null!, Quiet.Logger<MessageRuleJob>()),
             new PaymentReminderJob(null!, null!, Quiet.Logger<PaymentReminderJob>()),
             new SquareLinkPurgeJob(null!, null!, Quiet.Logger<SquareLinkPurgeJob>())
         ];

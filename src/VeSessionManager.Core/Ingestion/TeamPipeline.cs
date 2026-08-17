@@ -1,7 +1,7 @@
 using VeSessionManager.Core.Entities;
 using VeSessionManager.Core.ExamResults;
 using VeSessionManager.Core.Jobs;
-using VeSessionManager.Core.Notifications;
+using VeSessionManager.Core.Messaging;
 using VeSessionManager.Core.Payments;
 using VeSessionManager.Core.Scheduling;
 using VeSessionManager.Core.VolunteerExaminers;
@@ -10,7 +10,7 @@ namespace VeSessionManager.Core.Ingestion;
 
 /// <summary>
 /// The one definition of a team's refresh pipeline: ingest, sync the VE roster, sync exam results,
-/// schedule Zoom/Discord, generate payment links, send registration confirmations — in that order.
+/// schedule Zoom/Discord, generate payment links, run the CandidateRegistered rules — in that order.
 ///
 /// <para><b>Why this exists.</b> That ordered list used to be written out three times: in the
 /// Worker's SessionIngestionJob, and twice in ManualCandidateRefreshService (team-wide and
@@ -27,7 +27,7 @@ public class TeamPipeline(
     ExamResultSyncService examResultSyncService,
     SessionEventSchedulingService schedulingService,
     PaymentGenerationService paymentGenerationService,
-    CandidateNotificationService notificationService,
+    MessageRuleService messageRuleService,
     JobRunHistoryLogger jobRunHistoryLogger)
 {
     /// <summary>
@@ -70,9 +70,12 @@ public class TeamPipeline(
 
         await RunStepAsync("PaymentGeneration", ct => paymentGenerationService.RunAsync(team, ct, onlySessionId));
 
-        var email = new EmailNotificationResult();
+        // Scoped to CandidateRegistered on purpose (#401). This step runs on the ~5-minute ingestion
+        // tick and from the session-detail refresh button; running the whole rule set here would move
+        // the pre-session reminder off its daily job and onto whenever somebody pressed refresh.
+        var email = new MessageRuleResult();
         await RunStepAsync("RegistrationConfirmation", async ct =>
-            email = await notificationService.SendRegistrationConfirmationsAsync(team, ct, onlySessionId));
+            email = await messageRuleService.RunAsync(team, [MessageTrigger.CandidateRegistered], onlySessionId, ct));
 
         return new TeamPipelineResult(ingestion, email, failedSteps);
 
@@ -104,4 +107,4 @@ public class TeamPipeline(
 /// success</b>: the counts above are all zero in that case too, and are indistinguishable from a run
 /// that simply had nothing to do.
 /// </param>
-public record TeamPipelineResult(IngestionResult Ingestion, EmailNotificationResult Email, int FailedSteps);
+public record TeamPipelineResult(IngestionResult Ingestion, MessageRuleResult Email, int FailedSteps);

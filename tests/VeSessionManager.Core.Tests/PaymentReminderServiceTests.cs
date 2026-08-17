@@ -4,12 +4,24 @@ using Microsoft.Extensions.Options;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Email;
 using VeSessionManager.Core.Entities;
+using VeSessionManager.Core.Messaging;
 using VeSessionManager.Core.Payments;
 using VeSessionManager.Core.Integrations;
 using Xunit;
 
 namespace VeSessionManager.Core.Tests;
 
+/// <summary>
+/// The two money passes, end to end — <c>PaymentReminderService</c>'s local bookkeeping and the two
+/// trigger points that took over its messages (#401).
+///
+/// <para><b>Driven through both, in the order a deployment runs them</b> (see <see cref="Runner"/>).
+/// The FCC-fee reminder and the expiration notice are rules now, and expiring a payment is a
+/// separate job, but the behaviour anybody cares about is the composite — so the tests still assert
+/// "reminded, expired, flagged" and stayed almost entirely as they were. Expiring first is
+/// deliberate: it proves <c>PaymentUnpaidScanner</c> ignores <c>ExpiredUnpaid</c>, which is the one
+/// filter that would silently stop the notice ever going out.</para>
+/// </summary>
 public class PaymentReminderServiceTests
 {
     private static readonly DateTime Now = new(2026, 7, 20, 12, 0, 0, DateTimeKind.Utc);
@@ -38,13 +50,56 @@ public class PaymentReminderServiceTests
         return new AppDbContext(options);
     }
 
-    private static PaymentReminderService CreateService(AppDbContext dbContext, IEmailSender emailSender, int unmatchedReviewWindowDays = 5) => new(
-        dbContext,
-        new EmailTemplateRenderer(dbContext, NullLogger<EmailTemplateRenderer>.Instance),
-        emailSender, new TeamIntegrationState(NullLogger<TeamIntegrationState>.Instance),
-        new FixedTimeProvider(Now),
-        Options.Create(new PaymentReminderOptions { UnmatchedReviewWindowDays = unmatchedReviewWindowDays }),
-        NullLogger<PaymentReminderService>.Instance);
+    /// <summary>What one day's worth of both jobs did, flattened back into the shape these tests were written against.</summary>
+    private sealed record CombinedResult(int RemindersSent, int ExpirationsProcessed, int CandidatesFlaggedForReview, int Failed);
+
+    /// <summary>
+    /// Runs the expiry/flag pass and then the two money rules, one trigger at a time so the FCC-fee
+    /// reminder and the expiration notice stay separately countable.
+    /// </summary>
+    private sealed class Runner(AppDbContext dbContext, IEmailSender emailSender, int unmatchedReviewWindowDays)
+    {
+        public async Task<CombinedResult> RunAsync(Team team, CancellationToken cancellationToken)
+        {
+            var bookkeeping = await new PaymentReminderService(
+                dbContext,
+                new FixedTimeProvider(Now),
+                Options.Create(new PaymentReminderOptions { UnmatchedReviewWindowDays = unmatchedReviewWindowDays }),
+                NullLogger<PaymentReminderService>.Instance).RunAsync(team, cancellationToken);
+
+            var rules = MessageRuleTestHarness.Create(dbContext, emailSender, new FixedTimeProvider(Now));
+            var reminders = await rules.RunAsync(team, [MessageTrigger.FccFeeOutstanding], null, cancellationToken);
+            var notices = await rules.RunAsync(team, [MessageTrigger.PaymentUnpaid], null, cancellationToken);
+
+            return new CombinedResult(
+                reminders.Sent,
+                bookkeeping.ExpirationsProcessed,
+                bookkeeping.CandidatesFlaggedForReview,
+                reminders.Failed + notices.Failed);
+        }
+    }
+
+    private static Runner CreateService(AppDbContext dbContext, IEmailSender emailSender, int unmatchedReviewWindowDays = 5) =>
+        new(dbContext, emailSender, unmatchedReviewWindowDays);
+
+    /// <summary>Records that this team's rule for <paramref name="trigger"/> already fired for a subject — what stops a resend now.</summary>
+    private static async Task MarkAlreadyFiredAsync(
+        AppDbContext dbContext, Team team, MessageTrigger trigger, int subjectId, MessageSubjectType subjectType)
+    {
+        var rule = await dbContext.MessageRules.FirstAsync(r => r.TeamId == team.Id && r.Trigger == trigger);
+        dbContext.MessageRuleRuns.Add(new MessageRuleRun
+        {
+            TeamId = team.Id,
+            MessageRuleId = rule.Id,
+            RuleName = rule.Name,
+            Trigger = trigger,
+            SubjectType = subjectType,
+            SubjectId = subjectId,
+            FiredUtc = Now.AddDays(-1),
+            Outcome = MessageRuleOutcome.Sent
+        });
+        await dbContext.SaveChangesAsync();
+    }
 
     /// <summary>Seeds a Team. emailConfigured=true (default) sets SmtpHost/Username so Team.IsEmailConfigured is true.</summary>
     private static async Task<Team> SeedTeamAsync(AppDbContext dbContext, bool emailConfigured = true)
@@ -88,6 +143,14 @@ public class PaymentReminderServiceTests
             Subject = "Expired",
             Body = "{{CandidateName}} owes {{PaymentAmount}} from {{SessionDate}}"
         });
+
+        // The two rules that replaced this service's own sends. CreatedUtc a year back so it bounds
+        // nothing — these tests are about the thresholds, and the bound has its own tests.
+        dbContext.MessageRules.Add(MessageRuleTestHarness.NewRule(
+            team, MessageTrigger.FccFeeOutstanding, "FccFeeReminder5Day", 120, Now.AddYears(-1)));
+        dbContext.MessageRules.Add(MessageRuleTestHarness.NewRule(
+            team, MessageTrigger.PaymentUnpaid, "PaymentExpirationNotice", 240, Now.AddYears(-1), MessageRecipient.TeamAdminAddress));
+
         await dbContext.SaveChangesAsync();
     }
 
@@ -288,7 +351,11 @@ public class PaymentReminderServiceTests
         await using var dbContext = CreateContext();
         var team = await SeedTeamAsync(dbContext);
         await SeedEmailSettingsAndTemplatesAsync(dbContext, team);
-        await SeedCandidateWithPaymentAsync(dbContext, team, applicationDateEnteredUtc: Now.AddDays(-8), fccFeeReminderSentUtc: Now.AddDays(-3));
+        var (candidate, _) = await SeedCandidateWithPaymentAsync(dbContext, team, applicationDateEnteredUtc: Now.AddDays(-8), fccFeeReminderSentUtc: Now.AddDays(-3));
+        // The run marker is what suppresses it now, not Candidate.FccFeeReminderSentUtc — that column
+        // is still written and still shown in the candidate's email history, but nothing reads it to
+        // decide. See MessageRuleEngineTests for the same point on the registration confirmation.
+        await MarkAlreadyFiredAsync(dbContext, team, MessageTrigger.FccFeeOutstanding, candidate.Id, MessageSubjectType.Candidate);
         var sender = new FakeEmailSender();
 
         var result = await CreateService(dbContext, sender).RunAsync(team, CancellationToken.None);
@@ -477,6 +544,9 @@ public class PaymentReminderServiceTests
             FromAddress = "noreply@example.org", ReplyToAddress = "reply@example.org",
             PrivacyPolicyUrl = "https://example.org/privacy", AdminNotificationEmail = "admin@example.org"
         });
+        // The rule exists and points at a template that does not.
+        dbContext.MessageRules.Add(MessageRuleTestHarness.NewRule(
+            team, MessageTrigger.FccFeeOutstanding, "FccFeeReminder5Day", 120, Now.AddYears(-1)));
         await dbContext.SaveChangesAsync();
         await SeedCandidateWithPaymentAsync(dbContext, team, applicationDateEnteredUtc: Now.AddDays(-5));
         var sender = new FakeEmailSender();
@@ -542,13 +612,40 @@ public class PaymentReminderServiceTests
         await using var dbContext = CreateContext();
         var team = await SeedTeamAsync(dbContext);
         await SeedEmailSettingsAndTemplatesAsync(dbContext, team);
-        await SeedCandidateWithPaymentAsync(dbContext, team, applicationDateEnteredUtc: Now.AddDays(-20), expiredUnpaid: true);
+        var (_, payment) = await SeedCandidateWithPaymentAsync(dbContext, team, applicationDateEnteredUtc: Now.AddDays(-20), expiredUnpaid: true);
+        await MarkAlreadyFiredAsync(dbContext, team, MessageTrigger.PaymentUnpaid, payment.Id, MessageSubjectType.Payment);
         var sender = new FakeEmailSender();
 
         var result = await CreateService(dbContext, sender).RunAsync(team, CancellationToken.None);
 
         Assert.Equal(0, result.ExpirationsProcessed);
         Assert.DoesNotContain(sender.SentMessages, m => m.ToAddress == "admin@example.org");
+    }
+
+    /// <summary>
+    /// The split's sharpest edge (#401). <c>ExpiredUnpaid</c> is set by a different job now, and by
+    /// the time the rule scans it is normally already true — so <c>PaymentUnpaidScanner</c> must not
+    /// filter on it. If it did, the notice would silently never go out, and nothing would look wrong:
+    /// the flag would still be set, the payment would still be expired, and no email would exist to
+    /// miss.
+    ///
+    /// <para>It also describes exactly the pre-deploy row — expired long ago, no marker — which is why
+    /// the MessageRules migration backfills a marker from this flag rather than trusting the flag
+    /// itself.</para>
+    /// </summary>
+    [Fact]
+    public async Task Expiration_FlagAlreadySetButNoRunMarker_StillSendsTheNotice()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        await SeedEmailSettingsAndTemplatesAsync(dbContext, team);
+        await SeedCandidateWithPaymentAsync(dbContext, team, applicationDateEnteredUtc: Now.AddDays(-20), expiredUnpaid: true);
+        var sender = new FakeEmailSender();
+
+        var result = await CreateService(dbContext, sender).RunAsync(team, CancellationToken.None);
+
+        Assert.Equal(0, result.ExpirationsProcessed);
+        Assert.Contains(sender.SentMessages, m => m.ToAddress == "admin@example.org");
     }
 
     [Fact]
@@ -751,8 +848,16 @@ public class PaymentReminderServiceTests
 
     // ---- SMTP not configured ----
 
+    /// <summary>
+    /// <b>Expiring now happens without SMTP (#401), and that is a change.</b> The old code returned
+    /// early from the whole expiration pass when a team had no SMTP credentials, so a deployment that
+    /// never configured email also never expired a payment link — the bookkeeping was hostage to the
+    /// notice. Splitting them made the notice a rule and left the write behind, which fixes that as a
+    /// side effect. Nothing is sent, and no marker is written, so every notice still goes out on the
+    /// first tick after credentials are entered.
+    /// </summary>
     [Fact]
-    public async Task SmtpNotConfigured_SkipsRemindersAndExpirations_ButStillFlagsUnmatched()
+    public async Task SmtpNotConfigured_SendsNothing_ButStillExpiresAndFlags()
     {
         await using var dbContext = CreateContext();
         var team = await SeedTeamAsync(dbContext, emailConfigured: false);
@@ -764,8 +869,9 @@ public class PaymentReminderServiceTests
         var result = await CreateService(dbContext, sender).RunAsync(team, CancellationToken.None);
 
         Assert.Equal(0, result.RemindersSent);
-        Assert.Equal(0, result.ExpirationsProcessed);
+        Assert.Equal(1, result.ExpirationsProcessed);
         Assert.Empty(sender.SentMessages);
+        Assert.Empty(dbContext.MessageRuleRuns);
         Assert.Equal(1, result.CandidatesFlaggedForReview);
         Assert.NotNull((await dbContext.Candidates.SingleAsync(c => c.Id == unmatchedCandidate.Id)).UnmatchedReviewFlaggedUtc);
     }

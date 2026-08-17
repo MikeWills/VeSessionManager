@@ -52,6 +52,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options, IDataProtectio
     public DbSet<HistoricalImportRequest> HistoricalImportRequests => Set<HistoricalImportRequest>();
     public DbSet<WatchedLicense> WatchedLicenses => Set<WatchedLicense>();
     public DbSet<ReconciliationFinding> ReconciliationFindings => Set<ReconciliationFinding>();
+    public DbSet<MessageRule> MessageRules => Set<MessageRule>();
+    public DbSet<MessageRuleRun> MessageRuleRuns => Set<MessageRuleRun>();
 
     /// <summary>
     /// Was 340 lines and 27 inline entity blocks; the per-entity rules now live in
