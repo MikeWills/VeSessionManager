@@ -120,6 +120,31 @@ public class MessageRulesModel(
         return RedirectToPage(new { teamId = rule.TeamId });
     }
 
+    /// <summary>Copies a rule, switched off — same authorization as the rest, against the rule's own team.</summary>
+    public async Task<IActionResult> OnPostDuplicateAsync(int ruleId)
+    {
+        var user = await userManager.GetUserWithManagerAsync(dbContext, User);
+        if (user is null)
+        {
+            return Forbid();
+        }
+
+        var rule = await dbContext.MessageRules.AsNoTracking().FirstOrDefaultAsync(r => r.Id == ruleId, HttpContext.RequestAborted);
+        if (rule is null)
+        {
+            return NotFound();
+        }
+
+        if (!adminAccessScope.CanManageTeam(user, rule.TeamId))
+        {
+            return Forbid();
+        }
+
+        var result = await messageRuleAdminService.DuplicateAsync(ruleId, user.Id, HttpContext.RequestAborted);
+        SetStatus(result, "Rule copied. The copy is switched off — edit it, then switch it on.");
+        return RedirectToPage(new { teamId = rule.TeamId });
+    }
+
     /// <summary>Same authorization as switching off, against the rule's own team. Confirmed in the browser first — this is not undoable, and the rule does not come back on the next Worker start.</summary>
     public async Task<IActionResult> OnPostDeleteAsync(int ruleId)
     {

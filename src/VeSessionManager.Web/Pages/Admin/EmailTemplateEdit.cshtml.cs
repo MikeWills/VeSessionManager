@@ -29,7 +29,8 @@ public class EmailTemplateEditModel(
     AppDbContext dbContext,
     UserManager<User> userManager,
     AdminAccessScope adminAccessScope,
-    EmailTemplateAdminService emailTemplateAdminService) : PageModel
+    EmailTemplateAdminService emailTemplateAdminService,
+    MessageRuleAdminService messageRuleAdminService) : PageModel
 {
     [BindProperty(SupportsGet = true)]
     public int Id { get; set; }
@@ -87,6 +88,40 @@ public class EmailTemplateEditModel(
         TempData["ErrorMessage"] = result == EmailTemplateActionResult.ContentRequired
             ? "A template needs both a subject and a body."
             : "Template not found.";
+        return RedirectToPage(new { id = Id });
+    }
+
+    /// <summary>
+    /// Changing when this template goes out, without leaving the page it is written on. Offered only
+    /// when exactly one rule sends it — with two, "the schedule" is ambiguous, so the page links to
+    /// Message Rules instead.
+    ///
+    /// <para>Authorized twice over: the template's own team by <see cref="LoadAsync"/>, and then the
+    /// posted rule must be one of the rules that actually sends <i>this</i> template. Without that
+    /// second check a valid template id plus somebody else's rule id would edit their rule.</para>
+    /// </summary>
+    public async Task<IActionResult> OnPostScheduleAsync(int ruleId, int? parameterHours, MessageRecipient recipient)
+    {
+        var loaded = await LoadAsync();
+        if (loaded is not null) return loaded;
+
+        if (SendingRules.All(r => r.Id != ruleId))
+        {
+            return NotFound();
+        }
+
+        var user = await userManager.GetRequiredUserAsync(dbContext, User);
+        var result = await messageRuleAdminService.UpdateScheduleAsync(ruleId, parameterHours, recipient, user.Id, HttpContext.RequestAborted);
+
+        TempData[result == MessageRuleActionResult.Success ? "StatusMessage" : "ErrorMessage"] = result switch
+        {
+            MessageRuleActionResult.Success => "Schedule updated.",
+            MessageRuleActionResult.ParameterRequired => "This trigger needs a number of hours.",
+            MessageRuleActionResult.ParameterOutOfRange =>
+                $"Hours must be between 1 and {MessageRuleAdminService.MaxParameterHours} (a year).",
+            MessageRuleActionResult.RecipientNotLegal => "That trigger cannot send to that recipient.",
+            _ => "Rule not found."
+        };
         return RedirectToPage(new { id = Id });
     }
 
@@ -154,14 +189,19 @@ public class EmailTemplateEditModel(
             .AsNoTracking()
             .Where(r => r.TeamId == template.TeamId && r.TemplateKey == template.Key)
             .OrderBy(r => r.Id)
-            .Select(r => new { r.Name, r.Trigger, r.ParameterHours, r.IsEnabled })
+            .Select(r => new { r.Id, r.Name, r.Trigger, r.ParameterHours, r.IsEnabled, r.Recipient, r.Channel })
             .ToListAsync(HttpContext.RequestAborted);
 
         SendingRules = [.. rules.Select(r => new EmailTemplatesModel.SendingRule(
+            r.Id,
             r.Name,
             MessageTriggerLabels.Label(r.Trigger),
             MessageTriggerLabels.DescribeHours(r.ParameterHours),
-            r.IsEnabled))];
+            r.IsEnabled,
+            r.Trigger,
+            r.ParameterHours,
+            r.Recipient,
+            r.Channel))];
         return null;
     }
 }

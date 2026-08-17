@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using System.Net;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -175,6 +176,95 @@ public class MessageRulePageTests
 
         Assert.DoesNotContain($"hours-{MessageTrigger.CandidateRegistered}", html);
         Assert.Contains($"hours-{MessageTrigger.BeforeSessionStart}", html);
+    }
+
+    private static async Task<string> AntiforgeryTokenAsync(HttpClient client, string url)
+    {
+        var page = await client.GetStringAsync(url);
+        var token = Regex.Match(page, "name=\"__RequestVerificationToken\"[^>]*value=\"([^\"]+)\"").Groups[1].Value;
+        Assert.NotEmpty(token);
+        return token;
+    }
+
+    /// <summary>
+    /// The schedule is editable on the template editor itself, because writing the wording and
+    /// deciding when it goes are one job — making it two screens was the first thing to trip somebody
+    /// up in testing.
+    /// </summary>
+    [Fact]
+    public async Task TheTemplateEditorCanRescheduleTheRuleThatSendsIt()
+    {
+        using var factory = new WebAppFactory();
+        var ruleId = await SeedRuleAsync(factory);
+
+        int templateId;
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            templateId = await db.EmailTemplates.Where(t => t.Key == "DayBeforeReminder").Select(t => t.Id).FirstAsync();
+        }
+
+        var client = factory.CreateClientAs(UserRole.SystemAdmin);
+        var editUrl = $"/Admin/EmailTemplateEdit/{templateId}";
+
+        // The form is there, carrying the rule's current value rather than a blank.
+        var page = await client.GetStringAsync(editUrl);
+        Assert.Contains("name=\"parameterHours\"", page);
+        Assert.Contains("value=\"24\"", page);
+
+        var response = await client.PostAsync($"{editUrl}?handler=Schedule", new FormUrlEncodedContent(
+        [
+            new KeyValuePair<string, string>("ruleId", ruleId.ToString()),
+            new KeyValuePair<string, string>("parameterHours", "48"),
+            new KeyValuePair<string, string>("recipient", "0"),
+            new KeyValuePair<string, string>("__RequestVerificationToken", await AntiforgeryTokenAsync(client, editUrl))
+        ]));
+
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+
+        using var verify = factory.Services.CreateScope();
+        var db2 = verify.ServiceProvider.GetRequiredService<AppDbContext>();
+        Assert.Equal(48, (await db2.MessageRules.FirstAsync(r => r.Id == ruleId)).ParameterHours);
+    }
+
+    /// <summary>
+    /// Copying a rule is how you get a second reminder at a different hour without retyping the
+    /// template, recipient and channel. The copy starts switched off and stamped now, so it cannot
+    /// reach anybody whose moment has already passed — see <c>MessageRuleAdminService.DuplicateAsync</c>.
+    /// </summary>
+    [Fact]
+    public async Task ARuleCanBeCopied_AndTheCopyStartsOffAndCarriesNoHistory()
+    {
+        using var factory = new WebAppFactory();
+        var ruleId = await SeedRuleAsync(factory, hours: 24);
+        var client = factory.CreateClientAs(UserRole.SystemAdmin);
+        var listUrl = $"/Admin/MessageRules?teamId={factory.Seeded.TeamId}";
+
+        var response = await client.PostAsync($"{listUrl}&handler=Duplicate", new FormUrlEncodedContent(
+        [
+            new KeyValuePair<string, string>("ruleId", ruleId.ToString()),
+            new KeyValuePair<string, string>("__RequestVerificationToken", await AntiforgeryTokenAsync(client, listUrl))
+        ]));
+
+        Assert.Equal(HttpStatusCode.Redirect, response.StatusCode);
+
+        using var verify = factory.Services.CreateScope();
+        var db = verify.ServiceProvider.GetRequiredService<AppDbContext>();
+        // Scoped to the pair under test: the factory's seeded team already carries the four default
+        // rules, so a bare count would be counting those too.
+        var original = await db.MessageRules.FirstAsync(r => r.Id == ruleId);
+        var copy = await db.MessageRules.SingleAsync(r => r.Name == "Day before (copy)");
+
+        Assert.Equal(original.Trigger, copy.Trigger);
+        Assert.Equal(original.ParameterHours, copy.ParameterHours);
+        Assert.Equal(original.TemplateKey, copy.TemplateKey);
+        Assert.Equal(original.Recipient, copy.Recipient);
+        // Off, so a duplicate made in order to edit does not start sending the moment it exists.
+        Assert.False(copy.IsEnabled);
+        // Its own clock, so it cannot reach anybody the original has already passed — a copy of a
+        // year-old rule would otherwise inherit a year-old bound.
+        Assert.True(copy.CreatedUtc > original.CreatedUtc);
+        Assert.Empty(db.MessageRuleRuns.Where(r => r.MessageRuleId == copy.Id));
     }
 
     /// <summary>

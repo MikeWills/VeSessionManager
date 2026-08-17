@@ -45,7 +45,7 @@ public class TeamDefinedTemplatePageTests
         var client = factory.CreateClientAs(UserRole.SystemAdmin);
 
         var response = await PostWithTokenAsync(
-            client, $"{AdminUrl}?handler=Create&teamId={factory.Seeded.TeamId}", $"{AdminUrl}?teamId={factory.Seeded.TeamId}",
+            client, $"/Admin/EmailTemplateNew?teamId={factory.Seeded.TeamId}", $"/Admin/EmailTemplateNew?teamId={factory.Seeded.TeamId}",
             ("teamId", factory.Seeded.TeamId.ToString()),
             ("name", "Field Day invite"),
             ("audience", "0"),
@@ -71,7 +71,7 @@ public class TeamDefinedTemplatePageTests
         var client = factory.CreateClientAs(UserRole.SystemAdmin);
 
         await PostWithTokenAsync(
-            client, $"{AdminUrl}?handler=Create&teamId={factory.Seeded.TeamId}", $"{AdminUrl}?teamId={factory.Seeded.TeamId}",
+            client, $"/Admin/EmailTemplateNew?teamId={factory.Seeded.TeamId}", $"/Admin/EmailTemplateNew?teamId={factory.Seeded.TeamId}",
             ("teamId", factory.Seeded.TeamId.ToString()),
             ("name", "Field Day invite"),
             ("audience", "0"),
@@ -92,7 +92,7 @@ public class TeamDefinedTemplatePageTests
         var client = factory.CreateClientAs(UserRole.SystemAdmin);
 
         await PostWithTokenAsync(
-            client, $"{AdminUrl}?handler=Create&teamId={factory.Seeded.TeamId}", $"{AdminUrl}?teamId={factory.Seeded.TeamId}",
+            client, $"/Admin/EmailTemplateNew?teamId={factory.Seeded.TeamId}", $"/Admin/EmailTemplateNew?teamId={factory.Seeded.TeamId}",
             ("teamId", factory.Seeded.TeamId.ToString()),
             ("name", "Field Day invite"),
             ("audience", "0"),

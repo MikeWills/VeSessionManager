@@ -92,13 +92,29 @@ else
                                        not do this". Delete is confirmed and does not come back — the
                                        seeder sets a team up once and never re-adds. *@
                                     <td class="row-actions">
-                                        <a class="btn-secondary btn-sm" asp-page="/Admin/MessageRuleEdit" asp-route-id="@rule.Id">Edit</a>
+                                        <a class="btn-secondary btn-sm" asp-page="/Admin/MessageRuleEdit" asp-route-id="@rule.Id"
+                                           title="Edit @rule.Name" aria-label="Edit @rule.Name">
+                                            <i class="bi bi-pencil" aria-hidden="true"></i>
+                                        </a>
+                                        @* Copying is how you get "and again a week earlier" without
+                                           retyping the template, recipient and channel. The copy
+                                           arrives switched off — see MessageRuleAdminService. *@
+                                        <form method="post" asp-page-handler="Duplicate" style="display:inline;">
+                                            <input type="hidden" name="ruleId" value="@rule.Id" />
+                                            <button type="submit" class="btn-secondary btn-sm"
+                                                    title="Copy @rule.Name" aria-label="Copy @rule.Name">
+                                                <i class="bi bi-copy" aria-hidden="true"></i>
+                                            </button>
+                                        </form>
                                         <form method="post" asp-page-handler="SetEnabled" style="display:inline;">
                                             <input type="hidden" name="ruleId" value="@rule.Id" />
                                             <input type="hidden" name="enabled" value="@((!rule.IsEnabled).ToString().ToLowerInvariant())" />
                                             <button type="submit" class="btn-secondary btn-sm">@(rule.IsEnabled ? "Switch off" : "Switch on")</button>
                                         </form>
-                                        <button type="button" class="btn-secondary btn-sm" data-open-modal="deleteRule-@rule.Id">Delete</button>
+                                        <button type="button" class="btn-secondary btn-sm" data-open-modal="deleteRule-@rule.Id"
+                                                title="Delete @rule.Name" aria-label="Delete @rule.Name">
+                                            <i class="bi bi-trash" aria-hidden="true"></i>
+                                        </button>
                                     </td>
                                 </tr>
                             }

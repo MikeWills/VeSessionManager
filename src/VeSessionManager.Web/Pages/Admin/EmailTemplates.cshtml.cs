@@ -14,7 +14,7 @@ namespace VeSessionManager.Web.Pages.Admin;
 
 /// <summary>Phase 9c: per-Team EmailTemplate Subject/Body editing, with the available-placeholder chip list per Key. Same team-picker/lock pattern as TeamSettings.</summary>
 [Authorize(Roles = RoleGroups.Admins)]
-public class EmailTemplatesModel(AppDbContext dbContext, UserManager<User> userManager, AdminAccessScope adminAccessScope, EmailTemplateAdminService emailTemplateAdminService) : PageModel
+public class EmailTemplatesModel(AppDbContext dbContext, UserManager<User> userManager, AdminAccessScope adminAccessScope) : PageModel
 {
     [BindProperty(SupportsGet = true)]
     public int? TeamId { get; set; }
@@ -64,53 +64,27 @@ public class EmailTemplatesModel(AppDbContext dbContext, UserManager<User> userM
             .AsNoTracking()
             .Where(r => r.TeamId == effectiveTeamId.Value)
             .OrderBy(r => r.Id)
-            .Select(r => new { r.TemplateKey, r.Name, r.Trigger, r.ParameterHours, r.IsEnabled })
+            .Select(r => new { r.Id, r.TemplateKey, r.Name, r.Trigger, r.ParameterHours, r.IsEnabled, r.Recipient, r.Channel })
             .ToListAsync(HttpContext.RequestAborted))
             .GroupBy(r => r.TemplateKey)
             .ToDictionary(
                 g => g.Key,
                 IReadOnlyList<SendingRule> (g) => [.. g.Select(r => new SendingRule(
+                    r.Id,
                     r.Name,
                     MessageTriggerLabels.Label(r.Trigger),
                     MessageTriggerLabels.DescribeHours(r.ParameterHours),
-                    r.IsEnabled))]);
+                    r.IsEnabled,
+                    r.Trigger,
+                    r.ParameterHours,
+                    r.Recipient,
+                    r.Channel))]);
 
         return Page();
     }
 
-    /// <summary>
-    /// Creates a template this team wrote for itself (#144). Authorized against the posted team,
-    /// which is the only id available — there is no existing row to check against, so
-    /// <c>CanManageTeam</c> is the whole guard here.
-    /// </summary>
-    public async Task<IActionResult> OnPostCreateAsync(int teamId, string name, string subject, string body, EmailTemplateAudience audience)
-    {
-        var user = await userManager.GetUserWithManagerAsync(dbContext, User);
-        if (user is null || !adminAccessScope.CanManageTeam(user, teamId))
-        {
-            return Forbid();
-        }
-
-        var result = await emailTemplateAdminService.CreateAsync(teamId, name, subject, body, audience, user.Id, CancellationToken.None);
-        TempData[result == EmailTemplateActionResult.Success ? "StatusMessage" : "ErrorMessage"] = Describe(result, "created");
-        return RedirectToPage(new { teamId });
-    }
-
-
-
-
-    private static string Describe(EmailTemplateActionResult result, string verb) => result switch
-    {
-        EmailTemplateActionResult.Success => $"Template {verb}.",
-        EmailTemplateActionResult.NameRequired => "A template needs a name.",
-        EmailTemplateActionResult.ContentRequired => "A template needs both a subject and a body.",
-        // The one worth spelling out: it is not a permission problem, it is that something in the app
-        // sends this template and has no other way to find it.
-        EmailTemplateActionResult.NotUserDefined =>
-            "That is one of the app's own templates — it can be edited, but not renamed or deleted, because a background job sends it by name.",
-        _ => "Template not found."
-    };
-
+    // Creating a template moved to EmailTemplateNew — see there for why it is no longer a form at the
+    // bottom of this list.
 
     /// <summary>Which of this team's rules send each template, keyed by <c>EmailTemplate.Key</c>. Empty for a template no rule references.</summary>
     public IReadOnlyDictionary<string, IReadOnlyList<SendingRule>> SendingRules { get; private set; } =
@@ -145,8 +119,20 @@ public class EmailTemplatesModel(AppDbContext dbContext, UserManager<User> userM
 
     public record TemplateGroup(string Label, string Blurb, IReadOnlyList<TemplateRow> Templates);
 
+    /// <param name="Id">So the row can link straight to the rule's editor — "which rule sends this, and let me change it" is one question, not two screens.</param>
     /// <param name="When">"5 days", "immediately" — <c>MessageTriggerLabels.DescribeHours</c>, so the page and the rule cannot disagree.</param>
-    public record SendingRule(string Name, string TriggerLabel, string When, bool IsEnabled);
+    public record SendingRule(
+        int Id, string Name, string TriggerLabel, string When, bool IsEnabled,
+        MessageTrigger Trigger, int? ParameterHours, MessageRecipient Recipient, MessageChannel Channel)
+    {
+        /// <summary>Whether this rule's trigger has a delay to set. A state trigger has none, so the form shows no hours field rather than one that does nothing.</summary>
+        public bool TakesParameter =>
+            MessageTriggerDefinitions.For(Trigger).Mechanism == MessageTriggerMechanism.TimeRelative;
+
+        public string ParameterPrompt => MessageTriggerLabels.ParameterPrompt(Trigger);
+
+        public IReadOnlyList<MessageRecipient> LegalRecipients => MessageTriggerDefinitions.For(Trigger).LegalRecipients;
+    }
 
     /// <summary>What causes this template to be sent — see EmailTemplateTriggers. Null for a Key with no registry entry, in which case the page shows nothing rather than inventing a description.</summary>
     public static EmailTemplateTrigger? TriggerFor(string key) => EmailTemplateTriggers.For(key);

@@ -1,4 +1,5 @@
 @page "{id:int}"
+@using VeSessionManager.Core.Messaging
 @model VeSessionManager.Web.Pages.Admin.EmailTemplateEditModel
 @{
     ViewData["Title"] = Model.Label;
@@ -41,17 +42,97 @@ else if (Model.Trigger is { } trigger)
         <p>@trigger.Description</p>
     </div>
 }
-else if (Model.SendingRules.Count > 0)
+@* Exactly one rule sends this, so the schedule is editable right here — writing the wording and
+   deciding when it goes are one job, and making it two screens was the first thing to trip somebody
+   up. The trigger itself is shown but not settable: a rule's run markers are keyed to it and a
+   SubjectId means a candidate under one trigger and a payment under another, so moving a rule between
+   triggers would reinterpret every marker it has already written, and the visible consequence is a
+   re-send. Wanting a different moment means wanting a different rule. *@
+else if (Model.SendingRules.Count == 1)
 {
+    var rule = Model.SendingRules[0];
+    <div class="session-panel" style="display:block; margin-bottom:20px;">
+        <form method="post" asp-page-handler="Schedule">
+            <input type="hidden" name="ruleId" value="@rule.Id" />
+            <div class="section-head">
+                <div>
+                    <h2 style="margin:0;">Sends @rule.TriggerLabel.ToLowerInvariant()</h2>
+                    <p class="session-sub" style="margin:4px 0 0;">
+                        By the rule "@rule.Name".
+                        @if (!rule.IsEnabled)
+                        {
+                            <strong>Currently switched off</strong><text>, so nothing is being sent.</text>
+                        }
+                        <a asp-page="/Admin/MessageRules" asp-route-teamId="@Model.Template.TeamId">All message rules</a>
+                    </p>
+                </div>
+            </div>
+
+            <div style="display:flex; gap:16px; flex-wrap:wrap; align-items:flex-end;">
+                @if (rule.TakesParameter)
+                {
+                    <div class="field" style="max-width:220px; margin:0;">
+                        <label for="scheduleHours">@rule.ParameterPrompt</label>
+                        <input id="scheduleHours" name="parameterHours" type="number" min="1"
+                               max="@VeSessionManager.Core.Admin.MessageRuleAdminService.MaxParameterHours"
+                               value="@rule.ParameterHours" required />
+                        @* Hours, not days, and not a stylistic choice: a duration between two instants
+                           has no calendar date in it, so there is no timezone for an evening session to
+                           get wrong (#220). *@
+                        <span class="session-sub">Hours — 24 is a day, 120 is five days.</span>
+                    </div>
+                }
+                @if (rule.Channel == VeSessionManager.Core.Entities.MessageChannel.Email)
+                {
+                    <div class="field" style="max-width:260px; margin:0;">
+                        <label for="scheduleRecipient">Who receives it</label>
+                        <select id="scheduleRecipient" name="recipient" class="filter-select">
+                            @foreach (var recipient in rule.LegalRecipients)
+                            {
+                                <option value="@((int)recipient)" selected="@(recipient == rule.Recipient)">
+                                    @MessageTriggerLabels.Label(recipient)
+                                </option>
+                            }
+                        </select>
+                    </div>
+                }
+                else
+                {
+                    <div class="field" style="margin:0;">
+                        <span class="label-text">Posted to Discord</span>
+                        <span class="session-sub">Channel and fan-out are set on the rule.</span>
+                    </div>
+                }
+                <button type="submit" class="btn-secondary btn-sm">Save schedule</button>
+            </div>
+        </form>
+    </div>
+}
+else if (Model.SendingRules.Count > 1)
+{
+    @* Two rules means "the schedule" has no single answer, so this links out rather than guessing
+       which one somebody meant. *@
     <div class="template-trigger">
         @foreach (var rule in Model.SendingRules)
         {
-            <span class="chip @(rule.IsEnabled ? "chip-green" : "chip-neutral")">@rule.When</span>
+            <a asp-page="/Admin/MessageRuleEdit" asp-route-id="@rule.Id" title="Edit &quot;@rule.Name&quot;">
+                <span class="chip @(rule.IsEnabled ? "chip-green" : "chip-neutral")">@rule.When</span>
+            </a>
         }
         <p>
-            Sent by @(Model.SendingRules.Count == 1 ? "a rule" : "rules") on
-            <a asp-page="/Admin/MessageRules" asp-route-teamId="@Model.Template.TeamId">Message Rules</a>,
-            which is where when and who are set.
+            Sent by @Model.SendingRules.Count rules — pick one above, or see them all on
+            <a asp-page="/Admin/MessageRules" asp-route-teamId="@Model.Template.TeamId">Message Rules</a>.
+        </p>
+    </div>
+}
+else if (!Model.IsRetired)
+{
+    <div class="template-trigger">
+        <span class="chip chip-neutral">Not sent automatically</span>
+        <p>
+            Nothing sends this on a schedule. Add a rule on
+            <a asp-page="/Admin/MessageRules" asp-route-teamId="@Model.Template.TeamId">Message Rules</a>
+            to make it automatic.
         </p>
     </div>
 }

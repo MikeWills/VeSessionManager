@@ -6,11 +6,19 @@
     Layout = "_AppLayout";
 }
 
+@* The create form used to sit at the bottom of this page, on the reasoning that editing what is
+   already here is the common case. With eleven shipped templates plus a team's own it is simply a
+   long way down, and "somewhere past the fold" is not a discoverability strategy. Its own page, from
+   a button that is always in the same place. *@
 <div class="page-head">
     <div>
         <partial name="_ParentCrumb" model='new ParentCrumb("./Teams", "Teams", "Per team", RoleGroups.Admins)' />
         <h1>Email Templates</h1>
     </div>
+    @if (Model.TeamId is not null)
+    {
+        <a class="btn-primary" asp-page="/Admin/EmailTemplateNew" asp-route-teamId="@Model.TeamId">+ New template</a>
+    }
 </div>
 
 @if (Model.IsSystemAdmin)
@@ -74,11 +82,16 @@ else
                             </td>
                             <td>
                                 @* Read off this team's rules, so it says what will actually happen
-                                   rather than what the app's defaults once were. *@
+                                   rather than what the app's defaults once were — and each one links
+                                   to its own editor, because "which rule sends this, and let me
+                                   change it" is one question rather than two screens. *@
                                 @foreach (var rule in Model.RulesFor(template.Key))
                                 {
                                     <div>
-                                        <span class="chip @(rule.IsEnabled ? "chip-green" : "chip-neutral")">@rule.When</span>
+                                        <a asp-page="/Admin/MessageRuleEdit" asp-route-id="@rule.Id"
+                                           title="Edit the rule &quot;@rule.Name&quot;">
+                                            <span class="chip @(rule.IsEnabled ? "chip-green" : "chip-neutral")">@rule.When</span>
+                                        </a>
                                         <span class="session-sub">@rule.TriggerLabel@(rule.IsEnabled ? "" : " — switched off")</span>
                                     </div>
                                 }
@@ -91,15 +104,36 @@ else
                                 {
                                     <span class="chip chip-neutral">By hand</span>
                                 }
+
+                                @* The way in to making this automatic. Without it the answer to "how do
+                                   I get this sent on a schedule" is a page you have to already know
+                                   about. *@
+                                @if (Model.RulesFor(template.Key).Count == 0 && !VeSessionManager.Web.Pages.Admin.EmailTemplatesModel.IsRetired(template.Key))
+                                {
+                                    <div class="session-sub">
+                                        <a asp-page="/Admin/MessageRules" asp-route-teamId="@Model.TeamId">Add a rule…</a>
+                                    </div>
+                                }
                             </td>
                             <td data-sort-value="@(template.UpdatedUtc?.ToString("o") ?? "")">
                                 @(template.UpdatedUtc is { } updated
                                     ? EasternTimeFormatter.Format(updated, "MMM d, yyyy")
                                     : "Not edited yet")
                             </td>
+                            @* Icons, with the word still on the element as a title and an aria-label —
+                               an icon-only control is only as good as what a screen reader and a hover
+                               make of it. Bootstrap Icons, never a bare Unicode glyph: a symbol
+                               renders only if the device happens to have a font carrying it, which is
+                               how the withdrawn-roster marker became a tofu box on an iPhone. *@
                             <td class="row-actions">
-                                <a class="btn-secondary btn-sm" asp-page="/Admin/EmailTemplatePreview" asp-route-id="@template.Id">View</a>
-                                <a class="btn-secondary btn-sm" asp-page="/Admin/EmailTemplateEdit" asp-route-id="@template.Id">Edit</a>
+                                <a class="btn-secondary btn-sm" asp-page="/Admin/EmailTemplatePreview" asp-route-id="@template.Id"
+                                   title="View @template.Label" aria-label="View @template.Label">
+                                    <i class="bi bi-eye" aria-hidden="true"></i>
+                                </a>
+                                <a class="btn-secondary btn-sm" asp-page="/Admin/EmailTemplateEdit" asp-route-id="@template.Id"
+                                   title="Edit @template.Label" aria-label="Edit @template.Label">
+                                    <i class="bi bi-pencil" aria-hidden="true"></i>
+                                </a>
                             </td>
                         </tr>
                     }
@@ -108,46 +142,4 @@ else
         </div>
     }
 
-    @* Creating one is deliberately at the bottom, after the shipped templates: the common case is
-       editing what is already here, and a "New template" button at the top would suggest otherwise.
-       Nothing sends what you make here — see the blurb. *@
-    <div class="session-panel" style="display:block; margin-bottom:20px;">
-        <div class="section-head">
-            <div>
-                <h2>New template</h2>
-                <p class="session-sub">
-                    Your own starting text, for anything the templates above do not cover. Nothing sends it
-                    on a schedule — you pick it on a session's "Email candidates" screen, or on Email VEs,
-                    edit it, and choose who gets it.
-                </p>
-            </div>
-        </div>
-        <form method="post" asp-page-handler="Create">
-            <input type="hidden" name="teamId" value="@Model.TeamId" />
-            <div class="field">
-                <label for="new-template-name">Name</label>
-                <input id="new-template-name" name="name" required placeholder="e.g. Field Day invite" />
-                <span class="session-sub">Only you see this — it is how the template is listed when you pick one.</span>
-            </div>
-            @* Asked at creation because it decides the placeholders: a candidate template used on
-               VEs would reach them with a literal {{CandidateFirstName}} in the text. *@
-            <div class="field" style="max-width:320px;">
-                <label for="new-template-audience">Who is this written to?</label>
-                <select id="new-template-audience" name="audience" class="filter-select">
-                    <option value="@((int)VeSessionManager.Core.Entities.EmailTemplateAudience.Candidates)">Candidates</option>
-                    <option value="@((int)VeSessionManager.Core.Entities.EmailTemplateAudience.VolunteerExaminers)">Volunteer examiners</option>
-                </select>
-            </div>
-            <div class="field">
-                <label for="new-template-subject">Subject</label>
-                <input id="new-template-subject" name="subject" required />
-            </div>
-            <div class="field">
-                <label for="new-template-body">Body</label>
-                <textarea id="new-template-body" name="body" rows="8" required></textarea>
-                <span class="session-sub">HTML is allowed. You can edit it properly, with the visual editor, once it exists.</span>
-            </div>
-            <button type="submit" class="btn-primary btn-sm">Create template</button>
-        </form>
-    </div>
 }

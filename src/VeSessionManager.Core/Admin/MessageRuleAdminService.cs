@@ -137,6 +137,115 @@ public class MessageRuleAdminService(AppDbContext dbContext, TimeProvider timePr
     }
 
     /// <summary>
+    /// Copies a rule — how you get "and again a week earlier" without retyping the template,
+    /// recipient, channel and envelope.
+    ///
+    /// <para><b>The copy starts switched off.</b> A duplicate is made in order to change something,
+    /// and a rule that starts sending the instant it exists gives nobody the chance. Switching it on
+    /// is one click and a decision.</para>
+    ///
+    /// <para><b>It gets its own <c>CreatedUtc</c>, and that is the safety property.</b> A copy of a
+    /// rule created a year ago would otherwise inherit a year-old bound and reach everybody the
+    /// original had already passed — the exact "3000 emails because you added a rule" failure, arriving
+    /// through the back door. It also starts with no markers, which is correct: it has sent nothing.</para>
+    /// </summary>
+    public async Task<MessageRuleActionResult> DuplicateAsync(int messageRuleId, int userId, CancellationToken cancellationToken)
+    {
+        var original = await dbContext.MessageRules.AsNoTracking().FirstOrDefaultAsync(r => r.Id == messageRuleId, cancellationToken);
+        if (original is null)
+        {
+            return MessageRuleActionResult.NotFound;
+        }
+
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+        var copy = new MessageRule
+        {
+            TeamId = original.TeamId,
+            Name = $"{original.Name} (copy)",
+            Trigger = original.Trigger,
+            ParameterHours = original.ParameterHours,
+            TemplateKey = original.TemplateKey,
+            Channel = original.Channel,
+            DiscordChannelId = original.DiscordChannelId,
+            Recipient = original.Recipient,
+            FanOut = original.FanOut,
+            ReplyToSource = original.ReplyToSource,
+            ReplyToOverride = original.ReplyToOverride,
+            CcAddress = original.CcAddress,
+            BccAddress = original.BccAddress,
+            MonitoringCopyOncePerRun = original.MonitoringCopyOncePerRun,
+            IsEnabled = false,
+            CreatedUtc = now
+        };
+        dbContext.MessageRules.Add(copy);
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        dbContext.AddAuditLog(userId, "MessageRuleCreated", nameof(MessageRule), copy.Id,
+            $"Team {copy.TeamId} rule '{copy.Name}' copied from '{original.Name}' ({original.Id}), switched off.", now);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return MessageRuleActionResult.Success;
+    }
+
+    /// <summary>
+    /// Just the timing and the recipient — what the Email Templates editor offers inline, so somebody
+    /// writing the wording can change when it goes without leaving the page.
+    ///
+    /// <para><b>Narrower than <see cref="UpdateAsync"/> on purpose.</b> That one takes every field, so
+    /// calling it from a form that only knows about two would quietly reset the rule's channel,
+    /// Discord id and envelope to their defaults. A partial form needs a partial method; the
+    /// alternative is a caller that has to remember to round-trip five fields it never shows.</para>
+    ///
+    /// <para><b>The trigger is deliberately not settable here, or anywhere.</b> A rule's
+    /// <see cref="MessageRuleRun"/> markers are keyed to it, and their <c>SubjectId</c> means a
+    /// candidate under one trigger and a payment under another — moving a rule between triggers would
+    /// reinterpret every marker it has already written, and the visible consequence is a re-send.
+    /// Wanting a different moment means wanting a different rule.</para>
+    /// </summary>
+    public async Task<MessageRuleActionResult> UpdateScheduleAsync(
+        int messageRuleId, int? parameterHours, MessageRecipient recipient, int userId, CancellationToken cancellationToken)
+    {
+        var rule = await dbContext.MessageRules.FirstOrDefaultAsync(r => r.Id == messageRuleId, cancellationToken);
+        if (rule is null)
+        {
+            return MessageRuleActionResult.NotFound;
+        }
+
+        var definition = MessageTriggerDefinitions.For(rule.Trigger);
+        if (definition.Mechanism == MessageTriggerMechanism.TimeRelative)
+        {
+            if (parameterHours is not { } hours)
+            {
+                return MessageRuleActionResult.ParameterRequired;
+            }
+
+            if (hours < 1 || hours > MaxParameterHours)
+            {
+                return MessageRuleActionResult.ParameterOutOfRange;
+            }
+        }
+
+        // Only meaningful for an email rule; a channel post addresses nobody, so the form does not
+        // offer it and this leaves the stored value alone.
+        if (rule.Channel == MessageChannel.Email)
+        {
+            if (!definition.LegalRecipients.Contains(recipient))
+            {
+                return MessageRuleActionResult.RecipientNotLegal;
+            }
+
+            rule.Recipient = recipient;
+        }
+
+        rule.ParameterHours = parameterHours;
+
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+        dbContext.AddAuditLog(userId, "MessageRuleUpdated", nameof(MessageRule), rule.Id,
+            $"Team {rule.TeamId} rule '{rule.Name}' on {rule.Trigger} rescheduled to {Describe(parameterHours)} via {DescribeDestination(rule)}.", now);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return MessageRuleActionResult.Success;
+    }
+
+    /// <summary>
     /// Deletes a rule outright. For "we do not do this" — <see cref="SetEnabledAsync"/> is the answer
     /// to "not right now".
     ///
