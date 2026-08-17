@@ -485,10 +485,16 @@ $RECYCLE.BIN/
 *.db
 *.db-shm
 *.db-wal
-# Pre-migration/pre-fix DB snapshots (vesessionmanager.db.bak-<what>-<timestamp>). NOT covered by
-# the *.db rule above — the extension trails the .db — and these are full copies of a live database
-# containing candidate PII (names, emails, FRNs), so an accidental commit would be a real disclosure.
-*.db.bak-*
+# Pre-migration/pre-fix DB snapshots. NOT covered by the *.db rule above — the extension trails the
+# .db — and these are full copies of a live database containing candidate PII (names, emails, FRNs),
+# so an accidental commit would be a real disclosure into a public repo.
+#
+# The trailing * is load-bearing and was missing until 2026-08-17: the rule read `*.db.bak-*`, which
+# assumed the descriptive suffix the comment above suggested. A plain `cp vesessionmanager.db
+# vesessionmanager.db.bak` before running a migration — the obvious thing to type, and what the docs
+# here tell you to do — produced a file this did not match, and it turned up untracked in `git status`
+# one `git add -A` away from being published.
+*.db.bak*
 
 # Local dev Data Protection key ring (encrypts Team's credential columns at rest — see
 # EncryptedStringConverter) — generated, machine-specific, never committed, same as the .db files

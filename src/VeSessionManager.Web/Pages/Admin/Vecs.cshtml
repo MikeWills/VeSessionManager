@@ -110,8 +110,12 @@
                 <div class="field"><label for="editVecName-@vec.Id">Name</label><input id="editVecName-@vec.Id" name="name" value="@vec.Name" required /></div>
                 <div class="field">
                     <label for="editVecExamToolsCode-@vec.Id">ExamTools code</label>
-                    <input id="editVecExamToolsCode-@vec.Id" name="examToolsCode" value="@vec.ExamToolsCode" placeholder="Leave blank if the same as the name" />
-                    <p class="session-sub">ExamTools' own <code>vec</code> value for this VEC's sessions, if it differs from the name — GLAARG reports <code>lagroup</code>. Sessions are matched on this, so a mismatch means they never ingest.</p>
+                    @* Pre-filled with the *effective* code, not the stored one (#402). A VEC with no
+                       code is matched on its name, and showing an empty box hid that — so renaming it
+                       looked cosmetic while quietly re-pointing what ingestion accepts. Showing the
+                       real value means saving writes it down, and the next rename cannot move it. *@
+                    <input id="editVecExamToolsCode-@vec.Id" name="examToolsCode" value="@vec.MatchCode" />
+                    <p class="session-sub">ExamTools' own <code>vec</code> value for this VEC's sessions — GLAARG reports <code>lagroup</code>. Sessions are matched on this, so a mismatch means they never ingest. <strong>It does not change when you rename the VEC</strong>, because ExamTools keeps sending the same value. Blank falls back to the name.</p>
                 </div>
                 <div class="field">
                     <label><input type="checkbox" name="supportsYouthProgram" value="true" checked="@vec.SupportsYouthProgram" style="width:auto; display:inline-block;" /> Supports youth program</label>

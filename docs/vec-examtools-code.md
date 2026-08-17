@@ -36,8 +36,52 @@ v => (v.ExamToolsCode ?? v.Name).ToLower() == vecCode
 ```
 
 Admin → VECs gained an "ExamTools code" column and a field on both the create and edit modals,
-with helper text naming the GLAARG case. Blank stores null. A code typed to exactly match the name
-also stores null — otherwise a later rename would silently strand the code on the old spelling.
+with helper text naming the GLAARG case. Blank stores null.
+
+> A code typed to exactly match the name used to store null too, "otherwise a later rename would
+> silently strand the code on the old spelling". **That reasoning was wrong and it caused the same
+> outage again sixteen days later — see "The rename repeat" below.**
+
+## The rename repeat (#402, 2026-08-17)
+
+The same failure, from the other end. On the beta box HRCC's ARRL row was **renamed**. Its
+`ExamToolsCode` was null, so the row was matched on its name — and renaming it re-pointed the match
+at a name ExamTools has never heard of. Every ARRL session created afterwards was skipped; five had
+accumulated by the time it was noticed, five days later.
+
+Everything about it looked fine from the outside. The rename is the most obviously cosmetic edit on
+the screen. The ingestion job reported **`Success`** every fifteen minutes, with the truth in the
+middle of its summary string (`skipped(no config) 5`). The sessions were simply absent, which reads
+as "ExamTools hasn't published them yet" — the identical symptom to the GLAARG case above, and
+identically invisible. What actually surfaced it was a Session Manager noticing that a session
+another SM had created never appeared.
+
+**Null does not mean "no code". It means "the code is whatever this row is currently called"** — a
+live dependency from upstream matching onto a local display label, and nothing on the screen said so.
+
+Two changes, both in the same direction of making the implicit explicit:
+
+- **A rename freezes the old name into the code** (`VecManagementService.FreezeCodeOnRename`), but
+  only where the code was already implicit *and* the submitted one is still blank — nothing about the
+  code was touched, the name moved out from under it, so the old name is written down as what it
+  always effectively was. A typed code wins, which is the escape hatch for renaming *because* the old
+  name was wrong. Clearing a code that was really set is honoured as the deliberate "match on the
+  name" it is.
+- **The edit form pre-fills the effective code, not the stored one**, so a code-less VEC shows `ARRL`
+  rather than an empty box. Saving then writes it down, and the invisible case heals itself the first
+  time anybody edits the row. This is why `NormalizeCode` no longer discards a code equal to the
+  name: the form now submits exactly that, and discarding it would put the row straight back into the
+  implicit state.
+
+The direction of the fix is worth stating plainly, because it is the opposite of the original
+instinct: **stranding the code on the old spelling is correct.** ExamTools' `vec` value is upstream
+data. Nothing done to a local display label can change what ExamTools sends, so a rename must never
+change what the row accepts.
+
+**Still unfixed: the silence.** A skipped session is a `[WRN]` in the Worker log and a counter inside
+a `Success` summary. Nothing surfaces it in the app — no alert, no badge, no status. `AlertFeedService`
+(#339) exists to take sources like this one and was built for exactly this shape of problem: a
+condition nobody thinks to go looking for.
 
 ## Uniqueness is checked against the coalesce, not the column
 
@@ -132,7 +176,7 @@ Read live 2026-08-01 across the five teams on Mike's account:
 
 | ExamTools code | VEC | Teams seen on | Confidence |
 |---|---|---|---|
-| `arrl` | ARRL VEC | HRCC, San Diego ARRL VE Team, WX0MIK, MARC | **Confirmed** — live ingestion since Phase 1. Code equals name, so `ExamToolsCode` stays null |
+| `arrl` | ARRL VEC | HRCC, San Diego ARRL VE Team, WX0MIK, MARC | **Confirmed** — live ingestion since Phase 1. Code equals name, so `ExamToolsCode` was left null — which is exactly the row #402 broke by renaming |
 | `lagroup` | GLAARG | HRCC, San Diego Area Licensing Exams | **Confirmed** — the code in the Worker log that prompted this fix |
 | `sandarc` | SANDARC | HRCC | Code confirmed here; **name later corrected from "SANDARC-VEC"** by the HamStudy list above |
 
