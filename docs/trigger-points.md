@@ -38,6 +38,18 @@ and the "day before" reminder went out on the day of the session. Hours between 
 calendar date in it, so there is no timezone to get wrong. There is no way to express a date in this
 model, which is the point.
 
+**The form asks for days; the column still stores hours.** Nobody sets a reminder in hours — they set
+it "a day before" or "five days after the FCC got it" — and 120 is a number a team should not have to
+work out. `MessageDelay` is the single place the ×24 happens, converting at the page boundary and
+nowhere else, so the model the scanners compare instants in never changes unit. Two things about that
+field are deliberate. **Halves are allowed** (`step="0.5"`, minimum half a day): a whole-numbers-only
+day field would have quietly removed "12 hours before the session", which the hours field could always
+express and which is a real thing to want. **Anything finer is refused, not rounded** — 0.3 days is
+7.2 hours, and a form that silently stores 7 has moved somebody's rule to a moment they did not choose
+while reading back as though they had. A stored value that is not a whole number of half-days can only
+predate this field; it renders in hours in the list rather than being shown as a decimal the list is
+not entitled to invent.
+
 **`CreatedUtc` is load-bearing, not bookkeeping.** Every scan is bounded by it: a subject whose
 trigger moment fell before the rule existed is never returned. That makes "adding a rule never fires
 it for anyone already past the moment" true by construction rather than by somebody remembering

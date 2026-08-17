@@ -143,9 +143,8 @@ public class MessageRulePageTests
     }
 
     /// <summary>
-    /// The create form's field names are what the handler binds — <c>teamId</c>, <c>trigger</c>,
-    /// <c>name</c>, <c>parameterHours</c>, <c>recipient</c>, <c>templateKey</c>. A mismatch here binds
-    /// a default silently, and only reading the markup catches it (#144).
+    /// The create form's field names are what the handler binds. A mismatch binds a default silently,
+    /// and only reading the markup catches it (#144).
     /// </summary>
     [Fact]
     public async Task TheCreateFormPostsTheNamesTheHandlerBinds()
@@ -154,28 +153,67 @@ public class MessageRulePageTests
         await SeedRuleAsync(factory);
         var client = factory.CreateClientAs(UserRole.SystemAdmin);
 
-        var html = await client.GetStringAsync($"/Admin/MessageRules?teamId={factory.Seeded.TeamId}");
+        var html = await client.GetStringAsync($"/Admin/MessageRuleNew?teamId={factory.Seeded.TeamId}");
 
-        foreach (var field in new[] { "teamId", "trigger", "name", "parameterHours", "recipient", "templateKey" })
+        foreach (var field in new[] { "TeamId", "Trigger", "Name", "ParameterDays", "Recipient", "TemplateKey", "Channel", "FanOut" })
         {
             Assert.Contains($"name=\"{field}\"", html);
         }
     }
 
     /// <summary>
-    /// A state trigger has no delay to set, so its form must not offer an hours field — one that does
-    /// nothing is worse than none, because somebody sets it and expects an effect.
+    /// <b>The trigger is a real field, not a hidden one.</b> It used to be fixed by which section's
+    /// "+ Add rule" you pressed and named only in a modal heading, which read as "I cannot choose the
+    /// trigger" to the person who commissioned the feature — twice. Every trigger point is offered.
     /// </summary>
     [Fact]
-    public async Task TheRegistrationTriggersFormOffersNoHoursField()
+    public async Task TheCreateFormLetsYouPickAnyTriggerPoint()
     {
         using var factory = new WebAppFactory();
         var client = factory.CreateClientAs(UserRole.SystemAdmin);
 
-        var html = await client.GetStringAsync($"/Admin/MessageRules?teamId={factory.Seeded.TeamId}");
+        var html = await client.GetStringAsync($"/Admin/MessageRuleNew?teamId={factory.Seeded.TeamId}");
 
-        Assert.DoesNotContain($"hours-{MessageTrigger.CandidateRegistered}", html);
-        Assert.Contains($"hours-{MessageTrigger.BeforeSessionStart}", html);
+        Assert.Contains("id=\"triggerPicker\"", html);
+        foreach (var definition in MessageTriggerDefinitions.All)
+        {
+            Assert.Contains(MessageTriggerLabels.Label(definition.Trigger), html);
+        }
+    }
+
+    /// <summary>
+    /// The section you pressed "+ Add rule" in still decides what the picker opens on — it is a
+    /// default now rather than a decision, which is the whole difference.
+    /// </summary>
+    [Fact]
+    public async Task TheTriggerYouCameFrom_IsPreselected()
+    {
+        using var factory = new WebAppFactory();
+        var client = factory.CreateClientAs(UserRole.SystemAdmin);
+
+        var html = await client.GetStringAsync(
+            $"/Admin/MessageRuleNew?teamId={factory.Seeded.TeamId}&trigger={(int)MessageTrigger.LicenseGranted}");
+
+        Assert.Matches($"value=\"{(int)MessageTrigger.LicenseGranted}\"[^>]*selected", html);
+    }
+
+    /// <summary>
+    /// A state trigger has no delay to set, so the delay field starts hidden — one that does nothing
+    /// is worse than none, because somebody sets it and expects an effect. The script re-applies this
+    /// on change; the server ignores a stray value either way.
+    /// </summary>
+    [Fact]
+    public async Task TheDelayFieldIsHiddenForAStateTrigger_AndShownForATimeRelativeOne()
+    {
+        using var factory = new WebAppFactory();
+        var client = factory.CreateClientAs(UserRole.SystemAdmin);
+        var url = $"/Admin/MessageRuleNew?teamId={factory.Seeded.TeamId}&trigger=";
+
+        var stateTrigger = await client.GetStringAsync($"{url}{(int)MessageTrigger.CandidateRegistered}");
+        var timeRelative = await client.GetStringAsync($"{url}{(int)MessageTrigger.BeforeSessionStart}");
+
+        Assert.Matches("id=\"delayField\"[^>]*hidden", stateTrigger);
+        Assert.DoesNotMatch("id=\"delayField\"[^>]*hidden", timeRelative);
     }
 
     private static async Task<string> AntiforgeryTokenAsync(HttpClient client, string url)
@@ -209,13 +247,14 @@ public class MessageRulePageTests
 
         // The form is there, carrying the rule's current value rather than a blank.
         var page = await client.GetStringAsync(editUrl);
-        Assert.Contains("name=\"parameterHours\"", page);
-        Assert.Contains("value=\"24\"", page);
+        // Days on the form, hours in the column: the seeded rule is 24 hours, which is 1.
+        Assert.Contains("name=\"parameterDays\"", page);
+        Assert.Contains("value=\"1\"", page);
 
         var response = await client.PostAsync($"{editUrl}?handler=Schedule", new FormUrlEncodedContent(
         [
             new KeyValuePair<string, string>("ruleId", ruleId.ToString()),
-            new KeyValuePair<string, string>("parameterHours", "48"),
+            new KeyValuePair<string, string>("parameterDays", "2"),
             new KeyValuePair<string, string>("recipient", "0"),
             new KeyValuePair<string, string>("__RequestVerificationToken", await AntiforgeryTokenAsync(client, editUrl))
         ]));

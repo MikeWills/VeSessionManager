@@ -125,11 +125,15 @@ public class EmailTemplatesModel(AppDbContext dbContext, UserManager<User> userM
         int Id, string Name, string TriggerLabel, string When, bool IsEnabled,
         MessageTrigger Trigger, int? ParameterHours, MessageRecipient Recipient, MessageChannel Channel)
     {
-        /// <summary>Whether this rule's trigger has a delay to set. A state trigger has none, so the form shows no hours field rather than one that does nothing.</summary>
+        /// <summary>Whether this rule's trigger has a delay to set. A state trigger has none, so the form shows no delay field rather than one that does nothing.</summary>
         public bool TakesParameter =>
             MessageTriggerDefinitions.For(Trigger).Mechanism == MessageTriggerMechanism.TimeRelative;
 
         public string ParameterPrompt => MessageTriggerLabels.ParameterPrompt(Trigger);
+
+        /// <summary>The stored hours in the unit the form takes — see <see cref="MessageDelay"/>.</summary>
+        public string ParameterDaysText =>
+            MessageDelay.ToDays(ParameterHours) is { } days ? MessageDelay.Format(days) : "";
 
         public IReadOnlyList<MessageRecipient> LegalRecipients => MessageTriggerDefinitions.For(Trigger).LegalRecipients;
     }

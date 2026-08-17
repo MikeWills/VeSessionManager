@@ -42,7 +42,8 @@ else
                     <h2>@point.Label</h2>
                     <p class="session-sub">@point.Blurb</p>
                 </div>
-                <button type="button" class="btn-secondary btn-sm" data-open-modal="addRule-@point.Trigger">+ Add rule</button>
+                <a class="btn-secondary btn-sm" asp-page="/Admin/MessageRuleNew"
+                   asp-route-teamId="@Model.TeamId" asp-route-trigger="@((int)point.Trigger)">+ Add rule</a>
             </div>
 
             @if (point.Rules.Count == 0)
@@ -91,30 +92,43 @@ else
                                        right now" and keeps the rule on the screen; deleting is "we do
                                        not do this". Delete is confirmed and does not come back — the
                                        seeder sets a team up once and never re-adds. *@
+                                    @* One line, always — see .row-actions-inline. Four quiet icons
+                                       rather than four buttons: a glyph in a full button is four times
+                                       the width, which is what wrapped these onto a second line for
+                                       the rules with longer names. *@
                                     <td class="row-actions">
-                                        <a class="btn-secondary btn-sm" asp-page="/Admin/MessageRuleEdit" asp-route-id="@rule.Id"
-                                           title="Edit @rule.Name" aria-label="Edit @rule.Name">
-                                            <i class="bi bi-pencil" aria-hidden="true"></i>
-                                        </a>
-                                        @* Copying is how you get "and again a week earlier" without
-                                           retyping the template, recipient and channel. The copy
-                                           arrives switched off — see MessageRuleAdminService. *@
-                                        <form method="post" asp-page-handler="Duplicate" style="display:inline;">
-                                            <input type="hidden" name="ruleId" value="@rule.Id" />
-                                            <button type="submit" class="btn-secondary btn-sm"
-                                                    title="Copy @rule.Name" aria-label="Copy @rule.Name">
-                                                <i class="bi bi-copy" aria-hidden="true"></i>
+                                        <span class="row-actions-inline">
+                                            <a class="icon-action" asp-page="/Admin/MessageRuleEdit" asp-route-id="@rule.Id"
+                                               title="Edit @rule.Name" aria-label="Edit @rule.Name">
+                                                <i class="bi bi-pencil" aria-hidden="true"></i>
+                                            </a>
+                                            @* Copying is how you get "and again a week earlier" without
+                                               retyping the template, recipient and channel. The copy
+                                               arrives switched off — see MessageRuleAdminService. *@
+                                            <form method="post" asp-page-handler="Duplicate">
+                                                <input type="hidden" name="ruleId" value="@rule.Id" />
+                                                <button type="submit" class="icon-action"
+                                                        title="Copy @rule.Name" aria-label="Copy @rule.Name">
+                                                    <i class="bi bi-copy" aria-hidden="true"></i>
+                                                </button>
+                                            </form>
+                                            @* The one action whose two states are worth distinguishing at
+                                               a glance, so it carries a filled/slashed pair rather than
+                                               one icon that means opposite things. *@
+                                            <form method="post" asp-page-handler="SetEnabled">
+                                                <input type="hidden" name="ruleId" value="@rule.Id" />
+                                                <input type="hidden" name="enabled" value="@((!rule.IsEnabled).ToString().ToLowerInvariant())" />
+                                                <button type="submit" class="icon-action"
+                                                        title="@(rule.IsEnabled ? "Switch off" : "Switch on") @rule.Name"
+                                                        aria-label="@(rule.IsEnabled ? "Switch off" : "Switch on") @rule.Name">
+                                                    <i class="bi @(rule.IsEnabled ? "bi-toggle-on" : "bi-toggle-off")" aria-hidden="true"></i>
+                                                </button>
+                                            </form>
+                                            <button type="button" class="icon-action danger" data-open-modal="deleteRule-@rule.Id"
+                                                    title="Delete @rule.Name" aria-label="Delete @rule.Name">
+                                                <i class="bi bi-trash" aria-hidden="true"></i>
                                             </button>
-                                        </form>
-                                        <form method="post" asp-page-handler="SetEnabled" style="display:inline;">
-                                            <input type="hidden" name="ruleId" value="@rule.Id" />
-                                            <input type="hidden" name="enabled" value="@((!rule.IsEnabled).ToString().ToLowerInvariant())" />
-                                            <button type="submit" class="btn-secondary btn-sm">@(rule.IsEnabled ? "Switch off" : "Switch on")</button>
-                                        </form>
-                                        <button type="button" class="btn-secondary btn-sm" data-open-modal="deleteRule-@rule.Id"
-                                                title="Delete @rule.Name" aria-label="Delete @rule.Name">
-                                            <i class="bi bi-trash" aria-hidden="true"></i>
-                                        </button>
+                                        </span>
                                     </td>
                                 </tr>
                             }
@@ -148,102 +162,6 @@ else
             }
         </div>
 
-        <div class="modal-backdrop" id="addRule-@point.Trigger">
-            <div class="modal">
-                <h3>Add a rule — @point.Label.ToLowerInvariant()</h3>
-                <form method="post" asp-page-handler="Create">
-                    <input type="hidden" name="teamId" value="@Model.TeamId" />
-                    <input type="hidden" name="trigger" value="@((int)point.Trigger)" />
-                    <div class="field">
-                        <label for="name-@point.Trigger">Name</label>
-                        <input id="name-@point.Trigger" name="name" required placeholder="e.g. Second reminder, a week out" />
-                        <span class="session-sub">Only you see this. It is what the run log records, so make it tell two rules apart.</span>
-                    </div>
-                    @if (point.TakesParameter)
-                    {
-                        <div class="field" style="max-width:260px;">
-                            <label for="hours-@point.Trigger">@point.ParameterPrompt</label>
-                            <input id="hours-@point.Trigger" name="parameterHours" type="number" min="1"
-                                   max="@VeSessionManager.Core.Admin.MessageRuleAdminService.MaxParameterHours"
-                                   value="@point.DefaultParameterHours" required />
-                            @* Hours rather than days throughout, and not a stylistic choice: a
-                               duration between two instants has no calendar date in it, so there is no
-                               timezone for an evening session to get wrong (#220). *@
-                            <span class="session-sub">Hours, not days — 24 is a day, 120 is five days.</span>
-                            @if (point.ParameterCeilingNote is { } ceiling)
-                            {
-                                <span class="session-sub">@ceiling</span>
-                            }
-                        </div>
-                    }
-                    @* Channel first, because it decides whether the next field asks for a person or a
-                       room. Rendered as two radios rather than a select so both options are visible
-                       without opening anything — a team that has never posted to Discord should be
-                       able to see that it can. *@
-                    <div class="field" style="max-width:420px;">
-                        <span class="label-text">Send it as</span>
-                        <label style="font-weight:400;">
-                            <input type="radio" name="channel" value="@((int)MessageChannel.Email)" checked
-                                   data-channel-radio="@point.Trigger" />
-                            An email
-                        </label>
-                        <label style="font-weight:400;">
-                            <input type="radio" name="channel" value="@((int)MessageChannel.Discord)"
-                                   data-channel-radio="@point.Trigger" />
-                            A Discord post
-                        </label>
-                    </div>
-
-                    <div class="field" style="max-width:320px;" data-channel-only="Email" data-channel-group="@point.Trigger">
-                        <label for="recipient-@point.Trigger">Who receives it</label>
-                        <select id="recipient-@point.Trigger" name="recipient" class="filter-select">
-                            @foreach (var recipient in point.LegalRecipients)
-                            {
-                                <option value="@((int)recipient)">@MessageTriggerLabels.Label(recipient)</option>
-                            }
-                        </select>
-                    </div>
-
-                    <div class="field" style="max-width:420px;" data-channel-only="Discord" data-channel-group="@point.Trigger" hidden>
-                        <label for="discordChannel-@point.Trigger">Discord channel id</label>
-                        <input id="discordChannel-@point.Trigger" name="discordChannelId" type="text" inputmode="numeric"
-                               placeholder="e.g. 1042938475610293847" />
-                        <span class="session-sub">
-                            In Discord, turn on Developer Mode, right-click the channel and choose Copy Channel ID. The bot
-                            needs View Channel and Send Messages there.
-                        </span>
-                    </div>
-
-                    @* The field that decides one post or forty. Only shown for Discord, because a
-                       digest on email would be one message to one person listing everybody else. *@
-                    <div class="field" style="max-width:420px;" data-channel-only="Discord" data-channel-group="@point.Trigger" hidden>
-                        <label for="fanOut-@point.Trigger">How many posts</label>
-                        <select id="fanOut-@point.Trigger" name="fanOut" class="filter-select">
-                            <option value="@((int)MessageFanOut.SingleDigest)">One post covering everybody</option>
-                            <option value="@((int)MessageFanOut.PerRecipient)">One post each</option>
-                        </select>
-                        <span class="session-sub">
-                            A digest renders the template once with <code>{{Count}}</code> and <code>{{Subjects}}</code>;
-                            per-candidate tokens have no answer there and come out blank.
-                        </span>
-                    </div>
-                    <div class="field" style="max-width:420px;">
-                        <label for="template-@point.Trigger">Template</label>
-                        <select id="template-@point.Trigger" name="templateKey" class="filter-select" required>
-                            @foreach (var template in Model.Templates)
-                            {
-                                <option value="@template.Key">@template.Label</option>
-                            }
-                        </select>
-                        <span class="session-sub">Edit the wording on the Email Templates page.</span>
-                    </div>
-                    <div class="modal-actions">
-                        <button type="button" class="btn-secondary btn-sm" data-close-modal>Cancel</button>
-                        <button type="submit" class="btn-primary btn-sm">Add rule</button>
-                    </div>
-                </form>
-            </div>
-        </div>
     }
 
     <p class="session-sub">

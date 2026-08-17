@@ -126,14 +126,16 @@ else
                                renders only if the device happens to have a font carrying it, which is
                                how the withdrawn-roster marker became a tofu box on an iPhone. *@
                             <td class="row-actions">
-                                <a class="btn-secondary btn-sm" asp-page="/Admin/EmailTemplatePreview" asp-route-id="@template.Id"
-                                   title="View @template.Label" aria-label="View @template.Label">
-                                    <i class="bi bi-eye" aria-hidden="true"></i>
-                                </a>
-                                <a class="btn-secondary btn-sm" asp-page="/Admin/EmailTemplateEdit" asp-route-id="@template.Id"
-                                   title="Edit @template.Label" aria-label="Edit @template.Label">
-                                    <i class="bi bi-pencil" aria-hidden="true"></i>
-                                </a>
+                                <span class="row-actions-inline">
+                                    <a class="icon-action" asp-page="/Admin/EmailTemplatePreview" asp-route-id="@template.Id"
+                                       title="View @template.Label" aria-label="View @template.Label">
+                                        <i class="bi bi-eye" aria-hidden="true"></i>
+                                    </a>
+                                    <a class="icon-action" asp-page="/Admin/EmailTemplateEdit" asp-route-id="@template.Id"
+                                       title="Edit @template.Label" aria-label="Edit @template.Label">
+                                        <i class="bi bi-pencil" aria-hidden="true"></i>
+                                    </a>
+                                </span>
                             </td>
                         </tr>
                     }

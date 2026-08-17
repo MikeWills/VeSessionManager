@@ -100,7 +100,7 @@ public class EmailTemplateEditModel(
     /// posted rule must be one of the rules that actually sends <i>this</i> template. Without that
     /// second check a valid template id plus somebody else's rule id would edit their rule.</para>
     /// </summary>
-    public async Task<IActionResult> OnPostScheduleAsync(int ruleId, int? parameterHours, MessageRecipient recipient)
+    public async Task<IActionResult> OnPostScheduleAsync(int ruleId, decimal? parameterDays, MessageRecipient recipient)
     {
         var loaded = await LoadAsync();
         if (loaded is not null) return loaded;
@@ -110,15 +110,20 @@ public class EmailTemplateEditModel(
             return NotFound();
         }
 
+        if (!MessageDelayField.TryToHours(parameterDays, out var parameterHours))
+        {
+            TempData["ErrorMessage"] = MessageDelayField.RangeMessage;
+            return RedirectToPage(new { id = Id });
+        }
+
         var user = await userManager.GetRequiredUserAsync(dbContext, User);
         var result = await messageRuleAdminService.UpdateScheduleAsync(ruleId, parameterHours, recipient, user.Id, HttpContext.RequestAborted);
 
         TempData[result == MessageRuleActionResult.Success ? "StatusMessage" : "ErrorMessage"] = result switch
         {
             MessageRuleActionResult.Success => "Schedule updated.",
-            MessageRuleActionResult.ParameterRequired => "This trigger needs a number of hours.",
-            MessageRuleActionResult.ParameterOutOfRange =>
-                $"Hours must be between 1 and {MessageRuleAdminService.MaxParameterHours} (a year).",
+            MessageRuleActionResult.ParameterRequired => MessageDelayField.RequiredMessage,
+            MessageRuleActionResult.ParameterOutOfRange => MessageDelayField.RangeMessage,
             MessageRuleActionResult.RecipientNotLegal => "That trigger cannot send to that recipient.",
             _ => "Rule not found."
         };

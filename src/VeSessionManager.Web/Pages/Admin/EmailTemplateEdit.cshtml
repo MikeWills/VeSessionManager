@@ -72,14 +72,17 @@ else if (Model.SendingRules.Count == 1)
                 @if (rule.TakesParameter)
                 {
                     <div class="field" style="max-width:220px; margin:0;">
-                        <label for="scheduleHours">@rule.ParameterPrompt</label>
-                        <input id="scheduleHours" name="parameterHours" type="number" min="1"
-                               max="@VeSessionManager.Core.Admin.MessageRuleAdminService.MaxParameterHours"
-                               value="@rule.ParameterHours" required />
-                        @* Hours, not days, and not a stylistic choice: a duration between two instants
-                           has no calendar date in it, so there is no timezone for an evening session to
-                           get wrong (#220). *@
-                        <span class="session-sub">Hours — 24 is a day, 120 is five days.</span>
+                        <label for="scheduleDays">@rule.ParameterPrompt</label>
+                        <input id="scheduleDays" name="parameterDays" type="number"
+                               min="@MessageDelay.Format(MessageDelay.Minimum)"
+                               max="@MessageDelay.Format(MessageDelay.Maximum)"
+                               step="@MessageDelay.Format(MessageDelay.Step)"
+                               value="@rule.ParameterDaysText" required />
+                        @* Days on the form, hours in the column, and that is not a cosmetic split: a
+                           duration between two instants has no calendar date in it, so there is no
+                           timezone for an evening session to get wrong (#220). Halves keep "12 hours
+                           before" reachable. *@
+                        <span class="session-sub">Whole or half days — 0.5 is twelve hours.</span>
                     </div>
                 }
                 @if (rule.Channel == VeSessionManager.Core.Entities.MessageChannel.Email)

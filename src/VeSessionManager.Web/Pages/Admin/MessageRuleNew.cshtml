@@ -1,0 +1,148 @@
+@page
+@using VeSessionManager.Core.Entities
+@using VeSessionManager.Core.Messaging
+@model VeSessionManager.Web.Pages.Admin.MessageRuleNewModel
+@{
+    ViewData["Title"] = "New Rule";
+    ViewData["ActiveNav"] = "AdminMessageRules";
+    Layout = "_AppLayout";
+}
+
+<div class="page-head">
+    <div>
+        <partial name="_ParentCrumb" model='new ParentCrumb("./MessageRules", "Message Rules", "Per team", RoleGroups.Admins)' />
+        <h1>New rule</h1>
+        <p class="session-sub">A moment, a template, and who it goes to.</p>
+    </div>
+</div>
+
+<div class="session-panel" style="display:block; max-width:720px;">
+    <form method="post">
+        <input type="hidden" asp-for="TeamId" />
+
+        @* The trigger is a real field here and nowhere else. A rule that has never run has no markers
+           to reinterpret, which is exactly what makes changing it unsafe once it exists — so this is
+           the one screen where it can be chosen. *@
+        <div class="field" style="max-width:420px;">
+            <label asp-for="Trigger">When should it send?</label>
+            <select asp-for="Trigger" id="triggerPicker" class="filter-select">
+                @foreach (var definition in Model.Triggers)
+                {
+                    <option value="@((int)definition.Trigger)">@VeSessionManager.Web.Pages.Admin.MessageRuleNewModel.Label(definition.Trigger)</option>
+                }
+            </select>
+            @* Each trigger's explanation, plus the three things the script needs to know about it —
+               carried as data rather than restated in JavaScript, so the registry stays the only
+               place that defines them. *@
+            @foreach (var definition in Model.Triggers)
+            {
+                <span class="session-sub" data-trigger-blurb="@((int)definition.Trigger)"
+                      data-takes-parameter="@((definition.Mechanism == MessageTriggerMechanism.TimeRelative).ToString().ToLowerInvariant())"
+                      data-prompt="@VeSessionManager.Web.Pages.Admin.MessageRuleNewModel.ParameterPrompt(definition.Trigger)"
+                      data-ceiling="@VeSessionManager.Web.Pages.Admin.MessageRuleNewModel.CeilingNote(definition.Trigger)"
+                      data-default-days="@VeSessionManager.Web.Pages.Admin.MessageRuleNewModel.DefaultDaysText(definition.Trigger)"
+                      hidden="@(definition.Trigger != Model.Trigger)">
+                    @VeSessionManager.Web.Pages.Admin.MessageRuleNewModel.Blurb(definition.Trigger)
+                </span>
+            }
+        </div>
+
+        <div class="field">
+            <label asp-for="Name">Name</label>
+            <input asp-for="Name" required placeholder="e.g. Second reminder, a week out" />
+            <span class="session-sub">Only you see this. It is what the run log records, so make it tell two rules apart.</span>
+        </div>
+
+        @* One delay field whose label and visibility follow the chosen trigger, rather than one block
+           per trigger — a hidden input still posts, so duplicated fields would need disabling and the
+           bug would be silent. Disabled here too, belt and braces, when the trigger takes no delay. *@
+        <div class="field" style="max-width:300px;" id="delayField"
+             hidden="@(MessageTriggerDefinitions.For(Model.Trigger).Mechanism != MessageTriggerMechanism.TimeRelative)">
+            <label asp-for="ParameterDays" id="delayLabel">
+                @VeSessionManager.Web.Pages.Admin.MessageRuleNewModel.ParameterPrompt(Model.Trigger)
+            </label>
+            <input asp-for="ParameterDays" type="number"
+                   min="@MessageDelay.Format(MessageDelay.Minimum)"
+                   max="@MessageDelay.Format(MessageDelay.Maximum)"
+                   step="@MessageDelay.Format(MessageDelay.Step)" />
+            @* A duration, not a date — 1 is twenty-four hours ahead of the moment, wherever the person
+               is. Halves are allowed so "12 hours before" is still reachable. *@
+            <span class="session-sub">Whole or half days — 0.5 is twelve hours, 5 is five days.</span>
+            <span class="session-sub" id="delayCeiling"></span>
+        </div>
+
+        <div class="field" style="max-width:420px;">
+            <span class="label-text">Send it as</span>
+            <label style="font-weight:400;">
+                <input type="radio" asp-for="Channel" value="@((int)MessageChannel.Email)" data-channel-radio="new" />
+                An email
+            </label>
+            <label style="font-weight:400;">
+                <input type="radio" asp-for="Channel" value="@((int)MessageChannel.Discord)" data-channel-radio="new" />
+                A Discord post
+            </label>
+        </div>
+
+        <div class="field" style="max-width:320px;" data-channel-only="Email" data-channel-group="new">
+            <label asp-for="Recipient">Who receives it</label>
+            <select asp-for="Recipient" id="recipientPicker" class="filter-select">
+                @* Every recipient any trigger allows, filtered to the chosen one by the script below —
+                   and validated server-side regardless, which is what actually enforces it. *@
+                @foreach (var recipient in Model.Triggers.SelectMany(t => t.LegalRecipients).Distinct())
+                {
+                    <option value="@((int)recipient)"
+                            data-legal-for="@string.Join(",", Model.Triggers.Where(t => t.LegalRecipients.Contains(recipient)).Select(t => (int)t.Trigger))">
+                        @VeSessionManager.Web.Pages.Admin.MessageRuleNewModel.Label(recipient)
+                    </option>
+                }
+            </select>
+        </div>
+
+        <div class="field" style="max-width:420px;" data-channel-only="Discord" data-channel-group="new" hidden>
+            <label asp-for="DiscordChannelId">Discord channel id</label>
+            <input asp-for="DiscordChannelId" type="text" inputmode="numeric" placeholder="e.g. 1042938475610293847" />
+            <span class="session-sub">
+                Developer Mode on, right-click the channel, Copy Channel ID. The bot needs View Channel
+                and Send Messages there.
+            </span>
+        </div>
+
+        <div class="field" style="max-width:420px;" data-channel-only="Discord" data-channel-group="new" hidden>
+            <label asp-for="FanOut">How many posts</label>
+            <select asp-for="FanOut" class="filter-select">
+                <option value="@((int)MessageFanOut.SingleDigest)">One post covering everybody</option>
+                <option value="@((int)MessageFanOut.PerRecipient)">One post each</option>
+            </select>
+            <span class="session-sub">
+                A digest renders the template once with <code>{{Count}}</code> and <code>{{Subjects}}</code>;
+                per-candidate tokens have no answer there and come out blank.
+            </span>
+        </div>
+
+        <div class="field" style="max-width:420px;">
+            <label asp-for="TemplateKey">Template</label>
+            <select asp-for="TemplateKey" class="filter-select" required>
+                @foreach (var template in Model.Templates)
+                {
+                    <option value="@template.Key">@template.Label</option>
+                }
+            </select>
+            <span class="session-sub">Edit the wording on the Email Templates page.</span>
+        </div>
+
+        <button type="submit" class="btn-primary btn-sm">Create rule</button>
+    </form>
+</div>
+
+<p class="session-sub" style="max-width:720px; margin-top:16px;">
+    A new rule never fires for anyone whose moment has already passed — add a seven-day reminder today
+    and nobody already inside seven days of their session hears from it.
+</p>
+
+@section Scripts {
+    @* Page-specific, and small: the trigger decides whether an hours field applies, what it is called,
+       and which recipients are legal. All three are data attributes rendered above, so this reads them
+       rather than restating the registry — a second copy of "which recipients does this trigger allow"
+       is the thing that goes stale. *@
+    <script src="~/js/message-rule-new.js" asp-append-version="true"></script>
+}

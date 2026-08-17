@@ -108,9 +108,10 @@ public class EmailTemplateTriggersTests
     }
 
     /// <summary>
-    /// Hours read back as days when they divide evenly, because a team setting 120 should not have to
-    /// do the arithmetic — and as hours when they do not, because "1.5 days" is a rounding error
-    /// waiting to be believed.
+    /// Hours read back in the unit the form takes, so a rule reads back the way it was written — days,
+    /// down to the half day the form's own step allows. Anything finer stays in hours: nothing can
+    /// enter one now, and rendering 40 hours as "1.7 days" would be a rounding the list is not
+    /// entitled to make. See MessageDelayTests for the boundary itself.
     /// </summary>
     [Theory]
     [InlineData(null, "immediately")]
@@ -118,7 +119,9 @@ public class EmailTemplateTriggersTests
     [InlineData(24, "1 day")]
     [InlineData(120, "5 days")]
     [InlineData(240, "10 days")]
-    [InlineData(36, "36 hours")]
+    [InlineData(12, "half a day")]
+    [InlineData(36, "1½ days")]
+    [InlineData(40, "40 hours")]
     public void DescribeHours_ReadsAsSomebodyWouldSayIt(int? hours, string expected)
     {
         Assert.Equal(expected, MessageTriggerLabels.DescribeHours(hours));

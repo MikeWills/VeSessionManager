@@ -36,8 +36,9 @@ public class MessageRuleEditModel(
     [BindProperty]
     public string TemplateKey { get; set; } = "";
 
+    /// <summary>Days on the form, hours in the column — see <see cref="MessageDelay"/>. Halves are legal, so not an <c>int</c>.</summary>
     [BindProperty]
-    public int? ParameterHours { get; set; }
+    public decimal? ParameterDays { get; set; }
 
     [BindProperty]
     public MessageRecipient Recipient { get; set; }
@@ -82,7 +83,7 @@ public class MessageRuleEditModel(
 
         Name = Rule.Name;
         TemplateKey = Rule.TemplateKey;
-        ParameterHours = Rule.ParameterHours;
+        ParameterDays = MessageDelay.ToDays(Rule.ParameterHours);
         Recipient = Rule.Recipient;
         Channel = Rule.Channel;
         DiscordChannelId = Rule.DiscordChannelId;
@@ -100,9 +101,15 @@ public class MessageRuleEditModel(
         var loaded = await LoadAsync();
         if (loaded is not null) return loaded;
 
+        if (!MessageDelayField.TryToHours(ParameterDays, out var parameterHours))
+        {
+            TempData["ErrorMessage"] = MessageDelayField.RangeMessage;
+            return RedirectToPage(new { id = Id });
+        }
+
         var user = await userManager.GetRequiredUserAsync(dbContext, User);
         var result = await messageRuleAdminService.UpdateAsync(
-            Id, Name, TemplateKey, ParameterHours, Recipient, user.Id, HttpContext.RequestAborted,
+            Id, Name, TemplateKey, parameterHours, Recipient, user.Id, HttpContext.RequestAborted,
             Channel, DiscordChannelId, FanOut,
             new MessageEnvelope(ReplyToSource, ReplyToOverride, CcAddress, BccAddress, MonitoringCopyOncePerRun));
 
@@ -115,9 +122,8 @@ public class MessageRuleEditModel(
         TempData["ErrorMessage"] = result switch
         {
             MessageRuleActionResult.NameRequired => "A rule needs a name — it is what the run log records.",
-            MessageRuleActionResult.ParameterRequired => "This trigger needs a number of hours.",
-            MessageRuleActionResult.ParameterOutOfRange =>
-                $"Hours must be between 1 and {MessageRuleAdminService.MaxParameterHours} (a year).",
+            MessageRuleActionResult.ParameterRequired => MessageDelayField.RequiredMessage,
+            MessageRuleActionResult.ParameterOutOfRange => MessageDelayField.RangeMessage,
             MessageRuleActionResult.RecipientNotLegal => "That trigger cannot send to that recipient.",
             MessageRuleActionResult.TemplateNotFound => "Pick a template that exists on this team.",
             MessageRuleActionResult.DiscordChannelRequired => "A Discord rule needs a channel id — without one it would post nowhere.",

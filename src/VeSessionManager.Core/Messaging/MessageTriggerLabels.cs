@@ -50,13 +50,17 @@ public static class MessageTriggerLabels
         _ => ""
     };
 
-    /// <summary>The question the hours field is answering, in the form the answer completes.</summary>
+    /// <summary>
+    /// The question the delay field is answering, in the form the answer completes. Days, because that
+    /// is the unit the form takes — the stored value is hours, and <see cref="MessageDelay"/> is where
+    /// the two meet.
+    /// </summary>
     public static string ParameterPrompt(MessageTrigger trigger) => trigger switch
     {
-        MessageTrigger.BeforeSessionStart => "Hours before the session starts",
-        MessageTrigger.FccFeeOutstanding => "Hours after the FCC entered the application",
-        MessageTrigger.PaymentUnpaid => "Hours after the application was entered (or a retest result was marked)",
-        _ => "Hours"
+        MessageTrigger.BeforeSessionStart => "Days before the session starts",
+        MessageTrigger.FccFeeOutstanding => "Days after the FCC entered the application",
+        MessageTrigger.PaymentUnpaid => "Days after the application was entered (or a retest result was marked)",
+        _ => "Days"
     };
 
     /// <summary>
@@ -86,16 +90,22 @@ public static class MessageTriggerLabels
     };
 
     /// <summary>
-    /// "24 hours", "5 days" — whichever reads more naturally, since a team setting 120 hours means five
-    /// days and should be shown five days without being made to do the arithmetic. Exact multiples
-    /// only: 36 hours is 36 hours, not "1.5 days".
+    /// "1 day", "5 days", "half a day" — the same unit the form takes, so a rule reads back the way it
+    /// was written. Halves get words rather than "0.5 days" because that is how somebody says it out
+    /// loud, and because a decimal in a list column reads as a precision this is not claiming.
+    ///
+    /// <para>Anything not landing on a half-day still renders in hours. Nothing can enter one now (see
+    /// <see cref="MessageDelay"/>), but rows predating the day field can hold one, and showing "1.7
+    /// days" would be a rounding the list is not entitled to make.</para>
     /// </summary>
     public static string DescribeHours(int? hours) => hours switch
     {
         null => "immediately",
         1 => "1 hour",
+        12 => "half a day",
         var h when h % 24 == 0 && h / 24 == 1 => "1 day",
         var h when h % 24 == 0 => $"{h / 24} days",
+        var h when h % 12 == 0 => $"{h / 24}½ days",
         var h => $"{h} hours"
     };
 }

@@ -27,10 +27,13 @@
         @if (Model.TakesParameter)
         {
             <div class="field" style="max-width:260px;">
-                <label asp-for="ParameterHours">@Model.ParameterPrompt</label>
-                <input asp-for="ParameterHours" type="number" min="1"
-                       max="@VeSessionManager.Core.Admin.MessageRuleAdminService.MaxParameterHours" required />
-                <span class="session-sub">Hours, not days — 24 is a day, 120 is five days.</span>
+                <label asp-for="ParameterDays">@Model.ParameterPrompt</label>
+                <input asp-for="ParameterDays" type="number"
+                       min="@MessageDelay.Format(MessageDelay.Minimum)"
+                       max="@MessageDelay.Format(MessageDelay.Maximum)"
+                       step="@MessageDelay.Format(MessageDelay.Step)" required />
+                @* A duration, not a date — the reason the column underneath is hours. *@
+                <span class="session-sub">Whole or half days — 0.5 is twelve hours, 5 is five days.</span>
                 @if (MessageTriggerLabels.ParameterCeilingNote(Model.Rule.Trigger) is { } ceiling)
                 {
                     <span class="session-sub">@ceiling</span>
@@ -161,7 +164,7 @@
 @* Stated where the change is made, because both are surprising in the same direction — an edit does
    less than it looks like it does, which is the safe direction and the one worth saying out loud. *@
 <p class="session-sub" style="max-width:640px; margin-top:16px;">
-    Changing the hours does not re-open anybody already sent to: widening a 24-hour reminder to 48
+    Changing the delay does not re-open anybody already sent to: widening a one-day reminder to two
     reaches people not yet reminded, never people who already were. And this rule still never fires for
     anyone whose moment passed before it was created.
 </p>

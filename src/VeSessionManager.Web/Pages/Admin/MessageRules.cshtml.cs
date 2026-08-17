@@ -70,27 +70,10 @@ public class MessageRulesModel(
         return Page();
     }
 
-    /// <summary>
-    /// Authorized against the posted team, which is the only id available — there is no existing row
-    /// to check against, so <c>CanManageTeam</c> is the whole guard. Same shape as the Email Templates
-    /// create handler.
-    /// </summary>
-    public async Task<IActionResult> OnPostCreateAsync(
-        int teamId, MessageTrigger trigger, string name, string templateKey, int? parameterHours, MessageRecipient recipient,
-        MessageChannel channel = MessageChannel.Email, ulong? discordChannelId = null, MessageFanOut fanOut = MessageFanOut.PerRecipient)
-    {
-        var user = await userManager.GetUserWithManagerAsync(dbContext, User);
-        if (user is null || !adminAccessScope.CanManageTeam(user, teamId))
-        {
-            return Forbid();
-        }
-
-        var result = await messageRuleAdminService.CreateAsync(
-            teamId, trigger, name, templateKey, parameterHours, recipient, user.Id, HttpContext.RequestAborted,
-            channel, discordChannelId, fanOut);
-        SetStatus(result, "Rule created.");
-        return RedirectToPage(new { teamId });
-    }
+    // Creation lives on MessageRuleNew, not here. It used to be a per-section modal posting to a
+    // Create handler on this page; that handler went with the modal rather than being left behind,
+    // because a second create path taking hours while the form takes days is exactly how the two
+    // drift apart unnoticed.
 
     /// <summary>
     /// Authorized against the <b>rule's own</b> team, never a posted one — a TeamAdmin posting their
@@ -194,20 +177,13 @@ public class MessageRulesModel(
             definition.Trigger,
             MessageTriggerLabels.Label(definition.Trigger),
             MessageTriggerLabels.Blurb(definition.Trigger),
-            MessageTriggerLabels.ParameterPrompt(definition.Trigger),
-            MessageTriggerLabels.ParameterCeilingNote(definition.Trigger),
-            definition.Mechanism == MessageTriggerMechanism.TimeRelative,
-            definition.DefaultParameterHours,
-            definition.LegalRecipients,
             [.. rules.Where(r => r.Trigger == definition.Trigger).Select(r => new RuleRow(
                 r.Id,
                 r.Name,
                 r.TemplateKey,
                 LabelFor(r.TemplateKey),
                 templateKeys.Contains(r.TemplateKey),
-                r.ParameterHours,
                 MessageTriggerLabels.DescribeHours(r.ParameterHours),
-                r.Recipient,
                 DestinationLabel(r),
                 r.IsEnabled))]))];
     }
@@ -225,9 +201,8 @@ public class MessageRulesModel(
         {
             MessageRuleActionResult.Success => success,
             MessageRuleActionResult.NameRequired => "A rule needs a name — it is what the run log records.",
-            MessageRuleActionResult.ParameterRequired => "This trigger needs a number of hours.",
-            MessageRuleActionResult.ParameterOutOfRange =>
-                $"Hours must be between 1 and {MessageRuleAdminService.MaxParameterHours} (a year).",
+            MessageRuleActionResult.ParameterRequired => MessageDelayField.RequiredMessage,
+            MessageRuleActionResult.ParameterOutOfRange => MessageDelayField.RangeMessage,
             MessageRuleActionResult.RecipientNotLegal => "That trigger cannot send to that recipient.",
             MessageRuleActionResult.TemplateNotFound => "Pick a template that exists on this team.",
             MessageRuleActionResult.DiscordChannelRequired => "A Discord rule needs a channel id — without one it would post nowhere.",
@@ -236,28 +211,26 @@ public class MessageRulesModel(
             _ => "Rule not found."
         };
 
-    /// <param name="TakesParameter">False for a state trigger, which has no delay to set — the form hides the field rather than showing one that does nothing.</param>
+    /// <summary>
+    /// One trigger point and whatever rules a team has hung on it, including none. What the form used
+    /// to need — the prompt, the ceiling note, the default delay, the legal recipients — moved to
+    /// <c>MessageRuleNew</c> with the form itself; this list only reads.
+    /// </summary>
     public record TriggerSection(
         MessageTrigger Trigger,
         string Label,
         string Blurb,
-        string ParameterPrompt,
-        string? ParameterCeilingNote,
-        bool TakesParameter,
-        int? DefaultParameterHours,
-        IReadOnlyList<MessageRecipient> LegalRecipients,
         IReadOnlyList<RuleRow> Rules);
 
     /// <param name="TemplateExists">False when the rule points at a template that is no longer there — the row says so, because otherwise this fails nightly in silence.</param>
+    /// <param name="ParameterLabel">"1 day", "half a day" — the same words the form takes, so a rule reads back the way it was written.</param>
     public record RuleRow(
         int Id,
         string Name,
         string TemplateKey,
         string TemplateLabel,
         bool TemplateExists,
-        int? ParameterHours,
         string ParameterLabel,
-        MessageRecipient Recipient,
         string RecipientLabel,
         bool IsEnabled);
 
