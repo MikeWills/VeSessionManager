@@ -18,7 +18,7 @@ public class VecManagementService(AppDbContext dbContext, TimeProvider timeProvi
             return (VecActionResult.DuplicateName, null);
         }
 
-        examToolsCode = NormalizeCode(examToolsCode, name);
+        examToolsCode = NormalizeCode(examToolsCode);
         // Vec.Name is a required column; see TeamSettingsService.CreateAsync for the reasoning (#275).
         name = name?.Trim() ?? "";
         if (string.IsNullOrEmpty(name))
@@ -65,7 +65,11 @@ public class VecManagementService(AppDbContext dbContext, TimeProvider timeProvi
             return VecActionResult.DuplicateName;
         }
 
-        examToolsCode = NormalizeCode(examToolsCode, name);
+        examToolsCode = NormalizeCode(examToolsCode);
+
+        // A rename must never move what ingestion matches on (#402). See FreezeCodeOnRename.
+        examToolsCode = FreezeCodeOnRename(vec, name, examToolsCode);
+
         if (await MatchCodeIsTakenAsync(examToolsCode ?? name, excludingVecId: vecId, cancellationToken))
         {
             return VecActionResult.DuplicateExamToolsCode;
@@ -85,17 +89,35 @@ public class VecManagementService(AppDbContext dbContext, TimeProvider timeProvi
 
     /// <summary>
     /// Blank means "same as the name" and is stored as null, so an admin who leaves the field empty
-    /// gets the pre-ExamToolsCode behavior. A code typed to exactly match the name is also stored
-    /// as null rather than duplicating it — otherwise a later rename would silently strand the code
-    /// on the old spelling.
+    /// gets the pre-ExamToolsCode behavior.
+    ///
+    /// <para><b>A code typed to match the name is now stored, not discarded (#402).</b> It used to be
+    /// nulled, on the reasoning that "otherwise a later rename would silently strand the code on the
+    /// old spelling" — which had it exactly backwards. Stranding it on the old spelling is the correct
+    /// outcome: ExamTools' <c>vec</c> value is upstream data, and nothing done to a local display label
+    /// can change it. Discarding the code is what let a rename re-point the match.</para>
     /// </summary>
-    private static string? NormalizeCode(string? examToolsCode, string name)
+    private static string? NormalizeCode(string? examToolsCode)
     {
         var trimmed = examToolsCode?.Trim();
-        return string.IsNullOrEmpty(trimmed) || string.Equals(trimmed, name, StringComparison.OrdinalIgnoreCase)
-            ? null
-            : trimmed;
+        return string.IsNullOrEmpty(trimmed) ? null : trimmed;
     }
+
+    /// <summary>
+    /// Keeps a rename cosmetic (#402). A VEC with no code is matched on its <b>name</b>, so renaming
+    /// one silently changes which ExamTools sessions it accepts — on the beta box that skipped five
+    /// HRCC sessions for five days while every ingestion run still reported <c>Success</c>.
+    ///
+    /// <para>Applies only where the code was <i>already</i> implicit and the submitted one is still
+    /// blank: nothing about the code was touched, but the name moved out from under it, so the old
+    /// name is written down as what it always effectively was. A typed code wins (the admin renaming
+    /// because the old name was wrong), and clearing a code that was really set is honoured as the
+    /// deliberate "match on the name" it is.</para>
+    /// </summary>
+    private static string? FreezeCodeOnRename(Vec vec, string newName, string? submittedCode) =>
+        submittedCode is null && vec.ExamToolsCode is null && !string.Equals(vec.Name, newName, StringComparison.Ordinal)
+            ? vec.Name
+            : submittedCode;
 
     /// <summary>
     /// Ingestion matches on <c>ExamToolsCode ?? Name</c>, so a clash has to be checked against that
