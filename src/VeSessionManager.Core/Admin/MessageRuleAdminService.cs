@@ -40,9 +40,12 @@ public class MessageRuleAdminService(AppDbContext dbContext, TimeProvider timePr
 
     public async Task<MessageRuleActionResult> CreateAsync(
         int teamId, MessageTrigger trigger, string name, string templateKey, int? parameterHours,
-        MessageRecipient recipient, int userId, CancellationToken cancellationToken)
+        MessageRecipient recipient, int userId, CancellationToken cancellationToken,
+        MessageChannel channel = MessageChannel.Email, ulong? discordChannelId = null, MessageFanOut fanOut = MessageFanOut.PerRecipient,
+        MessageEnvelope? envelope = null)
     {
-        var validation = await ValidateAsync(teamId, trigger, name, templateKey, parameterHours, recipient, cancellationToken);
+        envelope ??= MessageEnvelope.Default;
+        var validation = await ValidateAsync(teamId, trigger, name, templateKey, parameterHours, recipient, channel, discordChannelId, fanOut, envelope, cancellationToken);
         if (validation != MessageRuleActionResult.Success)
         {
             return validation;
@@ -56,9 +59,15 @@ public class MessageRuleAdminService(AppDbContext dbContext, TimeProvider timePr
             Trigger = trigger,
             ParameterHours = parameterHours,
             TemplateKey = templateKey,
-            Channel = MessageChannel.Email,
+            Channel = channel,
+            DiscordChannelId = channel == MessageChannel.Discord ? discordChannelId : null,
             Recipient = recipient,
-            FanOut = MessageFanOut.PerRecipient,
+            FanOut = fanOut,
+            ReplyToSource = envelope.ReplyToSource,
+            ReplyToOverride = envelope.ReplyToOverride,
+            CcAddress = envelope.CcAddress,
+            BccAddress = envelope.BccAddress,
+            MonitoringCopyOncePerRun = envelope.MonitoringCopyOncePerRun,
             IsEnabled = true,
             // "Now", and it is the whole safety property rather than a timestamp: every scan is
             // bounded by it, so a rule created this morning cannot reach anybody whose moment passed
@@ -74,7 +83,7 @@ public class MessageRuleAdminService(AppDbContext dbContext, TimeProvider timePr
         await dbContext.SaveChangesAsync(cancellationToken);
 
         dbContext.AddAuditLog(userId, "MessageRuleCreated", nameof(MessageRule), rule.Id,
-            $"Team {teamId} rule '{rule.Name}' on {trigger} ({Describe(parameterHours)}) to {recipient}, template '{templateKey}'.", now);
+            $"Team {teamId} rule '{rule.Name}' on {trigger} ({Describe(parameterHours)}) via {DescribeDestination(rule)}, template '{templateKey}'.", now);
         await dbContext.SaveChangesAsync(cancellationToken);
         return MessageRuleActionResult.Success;
     }
@@ -90,15 +99,18 @@ public class MessageRuleAdminService(AppDbContext dbContext, TimeProvider timePr
     /// </summary>
     public async Task<MessageRuleActionResult> UpdateAsync(
         int messageRuleId, string name, string templateKey, int? parameterHours,
-        MessageRecipient recipient, int userId, CancellationToken cancellationToken)
+        MessageRecipient recipient, int userId, CancellationToken cancellationToken,
+        MessageChannel channel = MessageChannel.Email, ulong? discordChannelId = null, MessageFanOut fanOut = MessageFanOut.PerRecipient,
+        MessageEnvelope? envelope = null)
     {
+        envelope ??= MessageEnvelope.Default;
         var rule = await dbContext.MessageRules.FirstOrDefaultAsync(r => r.Id == messageRuleId, cancellationToken);
         if (rule is null)
         {
             return MessageRuleActionResult.NotFound;
         }
 
-        var validation = await ValidateAsync(rule.TeamId, rule.Trigger, name, templateKey, parameterHours, recipient, cancellationToken);
+        var validation = await ValidateAsync(rule.TeamId, rule.Trigger, name, templateKey, parameterHours, recipient, channel, discordChannelId, fanOut, envelope, cancellationToken);
         if (validation != MessageRuleActionResult.Success)
         {
             return validation;
@@ -108,10 +120,18 @@ public class MessageRuleAdminService(AppDbContext dbContext, TimeProvider timePr
         rule.TemplateKey = templateKey;
         rule.ParameterHours = parameterHours;
         rule.Recipient = recipient;
+        rule.Channel = channel;
+        rule.DiscordChannelId = channel == MessageChannel.Discord ? discordChannelId : null;
+        rule.FanOut = fanOut;
+        rule.ReplyToSource = envelope.ReplyToSource;
+        rule.ReplyToOverride = envelope.ReplyToOverride;
+        rule.CcAddress = envelope.CcAddress;
+        rule.BccAddress = envelope.BccAddress;
+        rule.MonitoringCopyOncePerRun = envelope.MonitoringCopyOncePerRun;
 
         var now = timeProvider.GetUtcNow().UtcDateTime;
         dbContext.AddAuditLog(userId, "MessageRuleUpdated", nameof(MessageRule), rule.Id,
-            $"Team {rule.TeamId} rule '{rule.Name}' on {rule.Trigger} set to {Describe(parameterHours)} to {recipient}, template '{templateKey}'.", now);
+            $"Team {rule.TeamId} rule '{rule.Name}' on {rule.Trigger} set to {Describe(parameterHours)} via {DescribeDestination(rule)}, template '{templateKey}'.", now);
         await dbContext.SaveChangesAsync(cancellationToken);
         return MessageRuleActionResult.Success;
     }
@@ -191,7 +211,8 @@ public class MessageRuleAdminService(AppDbContext dbContext, TimeProvider timePr
     /// </summary>
     private async Task<MessageRuleActionResult> ValidateAsync(
         int teamId, MessageTrigger trigger, string name, string templateKey, int? parameterHours,
-        MessageRecipient recipient, CancellationToken cancellationToken)
+        MessageRecipient recipient, MessageChannel channel, ulong? discordChannelId, MessageFanOut fanOut,
+        MessageEnvelope envelope, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(name))
         {
@@ -215,9 +236,29 @@ public class MessageRuleAdminService(AppDbContext dbContext, TimeProvider timePr
             }
         }
 
-        if (!definition.LegalRecipients.Contains(recipient))
+        if (channel == MessageChannel.Discord)
         {
-            return MessageRuleActionResult.RecipientNotLegal;
+            // A Discord rule with no channel posts nowhere, forever, and looks configured while doing
+            // it — the same class of silent nothing every other check here refuses.
+            if (discordChannelId is not { } channelId || channelId == 0)
+            {
+                return MessageRuleActionResult.DiscordChannelRequired;
+            }
+        }
+        else
+        {
+            // A digest is one message covering everybody, which only makes sense where nobody is
+            // individually addressed. On email it would mean one message to one address listing every
+            // other candidate — a disclosure, not a feature.
+            if (fanOut == MessageFanOut.SingleDigest)
+            {
+                return MessageRuleActionResult.DigestNeedsAChannel;
+            }
+
+            if (!definition.LegalRecipients.Contains(recipient))
+            {
+                return MessageRuleActionResult.RecipientNotLegal;
+            }
         }
 
         // Checked against this team's own templates, and it has to be: a rule pointing at a key that
@@ -228,11 +269,50 @@ public class MessageRuleAdminService(AppDbContext dbContext, TimeProvider timePr
             return MessageRuleActionResult.TemplateNotFound;
         }
 
+        return ValidateEnvelope(channel, recipient, envelope);
+    }
+
+    /// <summary>
+    /// The three envelope constraints, each of which exists because the obvious configuration is a
+    /// mistake rather than a preference.
+    /// </summary>
+    private static MessageRuleActionResult ValidateEnvelope(MessageChannel channel, MessageRecipient recipient, MessageEnvelope envelope)
+    {
+        // A channel post has no envelope at all — nobody is addressed, so there is nothing to reply to
+        // and nobody to copy. Refused rather than ignored, so a rule cannot carry settings that look
+        // like they do something.
+        if (channel == MessageChannel.Discord)
+        {
+            return envelope.ReplyToSource != MessageReplyToSource.EmailSettings
+                   || envelope.CcAddress is not null || envelope.BccAddress is not null
+                ? MessageRuleActionResult.EnvelopeNeedsEmail
+                : MessageRuleActionResult.Success;
+        }
+
+        if (envelope.ReplyToSource == MessageReplyToSource.Custom && string.IsNullOrWhiteSpace(envelope.ReplyToOverride))
+        {
+            return MessageRuleActionResult.ReplyToRequired;
+        }
+
+        // **A Cc'd person cannot unsubscribe**, because the footer's link belongs to the To recipient.
+        // On a candidate-facing rule that is a standing visible copy nobody can stop, and it discloses
+        // the address to every candidate besides. A Bcc is fine — invisible, and the same shape as the
+        // team monitoring copy that has always existed.
+        if (!string.IsNullOrWhiteSpace(envelope.CcAddress) && recipient == MessageRecipient.Candidate)
+        {
+            return MessageRuleActionResult.CcNotAllowedOnCandidateMail;
+        }
+
         return MessageRuleActionResult.Success;
     }
 
     private static string Describe(int? parameterHours) =>
         parameterHours is { } hours ? $"{hours}h" : "no delay";
+
+    /// <summary>Where the message actually goes, for the audit line — "the candidate" says nothing useful about a rule that posts to a chat room.</summary>
+    private static string DescribeDestination(MessageRule rule) => rule.Channel == MessageChannel.Discord
+        ? $"Discord channel {rule.DiscordChannelId}{(rule.FanOut == MessageFanOut.SingleDigest ? " (one digest)" : " (one post each)")}"
+        : $"email to {rule.Recipient}";
 }
 
 public enum MessageRuleActionResult
@@ -257,5 +337,29 @@ public enum MessageRuleActionResult
     RecipientNotLegal,
 
     /// <summary>No template with that key on this team. A rule pointing at nothing records Failed on every tick with only a log line to show for it.</summary>
-    TemplateNotFound
+    TemplateNotFound,
+
+    /// <summary>A Discord rule arrived with no channel id. It would post nowhere, forever, while looking configured (#401 PR4).</summary>
+    DiscordChannelRequired,
+
+    /// <summary>
+    /// A digest was asked for on email. One message covering everybody only makes sense where nobody
+    /// is individually addressed — on email it means one message to one address listing every other
+    /// candidate, which is a disclosure rather than a feature.
+    /// </summary>
+    DigestNeedsAChannel,
+
+    /// <summary>Reply-To, Cc or Bcc set on a Discord rule. Nobody is addressed on a channel post, so there is nothing to reply to and nobody to copy (#401 PR4).</summary>
+    EnvelopeNeedsEmail,
+
+    /// <summary>Reply-To set to a custom address, with no address.</summary>
+    ReplyToRequired,
+
+    /// <summary>
+    /// A Cc on a rule that writes to candidates. The person Cc'd cannot unsubscribe — the footer's
+    /// link belongs to the To recipient — so it is a standing visible copy nobody can stop, and it
+    /// discloses that address to every candidate. Use Bcc, which is invisible and stoppable by the
+    /// team that set it.
+    /// </summary>
+    CcNotAllowedOnCandidateMail
 }

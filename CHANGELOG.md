@@ -8,6 +8,23 @@ that window, or immediately if it's phase-numbered work already summarized in "C
 design rationale for any entry still lives in its linked `/docs/*.md` file, not here or in
 CLAUDE.md — this file, like CLAUDE.md's Change Log, is pointers only.
 
+- **Two-factor authentication, opt-in and un-enforced on purpose (2026-08-14).** Issue #356. See
+  `docs/two-factor.md`. TOTP with QR enrolment, recovery codes and an admin escape hatch. **Enforcement
+  was deliberately not built**: system SMTP has never been configured here, so an admin who loses a
+  phone cannot be emailed a way back in — and the account that would rescue them is the one that would
+  be locked. A non-dismissible nudge on admin accounts instead. **No application cookie exists until
+  the challenge is passed**, which is the property the whole thing rests on and the easy one to get
+  wrong while a browser still looks right. The pending-user handoff is hand-rolled because #340's
+  one-`Set-Cookie` split means `PasswordSignInAsync` is not used — it writes Identity's own
+  `TwoFactorUserIdScheme` claim shape, which is *behaviour not documentation*, so a test pins the
+  round trip. Four things worth carrying forward: **`GenerateTwoFactorTokenAsync(user,
+  "Authenticator")` returns an empty string** (only a phone can generate; it reads exactly like the
+  method you want and fails against correct code), **Identity recovery codes contain a hyphen** so the
+  space-and-hyphen stripping that is right for a six-digit TOTP silently breaks redemption, **a
+  recovery code must never earn device trust** (it means the authenticator is *lost*), and
+  **"sign out other devices" needs no extra call** — Identity registers its stamp validator on the
+  two-factor cookie too, while `ForgetTwoFactorClientAsync` would clear the wrong device entirely.
+
 - **Nineteen audit findings closed, and two retention questions finally answered (2026-08-14).** See
   `docs/audit-log.md` and `docs/ve-retention.md` (both new), plus issues #238-#240, #243, #257,
   #260-#262, #264, #265, #312, #313. Three themes, and each had one shape. **VE scope**: an id posted

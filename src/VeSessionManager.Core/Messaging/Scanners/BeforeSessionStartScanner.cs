@@ -73,6 +73,7 @@ public class BeforeSessionStartScanner(AppDbContext dbContext) : IMessageTrigger
                     .Select(p => p.PaymentLinkUrl)
                     .FirstOrDefault() ?? ""
             },
-            sentUtc => candidate.DayBeforeReminderSentUtc = sentUtc))];
+            sentUtc => candidate.DayBeforeReminderSentUtc = sentUtc)
+            { SessionLeadCallSign = candidate.Session.TeamLeadCallSign })];
     }
 }

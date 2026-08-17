@@ -127,6 +127,13 @@ public class SmtpEmailSender(SystemSettingsService systemSettingsService, ILogge
         {
             mimeMessage.Bcc.Add(MailboxAddress.Parse(effectiveMessage.BccAddress));
         }
+
+        // Cc is visible, and only a message rule that explicitly asked for one ever sets it (#401
+        // PR4) — see EmailMessage.CcAddress for why that is deliberately hard to switch on.
+        if (!string.IsNullOrWhiteSpace(effectiveMessage.CcAddress))
+        {
+            mimeMessage.Cc.Add(MailboxAddress.Parse(effectiveMessage.CcAddress));
+        }
         mimeMessage.Subject = effectiveMessage.Subject;
         var bodyBuilder = new BodyBuilder { HtmlBody = effectiveMessage.HtmlBody };
 

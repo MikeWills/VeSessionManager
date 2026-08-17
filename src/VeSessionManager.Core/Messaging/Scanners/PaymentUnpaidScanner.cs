@@ -81,6 +81,7 @@ public class PaymentUnpaidScanner(AppDbContext dbContext) : IMessageTriggerScann
                 // Never "C"/InvariantCulture, which renders the generic currency sign rather than a
                 // dollar, and never a bare :F2, which follows the ambient culture. See Core/Usd.cs.
                 ["PaymentAmount"] = Usd.Format(payment.Amount)
-            }))];
+            })
+            { SessionLeadCallSign = payment.Candidate.Session.TeamLeadCallSign })];
     }
 }

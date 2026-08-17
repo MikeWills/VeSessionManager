@@ -62,6 +62,7 @@ public class CandidateTestedScanner(AppDbContext dbContext) : IMessageTriggerSca
                 // Offered because a team may write "your call sign, once it arrives, will be…" and a
                 // token that silently does not exist is worse than one that renders empty.
                 ["CallSign"] = candidate.CallSign ?? ""
-            }))];
+            })
+            { SessionLeadCallSign = candidate.Session.TeamLeadCallSign })];
     }
 }

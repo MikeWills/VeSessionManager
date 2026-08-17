@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using VeSessionManager.Core.Data;
+using VeSessionManager.Core.Discord;
 using VeSessionManager.Core.Email;
 using VeSessionManager.Core.Entities;
 using VeSessionManager.Core.Integrations;
@@ -28,6 +29,7 @@ public class MessageDispatchService(
     AppDbContext dbContext,
     EmailTemplateRenderer templateRenderer,
     IEmailSender emailSender,
+    IDiscordChannelMessageClient discordClient,
     TeamIntegrationState integrationState,
     TimeProvider timeProvider,
     ILogger<MessageDispatchService> logger)
@@ -41,14 +43,9 @@ public class MessageDispatchService(
             return result;
         }
 
-        if (rule.Channel != MessageChannel.Email)
+        if (rule.Channel == MessageChannel.Discord)
         {
-            // Declared in the model, not yet dispatchable. Refused loudly rather than skipped: only
-            // the seeder can create a rule today, so reaching here means something wrote one that
-            // nothing can deliver, and a silent skip would look exactly like a quiet week.
-            logger.LogError("Rule {RuleId} ({RuleName}) on team {TeamId} asks for channel {Channel}, which is not implemented yet — {Count} subject(s) not delivered",
-                rule.Id, rule.Name, team.Id, rule.Channel, subjects.Count);
-            return await RecordAllAsync(team, rule, subjects, MessageRuleOutcome.Failed, $"Channel {rule.Channel} is not implemented", result, cancellationToken);
+            return await DispatchToDiscordAsync(team, rule, subjects, result, cancellationToken);
         }
 
         if (!team.IsEmailConfigured)
@@ -68,6 +65,12 @@ public class MessageDispatchService(
         }
 
         var credentials = team.ToEmailCredentials();
+
+        // The rule's own Cc/Bcc, resolved once. Forty candidates on a fan-out would otherwise be
+        // forty copies of the same message into the same inbox, which stops being monitoring and
+        // becomes a folder somebody filters — see MessageRule.MonitoringCopyOncePerRun.
+        var monitoringCopyRemaining = rule.MonitoringCopyOncePerRun ? 1 : int.MaxValue;
+        var replyToCache = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var subject in subjects)
         {
@@ -91,14 +94,29 @@ public class MessageDispatchService(
                     continue;
                 }
 
+                // The team-wide monitoring copy exists to watch what *candidates* receive (#207).
+                // Copying a team's own internal notice back to the same team's monitoring inbox is
+                // noise, so a rule addressed anywhere else carries no Bcc. Unchanged by PR4: this one
+                // still goes on every message, which is existing behaviour and a separate decision
+                // from the rule's own copies below.
+                var teamMonitoringBcc = rule.Recipient == MessageRecipient.Candidate ? emailSettings.BccAddress : null;
+
+                var takeMonitoringCopy = monitoringCopyRemaining > 0;
+                var ruleCc = takeMonitoringCopy ? NullIfBlank(rule.CcAddress) : null;
+                var ruleBcc = takeMonitoringCopy ? NullIfBlank(rule.BccAddress) : null;
+                if (takeMonitoringCopy && (ruleCc is not null || ruleBcc is not null))
+                {
+                    monitoringCopyRemaining--;
+                }
+
                 await emailSender.SendAsync(
                     credentials,
                     new EmailMessage(toAddress, emailSettings.FromAddress, emailSettings.FromDisplayName,
-                        emailSettings.ReplyToAddress, rendered.Subject, rendered.Body, rendered.InlineLogo,
-                        // The monitoring copy exists to watch what *candidates* receive (#207).
-                        // Copying a team's own internal notice back to the same team's monitoring
-                        // inbox is noise, so a rule addressed anywhere else carries no Bcc.
-                        BccAddress: rule.Recipient == MessageRecipient.Candidate ? emailSettings.BccAddress : null),
+                        await ResolveReplyToAsync(rule, subject, emailSettings, replyToCache, cancellationToken),
+                        rendered.Subject, rendered.Body, rendered.InlineLogo,
+                        // Two Bccs can be in play; the rule's own is folded in beside the team's.
+                        BccAddress: teamMonitoringBcc ?? ruleBcc,
+                        CcAddress: ruleCc),
                     cancellationToken);
 
                 // Only on a real send. These columns are no longer authoritative, but they are what
@@ -119,6 +137,181 @@ public class MessageDispatchService(
 
         return result;
     }
+
+    /// <summary>
+    /// Posting a rule's message into a Discord channel (#401 PR4).
+    ///
+    /// <para><b>Nothing per-person can reach here, structurally.</b> This path builds no
+    /// <see cref="EmailMessage"/>, so there is no From, no Reply-To, no monitoring Bcc and no
+    /// unsubscribe footer to accidentally carry into a room full of people — those are properties of
+    /// writing to one person, and a channel post is not that. The plan for this PR named the risk;
+    /// the answer is that the code has no field to put them in rather than a check that remembers
+    /// not to.</para>
+    ///
+    /// <para><b>Markers are still per subject even for a digest.</b> One post covering twelve
+    /// candidates writes twelve rows, so the next tick knows all twelve are done — a single marker
+    /// keyed to the post would leave eleven of them looking unsent, and the thirteenth candidate to
+    /// arrive would re-announce the first twelve.</para>
+    /// </summary>
+    private async Task<MessageRuleResult> DispatchToDiscordAsync(
+        Team team, MessageRule rule, IReadOnlyList<MessageSubject> subjects, MessageRuleResult result, CancellationToken cancellationToken)
+    {
+        // Same shape as the SMTP check above, and the same reason for the difference between the two:
+        // unconfigured leaves no marker and retries, muted settles.
+        if (!team.IsDiscordConfigured || !discordClient.IsConfigured || rule.DiscordChannelId is not { } channelId)
+        {
+            logger.LogInformation("Discord is not fully configured for team {TeamId} — {PendingCount} message(s) waiting on rule \"{RuleName}\"; will post automatically once it is",
+                team.Id, subjects.Count, rule.Name);
+            result.Waiting += subjects.Count;
+            return result;
+        }
+
+        if (!integrationState.ShouldCall(team, TeamIntegration.Discord, $"posting \"{rule.Name}\""))
+        {
+            return await RecordAllAsync(team, rule, subjects, MessageRuleOutcome.Suppressed, null, result, cancellationToken);
+        }
+
+        var guildId = team.DiscordGuildId!.Value;
+
+        if (rule.FanOut == MessageFanOut.SingleDigest)
+        {
+            return await PostDigestAsync(team, rule, guildId, channelId, subjects, result, cancellationToken);
+        }
+
+        foreach (var subject in subjects)
+        {
+            var now = timeProvider.GetUtcNow().UtcDateTime;
+            try
+            {
+                var rendered = await templateRenderer.RenderAsync(team.Id, rule.TemplateKey, subject.Placeholders, cancellationToken);
+                if (rendered is null)
+                {
+                    await RecordAsync(team, rule, subject, MessageRuleOutcome.Failed, $"Template \"{rule.TemplateKey}\" is missing", now, cancellationToken);
+                    result.Failed++;
+                    continue;
+                }
+
+                await discordClient.PostMessageAsync(guildId, channelId, DiscordMessageText.FromHtml(rendered.Body), cancellationToken);
+
+                // No legacy ...SentUtc stamp: those columns mean "this candidate was emailed", and a
+                // channel post is not an email to them.
+                await RecordAsync(team, rule, subject, MessageRuleOutcome.Sent, null, now, cancellationToken);
+                result.Sent++;
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Rule \"{RuleName}\" ({RuleId}) failed to post for {SubjectType} {SubjectId}", rule.Name, rule.Id, subject.SubjectType, subject.SubjectId);
+                await RecordAsync(team, rule, subject, MessageRuleOutcome.Failed, Truncate(ex.Message), now, cancellationToken);
+                result.Failed++;
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// One post covering every subject in the batch — what <see cref="MessageFanOut.SingleDigest"/>
+    /// selects, and the reason that field exists at all: a forty-candidate session on
+    /// <c>PerRecipient</c> is forty posts in a row.
+    ///
+    /// <para>The template is rendered once, against the digest's own placeholders rather than any one
+    /// candidate's — <c>{{Count}}</c> and <c>{{Subjects}}</c>. A per-candidate token like
+    /// <c>{{CandidateFirstName}}</c> has no answer here and renders blank, which is why the admin
+    /// screen offers a different placeholder list for a digest rule.</para>
+    ///
+    /// <para><b>All or nothing.</b> One post, so one failure means none of the subjects is marked —
+    /// they all come back on the next tick, and the post is retried whole. Recording some as sent
+    /// would be recording that a post said something it never said.</para>
+    /// </summary>
+    private async Task<MessageRuleResult> PostDigestAsync(
+        Team team, MessageRule rule, ulong guildId, ulong channelId, IReadOnlyList<MessageSubject> subjects,
+        MessageRuleResult result, CancellationToken cancellationToken)
+    {
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+        var placeholders = new Dictionary<string, string>
+        {
+            ["Count"] = subjects.Count.ToString(),
+            ["Subjects"] = string.Join("\n", subjects.Select(s => "• " + s.DigestLabel))
+        };
+
+        try
+        {
+            var rendered = await templateRenderer.RenderAsync(team.Id, rule.TemplateKey, placeholders, cancellationToken);
+            if (rendered is null)
+            {
+                logger.LogError("Rule \"{RuleName}\" ({RuleId}) points at template \"{TemplateKey}\", which does not exist on team {TeamId}",
+                    rule.Name, rule.Id, rule.TemplateKey, team.Id);
+                return await RecordAllAsync(team, rule, subjects, MessageRuleOutcome.Failed, $"Template \"{rule.TemplateKey}\" is missing", result, cancellationToken);
+            }
+
+            await discordClient.PostMessageAsync(guildId, channelId, DiscordMessageText.FromHtml(rendered.Body), cancellationToken);
+
+            foreach (var subject in subjects)
+            {
+                await RecordAsync(team, rule, subject, MessageRuleOutcome.Sent, "Included in a digest post", now, cancellationToken);
+            }
+
+            result.Sent += subjects.Count;
+            return result;
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Rule \"{RuleName}\" ({RuleId}) failed to post its digest of {Count} subject(s)", rule.Name, rule.Id, subjects.Count);
+            return await RecordAllAsync(team, rule, subjects, MessageRuleOutcome.Failed, Truncate(ex.Message), result, cancellationToken);
+        }
+    }
+
+    /// <summary>
+    /// Where a reply goes (#401 PR4). Falls back to the team's own address whenever the rule's choice
+    /// cannot be honoured — a reply reaching the team is worse than one reaching the session lead, and
+    /// a reply reaching nobody is worse than both.
+    ///
+    /// <para><b>The call sign is checked for usability, not merely for presence.</b> ExamTools puts a
+    /// literal <c>&lt;UNKNOWN&gt;</c> in this field, which once fused two people into one VE record —
+    /// <c>CallSign.Normalize</c> is what refuses a placeholder rather than looking one up.</para>
+    ///
+    /// <para>Cached per run because a session's whole cohort shares one lead: forty candidates would
+    /// otherwise be forty identical lookups.</para>
+    /// </summary>
+    private async Task<string> ResolveReplyToAsync(
+        MessageRule rule, MessageSubject subject, EmailSettings emailSettings,
+        Dictionary<string, string?> cache, CancellationToken cancellationToken)
+    {
+        if (rule.ReplyToSource == MessageReplyToSource.Custom)
+        {
+            return NullIfBlank(rule.ReplyToOverride) ?? emailSettings.ReplyToAddress;
+        }
+
+        if (rule.ReplyToSource != MessageReplyToSource.SessionLead)
+        {
+            return emailSettings.ReplyToAddress;
+        }
+
+        if (CallSign.Normalize(subject.SessionLeadCallSign) is not { } callSign)
+        {
+            return emailSettings.ReplyToAddress;
+        }
+
+        if (!cache.TryGetValue(callSign, out var leadEmail))
+        {
+            leadEmail = await dbContext.VolunteerExaminers
+                .Where(v => v.CallSign == callSign)
+                .Select(v => v.Email)
+                .FirstOrDefaultAsync(cancellationToken);
+            cache[callSign] = leadEmail;
+
+            if (string.IsNullOrWhiteSpace(leadEmail))
+            {
+                logger.LogInformation(
+                    "Rule \"{RuleName}\" asks for the session lead's address, but {CallSign} has no VE record with an email — replies go to the team instead",
+                    rule.Name, callSign);
+            }
+        }
+
+        return NullIfBlank(leadEmail) ?? emailSettings.ReplyToAddress;
+    }
+
+    private static string? NullIfBlank(string? value) => string.IsNullOrWhiteSpace(value) ? null : value;
 
     private static string? ResolveAddress(MessageRule rule, MessageSubject subject, EmailSettings emailSettings) => rule.Recipient switch
     {

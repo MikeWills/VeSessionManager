@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using VeSessionManager.Core.Data;
 
@@ -10,9 +11,11 @@ using VeSessionManager.Core.Data;
 namespace VeSessionManager.Core.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260817054458_MessageRuleDiscordChannel")]
+    partial class MessageRuleDiscordChannel
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.10");
@@ -504,12 +507,6 @@ namespace VeSessionManager.Core.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
 
-                    b.Property<string>("BccAddress")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("CcAddress")
-                        .HasColumnType("TEXT");
-
                     b.Property<int>("Channel")
                         .HasColumnType("INTEGER");
 
@@ -525,9 +522,6 @@ namespace VeSessionManager.Core.Migrations
                     b.Property<bool>("IsEnabled")
                         .HasColumnType("INTEGER");
 
-                    b.Property<bool>("MonitoringCopyOncePerRun")
-                        .HasColumnType("INTEGER");
-
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasColumnType("TEXT");
@@ -536,12 +530,6 @@ namespace VeSessionManager.Core.Migrations
                         .HasColumnType("INTEGER");
 
                     b.Property<int>("Recipient")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("ReplyToOverride")
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("ReplyToSource")
                         .HasColumnType("INTEGER");
 
                     b.Property<int>("TeamId")

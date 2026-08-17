@@ -72,6 +72,7 @@ public class LicenseGrantedScanner(AppDbContext dbContext, ILogger<LicenseGrante
                 // The one trigger whose seeded template (GettingStartedLocally) is about the club
                 // rather than the exam, so it signs off with a name.
                 ["TeamName"] = team.Name
-            }))];
+            })
+            { SessionLeadCallSign = candidate.Session.TeamLeadCallSign })];
     }
 }

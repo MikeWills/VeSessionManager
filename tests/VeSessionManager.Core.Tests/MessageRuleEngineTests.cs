@@ -1011,12 +1011,16 @@ public class MessageRuleEngineTests
     }
 
     /// <summary>
-    /// A rule pointed at a channel the dispatcher cannot deliver is refused loudly rather than
-    /// skipped. Nothing can create one today — the seeder is the only writer — so reaching this means
-    /// something wrote a rule nothing can deliver, and a silent skip would look like a quiet week.
+    /// A Discord rule on a team with no guild waits rather than failing, and leaves no marker — the
+    /// optional-integration pattern, same as unconfigured SMTP.
+    ///
+    /// <para>This test asserted the opposite until PR4. PR1 declared the Discord channel in the model
+    /// and refused it at dispatch, so "not implemented" was a state a rule could be in; now that it is
+    /// implemented, what remains is "not configured yet", which must backfill rather than settle.
+    /// <c>DiscordMessageRuleTests</c> covers the working path.</para>
     /// </summary>
     [Fact]
-    public async Task ARuleOnAChannelThatIsNotImplemented_IsRecordedAsFailed_NotSkipped()
+    public async Task ADiscordRuleOnATeamWithNoGuild_Waits_AndLeavesNoMarker()
     {
         await using var dbContext = CreateContext();
         var team = await SeedTeamAsync(dbContext);
@@ -1029,9 +1033,10 @@ public class MessageRuleEngineTests
         var sender = new FakeEmailSender();
         var result = await RunRulesAsync(dbContext, sender, team, MessageTrigger.CandidateRegistered);
 
-        Assert.Equal(1, result.Failed);
+        Assert.Equal(1, result.Waiting);
+        Assert.Equal(0, result.Sent);
         Assert.Empty(sender.SentMessages);
-        Assert.Contains("Discord", dbContext.MessageRuleRuns.Single().Detail);
+        Assert.Empty(dbContext.MessageRuleRuns);
     }
 
     /// <summary>A disabled rule does nothing at all — and leaves no marker, so enabling it later still works.</summary>

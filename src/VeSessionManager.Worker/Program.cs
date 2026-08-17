@@ -102,7 +102,12 @@ builder.Services.Configure<DiscordOptions>(builder.Configuration.GetSection(Disc
 // Singleton so the bot login only happens once (bot tokens don't expire, unlike Zoom's). Only
 // BotToken lives here now — it's shared across every team (multi-team, see docs/multi-team.md);
 // each team's own Discord Guild lives on Team.DiscordGuildId instead.
-builder.Services.AddSingleton<IDiscordEventClient, DiscordEventClient>();
+// One instance, two interfaces (#401 PR4). The bot login it caches is per-instance, so registering
+// the class once and resolving both contracts from it is what stops a second login — and splitting
+// the contracts keeps MessageDispatchService depending on the one call it makes.
+builder.Services.AddSingleton<DiscordEventClient>();
+builder.Services.AddSingleton<IDiscordEventClient>(sp => sp.GetRequiredService<DiscordEventClient>());
+builder.Services.AddSingleton<IDiscordChannelMessageClient>(sp => sp.GetRequiredService<DiscordEventClient>());
 builder.Services.AddScoped<SessionEventSchedulingService>();
 
 // Singleton: the Square SDK client owns its own HttpClient, same reasoning as the other API clients.

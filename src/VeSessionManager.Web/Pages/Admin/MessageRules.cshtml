@@ -160,7 +160,25 @@ else
                             }
                         </div>
                     }
-                    <div class="field" style="max-width:320px;">
+                    @* Channel first, because it decides whether the next field asks for a person or a
+                       room. Rendered as two radios rather than a select so both options are visible
+                       without opening anything — a team that has never posted to Discord should be
+                       able to see that it can. *@
+                    <div class="field" style="max-width:420px;">
+                        <span class="label-text">Send it as</span>
+                        <label style="font-weight:400;">
+                            <input type="radio" name="channel" value="@((int)MessageChannel.Email)" checked
+                                   data-channel-radio="@point.Trigger" />
+                            An email
+                        </label>
+                        <label style="font-weight:400;">
+                            <input type="radio" name="channel" value="@((int)MessageChannel.Discord)"
+                                   data-channel-radio="@point.Trigger" />
+                            A Discord post
+                        </label>
+                    </div>
+
+                    <div class="field" style="max-width:320px;" data-channel-only="Email" data-channel-group="@point.Trigger">
                         <label for="recipient-@point.Trigger">Who receives it</label>
                         <select id="recipient-@point.Trigger" name="recipient" class="filter-select">
                             @foreach (var recipient in point.LegalRecipients)
@@ -168,6 +186,30 @@ else
                                 <option value="@((int)recipient)">@MessageTriggerLabels.Label(recipient)</option>
                             }
                         </select>
+                    </div>
+
+                    <div class="field" style="max-width:420px;" data-channel-only="Discord" data-channel-group="@point.Trigger" hidden>
+                        <label for="discordChannel-@point.Trigger">Discord channel id</label>
+                        <input id="discordChannel-@point.Trigger" name="discordChannelId" type="text" inputmode="numeric"
+                               placeholder="e.g. 1042938475610293847" />
+                        <span class="session-sub">
+                            In Discord, turn on Developer Mode, right-click the channel and choose Copy Channel ID. The bot
+                            needs View Channel and Send Messages there.
+                        </span>
+                    </div>
+
+                    @* The field that decides one post or forty. Only shown for Discord, because a
+                       digest on email would be one message to one person listing everybody else. *@
+                    <div class="field" style="max-width:420px;" data-channel-only="Discord" data-channel-group="@point.Trigger" hidden>
+                        <label for="fanOut-@point.Trigger">How many posts</label>
+                        <select id="fanOut-@point.Trigger" name="fanOut" class="filter-select">
+                            <option value="@((int)MessageFanOut.SingleDigest)">One post covering everybody</option>
+                            <option value="@((int)MessageFanOut.PerRecipient)">One post each</option>
+                        </select>
+                        <span class="session-sub">
+                            A digest renders the template once with <code>{{Count}}</code> and <code>{{Subjects}}</code>;
+                            per-candidate tokens have no answer there and come out blank.
+                        </span>
                     </div>
                     <div class="field" style="max-width:420px;">
                         <label for="template-@point.Trigger">Template</label>

@@ -631,4 +631,25 @@
     highlightedRow.scrollIntoView({ block: "center", behavior: "smooth" });
   }
 
+
+  // ---- Message rule channel fields (#401 PR4) ---------------------------------------------------
+  // A rule sends an email or posts to Discord, and the two need different questions answered: a
+  // recipient, or a channel id and how many posts. Both sets are in the markup and this hides the
+  // one that does not apply.
+  //
+  // Hidden rather than removed, and the server validates either way — with JavaScript unavailable
+  // every field is simply visible, which is a slightly cluttered form rather than a broken one.
+  // Radios are grouped per trigger point because each modal on the page is its own form.
+  document.addEventListener("change", function (event) {
+    var radio = event.target.closest("[data-channel-radio]");
+    if (!radio) return;
+
+    var group = radio.getAttribute("data-channel-radio");
+    var selected = radio.value === "1" ? "Discord" : "Email";
+    var fields = document.querySelectorAll('[data-channel-group="' + group + '"]');
+    Array.prototype.forEach.call(fields, function (field) {
+      field.hidden = field.getAttribute("data-channel-only") !== selected;
+    });
+  });
+
 })();

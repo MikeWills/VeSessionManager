@@ -153,7 +153,12 @@ builder.Services.AddScoped<SessionIngestionService>();
 builder.Services.AddScoped<VolunteerExaminerSyncService>();
 builder.Services.AddSingleton<IZoomClient, ZoomClient>();
 builder.Services.Configure<DiscordOptions>(builder.Configuration.GetSection(DiscordOptions.SectionName));
-builder.Services.AddSingleton<IDiscordEventClient, DiscordEventClient>();
+// One instance, two interfaces (#401 PR4). The bot login it caches is per-instance, so registering
+// the class once and resolving both contracts from it is what stops a second login — and splitting
+// the contracts keeps MessageDispatchService depending on the one call it makes.
+builder.Services.AddSingleton<DiscordEventClient>();
+builder.Services.AddSingleton<IDiscordEventClient>(sp => sp.GetRequiredService<DiscordEventClient>());
+builder.Services.AddSingleton<IDiscordChannelMessageClient>(sp => sp.GetRequiredService<DiscordEventClient>());
 builder.Services.AddScoped<SessionEventSchedulingService>();
 builder.Services.AddScoped<JobRunHistoryLogger>();
 // Backs Admin -> Job Schedule. Web-only: the Worker obeys the schedule, it has no need to report it.

@@ -76,7 +76,8 @@ public class MessageRulesModel(
     /// create handler.
     /// </summary>
     public async Task<IActionResult> OnPostCreateAsync(
-        int teamId, MessageTrigger trigger, string name, string templateKey, int? parameterHours, MessageRecipient recipient)
+        int teamId, MessageTrigger trigger, string name, string templateKey, int? parameterHours, MessageRecipient recipient,
+        MessageChannel channel = MessageChannel.Email, ulong? discordChannelId = null, MessageFanOut fanOut = MessageFanOut.PerRecipient)
     {
         var user = await userManager.GetUserWithManagerAsync(dbContext, User);
         if (user is null || !adminAccessScope.CanManageTeam(user, teamId))
@@ -85,7 +86,8 @@ public class MessageRulesModel(
         }
 
         var result = await messageRuleAdminService.CreateAsync(
-            teamId, trigger, name, templateKey, parameterHours, recipient, user.Id, HttpContext.RequestAborted);
+            teamId, trigger, name, templateKey, parameterHours, recipient, user.Id, HttpContext.RequestAborted,
+            channel, discordChannelId, fanOut);
         SetStatus(result, "Rule created.");
         return RedirectToPage(new { teamId });
     }
@@ -181,9 +183,14 @@ public class MessageRulesModel(
                 r.ParameterHours,
                 MessageTriggerLabels.DescribeHours(r.ParameterHours),
                 r.Recipient,
-                MessageTriggerLabels.Label(r.Recipient),
+                DestinationLabel(r),
                 r.IsEnabled))]))];
     }
+
+    /// <summary>Where the message goes, which for a Discord rule is a room rather than a person — "The candidate" over a channel post would be actively misleading.</summary>
+    private static string DestinationLabel(MessageRule rule) => rule.Channel == MessageChannel.Discord
+        ? $"Discord{(rule.FanOut == MessageFanOut.SingleDigest ? " (one digest)" : "")}"
+        : MessageTriggerLabels.Label(rule.Recipient);
 
     private string LabelFor(string key) =>
         Templates.FirstOrDefault(t => t.Key == key) is { } template ? template.Label : key;
@@ -198,6 +205,9 @@ public class MessageRulesModel(
                 $"Hours must be between 1 and {MessageRuleAdminService.MaxParameterHours} (a year).",
             MessageRuleActionResult.RecipientNotLegal => "That trigger cannot send to that recipient.",
             MessageRuleActionResult.TemplateNotFound => "Pick a template that exists on this team.",
+            MessageRuleActionResult.DiscordChannelRequired => "A Discord rule needs a channel id — without one it would post nowhere.",
+            MessageRuleActionResult.DigestNeedsAChannel =>
+                "A single digest only makes sense on a channel. On email it would mean one message to one address listing everybody else.",
             _ => "Rule not found."
         };
 

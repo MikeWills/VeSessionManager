@@ -2,7 +2,7 @@
 
 Issue [#401](https://github.com/MikeWills/VeSessionManager/issues/401). **PR1: the engine, with
 behaviour frozen. PR2: the admin screen, and the parameters become real. PR3: three new trigger
-points.** Discord and the envelope fields follow in PR4.
+points. PR4: Discord channel posts, and the envelope.** That completes the issue.
 
 ## Why
 
@@ -348,12 +348,80 @@ session's VEC runs a youth program and refuses otherwise. A rule has no such che
 carry no conditions of their own beyond their trigger (Mike, Q3) — so a rule sends it to everyone
 granted a license. The template registry says so where somebody choosing it will read it.
 
+---
+
+# PR4 — Discord channel posts, and the envelope
+
+## Posting to Discord
+
+A rule's `Channel` can be `Discord`, with its own `DiscordChannelId` — per rule rather than per team,
+so session reminders can go to #announcements and new-licensee congratulations to #general. The guild
+is still the team's; the bot is only in one per team.
+
+**Nothing per-person can reach a channel post, structurally.** The plan for this PR named the risk —
+the unsubscribe link and CAN-SPAM footer are properties of writing to one person, and a room full of
+people is not that. The answer is that the Discord path builds no `EmailMessage` at all, so there is
+no field to put them in, rather than a check somebody has to remember. It writes no
+`Candidate.…SentUtc` either: those columns mean "this candidate was emailed".
+
+**`MessageFanOut.PerSubject` was renamed to `SingleDigest`** (value unchanged, so nothing stored
+moves). The old name read as "one per candidate", which is the opposite of what it selects and
+precisely the forty-posts mistake the field exists to prevent. A digest renders the template once
+against `{{Count}}` and `{{Subjects}}`; per-candidate tokens have no answer there and render blank,
+which the form says.
+
+**Markers stay per subject even for a digest.** One post covering twelve candidates writes twelve
+rows — a single marker keyed to the post would leave eleven looking unsent, and the thirteenth
+candidate to arrive would re-announce the first twelve. A failed digest marks *nobody*: recording
+some as sent would record that a post said something it never said.
+
+`DiscordMessageText` converts the rendered HTML to something readable in a chat window. Two decisions
+in it are worth knowing:
+
+- **It does not escape Discord markdown.** The obvious next step — backslash every `_`, `~`, `` ` ``
+  so a candidate's name cannot italicise the post — breaks the thing these posts are mostly for: an
+  underscore inside a URL is common, and escaping it leaves a visible backslash and a dead link.
+  Markdown is not executable, so unlike HTML (#260) there is nothing to inject.
+- **The one real risk is handled at the API instead.** A candidate calling themselves `@everyone`
+  would ping the server, so posts go with `AllowedMentions.None` and no mention resolves whatever the
+  text says. A control at the boundary beats string-mangling that has to anticipate every syntax.
+
+## The envelope
+
+Per rule: `ReplyToSource` (`EmailSettings` / `SessionLead` / `Custom`), `ReplyToOverride`,
+`CcAddress`, `BccAddress`, `MonitoringCopyOncePerRun`.
+
+**There is no From, and its absence is the design.** Changing the From address means SPF, DKIM and
+DMARC on a domain this app does not control; get it wrong and the mail is silently classed as spam,
+which is the worst outcome for a reminder nobody knows to expect. Reply-To carries none of that risk
+and is what "can it come from the session lead" actually means — somebody wants the answer to reach
+the right person, not the envelope to lie about the sender. A test asserts the From is always the
+team's, because an absence is otherwise nobody's job to keep.
+
+**`SessionLead` resolves through `CallSign.Normalize`, not a raw lookup.** ExamTools puts a literal
+`<UNKNOWN>` in that field, which once fused two people into a single VE record. Every way of failing
+to resolve — no call sign, a placeholder, no matching VE, a VE with no email — falls back to the
+team's address and logs once: a reply reaching the team is worse than one reaching the lead, and a
+reply reaching nobody is worse than both.
+
+**A Cc is refused on candidate-facing rules.** The person copied cannot unsubscribe — the footer's
+link belongs to the To recipient — so it is a standing visible copy nobody can stop, and it discloses
+that address to every candidate. Bcc is fine, and allowed; a Cc on an internal notice to the team's
+own inbox is fine too, since nobody is being disclosed to a candidate.
+
+**`MonitoringCopyOncePerRun` defaults to true.** Forty candidates on a fan-out otherwise means forty
+identical copies into one inbox, which stops being monitoring and becomes a folder somebody filters —
+at which point nobody is watching at all.
+
+**The team-wide `EmailSettings.BccAddress` is deliberately untouched** and still goes on every
+candidate-facing message, as it has since #207. Making that once-per-run too is a defensible change
+and a different decision — about what monitoring is for — so it is not made here in passing.
+
 ## Still to come
 
-- **PR4** — Discord channel posts (`FanOut = PerSubject`; the unsubscribe and CAN-SPAM footer are
-  per-person concepts and must not reach a channel post), and the envelope: `From` constrained to the
-  sending domain (SPF/DKIM/DMARC), `Reply-To` resolvable to the session lead, `Cc`/`Bcc` with a
-  once-per-run monitoring copy.
+Nothing in #401. Worth doing separately: **`PaymentReminderService` no longer sends anything**, so its
+name and its `PaymentReminder` job key both describe something it does not do. Renaming the key
+orphans its `JobRunHistory` rows, which is why it is its own change rather than a tidy-up here.
 
 Password reset, VE self-service sign-in links and VE email-change confirmations stay **outside** this
 model as action-based sends. They carry access tokens, and

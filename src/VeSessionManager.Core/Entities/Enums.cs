@@ -278,8 +278,19 @@ public enum MessageRecipient
 /// </summary>
 public enum MessageFanOut
 {
+    /// <summary>One message per subject, addressed to that subject's recipient. What every email rule does.</summary>
     PerRecipient = 0,
-    PerSubject = 1
+
+    /// <summary>
+    /// One message covering every subject in the batch — a digest. Only meaningful for a channel
+    /// nobody is individually addressed on, which today means Discord.
+    ///
+    /// <para><b>Renamed from <c>PerSubject</c> in PR4</b>, value unchanged so nothing stored moves.
+    /// The old name was ambiguous in the one place ambiguity is expensive: "per subject" reads as
+    /// "one per candidate", which is the opposite of what it selects and is exactly the forty-posts
+    /// mistake the <see cref="MessageFanOut"/> field exists to prevent.</para>
+    /// </summary>
+    SingleDigest = 1
 }
 
 /// <summary>
@@ -302,6 +313,32 @@ public enum MessageRuleOutcome
 
     /// <summary>The render or the send failed. <b>Not</b> terminal — retried on the next scan, exactly as a failed send has always been.</summary>
     Failed = 3
+}
+
+/// <summary>
+/// Where a rule's Reply-To comes from (#401 PR4).
+///
+/// <para>Note what is absent: a From source. Changing the From address means SPF/DKIM/DMARC on a
+/// domain this app does not control, and getting it wrong sends the mail to spam silently. Reply-To
+/// carries no such risk and is what "can it come from the session lead" actually means.</para>
+/// </summary>
+public enum MessageReplyToSource
+{
+    /// <summary>The team's configured Reply-To. What every message did before this field existed.</summary>
+    EmailSettings = 0,
+
+    /// <summary>
+    /// The session's lead VE, resolved from <c>Session.TeamLeadCallSign</c>.
+    ///
+    /// <para>Falls back to the team's own address when the lead cannot be resolved — no call sign on
+    /// the session, a placeholder like ExamTools' literal <c>&lt;UNKNOWN&gt;</c>, no matching VE, or a
+    /// VE with no email. A reply that reaches the team is worse than one that reaches the lead;
+    /// a reply that reaches nobody is worse than both.</para>
+    /// </summary>
+    SessionLead = 1,
+
+    /// <summary>A fixed address typed on the rule.</summary>
+    Custom = 2
 }
 
 /// <summary>What a <see cref="MessageRuleRun.SubjectId"/> points at. A trigger has exactly one subject type; see <see cref="Messaging.MessageTriggerDefinitions"/>.</summary>

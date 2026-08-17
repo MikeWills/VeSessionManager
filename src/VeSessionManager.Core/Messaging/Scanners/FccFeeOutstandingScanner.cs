@@ -82,6 +82,7 @@ public class FccFeeOutstandingScanner(AppDbContext dbContext) : IMessageTriggerS
                 ["Frn"] = candidate.Frn ?? "",
                 ["FccApplicationFileNumber"] = candidate.UlsApplicationFileNumber ?? ""
             },
-            sentUtc => candidate.FccFeeReminderSentUtc = sentUtc))];
+            sentUtc => candidate.FccFeeReminderSentUtc = sentUtc)
+            { SessionLeadCallSign = candidate.Session.TeamLeadCallSign })];
     }
 }

@@ -26,6 +26,9 @@ public static class TestModeEmailRedirector
         {
             ToAddress = overrideEmail,
             BccAddress = null,
+            // Same reasoning as the Bcc above, and more so: a Cc is visible, so leaving it would send
+            // a real person an un-redirected copy of mail that never really went out.
+            CcAddress = null,
             Subject = $"[TEST MODE] {message.Subject}",
             HtmlBody = $"<p style=\"background:#fee2e2;color:#991b1b;padding:8px 12px;border:1px solid #fca5a5;font-family:sans-serif;\">" +
                        $"TEST MODE — this would have been sent to <strong>{WebUtility.HtmlEncode(message.ToAddress)}</strong>.</p>" +

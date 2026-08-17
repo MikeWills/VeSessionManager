@@ -53,9 +53,69 @@ public class MessageRule
 
     public MessageChannel Channel { get; set; } = MessageChannel.Email;
 
+    /// <summary>
+    /// Which Discord channel a <see cref="MessageChannel.Discord"/> rule posts into (#401 PR4). Null
+    /// for an email rule.
+    ///
+    /// <para><b>Per rule rather than per team</b>, so one team can put its session reminders in
+    /// #announcements and its new-licensee congratulations in #general. The guild is still the team's
+    /// (<see cref="Team.DiscordGuildId"/>) — the bot is only in one per team.</para>
+    /// </summary>
+    public ulong? DiscordChannelId { get; set; }
+
     public MessageRecipient Recipient { get; set; } = MessageRecipient.Candidate;
 
     public MessageFanOut FanOut { get; set; } = MessageFanOut.PerRecipient;
+
+    /// <summary>
+    /// Where a reply goes (#401 PR4). Defaults to <see cref="MessageReplyToSource.EmailSettings"/>,
+    /// which is what every message did before this field existed.
+    ///
+    /// <para><b>This is the field teams actually want, and <c>From</c> is not.</b> Changing the From
+    /// address means SPF, DKIM and DMARC on a domain this app does not control — get it wrong and mail
+    /// silently goes to spam, which is the worst possible failure for a reminder. Reply-To has no such
+    /// constraint: it changes who hears the answer, which is the real request behind "can it come from
+    /// the session lead".</para>
+    /// </summary>
+    public MessageReplyToSource ReplyToSource { get; set; } = MessageReplyToSource.EmailSettings;
+
+    /// <summary>Used only when <see cref="ReplyToSource"/> is <see cref="MessageReplyToSource.Custom"/>.</summary>
+    public string? ReplyToOverride { get; set; }
+
+    /// <summary>
+    /// A visible copy on every message this rule sends (#401 PR4). Null for almost every rule, and
+    /// that is the right default.
+    ///
+    /// <para><b>Cc discloses.</b> Everyone on a fan-out sees this address, and the person at it sees
+    /// every recipient's name in the To line if a client shows it. Worse, they cannot unsubscribe —
+    /// the footer's link belongs to the To recipient — so a Cc on candidate-facing mail is a
+    /// standing copy nobody can stop. Deliberately not offered on the admin form for a
+    /// candidate-facing rule.</para>
+    /// </summary>
+    public string? CcAddress { get; set; }
+
+    /// <summary>
+    /// A silent copy, over and above the team-wide monitoring Bcc in <c>EmailSettings</c>.
+    ///
+    /// <para>See <see cref="MonitoringCopyOncePerRun"/> for the multiplication problem this shares
+    /// with <see cref="CcAddress"/>.</para>
+    /// </summary>
+    public string? BccAddress { get; set; }
+
+    /// <summary>
+    /// Whether this rule's own <see cref="CcAddress"/>/<see cref="BccAddress"/> go on <b>one</b>
+    /// message per run rather than on every one (#401 PR4). Default true, and the default is the
+    /// point.
+    ///
+    /// <para>Forty candidates on a fan-out means forty copies of the same message into the same
+    /// inbox, which stops being monitoring and becomes a reason to filter the folder — at which point
+    /// nobody is watching at all. One copy answers "what did this rule actually send today".</para>
+    ///
+    /// <para><b>The team-wide <c>EmailSettings.BccAddress</c> is untouched by this</b> and still goes
+    /// on every candidate-facing message, as it has since #207. That is existing behaviour outside
+    /// this field's remit; changing it is a separate decision about what monitoring is for.</para>
+    /// </summary>
+    public bool MonitoringCopyOncePerRun { get; set; } = true;
 
     public bool IsEnabled { get; set; } = true;
 

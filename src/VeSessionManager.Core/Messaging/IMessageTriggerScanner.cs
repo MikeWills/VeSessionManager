@@ -27,7 +27,32 @@ public sealed record MessageSubject(
     MessageSubjectType SubjectType,
     string? CandidateEmail,
     IReadOnlyDictionary<string, string> Placeholders,
-    Action<DateTime>? StampLegacySentUtc = null);
+    Action<DateTime>? StampLegacySentUtc = null)
+{
+    /// <summary>
+    /// How this subject appears in a <see cref="MessageFanOut.SingleDigest"/> post's
+    /// <c>{{Subjects}}</c> list (#401 PR4).
+    ///
+    /// <para>Read off the placeholders rather than passed in by each scanner, so a digest names people
+    /// exactly as every template already does and no scanner has to remember a second label. Falls
+    /// back to the id — a digest line that says "#412" is poor, and a blank bullet is worse.</para>
+    /// </summary>
+    /// <summary>
+    /// The call sign on this subject's session, for a rule whose Reply-To is
+    /// <see cref="MessageReplyToSource.SessionLead"/> (#401 PR4). Null when the scanner did not load a
+    /// session, or the session names no lead.
+    ///
+    /// <para>Carried here rather than looked up by the dispatcher because the scanner already has the
+    /// session in hand — the alternative is a second query per subject for a field that was two joins
+    /// away a moment ago.</para>
+    /// </summary>
+    public string? SessionLeadCallSign { get; init; }
+
+    public string DigestLabel =>
+        Placeholders.TryGetValue("CandidateName", out var name) && !string.IsNullOrWhiteSpace(name)
+            ? name
+            : $"#{SubjectId}";
+}
 
 /// <summary>
 /// Answers "which subjects is this rule due to fire for, right now" for one trigger point (#401).

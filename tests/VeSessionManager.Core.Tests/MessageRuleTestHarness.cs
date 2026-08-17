@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using VeSessionManager.Core.Data;
+using VeSessionManager.Core.Discord;
 using VeSessionManager.Core.Email;
 using VeSessionManager.Core.Entities;
 using VeSessionManager.Core.Integrations;
@@ -21,7 +22,33 @@ public static class MessageRuleTestHarness
 {
     public const string PublicBaseUrl = "https://test.example";
 
-    public static MessageRuleService Create(AppDbContext dbContext, IEmailSender emailSender, TimeProvider timeProvider)
+    /// <summary>
+    /// Records every channel post instead of making one, so a test can assert on what would have gone
+    /// to Discord (#401 PR4). <c>IsConfigured</c> is true because the interesting cases are about what
+    /// the dispatcher does with a working client; the unconfigured path has its own test.
+    /// </summary>
+    public sealed class FakeDiscordChannelClient : IDiscordChannelMessageClient
+    {
+        public List<(ulong GuildId, ulong ChannelId, string Message)> Posts { get; } = [];
+        public Exception? ThrowOnNextPost { get; set; }
+        public bool IsConfigured { get; set; } = true;
+
+        public Task PostMessageAsync(ulong guildId, ulong channelId, string message, CancellationToken cancellationToken)
+        {
+            if (ThrowOnNextPost is not null)
+            {
+                var ex = ThrowOnNextPost;
+                ThrowOnNextPost = null;
+                throw ex;
+            }
+
+            Posts.Add((guildId, channelId, message));
+            return Task.CompletedTask;
+        }
+    }
+
+    public static MessageRuleService Create(
+        AppDbContext dbContext, IEmailSender emailSender, TimeProvider timeProvider, IDiscordChannelMessageClient? discordClient = null)
     {
         var appOptions = Options.Create(new AppOptions { PublicBaseUrl = PublicBaseUrl });
         IMessageTriggerScanner[] scanners =
@@ -39,6 +66,7 @@ public static class MessageRuleTestHarness
             dbContext,
             new EmailTemplateRenderer(dbContext, NullLogger<EmailTemplateRenderer>.Instance),
             emailSender,
+            discordClient ?? new FakeDiscordChannelClient(),
             new TeamIntegrationState(NullLogger<TeamIntegrationState>.Instance),
             timeProvider,
             NullLogger<MessageDispatchService>.Instance);

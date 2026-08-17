@@ -79,7 +79,8 @@ public class CandidateRegisteredScanner(
                 ["YouthPaymentLinkUrl"] = BuildYouthPaymentLinkUrl(candidate),
                 ["PrivacyPolicyUrl"] = emailSettings.PrivacyPolicyUrl
             },
-            sentUtc => candidate.RegistrationConfirmationSentUtc = sentUtc))];
+            sentUtc => candidate.RegistrationConfirmationSentUtc = sentUtc)
+            { SessionLeadCallSign = candidate.Session.TeamLeadCallSign })];
     }
 
     /// <summary>Blank when the session's Vec doesn't support the youth program, or the InitialExam

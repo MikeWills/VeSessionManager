@@ -42,6 +42,30 @@ public class MessageRuleEditModel(
     [BindProperty]
     public MessageRecipient Recipient { get; set; }
 
+    [BindProperty]
+    public MessageChannel Channel { get; set; }
+
+    [BindProperty]
+    public ulong? DiscordChannelId { get; set; }
+
+    [BindProperty]
+    public MessageFanOut FanOut { get; set; }
+
+    [BindProperty]
+    public MessageReplyToSource ReplyToSource { get; set; }
+
+    [BindProperty]
+    public string? ReplyToOverride { get; set; }
+
+    [BindProperty]
+    public string? CcAddress { get; set; }
+
+    [BindProperty]
+    public string? BccAddress { get; set; }
+
+    [BindProperty]
+    public bool MonitoringCopyOncePerRun { get; set; }
+
     public MessageRule Rule { get; private set; } = null!;
     public IReadOnlyList<MessageRulesModel.TemplateOption> Templates { get; private set; } = [];
 
@@ -60,6 +84,14 @@ public class MessageRuleEditModel(
         TemplateKey = Rule.TemplateKey;
         ParameterHours = Rule.ParameterHours;
         Recipient = Rule.Recipient;
+        Channel = Rule.Channel;
+        DiscordChannelId = Rule.DiscordChannelId;
+        FanOut = Rule.FanOut;
+        ReplyToSource = Rule.ReplyToSource;
+        ReplyToOverride = Rule.ReplyToOverride;
+        CcAddress = Rule.CcAddress;
+        BccAddress = Rule.BccAddress;
+        MonitoringCopyOncePerRun = Rule.MonitoringCopyOncePerRun;
         return Page();
     }
 
@@ -70,7 +102,9 @@ public class MessageRuleEditModel(
 
         var user = await userManager.GetRequiredUserAsync(dbContext, User);
         var result = await messageRuleAdminService.UpdateAsync(
-            Id, Name, TemplateKey, ParameterHours, Recipient, user.Id, HttpContext.RequestAborted);
+            Id, Name, TemplateKey, ParameterHours, Recipient, user.Id, HttpContext.RequestAborted,
+            Channel, DiscordChannelId, FanOut,
+            new MessageEnvelope(ReplyToSource, ReplyToOverride, CcAddress, BccAddress, MonitoringCopyOncePerRun));
 
         if (result == MessageRuleActionResult.Success)
         {
@@ -86,6 +120,14 @@ public class MessageRuleEditModel(
                 $"Hours must be between 1 and {MessageRuleAdminService.MaxParameterHours} (a year).",
             MessageRuleActionResult.RecipientNotLegal => "That trigger cannot send to that recipient.",
             MessageRuleActionResult.TemplateNotFound => "Pick a template that exists on this team.",
+            MessageRuleActionResult.DiscordChannelRequired => "A Discord rule needs a channel id — without one it would post nowhere.",
+            MessageRuleActionResult.DigestNeedsAChannel =>
+                "A single digest only makes sense on a channel. On email it would mean one message to one address listing everybody else.",
+            MessageRuleActionResult.EnvelopeNeedsEmail =>
+                "Reply-To, Cc and Bcc only apply to email — nobody is addressed on a Discord post.",
+            MessageRuleActionResult.ReplyToRequired => "Pick an address for replies, or choose one of the other two options.",
+            MessageRuleActionResult.CcNotAllowedOnCandidateMail =>
+                "A Cc on candidate mail cannot unsubscribe and is visible to everyone who gets it. Use Bcc instead.",
             _ => "Rule not found."
         };
         return RedirectToPage(new { id = Id });

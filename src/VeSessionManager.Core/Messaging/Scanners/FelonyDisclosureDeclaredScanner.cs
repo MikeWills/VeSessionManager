@@ -74,6 +74,7 @@ public class FelonyDisclosureDeclaredScanner(AppDbContext dbContext, ILogger<Fel
                 ["CandidateFirstName"] = candidate.FirstName ?? "",
                 ["SessionDate"] = SessionTimeFormatter.ForCandidate(candidate.Session.ScheduledStartUtc)
             },
-            sentUtc => candidate.FelonyDisclosureInstructionsSentUtc = sentUtc))];
+            sentUtc => candidate.FelonyDisclosureInstructionsSentUtc = sentUtc)
+            { SessionLeadCallSign = candidate.Session.TeamLeadCallSign })];
     }
 }

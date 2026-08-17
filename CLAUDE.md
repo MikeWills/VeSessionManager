@@ -126,6 +126,18 @@ would be pure duplication — and goes straight to `CHANGELOG.md` instead. Non-p
 redesigns, hardening passes) start here and move to `CHANGELOG.md` once the section is at/over the
 cap and a newer entry needs to be added; oldest goes first.
 
+- **Rules can post to Discord, and carry their own Reply-To (2026-08-17).** Issue #401, PR4 — the last
+  of it. See `docs/trigger-points.md`. Three things worth carrying forward: **nothing per-person can
+  reach a channel post because that path builds no `EmailMessage` at all** — the unsubscribe and
+  CAN-SPAM footer have no field to occupy rather than a check that remembers them; **`MessageFanOut`'s
+  `PerSubject` was renamed `SingleDigest`** (value unchanged) because the old name read as "one per
+  candidate", which is the opposite of what it selects and exactly the forty-posts mistake the field
+  exists to prevent; and **there is deliberately no From override** — SPF/DKIM/DMARC live on a domain
+  this app does not control and a wrong From goes to spam silently, so Reply-To (resolvable to the
+  session lead, via `CallSign.Normalize` so ExamTools' `<UNKNOWN>` is never looked up) is the field
+  that answers what people actually ask for. A Cc is refused on candidate mail: the person copied
+  cannot unsubscribe.
+
 - **Three new trigger points, none of them seeded (2026-08-17).** Issue #401, PR3 — see
   `docs/trigger-points.md`. `CandidateTested`, `LicenseGranted` and `FelonyDisclosureDeclared`, all
   opt-in, so no existing team's mail changes. The one to carry forward: **a state trigger is only
@@ -252,23 +264,6 @@ cap and a newer entry needs to be added; oldest goes first.
   though Square's own rule counts only completed ones, and the ceiling is `SquareAmountPaidUsd`, not
   `Amount` — a $5 youth payment against a $15 row is routine here. Still unverified: whether each
   team's existing token carries `PAYMENTS_WRITE`, which only a live Sandbox call settles.
-
-- **Two-factor authentication, opt-in and un-enforced on purpose (2026-08-14).** Issue #356. See
-  `docs/two-factor.md`. TOTP with QR enrolment, recovery codes and an admin escape hatch. **Enforcement
-  was deliberately not built**: system SMTP has never been configured here, so an admin who loses a
-  phone cannot be emailed a way back in — and the account that would rescue them is the one that would
-  be locked. A non-dismissible nudge on admin accounts instead. **No application cookie exists until
-  the challenge is passed**, which is the property the whole thing rests on and the easy one to get
-  wrong while a browser still looks right. The pending-user handoff is hand-rolled because #340's
-  one-`Set-Cookie` split means `PasswordSignInAsync` is not used — it writes Identity's own
-  `TwoFactorUserIdScheme` claim shape, which is *behaviour not documentation*, so a test pins the
-  round trip. Four things worth carrying forward: **`GenerateTwoFactorTokenAsync(user,
-  "Authenticator")` returns an empty string** (only a phone can generate; it reads exactly like the
-  method you want and fails against correct code), **Identity recovery codes contain a hyphen** so the
-  space-and-hyphen stripping that is right for a six-digit TOTP silently breaks redemption, **a
-  recovery code must never earn device trust** (it means the authenticator is *lost*), and
-  **"sign out other devices" needs no extra call** — Identity registers its stamp validator on the
-  two-factor cookie too, while `ForgetTwoFactorClientAsync` would clear the wrong device entirely.
 
 Everything through Phase 0-10's initial build (ExamTools ingestion, Zoom/Discord, Square, email
 notifications, FCC ULS watcher, payment reminders, VE tracking, VEC submission tracker, admin
