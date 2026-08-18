@@ -66,52 +66,42 @@ public class CandidateEmailHistoryFormatterTests
             history.Select(h => h.Label));
     }
 
+
+
+
     /// <summary>
-    /// The felony column is written by <b>both</b> the on-demand button and
-    /// <c>FelonyDisclosureDeclaredScanner</c>. Where a run covers it, the column must not add a
-    /// second, worse-labelled line for the same email.
+    /// <b>#417.</b> A hand-send is a run now, so it needs no column and no fallback — including the
+    /// Youth Program instructions, which no trigger point can send and which therefore records the
+    /// <c>SentByHand</c> marker rather than a real trigger.
     /// </summary>
     [Fact]
-    public void FelonyInstructions_AreNotListedTwiceWhenARuleSentThem()
+    public void HandSends_AppearAsRunsLikeEverythingElse()
+    {
+        var history = CandidateEmailHistoryFormatter.Build(
+            Candidate(),
+            [Send("Youth Program instructions", 0, MessageTrigger.SentByHand),
+             Send("Registration confirmation (resent)", 10, MessageTrigger.CandidateRegistered)]);
+
+        Assert.Equal(
+            ["Youth Program instructions", "Registration confirmation (resent)"],
+            history.Select(h => h.Label));
+    }
+
+    /// <summary>
+    /// The felony instructions can come from the button or from a rule, and both now record a run —
+    /// so the one thing that must not happen is the same email appearing twice. It used to take a
+    /// dedup rule; now it takes nothing, because there is only one source.
+    /// </summary>
+    [Fact]
+    public void FelonyInstructions_AppearOnce_WhicheverPathSentThem()
     {
         var candidate = Candidate();
         candidate.FelonyDisclosureInstructionsSentUtc = Base;
 
         var history = CandidateEmailHistoryFormatter.Build(
-            candidate, [Send("Felony disclosure notice", 0, MessageTrigger.FelonyDisclosureDeclared)]);
+            candidate, [Send("Felony disclosure instructions", 0, MessageTrigger.FelonyDisclosureDeclared)]);
 
-        Assert.Equal("Felony disclosure notice", Assert.Single(history).Label);
-    }
-
-    /// <summary>But sent by hand, with no rule involved, it is the only record there is.</summary>
-    [Fact]
-    public void FelonyInstructions_SentByHand_StillAppear()
-    {
-        var candidate = Candidate();
-        candidate.FelonyDisclosureInstructionsSentUtc = Base;
-
-        var history = CandidateEmailHistoryFormatter.Build(candidate, []);
-
-        Assert.Equal("Felony disclosure instructions email", Assert.Single(history).Label);
-    }
-
-    /// <summary>
-    /// <c>Payment.PaymentReminderSentUtc</c> has no writer left — the FCC fee reminder became a rule
-    /// in #401. Rows written before that are recorded nowhere else, so the line stays rather than
-    /// quietly erasing them.
-    /// </summary>
-    [Fact]
-    public void AHistoricalPaymentReminder_StillAppears()
-    {
-        var candidate = Candidate();
-        candidate.Payments.Add(new Payment
-        {
-            CandidateId = 1, Amount = 15m, Reason = PaymentReason.InitialExam, PaymentReminderSentUtc = Base
-        });
-
-        var history = CandidateEmailHistoryFormatter.Build(candidate, []);
-
-        Assert.Equal("Payment reminder email", Assert.Single(history).Label);
+        Assert.Equal("Felony disclosure instructions", Assert.Single(history).Label);
     }
 
     [Fact]

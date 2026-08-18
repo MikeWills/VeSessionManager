@@ -242,7 +242,23 @@ public enum MessageTrigger
     /// ask anyone about it. Offering it here as an opt-in fixes the timing rather than reinstating
     /// the mistake; a team that wants it automatic gets it before the session, not after.</para>
     /// </summary>
-    FelonyDisclosureDeclared = 6
+    FelonyDisclosureDeclared = 6,
+
+    /// <summary>
+    /// Not a trigger point — a note on a run saying a person pressed a button (#417).
+    ///
+    /// <para>A hand-send has no moment to scan for, but <c>MessageRuleRun.Trigger</c> is not nullable
+    /// and the run still has to exist, or the send is invisible to the candidate's email history.
+    /// Numbered clear of the scan triggers and deliberately <b>absent from
+    /// <c>MessageTriggerDefinitions.All</c></b>: the admin screens iterate that list, so this can never
+    /// appear as something configurable, and <c>MessageTriggerDefinitions.For</c> throws for it because
+    /// nothing should ask.</para>
+    ///
+    /// <para>Used only where the hand-send mirrors no real trigger. A resent confirmation records
+    /// <see cref="CandidateRegistered"/>, because that is what the message <i>is</i>, however it was
+    /// set off.</para>
+    /// </summary>
+    SentByHand = 100
 }
 
 /// <summary>How a <see cref="MessageRule"/> delivers. Discord is declared but not yet dispatchable — see <see cref="MessageRecipient"/>.</summary>

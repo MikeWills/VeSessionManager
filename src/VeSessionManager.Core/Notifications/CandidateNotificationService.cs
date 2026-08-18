@@ -102,7 +102,11 @@ public class CandidateNotificationService(
 
         var credentials = team.ToEmailCredentials();
         if (!await TrySendAsync(
-            team, credentials, RegistrationConfirmationKey, candidate, emailSettings, placeholders, cancellationToken))
+            team, credentials, RegistrationConfirmationKey, candidate, emailSettings, placeholders,
+            // The message *is* a registration confirmation however it was set off, so it records that
+            // trigger rather than SentByHand — which is also what lets the history tell a resend from
+            // the original by its label alone.
+            MessageTrigger.CandidateRegistered, ResentConfirmationLabel, cancellationToken))
         {
             return CandidateEmailSendResult.TemplateMissing;
         }
@@ -165,7 +169,9 @@ public class CandidateNotificationService(
 
         var credentials = team.ToEmailCredentials();
         if (!await TrySendAsync(
-            team, credentials, YouthProgramInstructionsKey, candidate, emailSettings, placeholders, cancellationToken))
+            team, credentials, YouthProgramInstructionsKey, candidate, emailSettings, placeholders,
+            // No trigger point sends this one — a person decides — so it is the marker value.
+            MessageTrigger.SentByHand, YouthProgramLabel, cancellationToken))
         {
             return CandidateEmailSendResult.TemplateMissing;
         }
@@ -237,7 +243,10 @@ public class CandidateNotificationService(
 
         var credentials = team.ToEmailCredentials();
         if (!await TrySendAsync(
-            team, credentials, FelonyDisclosureInstructionsKey, candidate, emailSettings, placeholders, cancellationToken))
+            team, credentials, FelonyDisclosureInstructionsKey, candidate, emailSettings, placeholders,
+            // A rule can send this too (FelonyDisclosureDeclaredScanner), so it records the same
+            // trigger either way and the history does not care which path produced it.
+            MessageTrigger.FelonyDisclosureDeclared, FelonyInstructionsLabel, cancellationToken))
         {
             return CandidateEmailSendResult.TemplateMissing;
         }
@@ -411,7 +420,7 @@ public class CandidateNotificationService(
     /// </summary>
     private async Task<bool> TrySendAsync(
         Team team, EmailCredentials credentials, string templateKey, Candidate candidate, EmailSettings emailSettings,
-        Dictionary<string, string> placeholders, CancellationToken cancellationToken)
+        Dictionary<string, string> placeholders, MessageTrigger trigger, string label, CancellationToken cancellationToken)
     {
         var rendered = await templateRenderer.RenderAsync(team.Id, templateKey, placeholders, cancellationToken);
         if (rendered is null)
@@ -427,8 +436,38 @@ public class CandidateNotificationService(
                 emailSettings.ReplyToAddress, rendered.Subject, rendered.Body, rendered.InlineLogo,
                 BccAddress: emailSettings.BccAddress),
             cancellationToken);
+
+        // …and, since #417, the single place a hand-send is recorded. One dispatcher, several kinds
+        // of trigger: a button is a perfectly good trigger, it is just not a scheduled one. Without
+        // this the send existed only as a Candidate.*SentUtc column, which is what made a candidate's
+        // email history need per-column fallbacks and a dedup rule (#415).
+        //
+        // MessageRuleId is null because no rule produced it — the same nullable column that lets a
+        // run outlive a deleted rule. The caller saves; every one of them already does, for the
+        // legacy column written beside this.
+        dbContext.MessageRuleRuns.Add(new MessageRuleRun
+        {
+            TeamId = team.Id,
+            MessageRuleId = null,
+            RuleName = label,
+            Trigger = trigger,
+            SubjectType = MessageSubjectType.Candidate,
+            SubjectId = candidate.Id,
+            FiredUtc = timeProvider.GetUtcNow().UtcDateTime,
+            Outcome = MessageRuleOutcome.Sent,
+            Detail = "Sent by hand"
+        });
         return true;
     }
+
+    /// <summary>
+    /// What a hand-sent email is called in a candidate's history. Constants rather than literals
+    /// because the backfill migration writes the same strings for rows that predate #417, and the two
+    /// have to match or one send appears under two names.
+    /// </summary>
+    public const string ResentConfirmationLabel = "Registration confirmation (resent)";
+    public const string YouthProgramLabel = "Youth Program instructions";
+    public const string FelonyInstructionsLabel = "Felony disclosure instructions";
 
     /// <summary>
     /// Delegates to SessionTimeFormatter so both services — and both halves of what a candidate
