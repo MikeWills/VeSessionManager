@@ -84,10 +84,17 @@ public class CandidateCapabilitiesTests
     }
 
     [Fact]
-    public void CanDelete_StopsOnceTheCandidateHasTested()
+    public void CanDelete_StopsOnceTheCandidateHasTestedWithEvidence()
     {
         Assert.True(CandidateCapabilities.For(Active(), false, false).CanDelete);
-        Assert.False(CandidateCapabilities.For(Active(c => c.Tested = true), false, false).CanDelete);
+        // A graded result is the evidence — untouchable, as before.
+        Assert.False(CandidateCapabilities.For(
+            Active(c => { c.MarkTested(DateTime.UtcNow); c.NewLicenseClass = LicenseClass.Technician; }),
+            false, false).CanDelete);
+        // But a completion-only Tested must still offer Delete (#419): the menu gating on the bare
+        // flag is exactly how the fixed server-side path shipped behind a button nobody could press.
+        Assert.True(CandidateCapabilities.For(
+            Active(c => c.MarkTested(DateTime.UtcNow)), false, false).CanDelete);
     }
 
     [Theory]
