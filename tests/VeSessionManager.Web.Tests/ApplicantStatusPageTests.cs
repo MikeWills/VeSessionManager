@@ -128,4 +128,70 @@ public class ApplicantStatusPageTests : IClassFixture<WebAppFactory>
         Assert.Contains("""Pending FCC grant<span class="pill-count zero">""", html);
         Assert.Contains("Nobody is currently waiting on an FCC grant.", html);
     }
+
+    /// <summary>
+    /// The application-received date is shown as the date it is, <b>not</b> converted to Eastern.
+    ///
+    /// <para>Every FCC date arrives date-only and is stamped at UTC midnight by
+    /// <c>ExamToolsUlsLookupClient.AsUtcDate</c>, so it already is a wall-clock date. Running it
+    /// through <c>EasternTimeFormatter</c> — which is correct for the session date in the next column,
+    /// a real instant — renders 8pm the day before, so every application would read as received a day
+    /// early. A day is exactly the size of error nobody spots on a page about elapsed days.</para>
+    /// </summary>
+    [Fact]
+    public async Task ApplicationReceivedDate_IsNotShiftedByTimezoneConversion()
+    {
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            db.Candidates.RemoveRange(await db.Candidates.ToListAsync());
+            db.Candidates.Add(new Candidate
+            {
+                SessionId = _factory.Seeded.SessionId,
+                Name = "Awaiting Grant",
+                Email = "awaiting@localhost",
+                DateRegisteredUtc = DateTime.UtcNow.AddDays(-20),
+                Tested = true,
+                ApplicationStatus = CandidateApplicationStatus.Received,
+                // Exactly how the ULS client stamps it: date-only, midnight UTC.
+                ApplicationDateEnteredUtc = new DateTime(2026, 8, 13, 0, 0, 0, DateTimeKind.Utc)
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var html = await _factory.CreateClientAs(UserRole.SystemAdmin).GetStringAsync(Url);
+
+        Assert.Contains("Application received", html);
+        Assert.Contains("Aug 13, 2026", html);
+        // The Eastern conversion would render the 12th.
+        Assert.DoesNotContain("Aug 12, 2026", html);
+    }
+
+    /// <summary>Still Unmatched means FCC has nothing on file, so there is no date to show — the same "—" the days column uses, for the same reason.</summary>
+    [Fact]
+    public async Task ApplicationReceivedDate_IsBlankWhileTheFccHasNothingOnFile()
+    {
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            db.Candidates.RemoveRange(await db.Candidates.ToListAsync());
+            db.Candidates.Add(new Candidate
+            {
+                SessionId = _factory.Seeded.SessionId,
+                Name = "Unmatched Candidate",
+                Email = "unmatched@localhost",
+                DateRegisteredUtc = DateTime.UtcNow.AddDays(-20),
+                Tested = true,
+                ApplicationStatus = CandidateApplicationStatus.Unmatched,
+                ApplicationDateEnteredUtc = null
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var html = await _factory.CreateClientAs(UserRole.SystemAdmin).GetStringAsync(Url);
+
+        Assert.Contains("Unmatched Candidate", html);
+        Assert.Contains("Application received", html);
+    }
+
 }
