@@ -323,6 +323,20 @@ Two boundaries deliberately kept:
   roster is never synced again, so ingestion cannot repair rows stranded before this fix — the row's
   own Delete action, which now accepts completion-only Tested, is the repair.
 
+### The ruling that followed (same day)
+
+> "If it's not from the feed, it's not truth. Only from the feed is truth."
+
+"Mark session completed" no longer marks anyone Tested at all. It marks the **session** —
+`TestingCompletedUtc` — and nothing about any person; `Tested` comes from ExamTools' graded results
+(`ExamResultSyncService`) or a human marking a specific candidate, never from a bulk assertion about
+whoever happened to still be on the roster when the button was pressed. The completion outcome message
+stopped claiming "N candidate(s) tested" for the same reason, and the `CandidateTested` trigger blurb
+names the graded result as its only source.
+
+`TestedWithEvidence` and the withdrawal/Delete correction stay: rows marked by completion before this
+change exist in real data, and they are exactly what those guards repair.
+
 ## One dispatcher, several kinds of trigger (#417)
 
 #415 fixed the history but left the cause: a candidate-facing email could be sent from two unrelated
