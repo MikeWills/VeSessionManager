@@ -6,7 +6,8 @@ using VeSessionManager.Core.Entities;
 namespace VeSessionManager.Core.Email;
 
 /// <summary>
-/// Seeds one EmailSettings row and the four EmailTemplate rows per Team, if they don't already
+/// Seeds one EmailSettings row, the EmailTemplate rows, and (since #401) the four MessageRules that
+/// reproduce this app's original automatic sends, per Team, if they don't already
 /// exist for that team. Unlike DevDataSeeder, this runs in every environment (not just
 /// Development) — real deployments need real template rows to send anything, not just local
 /// dev convenience data. Idempotent per-row (checks existence individually, per team) so it never
@@ -184,6 +185,74 @@ public static class EmailDefaultsSeeder
             <p>Details and the submission form are available from ARRL — reach out to us if you have
             questions about your eligibility.</p>
             """);
+
+        await SeedMessageRulesAsync(dbContext, logger, team);
+    }
+
+    /// <summary>
+    /// The four rules that reproduce what this app sent automatically before trigger points existed
+    /// (#401) — 24 hours before a session, 5 days into an outstanding FCC fee, 10 days into an unpaid
+    /// payment, and a confirmation on registration. Seeded per team so a team starts with today's
+    /// behaviour and edits from there, exactly as the templates above are.
+    ///
+    /// <para><b><c>CreatedUtc</c> is the risky line, and it is deliberately "now".</b> Every scan is
+    /// bounded by it, so a rule created at this moment never fires for a subject whose trigger moment
+    /// already passed. On an existing deployment that means somebody who registered this morning and
+    /// has not had their confirmation yet will not get one — accepted, and confirmed with Mike, as the
+    /// price of the direction that cannot mass-mail. The migration that backfills a
+    /// <c>MessageRuleRun</c> per already-sent message is the second, independent guard against the
+    /// same thing; either alone would do, which is the point.</para>
+    ///
+    /// <para><b>Once per team, ever</b> — recorded by <see cref="Team.MessageRulesSeededUtc"/>, unlike
+    /// the templates above which are checked row by row. That difference is load-bearing (#401 PR2):
+    /// a per-trigger check re-adds a rule somebody deleted on the very next Worker start, quietly
+    /// resuming a send they had stopped. Setting a new team up is a one-time act, not an invariant to
+    /// maintain, and a team that wants no rule at a trigger point is entitled to have none.</para>
+    /// </summary>
+    private static async Task SeedMessageRulesAsync(AppDbContext dbContext, ILogger logger, Team team)
+    {
+        if (team.MessageRulesSeededUtc is not null)
+        {
+            return;
+        }
+
+        var createdUtc = DateTime.UtcNow;
+
+        SeedRule(dbContext, logger, team, MessageTrigger.CandidateRegistered,
+            "Registration confirmation", "RegistrationConfirmation", parameterHours: null, MessageRecipient.Candidate, createdUtc);
+
+        SeedRule(dbContext, logger, team, MessageTrigger.BeforeSessionStart,
+            "Reminder 24 hours before the session", "DayBeforeReminder", parameterHours: 24, MessageRecipient.Candidate, createdUtc);
+
+        SeedRule(dbContext, logger, team, MessageTrigger.FccFeeOutstanding,
+            "FCC fee reminder after 5 days", "FccFeeReminder5Day", parameterHours: 120, MessageRecipient.Candidate, createdUtc);
+
+        // The one that never went to a candidate: it tells the Session Manager a payment link has
+        // gone stale. That used to be a special case inside the send path; it is a field now.
+        SeedRule(dbContext, logger, team, MessageTrigger.PaymentUnpaid,
+            "Unpaid payment notice after 10 days", "PaymentExpirationNotice", parameterHours: 240, MessageRecipient.TeamAdminAddress, createdUtc);
+
+        team.MessageRulesSeededUtc = createdUtc;
+    }
+
+    private static void SeedRule(
+        AppDbContext dbContext, ILogger logger, Team team, MessageTrigger trigger, string name, string templateKey,
+        int? parameterHours, MessageRecipient recipient, DateTime createdUtc)
+    {
+        dbContext.MessageRules.Add(new MessageRule
+        {
+            TeamId = team.Id,
+            Name = name,
+            Trigger = trigger,
+            ParameterHours = parameterHours,
+            TemplateKey = templateKey,
+            Channel = MessageChannel.Email,
+            Recipient = recipient,
+            FanOut = MessageFanOut.PerRecipient,
+            IsEnabled = true,
+            CreatedUtc = createdUtc
+        });
+        logger.LogInformation("Seeded default MessageRule {Trigger} (\"{Name}\") for team {TeamId}", trigger, name, team.Id);
     }
 
     private static async Task SeedTemplateIfMissingAsync(AppDbContext dbContext, ILogger logger, Team team, string key, string subject, string body)

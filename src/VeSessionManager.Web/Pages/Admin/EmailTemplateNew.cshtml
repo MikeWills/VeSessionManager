@@ -1,0 +1,54 @@
+@page
+@using VeSessionManager.Core.Entities
+@model VeSessionManager.Web.Pages.Admin.EmailTemplateNewModel
+@{
+    ViewData["Title"] = "New Template";
+    ViewData["ActiveNav"] = "AdminEmailTemplates";
+    Layout = "_AppLayout";
+}
+
+<div class="page-head">
+    <div>
+        <partial name="_ParentCrumb" model='new ParentCrumb("./EmailTemplates", "Email Templates", "Per team", RoleGroups.Admins)' />
+        <h1>New template</h1>
+        <p class="session-sub">
+            Your own starting text, for anything the shipped templates do not cover. Nothing sends it on
+            a schedule by default — you pick it on a session's "Email candidates" screen, or on Email VEs,
+            edit it, and choose who gets it. You can also point a message rule at it once it exists.
+        </p>
+    </div>
+</div>
+
+<div class="session-panel" style="display:block; max-width:720px;">
+    <form method="post">
+        <input type="hidden" asp-for="TeamId" />
+        <div class="field">
+            <label asp-for="Name">Name</label>
+            <input asp-for="Name" required placeholder="e.g. Field Day invite" />
+            <span class="session-sub">Only you see this — it is how the template is listed when you pick one.</span>
+        </div>
+
+        @* Asked at creation because it decides the placeholders: a candidate template used on VEs
+           would reach them with a literal {{CandidateFirstName}} in the text. *@
+        <div class="field" style="max-width:320px;">
+            <label asp-for="Audience">Who is this written to?</label>
+            <select asp-for="Audience" class="filter-select">
+                <option value="@((int)EmailTemplateAudience.Candidates)">Candidates</option>
+                <option value="@((int)EmailTemplateAudience.VolunteerExaminers)">Volunteer examiners</option>
+            </select>
+        </div>
+
+        <div class="field">
+            <label asp-for="Subject">Subject</label>
+            <input asp-for="Subject" required />
+        </div>
+
+        <div class="field">
+            <label asp-for="Body">Body</label>
+            <textarea asp-for="Body" rows="10" required></textarea>
+            <span class="session-sub">HTML is allowed. You can edit it properly, with the visual editor, once it exists.</span>
+        </div>
+
+        <button type="submit" class="btn-primary btn-sm">Create template</button>
+    </form>
+</div>

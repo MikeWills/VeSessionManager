@@ -65,7 +65,7 @@ public class SessionActionService(
 
         foreach (var candidate in candidatesJustTested)
         {
-            candidate.Tested = true;
+            candidate.MarkTested(now);
         }
 
         dbContext.AddAuditLog(userId, "SessionMarkedCompleted", nameof(Session), session.Id,

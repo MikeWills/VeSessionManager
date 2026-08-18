@@ -97,7 +97,7 @@ public static class JobSchedules
 {
     public const string SessionIngestion = "SessionIngestion";
     public const string HistoricalImport = "HistoricalImport";
-    public const string DayBeforeReminder = "DayBeforeReminder";
+    public const string MessageRule = "MessageRule";
     public const string PaymentReminder = "PaymentReminder";
     public const string SquareLinkPurge = "SquareLinkPurge";
     public const string RefundStatus = "RefundStatus";
@@ -144,9 +144,13 @@ public static class JobSchedules
             DefaultIntervalSeconds: 60,
             TickIntervalSeconds: 60),
 
-        new(DayBeforeReminder,
-            "Day-before reminder",
-            "Emails candidates whose session is tomorrow.",
+        // Was "DayBeforeReminder" until #401, which is why the config key still reads that way — the
+        // job now runs every one of a team's message rules, of which the 24-hour pre-session reminder
+        // is one seeded example. Renaming the key would silently reset any deployment that had tuned
+        // it, for no gain.
+        new(MessageRule,
+            "Message rules",
+            "Fires each team's trigger-point rules — pre-session reminders, fee chasers, and anything else a team has configured.",
             JobCadenceKind.IntervalFromWorkerStart,
             "Jobs:DayBeforeReminderIntervalHours",
             DefaultIntervalHours: 24,

@@ -108,13 +108,7 @@ public class TeamPipelineTests
             new ExamResultSyncService(dbContext, examToolsClient, time, examToolsOptions, NullLogger<ExamResultSyncService>.Instance),
             new SessionEventSchedulingService(dbContext, new UnusedZoomClient(), new UnusedDiscordClient(), time, new TeamIntegrationState(NullLogger<TeamIntegrationState>.Instance), NullLogger<SessionEventSchedulingService>.Instance),
             new PaymentGenerationService(dbContext, new UnusedSquareClient(), time, new TeamIntegrationState(NullLogger<TeamIntegrationState>.Instance), NullLogger<PaymentGenerationService>.Instance),
-            new CandidateNotificationService(
-                dbContext,
-                new EmailTemplateRenderer(dbContext, NullLogger<EmailTemplateRenderer>.Instance),
-                new UnusedEmailSender(), new TeamIntegrationState(NullLogger<TeamIntegrationState>.Instance),
-                time,
-                appOptions,
-                NullLogger<CandidateNotificationService>.Instance),
+            MessageRuleTestHarness.Create(dbContext, new UnusedEmailSender(), time),
             new JobRunHistoryLogger(dbContext, NullLogger<JobRunHistoryLogger>.Instance));
     }
 

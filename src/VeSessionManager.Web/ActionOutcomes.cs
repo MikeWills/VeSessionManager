@@ -227,6 +227,11 @@ public static class ActionOutcomes
                 $"Could not {verbPhrase} — this session's VEC does not run a youth program."),
             CandidateEmailSendResult.NoFelonyDisclosure => new(false,
                 $"Could not {verbPhrase} — this candidate has not declared a felony disclosure."),
+            // Distinct from EmailNotConfigured above, and the distinction is the whole of #396: this
+            // one is a switch somebody threw, so the sentence points at the switch rather than at
+            // credentials. These actions used to report success here and send nothing.
+            CandidateEmailSendResult.EmailMuted => new(false,
+                $"Could not {verbPhrase} — email is switched off for this team. Turn it back on in Team Settings."),
             _ => new(false, $"Could not {verbPhrase}.")
         };
 }

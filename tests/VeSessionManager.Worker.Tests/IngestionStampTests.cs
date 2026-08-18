@@ -13,6 +13,8 @@ using VeSessionManager.Core.ExamTools;
 using VeSessionManager.Core.Ingestion;
 using VeSessionManager.Core.Integrations;
 using VeSessionManager.Core.Jobs;
+using VeSessionManager.Core.Messaging;
+using VeSessionManager.Core.Messaging.Scanners;
 using VeSessionManager.Core.Notifications;
 using VeSessionManager.Core.Payments;
 using VeSessionManager.Core.Scheduling;
@@ -91,7 +93,7 @@ public class IngestionStampTests
     /// before reaching the client. Throwing rather than returning empty makes that assumption fail
     /// loudly if it stops holding, instead of quietly changing what the test covers.
     /// </summary>
-    private sealed class UnreachableClients : IZoomClient, IDiscordEventClient, ISquareClient, IEmailSender
+    private sealed class UnreachableClients : IZoomClient, IDiscordEventClient, IDiscordChannelMessageClient, ISquareClient, IEmailSender
     {
         private static Task<T> Nope<T>([System.Runtime.CompilerServices.CallerMemberName] string member = "") =>
             throw new InvalidOperationException($"{member} should be unreachable — the team configures no such integration.");
@@ -107,6 +109,8 @@ public class IngestionStampTests
         public Task UpdateEventAsync(ulong g, string id, DiscordEventRequest r, CancellationToken ct) => Nope<object>();
         public Task DeleteEventAsync(ulong g, string id, CancellationToken ct) => Nope<object>();
         public Task<IReadOnlyList<DiscordEvent>> ListEventsAsync(ulong g, CancellationToken ct) => Nope<IReadOnlyList<DiscordEvent>>();
+
+        public Task PostMessageAsync(ulong g, ulong c, string m, CancellationToken ct) => Nope<object>();
 
         public Task<SquarePaymentLink> CreatePaymentLinkAsync(SquareCredentials c, SquarePaymentLinkRequest r, CancellationToken ct) => Nope<SquarePaymentLink>();
         public Task CompleteOrderAsync(SquareCredentials c, string o, CancellationToken ct) => Nope<object>();
@@ -136,6 +140,7 @@ public class IngestionStampTests
             services.AddSingleton(examTools);
             services.AddSingleton<IZoomClient>(unreachable);
             services.AddSingleton<IDiscordEventClient>(unreachable);
+            services.AddSingleton<IDiscordChannelMessageClient>(unreachable);
             services.AddSingleton<ISquareClient>(unreachable);
             services.AddSingleton<IEmailSender>(unreachable);
 
@@ -151,6 +156,12 @@ public class IngestionStampTests
             services.AddScoped<PaymentGenerationService>();
             services.AddScoped<EmailTemplateRenderer>();
             services.AddScoped<CandidateNotificationService>();
+            services.AddScoped<IMessageTriggerScanner, CandidateRegisteredScanner>();
+            services.AddScoped<IMessageTriggerScanner, BeforeSessionStartScanner>();
+            services.AddScoped<IMessageTriggerScanner, FccFeeOutstandingScanner>();
+            services.AddScoped<IMessageTriggerScanner, PaymentUnpaidScanner>();
+            services.AddScoped<MessageDispatchService>();
+            services.AddScoped<MessageRuleService>();
             services.AddScoped<JobRunHistoryLogger>();
             services.AddScoped<TeamPipeline>();
             services.AddScoped<IngestionScheduleService>();

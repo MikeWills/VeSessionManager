@@ -1,5 +1,11 @@
 # Candidate Notification Emails (Phase 4)
 
+
+> **Superseded in part by `docs/trigger-points.md` (#401, 2026-08-16.)** The four messages this app
+> sent automatically are per-team `MessageRule` rows now, with their thresholds expressed in hours,
+> so "when does this go out" is no longer answered by the code described below. Everything here about
+> *what* each message says, who receives it and which placeholders resolve is still accurate.
+
 > **See `docs/email-reference.md` for the current, complete picture** — every template (including
 > the ones added after this doc was written: `FccFeeReminder5Day`, `PaymentExpirationNotice`,
 > `FelonyDisclosureInstructions`, `ArrlYouthProgramInstructions`), every placeholder tag, and the
@@ -136,7 +142,7 @@ its purpose. Whether `Privacy.cshtml` should name it is an open question, delibe
   1) → scheduling (Phase 2) → payment generation (Phase 3), deliberately last in that order, so
   by the time it renders, the session's Zoom link and (if applicable) the candidate's payment
   link have had their best chance to already exist.
-- **DayBeforeReminder** is a separate daily job (`DayBeforeReminderJob`, 24-hour
+- **DayBeforeReminder** is a separate daily job (`MessageRuleJob` since #401, 24-hour
   `PeriodicTimer` from Worker startup — not pinned to a specific wall-clock time). Finds
   candidates whose session's `ScheduledStartUtc` falls on tomorrow's UTC calendar date. Both are
   idempotent: `Candidate.RegistrationConfirmationSentUtc` / `DayBeforeReminderSentUtc` are only

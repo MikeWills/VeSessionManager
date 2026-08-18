@@ -388,6 +388,31 @@ tbody tr.row-highlight, tbody tr.row-highlight:hover { background: var(--amber-d
 .row-actions-cell { display: flex; gap: 8px; align-items: center; }
 .row-actions-cell form { margin: 0; }
 
+/* A row's icon-only actions, kept on one line (#401).
+   .row-actions is text-align:right and nothing more, so its contents are inline boxes that wrap
+   whenever the cell gets narrow — which made a rule with a long name show its icons on a second
+   line while its neighbour showed them on one. flex-wrap:nowrap is the fix; the cell is at the end
+   of the row, so it is the column that should give up width, not the actions that should stack.
+   Each action is its own <form>, hence the margin reset. */
+.row-actions-inline { display: inline-flex; align-items: center; gap: 2px; flex-wrap: nowrap; }
+.row-actions-inline form { margin: 0; display: inline-flex; }
+
+/* Quiet icon control — same visual language as .kebab, which is the app's existing "icon on its own,
+   no chrome until you hover" button. A full .btn-secondary around a single glyph reads as heavy and
+   takes four times the width, which is what pushed these onto two lines in the first place.
+
+   **Two classes, deliberately.** `.vesm a` and `.vesm button` are (0,1,1) and set colour, so a
+   single-class `.icon-action` loses to them and the anchors render in the body colour — the exact
+   specificity trap recorded in CLAUDE.md that produced a white-on-black CTA and a hamburger that
+   would not hide. */
+.vesm .icon-action {
+  display: inline-flex; align-items: center; justify-content: center;
+  background: transparent; border: 1px solid transparent; color: var(--ink-soft);
+  padding: 7px 9px; border-radius: 5px; line-height: 1; font-size: 14px; cursor: pointer;
+}
+.vesm .icon-action:hover { background: var(--ghost-hover); border-color: var(--line-strong); color: var(--ink); }
+.vesm .icon-action.danger:hover { color: var(--brick); }
+
 .section-head { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin: 8px 0 12px; }
 .section-head h2 { font-size: 15px; margin: 0; font-weight: 600; }
 

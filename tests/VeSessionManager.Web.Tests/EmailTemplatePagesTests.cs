@@ -53,6 +53,67 @@ public class EmailTemplatePagesTests
         Assert.DoesNotContain("quill", html, StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>
+    /// Creating a template is its own page now, reached from a button that is always in the same
+    /// place. It was a form at the bottom of this list, which with eleven shipped templates above it
+    /// is a long way down — "past the fold" is not a discoverability strategy.
+    /// </summary>
+    [Fact]
+    public async Task TheListLinksToACreatePage_RatherThanCarryingTheFormItself()
+    {
+        using var factory = new WebAppFactory();
+        await SeedTemplateAsync(factory);
+        var client = factory.CreateClientAs(UserRole.SystemAdmin);
+
+        var html = await client.GetStringAsync($"/Admin/EmailTemplates?teamId={factory.Seeded.TeamId}");
+
+        Assert.Contains($"/Admin/EmailTemplateNew?teamId={factory.Seeded.TeamId}", html);
+        Assert.DoesNotContain("new-template-body", html);
+        Assert.DoesNotContain("handler=\"Create\"", html);
+    }
+
+    /// <summary>
+    /// Row actions are icons, and an icon-only control is only as good as what a hover and a screen
+    /// reader make of it — so the label travels with it. Bootstrap Icons rather than a bare glyph: a
+    /// Unicode symbol renders only if the device has a font carrying it, which is how a marker that
+    /// looked right on the dev machine became a tofu box on an iPhone.
+    /// </summary>
+    [Fact]
+    public async Task RowActionsAreLabelledIcons()
+    {
+        using var factory = new WebAppFactory();
+        var id = await SeedTemplateAsync(factory);
+        var client = factory.CreateClientAs(UserRole.SystemAdmin);
+
+        var html = await client.GetStringAsync($"/Admin/EmailTemplates?teamId={factory.Seeded.TeamId}");
+
+        Assert.Contains("bi bi-pencil", html);
+        Assert.Contains("bi bi-eye", html);
+        Assert.Contains("aria-label=\"Edit", html);
+        // The links themselves are unchanged — the icon is presentation, not a different action.
+        Assert.Contains($"/Admin/EmailTemplateEdit/{id}", html);
+    }
+
+    /// <summary>
+    /// "Which rule sends this, and let me change it" is one question. A template a rule sends links to
+    /// that rule; one nothing sends offers the way to make it automatic, which otherwise requires
+    /// already knowing the Message Rules page exists.
+    /// </summary>
+    [Fact]
+    public async Task ATemplateNoRuleSends_OffersAWayToAddOne()
+    {
+        using var factory = new WebAppFactory();
+        await SeedTemplateAsync(factory, key: "SomethingNothingSends");
+        var client = factory.CreateClientAs(UserRole.SystemAdmin);
+
+        var html = await client.GetStringAsync($"/Admin/EmailTemplates?teamId={factory.Seeded.TeamId}");
+
+        // #409: it carries the template now, rather than dropping you on Message Rules to find it
+        // again among thirty others.
+        Assert.Contains("Add a rule…", html);
+        Assert.Matches("MessageRuleNew[^\"]*templateId=", html);
+    }
+
     [Fact]
     public async Task ThePreviewRendersTheBody_WithSampleValuesRatherThanTokens()
     {

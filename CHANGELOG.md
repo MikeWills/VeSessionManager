@@ -8,6 +8,74 @@ that window, or immediately if it's phase-numbered work already summarized in "C
 design rationale for any entry still lives in its linked `/docs/*.md` file, not here or in
 CLAUDE.md — this file, like CLAUDE.md's Change Log, is pointers only.
 
+- **Two-factor authentication, opt-in and un-enforced on purpose (2026-08-14).** Issue #356. See
+  `docs/two-factor.md`. TOTP with QR enrolment, recovery codes and an admin escape hatch. **Enforcement
+  was deliberately not built**: system SMTP has never been configured here, so an admin who loses a
+  phone cannot be emailed a way back in — and the account that would rescue them is the one that would
+  be locked. A non-dismissible nudge on admin accounts instead. **No application cookie exists until
+  the challenge is passed**, which is the property the whole thing rests on and the easy one to get
+  wrong while a browser still looks right. The pending-user handoff is hand-rolled because #340's
+  one-`Set-Cookie` split means `PasswordSignInAsync` is not used — it writes Identity's own
+  `TwoFactorUserIdScheme` claim shape, which is *behaviour not documentation*, so a test pins the
+  round trip. Four things worth carrying forward: **`GenerateTwoFactorTokenAsync(user,
+  "Authenticator")` returns an empty string** (only a phone can generate; it reads exactly like the
+  method you want and fails against correct code), **Identity recovery codes contain a hyphen** so the
+  space-and-hyphen stripping that is right for a six-digit TOTP silently breaks redemption, **a
+  recovery code must never earn device trust** (it means the authenticator is *lost*), and
+  **"sign out other devices" needs no extra call** — Identity registers its stamp validator on the
+  two-factor cookie too, while `ForgetTwoFactorClientAsync` would clear the wrong device entirely.
+
+- **Nineteen audit findings closed, and two retention questions finally answered (2026-08-14).** See
+  `docs/audit-log.md` and `docs/ve-retention.md` (both new), plus issues #238-#240, #243, #257,
+  #260-#262, #264, #265, #312, #313. Three themes, and each had one shape. **VE scope**: an id posted
+  from a form was checked for existence but never against what the actor could reach — the worst sent
+  attacker-authored mail *from the team's own SMTP* to any VE on the deployment. **Silent failure**:
+  the key-ring guard iterated `Teams` and so missed the sixth encrypted column, on a different
+  entity, exactly as its own doc comment predicted; a deployment with zero teams verified nothing and
+  logged success. **Nothing was watching**: sign-ins were not audited at all, success or failure, so
+  a stuffing run left no trace — now `SignedIn`/`SignInFailed`/`SignInLockedOut` with a source
+  address, deliberately *not* on the ~175 ordinary audit sites, which would make an activity log into
+  a movement record. #313 was a decision, not a bug: **audit append-only is a convention enforced by
+  absence, not by the database** (written down, and guarded by a source scan so a delete path cannot
+  reappear quietly), and **VE contact details now age out** after a configurable inactivity window —
+  off until an admin sets it, keeping name/call sign/accreditations because those are the
+  accreditation trail. Two things worth carrying forward: **`[Required]` on a non-nullable `int` is
+  client-side-only**, the same trap already recorded for `bool`; and **an unreachable branch cannot be
+  tested** — the L-14 fix ships with no test because both routes to it are intercepted upstream, a
+  test was written and passed with the fix reverted, so it was deleted rather than kept as false
+  comfort.
+
+- **Dark mode follows the OS, then follows you (2026-08-13).** See `docs/theme-preference.md`. The
+  theme was `localStorage.getItem(key) || "light"` — OS-blind, per browser, and resolved at the
+  *bottom* of `<body>`, so it repainted after the page had already drawn. New
+  `User.ThemePreference` (`System`/`Light`/`Dark`) is rendered onto `<html>` by the layout;
+  `theme.js` resolves the rest in `<head>`, render-blocking, in the order server → localStorage →
+  `prefers-color-scheme` → light. **`System` must render no `data-theme` at all** — it is the
+  default, so every pre-existing account is in it, and emitting `light` there looks perfect to a
+  light-mode user while silently pinning everyone else. Razor renders a null attribute value as
+  `data-theme=""`, not as nothing, which is one `!== null` away from exactly that. Three things
+  worth knowing: an inline script is unavailable (CSP `script-src 'self'` — it renders and never
+  runs), `MapStaticAssets` makes `asp-append-version` emit a **fingerprinted filename** rather than
+  a `?v=` query so an asset-URL assertion on the literal name finds nothing, and the app's first
+  `fetch()` needed **no** antiforgery config — `RequestVerificationToken` is already
+  `HeaderName`'s default, proven by a mutation test that deleted the line and stayed green.
+
+- **The phone logged out constantly and the desktop did not (2026-08-13).** Issue #340. See
+  `docs/remember-me.md`. Every sign-in passed `isPersistent: false`, so the cookie had no `Expires`
+  and lived only as long as the browser *process* — a desktop browser runs for days, phones kill and
+  restart theirs constantly. **Persistence alone would not have fixed it**, which is the part that
+  looks finished after the first half: `PasswordSignInAsync` takes only an `isPersistent` flag and
+  the resulting cookie still expires after `ExpireTimeSpan` (8h, deliberate, #159), so a
+  once-a-day phone goes from "every time" to "daily". The window has to be set explicitly as
+  `AuthenticationProperties.ExpiresUtc` — 30 days, opt-in, default off. Sliding expiration then
+  slides by the *ticket's own* duration, not `ExpireTimeSpan`. Shipped with **"Sign out other
+  devices"** because a 30-day session needs a way to end it; that is a security-stamp rotation, so
+  it is **not instant** (30-minute revalidation) and the page says so. Three things that are not
+  obvious: the password path checks and signs in as two steps so exactly *one* `Set-Cookie` is
+  written; the provider buttons had to move *inside* the credentials form for the checkbox to reach
+  the external round trip; and **ASP.NET Core writes `expires=`, not `max-age=`** — the first test
+  asserted on the wrong one and failed against a correct cookie.
+
 - **Every Worker job now has its tick driven by a test (2026-08-11).** Issue #325. See
   `docs/worker-job-tests.md`. The Worker had **no test project at all** — nine background jobs running
   unattended on the deploy box, none of which had ever been executed. Each job's tick is now

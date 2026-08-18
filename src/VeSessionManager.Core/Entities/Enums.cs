@@ -196,3 +196,154 @@ public enum UserRole
     SessionManager = 2,
     TeamLead = 3
 }
+
+/// <summary>
+/// A moment when a condition first becomes true for a subject, and the thing a team hangs its own
+/// <see cref="MessageRule"/>s off (#401). See docs/trigger-points.md.
+///
+/// <para>Two mechanisms, and the difference decides how a scanner is written rather than being a
+/// label: a <b>state</b> trigger fires when a stored value changes (the moment is a stored
+/// timestamp), and a <b>time-relative</b> trigger fires a configurable number of hours either side of
+/// an anchor instant. <see cref="Messaging.MessageTriggerDefinitions"/> is where that is recorded.</para>
+/// </summary>
+public enum MessageTrigger
+{
+    /// <summary>A candidate appeared in ExamTools' feed. Replaces the hardcoded RegistrationConfirmation send.</summary>
+    CandidateRegistered = 0,
+
+    /// <summary>Time-relative, before <c>Session.ScheduledStartUtc</c>. Replaces the 24-hour DayBeforeReminder.</summary>
+    BeforeSessionStart = 1,
+
+    /// <summary>Time-relative, after <c>Candidate.ApplicationDateEnteredUtc</c>, while FCC still wants its own fee. Replaces the 5-day FccFeeReminder5Day.</summary>
+    FccFeeOutstanding = 2,
+
+    /// <summary>Time-relative, after the application/result anchor, while a Square payment is still unpaid. Replaces the 10-day PaymentExpirationNotice.</summary>
+    PaymentUnpaid = 3,
+
+    /// <summary>
+    /// A candidate has sat their exam — <c>Candidate.Tested</c>, from either the Session Manager
+    /// marking a session completed or the automatic exam-result sync (#401 PR3). New: nothing sent
+    /// here before, and no rule is seeded for it.
+    /// </summary>
+    CandidateTested = 4,
+
+    /// <summary>
+    /// The FCC has granted a license from this session — the natural home for a welcome email, and
+    /// the first trigger where <c>{{CallSign}}</c> resolves to anything (#401 PR3).
+    /// </summary>
+    LicenseGranted = 5,
+
+    /// <summary>
+    /// A candidate declared a felony disclosure on their application (#401 PR3).
+    ///
+    /// <para><b>Declaration, not completion, and no rule is seeded.</b> #221 deliberately took this
+    /// email <i>off</i> an automatic path because riding along with "mark session completed" meant it
+    /// could only ever arrive after the exam — the point at which the candidate can no longer easily
+    /// ask anyone about it. Offering it here as an opt-in fixes the timing rather than reinstating
+    /// the mistake; a team that wants it automatic gets it before the session, not after.</para>
+    /// </summary>
+    FelonyDisclosureDeclared = 6
+}
+
+/// <summary>How a <see cref="MessageRule"/> delivers. Discord is declared but not yet dispatchable — see <see cref="MessageRecipient"/>.</summary>
+public enum MessageChannel
+{
+    Email = 0,
+    Discord = 1
+}
+
+/// <summary>
+/// Who a <see cref="MessageRule"/> addresses. <see cref="TeamAdminAddress"/> replaces the
+/// PaymentExpirationNotice special case, which was the one hardcoded send that never went to a
+/// candidate.
+///
+/// <para><b>Two of these cannot yet be dispatched.</b> <see cref="SessionLead"/> and
+/// <see cref="DiscordChannel"/> are part of the agreed model and are declared here so the column
+/// never has to be widened, but <c>MessageDispatchService</c> refuses them outright rather than
+/// guessing. Nothing can create such a rule today — the seeder is the only writer.</para>
+/// </summary>
+public enum MessageRecipient
+{
+    Candidate = 0,
+    TeamAdminAddress = 1,
+    SessionLead = 2,
+    DiscordChannel = 3
+}
+
+/// <summary>
+/// Whether a rule produces one message per subject or one message covering them all.
+///
+/// <para>Named explicitly rather than derived from <see cref="MessageChannel"/>, because getting it
+/// wrong posts to a Discord room forty times or sends one email addressed to nobody.</para>
+/// </summary>
+public enum MessageFanOut
+{
+    /// <summary>One message per subject, addressed to that subject's recipient. What every email rule does.</summary>
+    PerRecipient = 0,
+
+    /// <summary>
+    /// One message covering every subject in the batch — a digest. Only meaningful for a channel
+    /// nobody is individually addressed on, which today means Discord.
+    ///
+    /// <para><b>Renamed from <c>PerSubject</c> in PR4</b>, value unchanged so nothing stored moves.
+    /// The old name was ambiguous in the one place ambiguity is expensive: "per subject" reads as
+    /// "one per candidate", which is the opposite of what it selects and is exactly the forty-posts
+    /// mistake the <see cref="MessageFanOut"/> field exists to prevent.</para>
+    /// </summary>
+    SingleDigest = 1
+}
+
+/// <summary>
+/// What happened when a rule fired for one subject — recorded on <see cref="MessageRuleRun"/>.
+///
+/// <para><b>Only <see cref="Sent"/> and <see cref="Suppressed"/> are terminal</b>, and that
+/// distinction is the whole idempotency model: a scanner excludes subjects that already have a
+/// terminal run, and returns the others again. See <see cref="MessageRuleRun"/>.</para>
+/// </summary>
+public enum MessageRuleOutcome
+{
+    /// <summary>Handed to SMTP without error. Terminal.</summary>
+    Sent = 0,
+
+    /// <summary>The team has email switched off. Terminal — the settle-without-doing rule: nothing is queued while it is off, so re-enabling starts fresh from that moment rather than flushing a backlog.</summary>
+    Suppressed = 1,
+
+    /// <summary>There was no address to send to. <b>Not</b> terminal: an address added later should still get the message.</summary>
+    NoRecipient = 2,
+
+    /// <summary>The render or the send failed. <b>Not</b> terminal — retried on the next scan, exactly as a failed send has always been.</summary>
+    Failed = 3
+}
+
+/// <summary>
+/// Where a rule's Reply-To comes from (#401 PR4).
+///
+/// <para>Note what is absent: a From source. Changing the From address means SPF/DKIM/DMARC on a
+/// domain this app does not control, and getting it wrong sends the mail to spam silently. Reply-To
+/// carries no such risk and is what "can it come from the session lead" actually means.</para>
+/// </summary>
+public enum MessageReplyToSource
+{
+    /// <summary>The team's configured Reply-To. What every message did before this field existed.</summary>
+    EmailSettings = 0,
+
+    /// <summary>
+    /// The session's lead VE, resolved from <c>Session.TeamLeadCallSign</c>.
+    ///
+    /// <para>Falls back to the team's own address when the lead cannot be resolved — no call sign on
+    /// the session, a placeholder like ExamTools' literal <c>&lt;UNKNOWN&gt;</c>, no matching VE, or a
+    /// VE with no email. A reply that reaches the team is worse than one that reaches the lead;
+    /// a reply that reaches nobody is worse than both.</para>
+    /// </summary>
+    SessionLead = 1,
+
+    /// <summary>A fixed address typed on the rule.</summary>
+    Custom = 2
+}
+
+/// <summary>What a <see cref="MessageRuleRun.SubjectId"/> points at. A trigger has exactly one subject type; see <see cref="Messaging.MessageTriggerDefinitions"/>.</summary>
+public enum MessageSubjectType
+{
+    Candidate = 0,
+    Payment = 1
+}

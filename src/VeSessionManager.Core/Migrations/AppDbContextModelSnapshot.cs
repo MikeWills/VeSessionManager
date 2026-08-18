@@ -211,6 +211,9 @@ namespace VeSessionManager.Core.Migrations
                     b.Property<bool>("Tested")
                         .HasColumnType("INTEGER");
 
+                    b.Property<DateTime?>("TestedUtc")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("UlsApplicationFileNumber")
                         .HasColumnType("TEXT");
 
@@ -493,6 +496,113 @@ namespace VeSessionManager.Core.Migrations
                     b.HasIndex("TeamId", "JobName", "StartedUtc");
 
                     b.ToTable("JobRunHistories");
+                });
+
+            modelBuilder.Entity("VeSessionManager.Core.Entities.MessageRule", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("BccAddress")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("CcAddress")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Channel")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("CreatedUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<ulong?>("DiscordChannelId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("FanOut")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("IsEnabled")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("MonitoringCopyOncePerRun")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("ParameterHours")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Recipient")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("ReplyToOverride")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("ReplyToSource")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("TeamId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("TemplateKey")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Trigger")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TeamId", "Trigger", "IsEnabled");
+
+                    b.ToTable("MessageRules");
+                });
+
+            modelBuilder.Entity("VeSessionManager.Core.Entities.MessageRuleRun", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Detail")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("FiredUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int?>("MessageRuleId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Outcome")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("RuleName")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("SubjectId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("SubjectType")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("TeamId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Trigger")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MessageRuleId", "SubjectId")
+                        .IsUnique();
+
+                    b.HasIndex("TeamId", "FiredUtc");
+
+                    b.ToTable("MessageRuleRuns");
                 });
 
             modelBuilder.Entity("VeSessionManager.Core.Entities.Payment", b =>
@@ -951,6 +1061,9 @@ namespace VeSessionManager.Core.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<DateTime?>("LogoUpdatedUtc")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("MessageRulesSeededUtc")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Name")
@@ -1790,6 +1903,35 @@ namespace VeSessionManager.Core.Migrations
                     b.Navigation("Team");
                 });
 
+            modelBuilder.Entity("VeSessionManager.Core.Entities.MessageRule", b =>
+                {
+                    b.HasOne("VeSessionManager.Core.Entities.Team", "Team")
+                        .WithMany()
+                        .HasForeignKey("TeamId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Team");
+                });
+
+            modelBuilder.Entity("VeSessionManager.Core.Entities.MessageRuleRun", b =>
+                {
+                    b.HasOne("VeSessionManager.Core.Entities.MessageRule", "MessageRule")
+                        .WithMany("Runs")
+                        .HasForeignKey("MessageRuleId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("VeSessionManager.Core.Entities.Team", "Team")
+                        .WithMany()
+                        .HasForeignKey("TeamId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("MessageRule");
+
+                    b.Navigation("Team");
+                });
+
             modelBuilder.Entity("VeSessionManager.Core.Entities.Payment", b =>
                 {
                     b.HasOne("VeSessionManager.Core.Entities.Candidate", "Candidate")
@@ -2129,6 +2271,11 @@ namespace VeSessionManager.Core.Migrations
             modelBuilder.Entity("VeSessionManager.Core.Entities.FeeConfiguration", b =>
                 {
                     b.Navigation("Sessions");
+                });
+
+            modelBuilder.Entity("VeSessionManager.Core.Entities.MessageRule", b =>
+                {
+                    b.Navigation("Runs");
                 });
 
             modelBuilder.Entity("VeSessionManager.Core.Entities.Payment", b =>

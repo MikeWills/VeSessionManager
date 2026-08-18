@@ -1,5 +1,11 @@
 ﻿# Candidate & Admin Email Reference
 
+
+> **Superseded in part by `docs/trigger-points.md` (#401, 2026-08-16.)** The four messages this app
+> sent automatically are per-team `MessageRule` rows now, with their thresholds expressed in hours,
+> so "when does this go out" is no longer answered by the code described below. Everything here about
+> *what* each message says, who receives it and which placeholders resolve is still accurate.
+
 Single reference for every outbound email this app sends: what triggers each one, who receives it,
 every `{{Tag}}` available to its template, and the gotchas worth knowing before editing content or
 debugging why a candidate did (or didn't) get an email.
@@ -153,7 +159,7 @@ This runs two ways, both executing the identical sequence for a given `Team`:
    distinguishable from a scheduled tick on the ops dashboard.
 
 `DayBeforeReminder` and the two payment-reminder passes are **not** part of this pipeline — they're
-separate daily jobs (`DayBeforeReminderJob`, `PaymentReminderJob`, both 24-hour `PeriodicTimer`s
+separate daily jobs (`MessageRuleJob` and `PaymentReminderJob` since #401, both 24-hour `PeriodicTimer`s
 from Worker startup, not pinned to a specific wall-clock time). By the time either runs, the
 session's Zoom link has normally existed for a while, so there's no equivalent ordering concern.
 
@@ -195,9 +201,9 @@ separate daily jobs, and the three per-candidate emails are buttons.
 |---|---|---|---|
 | Registration confirmation | pipeline (scheduled + manual) | `RegistrationConfirmationSentUtc` null, and session not ended | **Yes**, once per candidate |
 | Registration confirmation (resend) | per-candidate button | none — deliberate, and re-stamps | No |
-| Day-before reminder | `DayBeforeReminderJob` | `DayBeforeReminderSentUtc` null | No |
-| FCC fee reminder | `PaymentReminderJob` | `Candidate.FccFeeReminderSentUtc` | No |
-| Payment expiration notice | `PaymentReminderJob` | admin-facing, not to the candidate | No |
+| Day-before reminder | `MessageRuleJob` (`BeforeSessionStart` rule) | a `MessageRuleRun` for that rule | No |
+| FCC fee reminder | `MessageRuleJob` (`FccFeeOutstanding` rule) | a `MessageRuleRun` for that rule | No |
+| Payment expiration notice | `MessageRuleJob` (`PaymentUnpaid` rule) | admin-facing, not to the candidate | No |
 | Felony disclosure instructions | per-candidate button | timestamp is display-only | No |
 | Youth program instructions | per-candidate button | display-only; repeatable by design | No |
 

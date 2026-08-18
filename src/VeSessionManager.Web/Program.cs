@@ -21,6 +21,8 @@ using VeSessionManager.Core.ExamTools;
 using VeSessionManager.Core.Ingestion;
 using VeSessionManager.Core.Jobs;
 using VeSessionManager.Core.Navigation;
+using VeSessionManager.Core.Messaging;
+using VeSessionManager.Core.Messaging.Scanners;
 using VeSessionManager.Core.Notifications;
 using VeSessionManager.Core.Payments;
 using VeSessionManager.Core.Reporting;
@@ -97,6 +99,23 @@ builder.Services.AddScoped<IEmailSender, SmtpEmailSender>();
 builder.Services.AddScoped<EmailTemplateRenderer>();
 builder.Services.AddScoped<CandidateNotificationService>();
 
+// Trigger points (#401). Registered in both hosts: the Worker runs the daily pass, and Web reaches
+// the same engine through TeamPipeline's CandidateRegistered step when somebody presses Refresh.
+builder.Services.AddScoped<IMessageTriggerScanner, CandidateRegisteredScanner>();
+builder.Services.AddScoped<IMessageTriggerScanner, BeforeSessionStartScanner>();
+builder.Services.AddScoped<IMessageTriggerScanner, FccFeeOutstandingScanner>();
+builder.Services.AddScoped<IMessageTriggerScanner, PaymentUnpaidScanner>();
+// PR3's three, none of them seeded — a team opts in by creating a rule.
+builder.Services.AddScoped<IMessageTriggerScanner, CandidateTestedScanner>();
+builder.Services.AddScoped<IMessageTriggerScanner, LicenseGrantedScanner>();
+builder.Services.AddScoped<IMessageTriggerScanner, FelonyDisclosureDeclaredScanner>();
+builder.Services.AddScoped<MessageDispatchService>();
+builder.Services.AddScoped<MessageRuleService>();
+// Read by the Applicant Status page to colour its "days pending" column on the team's own
+// boundaries rather than a constant (#401 PR2), and by the admin screen that sets them.
+builder.Services.AddScoped<MessageThresholdService>();
+builder.Services.AddScoped<MessageRuleAdminService>();
+
 builder.Services.AddScoped<VecSubmissionService>();
 builder.Services.AddScoped<VolunteerExaminerReportService>();
 builder.Services.AddScoped<SessionStatsService>();
@@ -134,7 +153,12 @@ builder.Services.AddScoped<SessionIngestionService>();
 builder.Services.AddScoped<VolunteerExaminerSyncService>();
 builder.Services.AddSingleton<IZoomClient, ZoomClient>();
 builder.Services.Configure<DiscordOptions>(builder.Configuration.GetSection(DiscordOptions.SectionName));
-builder.Services.AddSingleton<IDiscordEventClient, DiscordEventClient>();
+// One instance, two interfaces (#401 PR4). The bot login it caches is per-instance, so registering
+// the class once and resolving both contracts from it is what stops a second login — and splitting
+// the contracts keeps MessageDispatchService depending on the one call it makes.
+builder.Services.AddSingleton<DiscordEventClient>();
+builder.Services.AddSingleton<IDiscordEventClient>(sp => sp.GetRequiredService<DiscordEventClient>());
+builder.Services.AddSingleton<IDiscordChannelMessageClient>(sp => sp.GetRequiredService<DiscordEventClient>());
 builder.Services.AddScoped<SessionEventSchedulingService>();
 builder.Services.AddScoped<JobRunHistoryLogger>();
 // Backs Admin -> Job Schedule. Web-only: the Worker obeys the schedule, it has no need to report it.

@@ -14,6 +14,8 @@ using VeSessionManager.Core.Uls;
 using VeSessionManager.Core.Ingestion;
 using VeSessionManager.Core.Integrations;
 using VeSessionManager.Core.Jobs;
+using VeSessionManager.Core.Messaging;
+using VeSessionManager.Core.Messaging.Scanners;
 using VeSessionManager.Core.Navigation;
 using VeSessionManager.Core.Notifications;
 using VeSessionManager.Core.Payments;
@@ -100,7 +102,12 @@ builder.Services.Configure<DiscordOptions>(builder.Configuration.GetSection(Disc
 // Singleton so the bot login only happens once (bot tokens don't expire, unlike Zoom's). Only
 // BotToken lives here now — it's shared across every team (multi-team, see docs/multi-team.md);
 // each team's own Discord Guild lives on Team.DiscordGuildId instead.
-builder.Services.AddSingleton<IDiscordEventClient, DiscordEventClient>();
+// One instance, two interfaces (#401 PR4). The bot login it caches is per-instance, so registering
+// the class once and resolving both contracts from it is what stops a second login — and splitting
+// the contracts keeps MessageDispatchService depending on the one call it makes.
+builder.Services.AddSingleton<DiscordEventClient>();
+builder.Services.AddSingleton<IDiscordEventClient>(sp => sp.GetRequiredService<DiscordEventClient>());
+builder.Services.AddSingleton<IDiscordChannelMessageClient>(sp => sp.GetRequiredService<DiscordEventClient>());
 builder.Services.AddScoped<SessionEventSchedulingService>();
 
 // Singleton: the Square SDK client owns its own HttpClient, same reasoning as the other API clients.
@@ -119,6 +126,23 @@ builder.Services.AddScoped<RefundStatusService>();
 builder.Services.AddScoped<IEmailSender, SmtpEmailSender>();
 builder.Services.AddScoped<EmailTemplateRenderer>();
 builder.Services.AddScoped<CandidateNotificationService>();
+
+// Trigger points (#401). The scanners are registered as IMessageTriggerScanner rather than by their
+// own types: MessageRuleService resolves the set and matches on Trigger, so adding one is a
+// registration here plus a definition in MessageTriggerDefinitions, and nothing else changes.
+builder.Services.AddScoped<IMessageTriggerScanner, CandidateRegisteredScanner>();
+builder.Services.AddScoped<IMessageTriggerScanner, BeforeSessionStartScanner>();
+builder.Services.AddScoped<IMessageTriggerScanner, FccFeeOutstandingScanner>();
+builder.Services.AddScoped<IMessageTriggerScanner, PaymentUnpaidScanner>();
+// PR3's three, none of them seeded — a team opts in by creating a rule.
+builder.Services.AddScoped<IMessageTriggerScanner, CandidateTestedScanner>();
+builder.Services.AddScoped<IMessageTriggerScanner, LicenseGrantedScanner>();
+builder.Services.AddScoped<IMessageTriggerScanner, FelonyDisclosureDeclaredScanner>();
+builder.Services.AddScoped<MessageDispatchService>();
+builder.Services.AddScoped<MessageRuleService>();
+// PaymentReminderService expires a link on the team's own PaymentUnpaid hours now, so the two
+// cannot disagree about the day it happened (#401 PR2).
+builder.Services.AddScoped<MessageThresholdService>();
 
 builder.Services.Configure<UlsLookupOptions>(builder.Configuration.GetSection(UlsLookupOptions.SectionName));
 // Singleton: owns its own HttpClient, same reasoning as the other API clients. No credentials, so
@@ -152,7 +176,7 @@ builder.Services.AddScoped<TeamSecretsMigrationService>();
 
 builder.Services.AddScoped<JobRunHistoryLogger>();
 builder.Services.AddHostedService<SessionIngestionJob>();
-builder.Services.AddHostedService<DayBeforeReminderJob>();
+builder.Services.AddHostedService<MessageRuleJob>();
 builder.Services.AddHostedService<UlsWatcherJob>();
 builder.Services.AddHostedService<LicenseWatchJob>();
 builder.Services.AddHostedService<PaymentReminderJob>();

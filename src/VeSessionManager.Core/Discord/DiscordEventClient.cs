@@ -12,7 +12,7 @@ namespace VeSessionManager.Core.Discord;
 /// https://docs.discordnet.dev/guides/guild_events/creating-guild-events.html. Registered as a
 /// singleton so the login only happens once; bot tokens don't expire, unlike Zoom's.
 /// </summary>
-public sealed class DiscordEventClient : IDiscordEventClient, IDisposable
+public sealed class DiscordEventClient : IDiscordEventClient, IDiscordChannelMessageClient, IDisposable
 {
     private readonly DiscordOptions _options;
     private readonly ILogger<DiscordEventClient> _logger;
@@ -82,6 +82,30 @@ public sealed class DiscordEventClient : IDiscordEventClient, IDisposable
 
         await scheduledEvent.DeleteAsync();
         _logger.LogInformation("Deleted Discord scheduled event {DiscordEventId} in guild {GuildId}", eventId, guildId);
+    }
+
+    /// <summary>
+    /// Posts into a text channel (#401 PR4). Deliberately not "create if missing" or idempotent in
+    /// any way of its own: a Discord message cannot be matched back to the thing that sent it the way
+    /// a scheduled event can be matched by name and time, so <b>the caller's
+    /// <c>MessageRuleRun</c> marker is the only thing standing between a retry and a duplicate
+    /// post</b>. That is the same rule the rest of this app follows for a non-idempotent external
+    /// call; it is worth stating here because the methods above it all query first.
+    /// </summary>
+    public async Task PostMessageAsync(ulong guildId, ulong channelId, string message, CancellationToken cancellationToken)
+    {
+        var guild = await GetGuildAsync(guildId, cancellationToken);
+        var channel = await guild.GetTextChannelAsync(channelId)
+            ?? throw new InvalidOperationException(
+                $"Discord channel {channelId} was not found in guild {guildId}, or the bot cannot see it. " +
+                "Check the channel id on the message rule, and that the bot has View Channel + Send Messages there.");
+
+        // AllowedMentions.None is the control that makes DiscordMessageText's decision not to escape
+        // markdown safe: a candidate whose name is "@everyone" cannot ping the server, whatever the
+        // text says, because no mention in this message resolves. Enforced at the API rather than by
+        // string-mangling that would have to anticipate every syntax Discord adds.
+        await channel.SendMessageAsync(message, allowedMentions: AllowedMentions.None);
+        _logger.LogInformation("Posted a message to Discord channel {ChannelId} in guild {GuildId}", channelId, guildId);
     }
 
     /// <summary>DateTimeOffset(DateTime, TimeSpan.Zero) requires Kind=Utc (or Unspecified); force it so a value that round-tripped through EF/Sqlite (which drops Kind) never throws.</summary>

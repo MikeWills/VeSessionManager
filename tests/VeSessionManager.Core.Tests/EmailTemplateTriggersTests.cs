@@ -1,15 +1,22 @@
 using VeSessionManager.Core.Email;
+using VeSessionManager.Core.Entities;
+using VeSessionManager.Core.Messaging;
 using Xunit;
 
 namespace VeSessionManager.Core.Tests;
 
 /// <summary>
-/// Guards that every seeded template Key has a trigger description on the admin page.
+/// Guards that every seeded template is accounted for on the admin page — either by a rule that sends
+/// it, or by a hand-written description of the button that does.
 ///
-/// <para><b>What this cannot do:</b> tell whether the prose is still <i>true</i>. If a trigger
-/// condition changes in CandidateNotificationService/PaymentReminderService/SessionActionService,
-/// the text in EmailTemplateTriggers has to be updated by hand — nothing here will catch a
-/// description that has quietly become wrong.</para>
+/// <para><b>The registry shrank in #401 PR2.</b> It used to describe all seven templates, including
+/// the four sent automatically, with their conditions in prose: "within the next 24 hours", "5 days".
+/// Those are per-team rules now, so that prose was describing one deployment's defaults as the app's
+/// behaviour. What the page shows for an automatic template is read from the rules; what is left here
+/// is only the on-demand ones, which no rule can describe because a person decides.</para>
+///
+/// <para><b>What this still cannot do:</b> tell whether the remaining prose is <i>true</i>. If a
+/// button's condition changes, the text has to change with it and nothing here will notice.</para>
 /// </summary>
 public class EmailTemplateTriggersTests
 {
@@ -25,52 +32,99 @@ public class EmailTemplateTriggersTests
         "GettingStartedLocally"
     ];
 
+    /// <summary>The template each seeded rule points at — the other half of "what sends this".</summary>
+    private static readonly string[] KeysASeededRuleSends =
+    [
+        "RegistrationConfirmation",
+        "DayBeforeReminder",
+        "FccFeeReminder5Day",
+        "PaymentExpirationNotice"
+    ];
+
     public static IEnumerable<object[]> SeededKeyData() => SeededKeys.Select(k => new object[] { k });
+
+    /// <summary>
+    /// Every seeded template is explained by exactly one of the two mechanisms. Stated as an
+    /// exclusive-or rather than two separate assertions because the failure worth catching is a
+    /// template that falls through both — the page would then show it with no indication of what
+    /// sends it, which is the state the registry existed to prevent.
+    /// </summary>
+    [Theory]
+    [MemberData(nameof(SeededKeyData))]
+    public void EverySeededKey_IsEitherSentByASeededRule_OrDescribedAsOnDemand(string key)
+    {
+        var sentByRule = KeysASeededRuleSends.Contains(key);
+        var describedByHand = EmailTemplateTriggers.For(key) is not null;
+
+        Assert.True(sentByRule ^ describedByHand,
+            $"'{key}' is {(sentByRule && describedByHand ? "described in both places" : "explained by neither")}.");
+    }
 
     [Theory]
     [MemberData(nameof(SeededKeyData))]
-    public void EverySeededKey_HasATrigger(string key)
+    public void AnOnDemandDescription_SaysWhoGetsItAndWhatCausesIt(string key)
     {
-        var trigger = EmailTemplateTriggers.For(key);
+        if (EmailTemplateTriggers.For(key) is not { } trigger)
+        {
+            return;
+        }
 
-        Assert.NotNull(trigger);
-        Assert.False(string.IsNullOrWhiteSpace(trigger!.Cadence));
         Assert.False(string.IsNullOrWhiteSpace(trigger.Recipient));
         Assert.False(string.IsNullOrWhiteSpace(trigger.Description));
     }
 
     /// <summary>
-    /// Every template belongs to exactly one phase, and the enum's declaration order is the display
-    /// order the page relies on.
+    /// The four automatic templates must NOT carry a hand-written description any more. One left
+    /// behind would state a condition — "5 days" — beside the team's own setting saying otherwise, and
+    /// the reader has no way to tell which is real.
     /// </summary>
     [Theory]
-    [MemberData(nameof(SeededKeyData))]
-    public void EverySeededKey_HasAPhase(string key)
+    [InlineData("RegistrationConfirmation")]
+    [InlineData("DayBeforeReminder")]
+    [InlineData("FccFeeReminder5Day")]
+    [InlineData("PaymentExpirationNotice")]
+    public void ATemplateARuleSends_HasNoHandWrittenConditionToContradictIt(string key)
     {
-        Assert.Contains(EmailTemplateTriggers.For(key)!.Phase, Enum.GetValues<EmailTemplatePhase>());
+        Assert.Null(EmailTemplateTriggers.For(key));
     }
 
+    /// <summary>Every trigger point the engine knows about is one the labels can render — a missing label shows an enum name to an admin.</summary>
     [Fact]
-    public void PhasesReadInTheOrderThingsActuallyHappen()
+    public void EveryTriggerPoint_HasALabelAndABlurb()
     {
-        Assert.True((int)EmailTemplatePhase.AtRegistration < (int)EmailTemplatePhase.PreSession);
-        Assert.True((int)EmailTemplatePhase.PreSession < (int)EmailTemplatePhase.PostSession);
+        Assert.All(MessageTriggerDefinitions.All, definition =>
+        {
+            Assert.False(string.IsNullOrWhiteSpace(MessageTriggerLabels.Label(definition.Trigger)));
+            Assert.False(string.IsNullOrWhiteSpace(MessageTriggerLabels.Blurb(definition.Trigger)));
+        });
+    }
+
+    /// <summary>And every recipient a rule may legally carry, for the same reason.</summary>
+    [Fact]
+    public void EveryLegalRecipient_HasALabel()
+    {
+        Assert.All(MessageTriggerDefinitions.All.SelectMany(d => d.LegalRecipients).Distinct(),
+            recipient => Assert.NotEqual(recipient.ToString(), MessageTriggerLabels.Label(recipient)));
     }
 
     /// <summary>
-    /// Anything gated on the FCC entering an application is necessarily post-session, whatever the
-    /// template name suggests. Only two are now: FelonyDisclosureInstructions left this list in #221
-    /// when it stopped riding along with marking a session completed.
+    /// Hours read back in the unit the form takes, so a rule reads back the way it was written — days,
+    /// down to the half day the form's own step allows. Anything finer stays in hours: nothing can
+    /// enter one now, and rendering 40 hours as "1.7 days" would be a rounding the list is not
+    /// entitled to make. See MessageDelayTests for the boundary itself.
     /// </summary>
     [Theory]
-    [InlineData("FccFeeReminder5Day")]
-    [InlineData("PaymentExpirationNotice")]
-    // FelonyDisclosureInstructions was here until #221. It is PreSession now, and deliberately so:
-    // it used to ride along with marking a session completed, which meant it could only ever arrive
-    // after the exam — when the candidate can no longer easily ask anyone about it.
-    public void FccGatedAndSessionCompletionEmails_ArePostSession(string key)
+    [InlineData(null, "immediately")]
+    [InlineData(1, "1 hour")]
+    [InlineData(24, "1 day")]
+    [InlineData(120, "5 days")]
+    [InlineData(240, "10 days")]
+    [InlineData(12, "half a day")]
+    [InlineData(36, "1½ days")]
+    [InlineData(40, "40 hours")]
+    public void DescribeHours_ReadsAsSomebodyWouldSayIt(int? hours, string expected)
     {
-        Assert.Equal(EmailTemplatePhase.PostSession, EmailTemplateTriggers.For(key)!.Phase);
+        Assert.Equal(expected, MessageTriggerLabels.DescribeHours(hours));
     }
 
     /// <summary>
@@ -84,10 +138,7 @@ public class EmailTemplateTriggersTests
         Assert.DoesNotContain(EmailTemplateTriggers.Retired, EmailTemplateTriggers.ByKey.ContainsKey);
     }
 
-    /// <summary>
-    /// And a retired key must no longer be seeded, or every new deployment would create a row the
-    /// page immediately labels as never sent.
-    /// </summary>
+    /// <summary>And a retired key must no longer be seeded, as a template or as a rule's target.</summary>
     [Theory]
     [MemberData(nameof(SeededKeyData))]
     public void NoSeededKeyIsRetired(string key)
@@ -101,24 +152,26 @@ public class EmailTemplateTriggersTests
         Assert.Null(EmailTemplateTriggers.For("SomeUnknownKey"));
     }
 
+    /// <summary>
+    /// The genuinely surprising one, and now a rule's field rather than prose: the unpaid-payment
+    /// notice goes to the team, not the candidate. Pinned on the definition, because that is what the
+    /// admin form offers and therefore what somebody can pick.
+    /// </summary>
     [Fact]
-    public void Cadence_IsOneOfTheTwoThePageStyles()
+    public void PaymentUnpaid_CanAddressTheTeamsOwnInbox()
     {
-        // The page picks a chip colour from this value, so a third spelling would render as the
-        // "on demand" style without anyone noticing.
-        Assert.All(EmailTemplateTriggers.ByKey.Values,
-            t => Assert.Contains(t.Cadence, new[] { "Automatic", "On demand" }));
+        Assert.Contains(MessageRecipient.TeamAdminAddress,
+            MessageTriggerDefinitions.For(MessageTrigger.PaymentUnpaid).LegalRecipients);
     }
 
     /// <summary>
-    /// The one genuinely surprising entry, pinned because it is the most consequential thing an
-    /// admin could get wrong: editing this template as though a candidate will read it.
+    /// And the inverse, which is the one worth refusing: a registration confirmation is written to a
+    /// candidate, so offering to send it to the team's admin inbox would be offering a mistake.
     /// </summary>
     [Fact]
-    public void PaymentExpirationNotice_IsMarkedAsGoingToTheTeam_NotTheCandidate()
+    public void CandidateFacingTriggers_CannotBeAddressedToTheTeam()
     {
-        var trigger = EmailTemplateTriggers.For("PaymentExpirationNotice");
-
-        Assert.Contains("not the candidate", trigger!.Recipient, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(MessageRecipient.TeamAdminAddress,
+            MessageTriggerDefinitions.For(MessageTrigger.CandidateRegistered).LegalRecipients);
     }
 }

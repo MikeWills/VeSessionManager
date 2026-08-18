@@ -126,6 +126,54 @@ would be pure duplication — and goes straight to `CHANGELOG.md` instead. Non-p
 redesigns, hardening passes) start here and move to `CHANGELOG.md` once the section is at/over the
 cap and a newer entry needs to be added; oldest goes first.
 
+- **Rules can post to Discord, and carry their own Reply-To (2026-08-17).** Issue #401, PR4 — the last
+  of it. See `docs/trigger-points.md`. Three things worth carrying forward: **nothing per-person can
+  reach a channel post because that path builds no `EmailMessage` at all** — the unsubscribe and
+  CAN-SPAM footer have no field to occupy rather than a check that remembers them; **`MessageFanOut`'s
+  `PerSubject` was renamed `SingleDigest`** (value unchanged) because the old name read as "one per
+  candidate", which is the opposite of what it selects and exactly the forty-posts mistake the field
+  exists to prevent; and **there is deliberately no From override** — SPF/DKIM/DMARC live on a domain
+  this app does not control and a wrong From goes to spam silently, so Reply-To (resolvable to the
+  session lead, via `CallSign.Normalize` so ExamTools' `<UNKNOWN>` is never looked up) is the field
+  that answers what people actually ask for. A Cc is refused on candidate mail: the person copied
+  cannot unsubscribe.
+
+- **Three new trigger points, none of them seeded (2026-08-17).** Issue #401, PR3 — see
+  `docs/trigger-points.md`. `CandidateTested`, `LicenseGranted` and `FelonyDisclosureDeclared`, all
+  opt-in, so no existing team's mail changes. The one to carry forward: **a state trigger is only
+  implementable if something records *when* the state changed**, and `Candidate.Tested` was a bool
+  written from four places — so `Candidate.TestedUtc` exists, set through the one `MarkTested(now)`
+  helper, guarded by a source scan, and deliberately not backfilled (null means "tested before this
+  existed", which excludes imported history for free). `LicenseGranted` could reuse FCC's own grant
+  date, and skips an upgrader whose license predates the session, who earned no call sign here.
+
+- **Teams set their own message rules now, from a screen (2026-08-17).** Issue #401, PR2 — see
+  `docs/trigger-points.md`. `Admin/MessageRules` lists every trigger point with its rules, and
+  `ParameterHours` is editable. Two things worth carrying forward: **a rule can be switched off *or*
+  deleted, and making delete real took two changes rather than one** — the seeder now seeds once per
+  team and records it (`Team.MessageRulesSeededUtc`), because a per-trigger check re-added a deleted
+  rule on the next Worker start, and `MessageRuleRun.MessageRuleId` became nullable with `SetNull` so
+  the record of what was sent outlives the rule that sent it (which is what its `RuleName`/`Trigger`
+  snapshots were always for); and **the two `PaymentReminderService` threshold constants
+  are gone**, because the Applicant Status colours and the payment-expiry write both have to agree
+  with what a team actually configured. They read `MessageThresholdService`, whose two methods differ
+  in one deliberate way: bookkeeping gets a number regardless, a page gets null and shows no boundary
+  at all.
+
+- **When each automatic email goes out is a per-team row now, not a constant (2026-08-16).** Issue
+  #401, PR1 — the engine, with behaviour frozen. See `docs/trigger-points.md`. The four hardcoded sends are
+  `MessageRule`s against four trigger points, their thresholds expressed in **hours** so no calendar
+  date exists to get wrong (#220 made structural), and `MessageRuleRun` replaces the
+  `Candidate.*SentUtc` columns as both marker and log — which is what closes #396, since a muted send
+  can now record `Suppressed` instead of a timestamp claiming it was sent. Three things worth carrying
+  forward: **`MessageRule.CreatedUtc` bounds every scan**, which is the only thing standing between
+  adding a rule and mailing everyone already past its moment, and is why the seeded rules are stamped
+  at deploy time; **`PaymentUnpaidScanner` must not filter on `ExpiredUnpaid`** — that write stayed in
+  `PaymentReminderService` and is normally already true by the time the rule scans, so filtering on it
+  would silently stop the notice with nothing looking wrong; and **only `Sent`/`Suppressed` are
+  terminal**, so a failed send is logged *and* retried, with the retry updating the row rather than
+  inserting past the unique index.
+
 - **Candidates can be emailed by hand from a session now, from templates a team writes itself (2026-08-16).** Issue #144, both PRs.
   See `docs/candidate-email.md`. Pick candidates, start from a template, **edit the message**, send —
   which is a shape this app did not have: every other candidate email is composed by code. The issue
@@ -217,78 +265,10 @@ cap and a newer entry needs to be added; oldest goes first.
   `Amount` — a $5 youth payment against a $15 row is routine here. Still unverified: whether each
   team's existing token carries `PAYMENTS_WRITE`, which only a live Sandbox call settles.
 
-- **Two-factor authentication, opt-in and un-enforced on purpose (2026-08-14).** Issue #356. See
-  `docs/two-factor.md`. TOTP with QR enrolment, recovery codes and an admin escape hatch. **Enforcement
-  was deliberately not built**: system SMTP has never been configured here, so an admin who loses a
-  phone cannot be emailed a way back in — and the account that would rescue them is the one that would
-  be locked. A non-dismissible nudge on admin accounts instead. **No application cookie exists until
-  the challenge is passed**, which is the property the whole thing rests on and the easy one to get
-  wrong while a browser still looks right. The pending-user handoff is hand-rolled because #340's
-  one-`Set-Cookie` split means `PasswordSignInAsync` is not used — it writes Identity's own
-  `TwoFactorUserIdScheme` claim shape, which is *behaviour not documentation*, so a test pins the
-  round trip. Four things worth carrying forward: **`GenerateTwoFactorTokenAsync(user,
-  "Authenticator")` returns an empty string** (only a phone can generate; it reads exactly like the
-  method you want and fails against correct code), **Identity recovery codes contain a hyphen** so the
-  space-and-hyphen stripping that is right for a six-digit TOTP silently breaks redemption, **a
-  recovery code must never earn device trust** (it means the authenticator is *lost*), and
-  **"sign out other devices" needs no extra call** — Identity registers its stamp validator on the
-  two-factor cookie too, while `ForgetTwoFactorClientAsync` would clear the wrong device entirely.
-
-- **Nineteen audit findings closed, and two retention questions finally answered (2026-08-14).** See
-  `docs/audit-log.md` and `docs/ve-retention.md` (both new), plus issues #238-#240, #243, #257,
-  #260-#262, #264, #265, #312, #313. Three themes, and each had one shape. **VE scope**: an id posted
-  from a form was checked for existence but never against what the actor could reach — the worst sent
-  attacker-authored mail *from the team's own SMTP* to any VE on the deployment. **Silent failure**:
-  the key-ring guard iterated `Teams` and so missed the sixth encrypted column, on a different
-  entity, exactly as its own doc comment predicted; a deployment with zero teams verified nothing and
-  logged success. **Nothing was watching**: sign-ins were not audited at all, success or failure, so
-  a stuffing run left no trace — now `SignedIn`/`SignInFailed`/`SignInLockedOut` with a source
-  address, deliberately *not* on the ~175 ordinary audit sites, which would make an activity log into
-  a movement record. #313 was a decision, not a bug: **audit append-only is a convention enforced by
-  absence, not by the database** (written down, and guarded by a source scan so a delete path cannot
-  reappear quietly), and **VE contact details now age out** after a configurable inactivity window —
-  off until an admin sets it, keeping name/call sign/accreditations because those are the
-  accreditation trail. Two things worth carrying forward: **`[Required]` on a non-nullable `int` is
-  client-side-only**, the same trap already recorded for `bool`; and **an unreachable branch cannot be
-  tested** — the L-14 fix ships with no test because both routes to it are intercepted upstream, a
-  test was written and passed with the fix reverted, so it was deleted rather than kept as false
-  comfort.
-
-- **Dark mode follows the OS, then follows you (2026-08-13).** See `docs/theme-preference.md`. The
-  theme was `localStorage.getItem(key) || "light"` — OS-blind, per browser, and resolved at the
-  *bottom* of `<body>`, so it repainted after the page had already drawn. New
-  `User.ThemePreference` (`System`/`Light`/`Dark`) is rendered onto `<html>` by the layout;
-  `theme.js` resolves the rest in `<head>`, render-blocking, in the order server → localStorage →
-  `prefers-color-scheme` → light. **`System` must render no `data-theme` at all** — it is the
-  default, so every pre-existing account is in it, and emitting `light` there looks perfect to a
-  light-mode user while silently pinning everyone else. Razor renders a null attribute value as
-  `data-theme=""`, not as nothing, which is one `!== null` away from exactly that. Three things
-  worth knowing: an inline script is unavailable (CSP `script-src 'self'` — it renders and never
-  runs), `MapStaticAssets` makes `asp-append-version` emit a **fingerprinted filename** rather than
-  a `?v=` query so an asset-URL assertion on the literal name finds nothing, and the app's first
-  `fetch()` needed **no** antiforgery config — `RequestVerificationToken` is already
-  `HeaderName`'s default, proven by a mutation test that deleted the line and stayed green.
-
-- **The phone logged out constantly and the desktop did not (2026-08-13).** Issue #340. See
-  `docs/remember-me.md`. Every sign-in passed `isPersistent: false`, so the cookie had no `Expires`
-  and lived only as long as the browser *process* — a desktop browser runs for days, phones kill and
-  restart theirs constantly. **Persistence alone would not have fixed it**, which is the part that
-  looks finished after the first half: `PasswordSignInAsync` takes only an `isPersistent` flag and
-  the resulting cookie still expires after `ExpireTimeSpan` (8h, deliberate, #159), so a
-  once-a-day phone goes from "every time" to "daily". The window has to be set explicitly as
-  `AuthenticationProperties.ExpiresUtc` — 30 days, opt-in, default off. Sliding expiration then
-  slides by the *ticket's own* duration, not `ExpireTimeSpan`. Shipped with **"Sign out other
-  devices"** because a 30-day session needs a way to end it; that is a security-stamp rotation, so
-  it is **not instant** (30-minute revalidation) and the page says so. Three things that are not
-  obvious: the password path checks and signs in as two steps so exactly *one* `Set-Cookie` is
-  written; the provider buttons had to move *inside* the credentials form for the checkbox to reach
-  the external round trip; and **ASP.NET Core writes `expires=`, not `max-age=`** — the first test
-  asserted on the wrong one and failed against a correct cookie.
-
 Everything through Phase 0-10's initial build (ExamTools ingestion, Zoom/Discord, Square, email
 notifications, FCC ULS watcher, payment reminders, VE tracking, VEC submission tracker, admin
-auth/config/candidate-actions, PII purge), the public privacy page, and everything dated 2026-08-01
-or earlier has aged out to **`CHANGELOG.md`** — same one-line-pointer format, just the overflow.
+auth/config/candidate-actions, PII purge), the public privacy page, and everything older than the
+entries above has aged out to **`CHANGELOG.md`** — same one-line-pointer format, just the overflow.
 
 ## Environment
 
@@ -452,6 +432,7 @@ To pick up updates: `/plugin marketplace update claude-tools`
   `docs/square-refunds.md`.
 - **Square webhook subscriptions are separate per Sandbox/Production, each with its own signature key** — an existing subscription registered under one mode receives zero delivery attempts for events in the other (not a 401, no attempt at all), and reusing one mode's `WebhookSignatureKey` against the other mode's subscription makes every delivery fail signature verification (401) even though the URL/event config is otherwise correct. Found live 2026-07-25 testing Team 2 (MARC)'s payment flow — the "Ve Session Manager" subscription had been created under Production while all local testing used Sandbox credentials/payment links. Fix: add (or move) the subscription under the correct mode's tab in the Square dashboard, then set `Team.SquareWebhookSignatureKey` to *that* subscription's own signature key, not the other mode's. See `docs/square-payments.md`. **Which mode a team is in is now `Team.SquareEnvironment`, not a config value (2026-08-06)** — so this is per-team, and two teams on one deployment can legitimately be in different modes, each needing its own subscription. A team whose access token and environment disagree gets an auth failure from Square rather than a wrong-account charge.
 - **`Web` and `Worker` must register Data Protection with the exact same application name and key-ring path, or one process's writes silently become unreadable by the other.** `Team`'s credential columns (ExamTools/Zoom/Square/SMTP secrets) are encrypted at rest via `EncryptedStringConverter` (2026-07-30) — both `Program.cs` files call `AddDataProtection().SetApplicationName("VeSessionManager").PersistKeysToFileSystem(...)` with the same hardcoded app name and the same `DataProtection:KeyRingPath` config value. A drift here doesn't throw — `EncryptedStringConverter`'s legacy-plaintext fallback (needed for the migration path) means a value encrypted under a different key just looks like it was never migrated. See `docs/credential-encryption.md`. Also: **if the key-ring directory is ever lost, every encrypted credential becomes permanently unrecoverable** — it must be backed up with the same discipline as the DB file itself (see `docs/deployment.md`).
+- **`PaymentEligibilityWindow` (30 days from session start) silently caps two values a team can now set past it.** It bounds `FccFeeOutstanding` and `PaymentUnpaid` — the historical-import guard, and rightly so — but since #401 PR2 those triggers' hours are per-team with a one-year ceiling on the form. A rule set beyond the window never fires, and nothing fails: no send, no error, no marker. The Message Rules form shows a caution rather than refusing, because the real headroom is 30 days *minus* however long the FCC took to enter the application, which nobody knows in advance. **Changing the window now changes what a team's configuration is allowed to mean**, not just what the code does.
 - **A POST form on a filtered list page needs BOTH an explicit `action=` and `asp-antiforgery="true"` — each half fixes a bug the other half causes.** `asp-page-handler` builds the form action from the route only and **drops the query string**, so posting an action from a filtered/paged list silently redirects back to the unfiltered first page (found on the Sessions row-action menu, 2026-07-30). The fix is an explicit `action="@Model.BuildActionUrl("Handler")"`. But `FormTagHelper` only auto-emits the antiforgery token when *it* generated the action — with an explicit `action=` the token disappears, and every POST then 400s in the antiforgery middleware **before reaching the app, logging nothing server-side** (the symptom is a browser error page with a completely silent log, which reads like the request never happened). `asp-antiforgery="true"` restores it. Any future list page with row-level POST actions needs both, plus a `BuildActionUrl`-style helper so the redirect target keeps the same filter state.
 - **`wireless2.fcc.gov` (ULS's own web UI) returns Akamai "Access Denied" (HTTP 403) to automated requests, and has done so for at least one manual browser attempt too.** This is why `FccUlsLinks` ships the *license* deep link (`UlsSearch/license.jsp?licKey=…`, whose shape is verified — ExamTools links to exactly it) but deliberately **not** an application deep link: the `applView.jsp?applID=…` shape has never been confirmed against a working response, and an unverified link would send a Session Manager to a dead page. `exam.tools`' own ULS mirror is unaffected and is what the app actually calls.
 - **The FCC bulk-file constraints are historical as of 2026-07-31** — the weekly-snapshot staleness, the day-name publication schedule, the Sunday-file-is-empty trap, and the `AM.dat`/Grant-Date upgrade behaviour all described a subsystem this app no longer runs. They are preserved in `docs/fcc-uls-watcher.md` (marked as removed) because the *matching rules* they justify are still enforced in `UlsWatcherService`. The one that still bites day-to-day: **FCC's Grant Date does NOT advance on a class upgrade — the effective/last-action date does**, so any "did this exam produce a result?" check written against grant date is correct for a first-time licensee and permanently false for an upgrade. Confirming an upgrade needs the operator class matching `NewLicenseClass` **and** the effective date on/after the session; neither alone is sufficient. See `docs/uls-watcher.md`.

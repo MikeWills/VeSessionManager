@@ -1,0 +1,170 @@
+@page "{id:int}"
+@using VeSessionManager.Core.Messaging
+@model VeSessionManager.Web.Pages.Admin.MessageRuleEditModel
+@{
+    ViewData["Title"] = "Edit Rule";
+    ViewData["ActiveNav"] = "AdminMessageRules";
+    Layout = "_AppLayout";
+}
+
+<div class="page-head">
+    <div>
+        <partial name="_ParentCrumb" model='new ParentCrumb("./MessageRules", "Message Rules", "Per team", RoleGroups.Admins)' />
+        <h1>@Model.Rule.Name</h1>
+        <p class="session-sub">@Model.TriggerLabel — @Model.TriggerBlurb</p>
+    </div>
+</div>
+
+<div class="session-panel" style="display:block; max-width:640px;">
+    <form method="post">
+        <input type="hidden" asp-for="Id" />
+        <div class="field">
+            <label asp-for="Name">Name</label>
+            <input asp-for="Name" required />
+            <span class="session-sub">What the run log records. Only you see it.</span>
+        </div>
+
+        @if (Model.TakesParameter)
+        {
+            <div class="field" style="max-width:260px;">
+                <label asp-for="ParameterDays">@Model.ParameterPrompt</label>
+                <input asp-for="ParameterDays" type="number"
+                       min="@MessageDelay.Format(MessageDelay.Minimum)"
+                       max="@MessageDelay.Format(MessageDelay.Maximum)"
+                       step="@MessageDelay.Format(MessageDelay.Step)" required />
+                @* A duration, not a date — the reason the column underneath is hours. *@
+                <span class="session-sub">Whole or half days — 0.5 is twelve hours, 5 is five days.</span>
+                @if (MessageTriggerLabels.ParameterCeilingNote(Model.Rule.Trigger) is { } ceiling)
+                {
+                    <span class="session-sub">@ceiling</span>
+                }
+            </div>
+        }
+
+        <div class="field" style="max-width:420px;">
+            <span class="label-text">Send it as</span>
+            <label style="font-weight:400;">
+                <input type="radio" asp-for="Channel" value="@((int)VeSessionManager.Core.Entities.MessageChannel.Email)"
+                       data-channel-radio="edit" />
+                An email
+            </label>
+            <label style="font-weight:400;">
+                <input type="radio" asp-for="Channel" value="@((int)VeSessionManager.Core.Entities.MessageChannel.Discord)"
+                       data-channel-radio="edit" />
+                A Discord post
+            </label>
+        </div>
+
+        <div class="field" style="max-width:320px;" data-channel-only="Email" data-channel-group="edit"
+             hidden="@(Model.Channel == VeSessionManager.Core.Entities.MessageChannel.Discord)">
+            <label asp-for="Recipient">Who receives it</label>
+            <select asp-for="Recipient" class="filter-select">
+                @foreach (var recipient in Model.Definition.LegalRecipients)
+                {
+                    <option value="@((int)recipient)">@MessageTriggerLabels.Label(recipient)</option>
+                }
+            </select>
+        </div>
+
+        <div class="field" style="max-width:420px;" data-channel-only="Discord" data-channel-group="edit"
+             hidden="@(Model.Channel != VeSessionManager.Core.Entities.MessageChannel.Discord)">
+            <label asp-for="DiscordChannelId">Discord channel id</label>
+            <input asp-for="DiscordChannelId" type="text" inputmode="numeric" />
+            <span class="session-sub">
+                Developer Mode on, right-click the channel, Copy Channel ID. The bot needs View Channel
+                and Send Messages there.
+            </span>
+        </div>
+
+        <div class="field" style="max-width:420px;" data-channel-only="Discord" data-channel-group="edit"
+             hidden="@(Model.Channel != VeSessionManager.Core.Entities.MessageChannel.Discord)">
+            <label asp-for="FanOut">How many posts</label>
+            <select asp-for="FanOut" class="filter-select">
+                <option value="@((int)VeSessionManager.Core.Entities.MessageFanOut.SingleDigest)">One post covering everybody</option>
+                <option value="@((int)VeSessionManager.Core.Entities.MessageFanOut.PerRecipient)">One post each</option>
+            </select>
+            <span class="session-sub">
+                A digest renders the template once with <code>{{Count}}</code> and <code>{{Subjects}}</code>;
+                per-candidate tokens have no answer there and come out blank.
+            </span>
+        </div>
+
+        <div class="field" style="max-width:420px;">
+            <label asp-for="TemplateKey">Template</label>
+            <select asp-for="TemplateKey" class="filter-select" required>
+                @foreach (var template in Model.Templates)
+                {
+                    <option value="@template.Key">@template.Label</option>
+                }
+            </select>
+            <span class="session-sub">Edit the wording on the Email Templates page.</span>
+        </div>
+
+        @* Email only, and hidden with the rest of the email fields when the rule posts to Discord:
+           nobody is addressed on a channel post, so there is nothing to reply to and nobody to copy. *@
+        <div data-channel-only="Email" data-channel-group="edit"
+             hidden="@(Model.Channel == VeSessionManager.Core.Entities.MessageChannel.Discord)">
+            <h2 style="margin-top:24px;">Replies and copies</h2>
+
+            <div class="field" style="max-width:420px;">
+                <label asp-for="ReplyToSource">Replies go to</label>
+                <select asp-for="ReplyToSource" class="filter-select">
+                    <option value="@((int)VeSessionManager.Core.Entities.MessageReplyToSource.EmailSettings)">Your team's reply-to address</option>
+                    <option value="@((int)VeSessionManager.Core.Entities.MessageReplyToSource.SessionLead)">The session's lead VE</option>
+                    <option value="@((int)VeSessionManager.Core.Entities.MessageReplyToSource.Custom)">A specific address</option>
+                </select>
+                @* Said plainly because the fallback is silent by design — a reply reaching the team is
+                   better than one reaching nobody, but somebody should know it can happen. *@
+                <span class="session-sub">
+                    If the lead cannot be worked out — no call sign on the session, or no VE record with an
+                    email — replies go to your team's address instead.
+                </span>
+            </div>
+
+            <div class="field" style="max-width:420px;">
+                <label asp-for="ReplyToOverride">Reply-to address</label>
+                <input asp-for="ReplyToOverride" type="email" />
+                <span class="session-sub">Used only with "a specific address" above.</span>
+            </div>
+
+            @* From is deliberately absent. Changing it means SPF/DKIM/DMARC on a domain this app does
+               not control, and getting it wrong sends the mail to spam silently — Reply-To is the
+               field that actually answers "can it come from the session lead". *@
+            <div class="field" style="max-width:420px;">
+                <label asp-for="BccAddress">Blind copy each message to</label>
+                <input asp-for="BccAddress" type="email" />
+                <span class="session-sub">Invisible to the recipient. On top of any team-wide monitoring copy.</span>
+            </div>
+
+            <div class="field" style="max-width:420px;">
+                <label asp-for="CcAddress">Visible copy to</label>
+                <input asp-for="CcAddress" type="email" />
+                <span class="session-sub">
+                    Not allowed on a rule that writes to candidates: everyone sees the address, and the
+                    person at it cannot unsubscribe. Use the blind copy above instead.
+                </span>
+            </div>
+
+            <div class="field">
+                <label style="font-weight:400;">
+                    <input asp-for="MonitoringCopyOncePerRun" type="checkbox" />
+                    Send those copies once per run, not once per recipient
+                </label>
+                <span class="session-sub">
+                    On by default. A forty-candidate session otherwise puts forty identical copies in the
+                    same inbox, which is the point at which somebody filters the folder and stops looking.
+                </span>
+            </div>
+        </div>
+
+        <button type="submit" class="btn-primary btn-sm">Save</button>
+    </form>
+</div>
+
+@* Stated where the change is made, because both are surprising in the same direction — an edit does
+   less than it looks like it does, which is the safe direction and the one worth saying out loud. *@
+<p class="session-sub" style="max-width:640px; margin-top:16px;">
+    Changing the delay does not re-open anybody already sent to: widening a one-day reminder to two
+    reaches people not yet reminded, never people who already were. And this rule still never fires for
+    anyone whose moment passed before it was created.
+</p>

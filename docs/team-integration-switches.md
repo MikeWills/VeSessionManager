@@ -82,14 +82,27 @@ therefore **clean up first, switch off second**.
 
 **No backlog on re-enable.** Work skipped while a switch was off is never queued.
 
-One place where that rule and "do not write a false timestamp" pull against each other, stated
-plainly rather than papered over: the FCC-fee reminder pass is skipped whole while email is muted and
-deliberately does **not** stamp `FccFeeReminderSentUtc`. Writing it would claim an email was sent that
-was not, and those timestamps are rendered to a Session Manager in the candidate's email history. The
-trade is that a candidate still inside the reminder window when the switch goes back on will be
-reminded then, rather than never. Muted candidate confirmations settle the other way — `TrySendAsync`
-returns "nothing more to do" and the caller stamps — because there the stamp is the only thing
-standing between re-enabling and a burst of stale mail.
+**Every muted message now settles, uniformly (#401, 2026-08-16), and the FCC-fee exception is gone.**
+
+That exception used to be recorded here as a tension between "no backlog on re-enable" and "do not
+write a false timestamp": the FCC-fee reminder pass was skipped whole while email was muted and
+deliberately did *not* stamp `FccFeeReminderSentUtc`, so a candidate still inside the window would be
+reminded once the switch went back on. Muted confirmations settled the other way, because their stamp
+was the only thing standing between re-enabling and a burst of stale mail.
+
+Both messages are trigger-point rules now, and a muted send records
+`MessageRuleRun.Outcome = Suppressed` — which settles it, for all four. What made the old compromise
+necessary was that a settled message and a sent one were the same nullable timestamp; the outcome
+column is a distinct value, so nothing has to be claimed that did not happen. See
+`docs/trigger-points.md`.
+
+The three **on-demand** buttons went the other way in the same change: they now refuse a muted team
+with `CandidateEmailSendResult.EmailMuted` rather than reporting success (#396). Settling silently is
+right for a poll pass and wrong for somebody standing at a button waiting to hear what happened.
+
+**Expiring a stale payment link no longer depends on email at all.** The expiration pass used to
+return early when a team had no SMTP credentials, so a deployment that never configured email also
+never expired a link. The write and the notice are separate now.
 
 ## Making a muted team recognisable
 

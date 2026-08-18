@@ -20,9 +20,13 @@ namespace VeSessionManager.Core.Payments;
 /// `ExamResultSyncService.ResultSyncWindow`, and for the same reason.
 ///
 /// **Why 30 days.** It must clear the longest real path from session to a live payment concern:
-/// application entered some days after the session, then `ExpirationThresholdDays` (10) before an
-/// unpaid link expires. 30 leaves comfortable headroom without reaching into imported history, whose
-/// nearest rows are months old.
+/// application entered some days after the session, then the team's `PaymentUnpaid` threshold —
+/// 240 hours by default, and a team's own to set since #401 — before an unpaid link expires. 30 leaves
+/// comfortable headroom without reaching into imported history, whose nearest rows are months old.
+///
+/// **Which is a bound this window does not enforce**: a team that pushes its unpaid-payment rule past
+/// 30 days will find these passes stop seeing the payment before its own threshold arrives. Nothing
+/// warns about that today; the admin form's ceiling is a year.
 ///
 /// Anchored on `Session.ScheduledStartUtc` — deliberately **not** `ExamToolsClosedUtc`, which the
 /// historical import stamps at *import* time and would therefore make every backfilled session look

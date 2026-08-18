@@ -10,19 +10,26 @@ using VeSessionManager.Core.Integrations;
 namespace VeSessionManager.Core.Notifications;
 
 /// <summary>
-/// Phase 4: sends the two candidate-facing emails via the shared template engine
-/// (EmailTemplateRenderer) and SMTP sender (IEmailSender). Every later phase that sends email
-/// should follow this same shape — render via EmailTemplateRenderer using its own EmailTemplate
-/// Key, never hardcode content — per the spec's explicit note to keep this pattern consistent.
+/// Candidate email that somebody asks for by pressing a button — a resend, the two instruction
+/// emails, and the hand-composed send off a session (#144). Rendered through the shared
+/// EmailTemplateRenderer and sent through IEmailSender, never with content hardcoded here.
 ///
-/// Both methods are scan-based and idempotent, like Phase 2/3: a Candidate's
-/// RegistrationConfirmationSentUtc/DayBeforeReminderSentUtc being null is the "needs to be sent"
-/// signal, set only after a successful send, so a mid-run crash or per-item failure retries
-/// cleanly next run without resending anything already delivered.
+/// <para><b>The scan-based half of this class is gone (#401, 2026-08-16.)</b> It used to hold two
+/// poll passes as well — SendRegistrationConfirmationsAsync and SendDayBeforeRemindersAsync, each
+/// keyed off its own <c>Candidate.…SentUtc</c> column. Those are now
+/// <c>MessageTrigger.CandidateRegistered</c> and <c>MessageTrigger.BeforeSessionStart</c>, so which
+/// message goes out and how long before is a row a team owns rather than a literal here. See
+/// docs/trigger-points.md. The columns are still written, by the dispatcher, because the candidate
+/// Email history screen renders them; they are no longer what decides whether to send.</para>
 ///
-/// Multi-team: this service now operates on one Team's candidates per call — each team has its
-/// own separate SMTP account and its own EmailSettings/EmailTemplate rows (confirmed with the
-/// user — content is per-team customizable, not shared). See docs/multi-team.md.
+/// <para><b>Which is what made the mute check honest.</b> Every method below now refuses a muted team
+/// with <see cref="CandidateEmailSendResult.EmailMuted"/> instead of reporting success (#396). It
+/// could not do that while the jobs shared TrySendAsync: a job must settle silently when email is
+/// switched off, or it builds a backlog to flush on re-enable, and that same "return true, nothing to
+/// do" answer reached somebody standing at a button and told them the mail had gone.</para>
+///
+/// Multi-team: one Team per call — each team has its own SMTP account and its own
+/// EmailSettings/EmailTemplate rows. See docs/multi-team.md.
 /// </summary>
 public class CandidateNotificationService(
     AppDbContext dbContext,
@@ -34,212 +41,8 @@ public class CandidateNotificationService(
     ILogger<CandidateNotificationService> logger)
 {
     private const string RegistrationConfirmationKey = "RegistrationConfirmation";
-    private const string DayBeforeReminderKey = "DayBeforeReminder";
     private const string YouthProgramInstructionsKey = "ArrlYouthProgramInstructions";
     private const string FelonyDisclosureInstructionsKey = "FelonyDisclosureInstructions";
-
-    /// <param name="onlySessionId">Restrict the run to one session's candidates (the Detail page's
-    /// session-scoped refresh); null (every scheduled/team-wide run) scans the whole team.</param>
-    public async Task<EmailNotificationResult> SendRegistrationConfirmationsAsync(Team team, CancellationToken cancellationToken, int? onlySessionId = null)
-    {
-        var result = new EmailNotificationResult();
-        var now = timeProvider.GetUtcNow().UtcDateTime;
-        var recentSessionCutoff = now.AddDays(-1);
-
-        var emailSettings = await dbContext.EmailSettings.FirstOrDefaultAsync(e => e.TeamId == team.Id, cancellationToken);
-        if (emailSettings is null)
-        {
-            logger.LogWarning("No EmailSettings row exists yet for team {TeamId} — skipping registration confirmations until seeded", team.Id);
-            return result;
-        }
-
-        var candidatesIncludingPastSessions = await dbContext.Candidates
-            .Include(c => c.Session).ThenInclude(s => s.FeeConfiguration)
-            .Include(c => c.Session).ThenInclude(s => s.Vec)
-            .Include(c => c.Payments)
-            .Where(c => c.PiiPurgedUtc == null
-                        && c.Email != null
-                        && c.RegistrationConfirmationSentUtc == null
-                        && c.Session.TeamId == team.Id
-                        && c.Session.Status == SessionStatus.Active
-                        // Query-side coarse bound so a year of backfilled sessions doesn't get
-                        // loaded, filtered and log-counted on every tick, forever — the numbers only
-                        // ever grow, and the lines drowned out real ones (~1991 for one team). A
-                        // session starting more than a day ago has certainly ended (durations are
-                        // hours), so this never hides one the precise HasEnded check below needs.
-                        && c.Session.ScheduledStartUtc >= recentSessionCutoff
-                        && (onlySessionId == null || c.SessionId == onlySessionId))
-            .ToListAsync(cancellationToken);
-
-        // A candidate on a session ingested via the completed-session backfill window (see
-        // SessionIngestionService) already had their session happen — a "you're registered!" email
-        // for something already over would just confuse them. Skipped permanently, not retried:
-        // there's no future poll where this session stops being in the past.
-        var candidates = candidatesIncludingPastSessions.Where(c => !c.Session.HasEnded(now)).ToList();
-        var skippedPastSessionCount = candidatesIncludingPastSessions.Count - candidates.Count;
-        if (skippedPastSessionCount > 0)
-        {
-            logger.LogInformation("Skipped RegistrationConfirmation for {Count} candidate(s) in team {TeamId} whose session has already ended — likely backfilled via the completed-session ingestion window",
-                skippedPastSessionCount, team.Id);
-        }
-
-        if (candidates.Count > 0 && !team.IsEmailConfigured)
-        {
-            // SMTP is optional the same way Square is (see PaymentGenerationService) — skip
-            // quietly rather than retry-and-fail-log every poll; RegistrationConfirmationSentUtc
-            // stays null, so the very next poll sends everything backlogged once SMTP is set up.
-            logger.LogInformation("SMTP is not fully configured for team {TeamId} — {PendingCount} registration confirmation(s) waiting; will send automatically once configured",
-                team.Id, candidates.Count);
-            return result;
-        }
-
-        var credentials = team.ToEmailCredentials();
-
-        foreach (var candidate in candidates)
-        {
-            try
-            {
-                var paymentLinkUrl = candidate.Session.FeeConfiguration.FeeCollectionEnabled
-                    ? candidate.Payments.FirstOrDefault(p => p.Reason == PaymentReason.InitialExam)?.PaymentLinkUrl ?? ""
-                    : "";
-
-                var placeholders = new Dictionary<string, string>
-                {
-                    ["CandidateName"] = candidate.Name ?? "",
-                    ["CandidateFirstName"] = candidate.FirstName ?? "",
-                    ["SessionDate"] = FormatSessionDate(candidate.Session.ScheduledStartUtc),
-                    ["ZoomJoinUrl"] = candidate.Session.ZoomJoinUrl ?? "",
-                    ["PaymentLinkUrl"] = paymentLinkUrl,
-                    ["YouthPaymentLinkUrl"] = BuildYouthPaymentLinkUrl(candidate),
-                    ["PrivacyPolicyUrl"] = emailSettings.PrivacyPolicyUrl
-                };
-
-                if (!await TrySendAsync(
-            team, credentials, RegistrationConfirmationKey, candidate, emailSettings, placeholders, cancellationToken))
-                {
-                    result.Failed++;
-                    await dbContext.SaveChangesAsync(cancellationToken);
-                    continue;
-                }
-
-                candidate.RegistrationConfirmationSentUtc = now;
-                result.Sent++;
-            }
-            catch (Exception ex)
-            {
-                result.Failed++;
-                logger.LogError(ex, "Failed to send RegistrationConfirmation for candidate {CandidateId}", candidate.Id);
-            }
-
-            // Save after every candidate so a crash mid-run, or one send failing, never loses
-            // progress already made on others, and never resends to someone already notified.
-            await dbContext.SaveChangesAsync(cancellationToken);
-        }
-
-        logger.LogInformation("Registration confirmations finished for team {TeamId} ({TeamName}): {Result}", team.Id, team.Name, result);
-        return result;
-    }
-
-    /// <summary>
-    /// How far ahead of a session its reminder goes out. A duration rather than a time of day on
-    /// purpose — see the window comment below.
-    /// </summary>
-    public const int PreSessionReminderHours = 24;
-
-    public async Task<EmailNotificationResult> SendDayBeforeRemindersAsync(Team team, CancellationToken cancellationToken)
-    {
-        var result = new EmailNotificationResult();
-        var now = timeProvider.GetUtcNow().UtcDateTime;
-
-        // A rolling 24-hour window ending at the session start — NOT a calendar date (#220).
-        //
-        // This used to compare against "tomorrow" as a UTC calendar date, which broke in two ways at
-        // once. Sessions run in the evening Eastern, and anything from ~8pm ET onward is already
-        // tomorrow in raw UTC — so a Monday-evening session is stored on Tuesday, "tomorrow in UTC"
-        // is the session's own Eastern day, and the "day before" reminder went out on the day of the
-        // session. On top of that the job ticks on an interval from Worker start, so which side of
-        // UTC midnight it landed depended on when the Worker was last deployed: the same session
-        // could be reminded anywhere from ~36 hours out to ~3 hours out.
-        //
-        // Comparing two instants removes the whole class: there is no calendar date, so there is no
-        // timezone to get wrong, and a restart shifts a reminder by minutes rather than a day. Drift
-        // of one tick is acceptable and was Mike's explicit call — "24 hours before the test, no
-        // matter the time zone, +/- job run time is fine".
-        var windowEndUtc = now.AddHours(PreSessionReminderHours);
-
-        var emailSettings = await dbContext.EmailSettings.FirstOrDefaultAsync(e => e.TeamId == team.Id, cancellationToken);
-        if (emailSettings is null)
-        {
-            logger.LogWarning("No EmailSettings row exists yet for team {TeamId} — skipping day-before reminders until seeded", team.Id);
-            return result;
-        }
-
-        var candidates = await dbContext.Candidates
-            .Include(c => c.Session)
-            .Include(c => c.Payments)
-            .Where(c => c.PiiPurgedUtc == null
-                        && c.Email != null
-                        && c.DayBeforeReminderSentUtc == null
-                        && c.Session.TeamId == team.Id
-                        && c.Session.Status == SessionStatus.Active
-                        // Starts within the next 24 hours, and has not started yet. The upper bound
-                        // is what makes this a reminder rather than a notification about something
-                        // already under way; DayBeforeReminderSentUtc keeps it to once.
-                        && c.Session.ScheduledStartUtc > now
-                        && c.Session.ScheduledStartUtc <= windowEndUtc)
-            .ToListAsync(cancellationToken);
-
-        if (candidates.Count > 0 && !team.IsEmailConfigured)
-        {
-            logger.LogInformation("SMTP is not fully configured for team {TeamId} — {PendingCount} day-before reminder(s) waiting; will send automatically once configured",
-                team.Id, candidates.Count);
-            return result;
-        }
-
-        var credentials = team.ToEmailCredentials();
-
-        foreach (var candidate in candidates)
-        {
-            try
-            {
-                var outstandingPaymentLinkUrl = candidate.Payments
-                    .Where(p => p.Status == PaymentStatus.Unpaid && p.PaymentLinkUrl != null)
-                    .OrderByDescending(p => p.CreatedUtc)
-                    .Select(p => p.PaymentLinkUrl)
-                    .FirstOrDefault() ?? "";
-
-                var placeholders = new Dictionary<string, string>
-                {
-                    ["CandidateName"] = candidate.Name ?? "",
-                    ["CandidateFirstName"] = candidate.FirstName ?? "",
-                    ["SessionDate"] = FormatSessionDate(candidate.Session.ScheduledStartUtc),
-                    ["ZoomJoinUrl"] = candidate.Session.ZoomJoinUrl ?? "",
-                    ["OutstandingPaymentLinkUrl"] = outstandingPaymentLinkUrl
-                };
-
-                if (!await TrySendAsync(
-            team, credentials, DayBeforeReminderKey, candidate, emailSettings, placeholders, cancellationToken))
-                {
-                    result.Failed++;
-                    await dbContext.SaveChangesAsync(cancellationToken);
-                    continue;
-                }
-
-                candidate.DayBeforeReminderSentUtc = now;
-                result.Sent++;
-            }
-            catch (Exception ex)
-            {
-                result.Failed++;
-                logger.LogError(ex, "Failed to send DayBeforeReminder for candidate {CandidateId}", candidate.Id);
-            }
-
-            await dbContext.SaveChangesAsync(cancellationToken);
-        }
-
-        logger.LogInformation("Day-before reminders finished for team {TeamId} ({TeamName}): {Result}", team.Id, team.Name, result);
-        return result;
-    }
 
     /// <summary>
     /// Phase 9b's "resend reminder email" action — re-renders and re-sends RegistrationConfirmation
@@ -291,6 +94,11 @@ public class CandidateNotificationService(
             ["YouthPaymentLinkUrl"] = BuildYouthPaymentLinkUrl(candidate),
             ["PrivacyPolicyUrl"] = emailSettings.PrivacyPolicyUrl
         };
+
+        if (IsMuted(team, RegistrationConfirmationKey))
+        {
+            return CandidateEmailSendResult.EmailMuted;
+        }
 
         var credentials = team.ToEmailCredentials();
         if (!await TrySendAsync(
@@ -349,6 +157,11 @@ public class CandidateNotificationService(
             ["CandidateName"] = candidate.Name ?? "",
             ["CallSign"] = candidate.CallSign ?? ""
         };
+
+        if (IsMuted(team, YouthProgramInstructionsKey))
+        {
+            return CandidateEmailSendResult.EmailMuted;
+        }
 
         var credentials = team.ToEmailCredentials();
         if (!await TrySendAsync(
@@ -416,6 +229,11 @@ public class CandidateNotificationService(
         {
             ["CandidateName"] = candidate.Name ?? ""
         };
+
+        if (IsMuted(team, FelonyDisclosureInstructionsKey))
+        {
+            return CandidateEmailSendResult.EmailMuted;
+        }
 
         var credentials = team.ToEmailCredentials();
         if (!await TrySendAsync(
@@ -575,24 +393,26 @@ public class CandidateNotificationService(
     }
 
     /// <summary>
-    /// Every candidate-facing email this service sends funnels through here, which is why the mute
-    /// switch is checked here and not at five call sites (#64). Takes the Team rather than its id for
-    /// exactly that reason.
+    /// Refuses a muted team, and says so (#396). Every caller left in this class is somebody standing
+    /// at a button, and the answer they need is "nothing was sent" rather than silence.
+    ///
+    /// <para>The mute check used to live in <see cref="TrySendAsync"/>, where it returned
+    /// <c>true</c> — "nothing more to do" — because the poll passes that also went through there must
+    /// settle rather than queue. Those passes are rules now (#401), so the compromise has no second
+    /// side to serve.</para>
+    /// </summary>
+    private bool IsMuted(Team team, string templateKey) =>
+        !integrationState.ShouldCall(team, TeamIntegration.Email, $"sending {templateKey}");
+
+    /// <summary>
+    /// Every templated candidate email this service sends funnels through here — one render, one
+    /// send, one place the team's monitoring copy is attached. Takes the Team rather than its id
+    /// because <see cref="Team.ToEmailCredentials"/> and the From/Reply-To come off it.
     /// </summary>
     private async Task<bool> TrySendAsync(
         Team team, EmailCredentials credentials, string templateKey, Candidate candidate, EmailSettings emailSettings,
         Dictionary<string, string> placeholders, CancellationToken cancellationToken)
     {
-        // Reported as "template missing" is wrong here, so callers get false only after a real
-        // failure — a muted send returns true, meaning "nothing more to do", and the caller stamps
-        // its ...SentUtc. That is the settle-without-doing-it rule: no retry, no backlog on
-        // re-enable. It is safe precisely because it is deliberate and indefinite, unlike an
-        // unconfigured integration, which must stay pending so it backfills.
-        if (!integrationState.ShouldCall(team, TeamIntegration.Email, $"sending {templateKey}"))
-        {
-            return true;
-        }
-
         var rendered = await templateRenderer.RenderAsync(team.Id, templateKey, placeholders, cancellationToken);
         if (rendered is null)
         {

@@ -8,6 +8,7 @@ using VeSessionManager.Core.Authorization;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Email;
 using VeSessionManager.Core.Entities;
+using VeSessionManager.Core.Messaging;
 
 namespace VeSessionManager.Web.Pages.Admin;
 
@@ -28,7 +29,8 @@ public class EmailTemplateEditModel(
     AppDbContext dbContext,
     UserManager<User> userManager,
     AdminAccessScope adminAccessScope,
-    EmailTemplateAdminService emailTemplateAdminService) : PageModel
+    EmailTemplateAdminService emailTemplateAdminService,
+    MessageRuleAdminService messageRuleAdminService) : PageModel
 {
     [BindProperty(SupportsGet = true)]
     public int Id { get; set; }
@@ -44,6 +46,9 @@ public class EmailTemplateEditModel(
     public string Label => Template.DisplayName ?? EmailTemplateLabels.For(Template.Key);
 
     public EmailTemplateTrigger? Trigger => EmailTemplateTriggers.For(Template.Key);
+
+    /// <summary>This team's rules that send this template, so the editor can say what it is for without restating a condition that is now a team's own (#401 PR2).</summary>
+    public IReadOnlyList<EmailTemplatesModel.SendingRule> SendingRules { get; private set; } = [];
 
     public bool IsRetired => EmailTemplateTriggers.IsRetired(Template.Key);
 
@@ -83,6 +88,45 @@ public class EmailTemplateEditModel(
         TempData["ErrorMessage"] = result == EmailTemplateActionResult.ContentRequired
             ? "A template needs both a subject and a body."
             : "Template not found.";
+        return RedirectToPage(new { id = Id });
+    }
+
+    /// <summary>
+    /// Changing when this template goes out, without leaving the page it is written on. Offered only
+    /// when exactly one rule sends it — with two, "the schedule" is ambiguous, so the page links to
+    /// Message Rules instead.
+    ///
+    /// <para>Authorized twice over: the template's own team by <see cref="LoadAsync"/>, and then the
+    /// posted rule must be one of the rules that actually sends <i>this</i> template. Without that
+    /// second check a valid template id plus somebody else's rule id would edit their rule.</para>
+    /// </summary>
+    public async Task<IActionResult> OnPostScheduleAsync(int ruleId, decimal? parameterDays, MessageRecipient recipient)
+    {
+        var loaded = await LoadAsync();
+        if (loaded is not null) return loaded;
+
+        if (SendingRules.All(r => r.Id != ruleId))
+        {
+            return NotFound();
+        }
+
+        if (!MessageDelayField.TryToHours(parameterDays, out var parameterHours))
+        {
+            TempData["ErrorMessage"] = MessageDelayField.RangeMessage;
+            return RedirectToPage(new { id = Id });
+        }
+
+        var user = await userManager.GetRequiredUserAsync(dbContext, User);
+        var result = await messageRuleAdminService.UpdateScheduleAsync(ruleId, parameterHours, recipient, user.Id, HttpContext.RequestAborted);
+
+        TempData[result == MessageRuleActionResult.Success ? "StatusMessage" : "ErrorMessage"] = result switch
+        {
+            MessageRuleActionResult.Success => "Schedule updated.",
+            MessageRuleActionResult.ParameterRequired => MessageDelayField.RequiredMessage,
+            MessageRuleActionResult.ParameterOutOfRange => MessageDelayField.RangeMessage,
+            MessageRuleActionResult.RecipientNotLegal => "That trigger cannot send to that recipient.",
+            _ => "Rule not found."
+        };
         return RedirectToPage(new { id = Id });
     }
 
@@ -145,6 +189,24 @@ public class EmailTemplateEditModel(
         }
 
         Template = template;
+        // Materialized first: the labels are lookups, not expressions EF can translate.
+        var rules = await dbContext.MessageRules
+            .AsNoTracking()
+            .Where(r => r.TeamId == template.TeamId && r.TemplateKey == template.Key)
+            .OrderBy(r => r.Id)
+            .Select(r => new { r.Id, r.Name, r.Trigger, r.ParameterHours, r.IsEnabled, r.Recipient, r.Channel })
+            .ToListAsync(HttpContext.RequestAborted);
+
+        SendingRules = [.. rules.Select(r => new EmailTemplatesModel.SendingRule(
+            r.Id,
+            r.Name,
+            MessageTriggerLabels.Label(r.Trigger),
+            MessageTriggerLabels.DescribeHours(r.ParameterHours),
+            r.IsEnabled,
+            r.Trigger,
+            r.ParameterHours,
+            r.Recipient,
+            r.Channel))];
         return null;
     }
 }
