@@ -60,7 +60,11 @@ public readonly record struct CandidateCapabilities(
 
         return new CandidateCapabilities(
             CanResendConfirmation: active && candidate.Email is not null,
-            CanDelete: active && !candidate.Tested,
+            // Evidence, not the bare flag (#419) — mirroring DeleteAsync's own guard. Gating the
+            // menu on Tested alone is exactly how the fixed server-side path shipped behind a button
+            // nobody could press: the orphan this exists to repair reads Tested ✓ on screen, because
+            // that checkbox IS the completion-click assertion being corrected.
+            CanDelete: active && !candidate.TestedWithEvidence,
             CanMarkFailed: active && candidate.ApplicationStatus
                 is CandidateApplicationStatus.Unmatched or CandidateApplicationStatus.Received,
             CanCreateRetestPayment: active && candidate.ApplicationStatus == CandidateApplicationStatus.Failed,
