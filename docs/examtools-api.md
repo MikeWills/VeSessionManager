@@ -38,6 +38,16 @@ credentials/session data live there, verified directly against the API) — this
 - **No cancelled state exists.** A cancelled session simply disappears from the team feed; a
   reschedule shows up as a changed `date` on the same `_id`. Phase 1's detection logic is built
   on exactly this (see `SessionIngestionService`).
+- **A signed-out request arrives as 200 with HTML, not as 401 (fixed 2026-08-18, issue #412).** The
+  unauthenticated SPA shell and the `/portal/veLogin` redirect noted below are not just a curiosity for
+  a browser fetch: `HttpClient` follows the redirect, so the app receives a web page with a success
+  status. `ExamToolsClient.GetJsonAsync` used to re-authenticate on 401/403 only, so this sailed past
+  the status check and died in `System.Text.Json` as `'<' is an invalid start of a value. Path: $ |
+  LineNumber: 0`, naming neither the endpoint nor the cause. It now treats an HTML body exactly as it
+  treats a 401 — one forced re-login and one retry — and if the second answer is still HTML it throws
+  `ExamToolsResponseException`, which names the request and quotes the first 200 characters of the
+  response. Once, never in a loop: a second HTML answer after re-authenticating is not a stale cookie.
+
 - **Stale `"pend"` sessions exist.** The team feed can contain sessions years past their date
   still in state `"pend"` (observed live on the dev feed: sessions from 2023/2024). Ingestion
   refuses to first-ingest a `"pend"` session more than a day past its start so downstream phases
