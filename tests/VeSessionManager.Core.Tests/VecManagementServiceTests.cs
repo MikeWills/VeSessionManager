@@ -115,9 +115,7 @@ public class VecManagementServiceTests
     [InlineData("")]
     [InlineData("   ")]
     [InlineData(null)]
-    [InlineData("ARRL")]   // same as the name — storing it would strand the code on a later rename
-    [InlineData("arrl")]   // matching is case-insensitive, so this is still "same as the name"
-    public async Task CreateAsync_BlankOrNameMatchingCode_StoresNull(string? code)
+    public async Task CreateAsync_BlankCode_StoresNullAndMatchesOnTheName(string? code)
     {
         await using var dbContext = CreateContext();
         var user = await SeedUserAsync(dbContext);
@@ -127,6 +125,27 @@ public class VecManagementServiceTests
         Assert.Equal(VecActionResult.Success, result);
         Assert.Null(vec!.ExamToolsCode);
         Assert.Equal("ARRL", vec.MatchCode);
+    }
+
+    /// <summary>
+    /// <b>Reversed by #402.</b> A code equal to the name used to be discarded, "otherwise a later
+    /// rename would strand the code on the old spelling" — but that spelling is what ExamTools sends,
+    /// so stranding it there is right and discarding it is what let a rename break ingestion. Typing
+    /// it now means it, and matching stays case-insensitive either way.
+    /// </summary>
+    [Theory]
+    [InlineData("ARRL")]
+    [InlineData("arrl")]
+    public async Task CreateAsync_CodeMatchingTheName_IsStored(string code)
+    {
+        await using var dbContext = CreateContext();
+        var user = await SeedUserAsync(dbContext);
+
+        var (result, vec) = await CreateService(dbContext).CreateAsync("ARRL", code, false, null, user.Id, CancellationToken.None);
+
+        Assert.Equal(VecActionResult.Success, result);
+        Assert.Equal(code, vec!.ExamToolsCode);
+        Assert.Equal(code, vec.MatchCode);
     }
 
     [Fact]
@@ -188,6 +207,101 @@ public class VecManagementServiceTests
         var updated = await dbContext.Vecs.SingleAsync();
         Assert.Null(updated.ExamToolsCode);
         Assert.Equal("GLAARG", updated.MatchCode);
+    }
+
+    /// <summary>
+    /// <b>Issue #402, and it cost five days of a team's sessions.</b> A VEC with no ExamTools code is
+    /// matched on its <i>name</i>, so renaming it — an apparently cosmetic edit — silently re-points
+    /// what ingestion matches. HRCC's ARRL was renamed on the beta box; every ARRL session created
+    /// afterwards was skipped for want of a matching VEC, the job reported <c>Success</c> with the
+    /// count buried in its summary, and the visible symptom was "sessions are missing from the app".
+    ///
+    /// <para>ExamTools' <c>vec</c> value is upstream data. Nothing done to a local display label can
+    /// change it, so a rename must never change the match: the old name is frozen into the code, which
+    /// is what the field was always implicitly holding.</para>
+    /// </summary>
+    [Fact]
+    public async Task UpdateAsync_RenamingAVecWithNoCode_FreezesTheOldNameAsTheCode()
+    {
+        await using var dbContext = CreateContext();
+        var user = await SeedUserAsync(dbContext);
+        var vec = new Vec { Name = "ARRL" };
+        dbContext.Vecs.Add(vec);
+        await dbContext.SaveChangesAsync();
+
+        var result = await CreateService(dbContext).UpdateAsync(
+            vec.Id, "ARRL VEC (Newington)", null, false, null, user.Id, CancellationToken.None);
+
+        Assert.Equal(VecActionResult.Success, result);
+        var updated = await dbContext.Vecs.SingleAsync();
+        Assert.Equal("ARRL VEC (Newington)", updated.Name);
+        Assert.Equal("ARRL", updated.ExamToolsCode);
+        // The whole point: what ingestion matches on did not move.
+        Assert.Equal("ARRL", updated.MatchCode);
+    }
+
+    /// <summary>
+    /// The escape hatch has to keep working: an admin renaming *because the old name was wrong* types
+    /// the real code, and that wins over the freeze.
+    /// </summary>
+    [Fact]
+    public async Task UpdateAsync_RenamingAndTypingACode_KeepsTheTypedCode()
+    {
+        await using var dbContext = CreateContext();
+        var user = await SeedUserAsync(dbContext);
+        var vec = new Vec { Name = "LA Group" };
+        dbContext.Vecs.Add(vec);
+        await dbContext.SaveChangesAsync();
+
+        var result = await CreateService(dbContext).UpdateAsync(
+            vec.Id, "GLAARG", "lagroup", false, null, user.Id, CancellationToken.None);
+
+        Assert.Equal(VecActionResult.Success, result);
+        Assert.Equal("lagroup", (await dbContext.Vecs.SingleAsync()).ExamToolsCode);
+    }
+
+    /// <summary>
+    /// Clearing a code that was really set is a deliberate "match on the name" — the freeze applies
+    /// only where the code was already implicit, so this is not overridden.
+    /// </summary>
+    [Fact]
+    public async Task UpdateAsync_RenamingAndClearingARealCode_HonoursTheClear()
+    {
+        await using var dbContext = CreateContext();
+        var user = await SeedUserAsync(dbContext);
+        var vec = new Vec { Name = "GLAARG", ExamToolsCode = "lagroup" };
+        dbContext.Vecs.Add(vec);
+        await dbContext.SaveChangesAsync();
+
+        var result = await CreateService(dbContext).UpdateAsync(
+            vec.Id, "lagroup", "", false, null, user.Id, CancellationToken.None);
+
+        Assert.Equal(VecActionResult.Success, result);
+        var updated = await dbContext.Vecs.SingleAsync();
+        Assert.Null(updated.ExamToolsCode);
+        Assert.Equal("lagroup", updated.MatchCode);
+    }
+
+    /// <summary>
+    /// A code typed to match the name is now <b>stored</b>, not discarded. It used to be nulled "so a
+    /// later rename would not strand it on the old spelling" — which is precisely the behaviour that
+    /// broke #402: stranding it on the old spelling is correct, because that spelling is what
+    /// ExamTools sends.
+    /// </summary>
+    [Fact]
+    public async Task UpdateAsync_ACodeMatchingTheName_IsStoredRatherThanDiscarded()
+    {
+        await using var dbContext = CreateContext();
+        var user = await SeedUserAsync(dbContext);
+        var vec = new Vec { Name = "ARRL" };
+        dbContext.Vecs.Add(vec);
+        await dbContext.SaveChangesAsync();
+
+        var result = await CreateService(dbContext).UpdateAsync(
+            vec.Id, "ARRL", "ARRL", false, null, user.Id, CancellationToken.None);
+
+        Assert.Equal(VecActionResult.Success, result);
+        Assert.Equal("ARRL", (await dbContext.Vecs.SingleAsync()).ExamToolsCode);
     }
 
     [Fact]

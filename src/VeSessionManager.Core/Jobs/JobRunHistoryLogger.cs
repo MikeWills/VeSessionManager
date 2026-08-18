@@ -111,7 +111,7 @@ public class JobRunHistoryLogger(AppDbContext dbContext, ILogger<JobRunHistoryLo
         {
             failed = true;
             history.Success = false;
-            history.ErrorMessage = ex.Message;
+            history.ErrorMessage = Describe(ex);
             logger.LogError(ex, "Job {JobName} failed", jobName);
         }
         finally
@@ -171,5 +171,42 @@ public class JobRunHistoryLogger(AppDbContext dbContext, ILogger<JobRunHistoryLo
             logger.LogError(ex, "Could not write the JobRunHistory completion row for {JobLabel} — the job itself already ran; only its dashboard entry is incomplete", jobLabel);
             dbContext.ChangeTracker.Clear();
         }
+    }
+
+    /// <summary>How much of an exception chain the dashboard is willing to hold. Long enough for a constraint name, short enough not to turn a table row into a stack trace.</summary>
+    internal const int MaxErrorMessageLength = 1000;
+
+    /// <summary>Chains deeper than this are a wrapper storm, not information.</summary>
+    private const int MaxExceptionDepth = 5;
+
+    /// <summary>
+    /// The whole exception chain in one line (#413), because the outermost message is routinely the
+    /// least informative one. <c>DbUpdateException</c> — what EF Core throws for every constraint
+    /// violation, unique-index collision and null-column write — says only "An error occurred while
+    /// saving the entity changes. See the inner exception for details.", and storing just that
+    /// recorded an instruction to read something the row did not contain. Reconciliation failed three
+    /// times for one team with exactly that message and the cause can no longer be identified.
+    ///
+    /// <para>The full exception still goes to Serilog with its stack. This is the ops dashboard's copy:
+    /// what a TeamAdmin can see without shell access, and what gets exported and pasted into an
+    /// issue.</para>
+    /// </summary>
+    internal static string Describe(Exception exception)
+    {
+        var parts = new List<string>();
+        var current = (Exception?)exception;
+        for (var depth = 0; current is not null && depth < MaxExceptionDepth; depth++)
+        {
+            // The outermost keeps its bare message — that is the sentence the job author wrote. Inner
+            // ones are typed, since "UNIQUE constraint failed" means something different coming from
+            // SqliteException than from a validation helper.
+            parts.Add(depth == 0 ? current.Message : $"{current.GetType().Name}: {current.Message}");
+            current = current.InnerException;
+        }
+
+        var text = string.Join(" -> ", parts);
+        return text.Length <= MaxErrorMessageLength
+            ? text
+            : text[..(MaxErrorMessageLength - 3)] + "...";
     }
 }
