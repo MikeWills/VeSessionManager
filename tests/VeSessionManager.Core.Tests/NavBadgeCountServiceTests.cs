@@ -15,6 +15,14 @@ public class NavBadgeCountServiceTests
 {
     private static readonly DateTime Now = new(2026, 7, 21, 12, 0, 0, DateTimeKind.Utc);
 
+    private sealed class FixedTimeProvider(DateTime utcNow) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => new(utcNow, TimeSpan.Zero);
+    }
+
+    private static NavBadgeCountService CreateService(AppDbContext dbContext) =>
+        new(dbContext, new FixedTimeProvider(Now));
+
     private static AppDbContext CreateContext()
     {
         var options = new DbContextOptionsBuilder<AppDbContext>()
@@ -78,7 +86,7 @@ public class NavBadgeCountServiceTests
         await SeedTeamWithOneOfEachAsync(dbContext, "TEAM-A");
         await SeedTeamWithOneOfEachAsync(dbContext, "TEAM-B");
 
-        var counts = await new NavBadgeCountService(dbContext).GetCountsAsync(null, CancellationToken.None);
+        var counts = await CreateService(dbContext).GetCountsAsync(null, CancellationToken.None);
 
         Assert.Equal(2, counts.ApplicantsPendingGrant);
         Assert.Equal(2, counts.SessionsPendingVecSubmission);
@@ -91,7 +99,7 @@ public class NavBadgeCountServiceTests
         await using var dbContext = CreateContext();
         await SeedTeamWithOneOfEachAsync(dbContext, "TEAM-A");
 
-        var counts = await new NavBadgeCountService(dbContext).GetCountsAsync([], CancellationToken.None);
+        var counts = await CreateService(dbContext).GetCountsAsync([], CancellationToken.None);
 
         Assert.Equal(0, counts.ApplicantsPendingGrant);
         Assert.Equal(0, counts.SessionsPendingVecSubmission);
@@ -105,7 +113,7 @@ public class NavBadgeCountServiceTests
         var teamA = await SeedTeamWithOneOfEachAsync(dbContext, "TEAM-A");
         await SeedTeamWithOneOfEachAsync(dbContext, "TEAM-B");
 
-        var counts = await new NavBadgeCountService(dbContext).GetCountsAsync([teamA.Id], CancellationToken.None);
+        var counts = await CreateService(dbContext).GetCountsAsync([teamA.Id], CancellationToken.None);
 
         Assert.Equal(1, counts.ApplicantsPendingGrant);
         Assert.Equal(1, counts.SessionsPendingVecSubmission);
@@ -120,7 +128,7 @@ public class NavBadgeCountServiceTests
         var teamB = await SeedTeamWithOneOfEachAsync(dbContext, "TEAM-B");
         await SeedTeamWithOneOfEachAsync(dbContext, "TEAM-C"); // not in scope
 
-        var counts = await new NavBadgeCountService(dbContext).GetCountsAsync([teamA.Id, teamB.Id], CancellationToken.None);
+        var counts = await CreateService(dbContext).GetCountsAsync([teamA.Id, teamB.Id], CancellationToken.None);
 
         Assert.Equal(2, counts.ApplicantsPendingGrant);
         Assert.Equal(2, counts.SessionsPendingVecSubmission);
@@ -136,7 +144,7 @@ public class NavBadgeCountServiceTests
         unmatched.ResolvedUtc = Now;
         await dbContext.SaveChangesAsync();
 
-        var counts = await new NavBadgeCountService(dbContext).GetCountsAsync([team.Id], CancellationToken.None);
+        var counts = await CreateService(dbContext).GetCountsAsync([team.Id], CancellationToken.None);
 
         Assert.Equal(0, counts.UnresolvedUnmatchedPayments);
     }
@@ -154,8 +162,51 @@ public class NavBadgeCountServiceTests
         dbContext.Candidates.Add(new Candidate { Session = session, Tested = true, ApplicationStatus = CandidateApplicationStatus.Granted, DateRegisteredUtc = Now });
         await dbContext.SaveChangesAsync();
 
-        var counts = await new NavBadgeCountService(dbContext).GetCountsAsync([team.Id], CancellationToken.None);
+        var counts = await CreateService(dbContext).GetCountsAsync([team.Id], CancellationToken.None);
 
         Assert.Equal(1, counts.ApplicantsPendingGrant); // still just the one seeded Received candidate
     }
+
+    /// <summary>
+    /// The Applicants menu counts renewals too (#422-shaped ask): the parent chip is the sum of its
+    /// items, and the Renewal Monitor's share is <c>NeedsAttention()</c> — the predicate whose own
+    /// comment always said it was "what a future digest would count". A healthy or recently renewed
+    /// license contributes nothing.
+    /// </summary>
+    [Fact]
+    public async Task RenewalsNeedingAttention_CountsOnlyTheActionableStatuses()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamWithOneOfEachAsync(dbContext, "TEAM-A");
+
+        dbContext.WatchedLicenses.AddRange(
+            // Expired last month, past grace start but within it -> ExpiredInGrace, needs attention.
+            new WatchedLicense { TeamId = team.Id, CallSign = "K0AAA", LastCheckedUtc = Now, ExpiredDateUtc = Now.AddDays(-10) },
+            // Healthy for years -> Active, not counted.
+            new WatchedLicense { TeamId = team.Id, CallSign = "K0BBB", LastCheckedUtc = Now, ExpiredDateUtc = Now.AddYears(5) },
+            // Never found at the FCC -> NotFound, needs attention.
+            new WatchedLicense { TeamId = team.Id, CallSign = "K0CCC", LastCheckedUtc = Now, NotFoundAtFcc = true });
+        await dbContext.SaveChangesAsync();
+
+        var counts = await CreateService(dbContext).GetCountsAsync([team.Id], CancellationToken.None);
+
+        Assert.Equal(2, counts.RenewalsNeedingAttention);
+    }
+
+    [Fact]
+    public async Task RenewalsNeedingAttention_RespectsTheTeamScope()
+    {
+        await using var dbContext = CreateContext();
+        var teamA = await SeedTeamWithOneOfEachAsync(dbContext, "TEAM-A");
+        var teamB = await SeedTeamWithOneOfEachAsync(dbContext, "TEAM-B");
+        dbContext.WatchedLicenses.Add(
+            new WatchedLicense { TeamId = teamB.Id, CallSign = "K0ZZZ", LastCheckedUtc = Now, ExpiredDateUtc = Now.AddDays(-10) });
+        await dbContext.SaveChangesAsync();
+
+        Assert.Equal(0, (await CreateService(dbContext).GetCountsAsync([teamA.Id], CancellationToken.None)).RenewalsNeedingAttention);
+        Assert.Equal(1, (await CreateService(dbContext).GetCountsAsync([teamB.Id], CancellationToken.None)).RenewalsNeedingAttention);
+        Assert.Equal(1, (await CreateService(dbContext).GetCountsAsync(null, CancellationToken.None)).RenewalsNeedingAttention);
+        Assert.Equal(0, (await CreateService(dbContext).GetCountsAsync([], CancellationToken.None)).RenewalsNeedingAttention);
+    }
+
 }

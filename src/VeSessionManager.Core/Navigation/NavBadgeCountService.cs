@@ -25,7 +25,7 @@ namespace VeSessionManager.Core.Navigation;
 /// silently show a SystemAdmin an all-zero nav. The per-team methods take a concrete, non-null list
 /// instead — a picker always knows exactly which teams it's about to render.
 /// </summary>
-public class NavBadgeCountService(AppDbContext dbContext)
+public class NavBadgeCountService(AppDbContext dbContext, TimeProvider timeProvider)
 {
     /// <summary>Matches ApplicantStatus.cshtml.cs's own "Pending FCC grant" query — passed, but not yet confirmed Granted.</summary>
     private static readonly Expression<Func<Candidate, bool>> PendingGrantPredicate =
@@ -58,7 +58,35 @@ public class NavBadgeCountService(AppDbContext dbContext)
             .Where(f => teamIds == null || teamIds.Contains(f.TeamId))
             .CountAsync(cancellationToken);
 
-        return new NavBadgeCounts(applicantsPendingGrant, sessionsPendingVecSubmission, unresolvedUnmatchedPayments, openReconciliationFindings);
+        var renewalsNeedingAttention = await CountRenewalsNeedingAttentionAsync(teamIds, cancellationToken);
+
+        return new NavBadgeCounts(applicantsPendingGrant, sessionsPendingVecSubmission, unresolvedUnmatchedPayments, openReconciliationFindings, renewalsNeedingAttention);
+    }
+
+    /// <summary>
+    /// The Renewal Monitor's share of the Applicants menu: watched licenses in a status a human
+    /// should act on — <c>WatchedLicenseStatusExtensions.NeedsAttention</c>, whose own comment always
+    /// said it was "what a future digest would count".
+    ///
+    /// <para>Materialized and derived in memory rather than translated: <c>DeriveStatus</c> is date
+    /// arithmetic against now with deliberate edge rules (valid <i>through</i> the expiry date, grace
+    /// through its final day), and re-expressing that in SQL is a second copy that drifts. The watch
+    /// list is hand-curated and small, and this sits behind <c>NavBadgeCountCache</c> anyway.</para>
+    /// </summary>
+    private async Task<int> CountRenewalsNeedingAttentionAsync(IReadOnlyList<int>? teamIds, CancellationToken cancellationToken)
+    {
+        if (teamIds is { Count: 0 })
+        {
+            return 0;
+        }
+
+        var licenses = await dbContext.WatchedLicenses
+            .AsNoTracking()
+            .Where(w => teamIds == null || teamIds.Contains(w.TeamId))
+            .ToListAsync(cancellationToken);
+
+        var nowUtc = timeProvider.GetUtcNow().UtcDateTime;
+        return licenses.Count(w => w.DeriveStatus(nowUtc).NeedsAttention());
     }
 
     /// <summary>
@@ -120,7 +148,12 @@ public class NavBadgeCountService(AppDbContext dbContext)
 }
 
 /// <summary>Zero means "nothing outstanding" — the nav hides the badge entirely rather than rendering a "0".</summary>
-public record NavBadgeCounts(int ApplicantsPendingGrant, int SessionsPendingVecSubmission, int UnresolvedUnmatchedPayments, int OpenReconciliationFindings);
+/// <param name="RenewalsNeedingAttention">Watched licenses a human should act on — the Renewal Monitor's share of the Applicants menu.</param>
+public record NavBadgeCounts(int ApplicantsPendingGrant, int SessionsPendingVecSubmission, int UnresolvedUnmatchedPayments, int OpenReconciliationFindings, int RenewalsNeedingAttention)
+{
+    /// <summary>The Applicants trigger chip: the sum of its menu items, so the number on the closed menu equals what opening it accounts for.</summary>
+    public int ApplicantsTotal => ApplicantsPendingGrant + RenewalsNeedingAttention;
+}
 
 /// <summary>
 /// Reading a per-team count dictionary safely. The grouped queries above omit teams with nothing

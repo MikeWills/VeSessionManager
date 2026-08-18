@@ -94,7 +94,7 @@ public class PerTeamBadgeCountTests
         AddCandidate(dbContext, sessionB, tested: true, CandidateApplicationStatus.Received);
         await dbContext.SaveChangesAsync();
 
-        var counts = await new NavBadgeCountService(dbContext)
+        var counts = await new NavBadgeCountService(dbContext, TimeProvider.System)
             .GetApplicantsPendingGrantByTeamAsync([teamA.Id, teamB.Id], CancellationToken.None);
 
         Assert.Equal(2, counts.CountFor(teamA.Id));
@@ -113,7 +113,7 @@ public class PerTeamBadgeCountTests
         AddCandidate(dbContext, session, tested, status);
         await dbContext.SaveChangesAsync();
 
-        var counts = await new NavBadgeCountService(dbContext)
+        var counts = await new NavBadgeCountService(dbContext, TimeProvider.System)
             .GetApplicantsPendingGrantByTeamAsync([team.Id], CancellationToken.None);
 
         Assert.Equal(0, counts.CountFor(team.Id));
@@ -132,7 +132,7 @@ public class PerTeamBadgeCountTests
         AddUnmatchedPayment(dbContext, teamB, resolved: true);
         await dbContext.SaveChangesAsync();
 
-        var counts = await new NavBadgeCountService(dbContext)
+        var counts = await new NavBadgeCountService(dbContext, TimeProvider.System)
             .GetUnresolvedUnmatchedPaymentsByTeamAsync([teamA.Id, teamB.Id], CancellationToken.None);
 
         Assert.Equal(2, counts.CountFor(teamA.Id));
@@ -150,7 +150,7 @@ public class PerTeamBadgeCountTests
         AddUnmatchedPayment(dbContext, team, resolved: false);
         await dbContext.SaveChangesAsync();
 
-        var counts = await new NavBadgeCountService(dbContext)
+        var counts = await new NavBadgeCountService(dbContext, TimeProvider.System)
             .GetUnresolvedUnmatchedPaymentsByTeamAsync([], CancellationToken.None);
 
         Assert.Empty(counts);

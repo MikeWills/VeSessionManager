@@ -86,7 +86,7 @@ public class PendingVecSubmissionCountTests
         AddCandidate(dbContext, session, terminalStatus);
         await dbContext.SaveChangesAsync();
 
-        var count = await new NavBadgeCountService(dbContext).CountSessionsPendingVecSubmissionAsync([team.Id], CancellationToken.None);
+        var count = await new NavBadgeCountService(dbContext, TimeProvider.System).CountSessionsPendingVecSubmissionAsync([team.Id], CancellationToken.None);
 
         Assert.Equal(1, count);
     }
@@ -101,7 +101,7 @@ public class PendingVecSubmissionCountTests
         AddCandidate(dbContext, session, CandidateApplicationStatus.Granted);
         await dbContext.SaveChangesAsync();
 
-        var count = await new NavBadgeCountService(dbContext).CountSessionsPendingVecSubmissionAsync([team.Id], CancellationToken.None);
+        var count = await new NavBadgeCountService(dbContext, TimeProvider.System).CountSessionsPendingVecSubmissionAsync([team.Id], CancellationToken.None);
 
         Assert.Equal(0, count);
     }
@@ -118,7 +118,7 @@ public class PendingVecSubmissionCountTests
         AddCandidate(dbContext, session, nonTerminalStatus);
         await dbContext.SaveChangesAsync();
 
-        var count = await new NavBadgeCountService(dbContext).CountSessionsPendingVecSubmissionAsync([team.Id], CancellationToken.None);
+        var count = await new NavBadgeCountService(dbContext, TimeProvider.System).CountSessionsPendingVecSubmissionAsync([team.Id], CancellationToken.None);
 
         Assert.Equal(0, count);
     }
@@ -133,7 +133,7 @@ public class PendingVecSubmissionCountTests
         AddCandidate(dbContext, session, CandidateApplicationStatus.Granted);
         await dbContext.SaveChangesAsync();
 
-        var count = await new NavBadgeCountService(dbContext).CountSessionsPendingVecSubmissionAsync([team.Id], CancellationToken.None);
+        var count = await new NavBadgeCountService(dbContext, TimeProvider.System).CountSessionsPendingVecSubmissionAsync([team.Id], CancellationToken.None);
 
         Assert.Equal(0, count);
     }
@@ -149,7 +149,7 @@ public class PendingVecSubmissionCountTests
         AddCandidate(dbContext, session, CandidateApplicationStatus.Granted);
         await dbContext.SaveChangesAsync();
 
-        var count = await new NavBadgeCountService(dbContext).CountSessionsPendingVecSubmissionAsync([team.Id], CancellationToken.None);
+        var count = await new NavBadgeCountService(dbContext, TimeProvider.System).CountSessionsPendingVecSubmissionAsync([team.Id], CancellationToken.None);
 
         Assert.Equal(1, count);
     }
@@ -167,7 +167,7 @@ public class PendingVecSubmissionCountTests
         AddCandidate(dbContext, sessionB, CandidateApplicationStatus.Granted);
         await dbContext.SaveChangesAsync();
 
-        var count = await new NavBadgeCountService(dbContext).CountSessionsPendingVecSubmissionAsync([teamA.Id], CancellationToken.None);
+        var count = await new NavBadgeCountService(dbContext, TimeProvider.System).CountSessionsPendingVecSubmissionAsync([teamA.Id], CancellationToken.None);
 
         Assert.Equal(1, count);
     }
