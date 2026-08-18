@@ -267,6 +267,58 @@ public class MessageRulePageTests
     /// The create form's field names are what the handler binds. A mismatch binds a default silently,
     /// and only reading the markup catches it (#144).
     /// </summary>
+    /// <summary>
+    /// <b>The delay field is denominated in days, and the browser has to enforce the halves.</b>
+    /// Asserted against the rendered attributes rather than the model, because <c>min</c>/<c>max</c>/
+    /// <c>step</c> are the whole of the client-side contract: lose <c>step</c> and the box silently
+    /// accepts 0.3, which the server then refuses with an error the person cannot act on, having typed
+    /// something the form appeared to allow.
+    ///
+    /// <para>Both screens, because they are separate markup that has already drifted once — the create
+    /// form and the edit form were written days apart.</para>
+    /// </summary>
+    [Theory]
+    [InlineData("new")]
+    [InlineData("edit")]
+    public async Task TheDelayFieldIsInDays_WithHalvesAllowed(string screen)
+    {
+        using var factory = new WebAppFactory();
+        var ruleId = await SeedRuleAsync(factory);
+        var client = factory.CreateClientAs(UserRole.SystemAdmin);
+
+        var url = screen == "new"
+            ? $"/Admin/MessageRuleNew?teamId={factory.Seeded.TeamId}"
+            : $"/Admin/MessageRuleEdit/{ruleId}";
+        var html = await client.GetStringAsync(url);
+
+        Assert.Matches("name=\"ParameterDays\"", html);
+        Assert.Matches("min=\"0.5\"", html);
+        Assert.Matches("max=\"365\"", html);
+        Assert.Matches("step=\"0.5\"", html);
+        // The label has to say days too. An input that takes days under a label reading "Hours" is
+        // the same bug as storing the wrong unit, arriving by a different route.
+        Assert.Contains("Days before the session starts", html);
+        Assert.DoesNotContain("Hours before the session starts", html);
+    }
+
+    /// <summary>
+    /// The stored hours come back as days on the edit form — 24 reads as 1, not as 24. This is the
+    /// half of the round trip the POST test cannot see: that test proves days go in correctly, this
+    /// one proves the box is not showing hours in a field labelled days.
+    /// </summary>
+    [Fact]
+    public async Task TheEditFormShowsStoredHoursAsDays()
+    {
+        using var factory = new WebAppFactory();
+        var ruleId = await SeedRuleAsync(factory, hours: 36);
+        var client = factory.CreateClientAs(UserRole.SystemAdmin);
+
+        var html = await client.GetStringAsync($"/Admin/MessageRuleEdit/{ruleId}");
+
+        // 36 hours is a day and a half.
+        Assert.Matches("name=\"ParameterDays\"[^>]*value=\"1.5\"|value=\"1.5\"[^>]*name=\"ParameterDays\"", html);
+    }
+
     [Fact]
     public async Task TheCreateFormPostsTheNamesTheHandlerBinds()
     {
