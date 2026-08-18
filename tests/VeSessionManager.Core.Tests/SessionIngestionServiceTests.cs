@@ -1106,10 +1106,10 @@ public class SessionIngestionServiceTests
     }
 
     [Fact]
-    public async Task TestedCandidateGoneFromFeed_IsNeverWithdrawn()
+    public async Task GradedCandidateGoneFromFeed_IsNeverWithdrawn()
     {
-        // Same refusal DeleteAsync makes: someone who actually sat the exam is not a withdrawal,
-        // whatever the feed says afterwards.
+        // Same refusal DeleteAsync makes: someone with a graded result actually sat the exam, and is
+        // not a withdrawal whatever the feed says afterwards.
         await using var dbContext = CreateContext();
         await SeedVecAndFeeConfigAsync(dbContext);
         var team = await SeedTeamAsync(dbContext);
@@ -1119,7 +1119,8 @@ public class SessionIngestionServiceTests
         await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
 
         var candidate = dbContext.Candidates.Single();
-        candidate.Tested = true;
+        candidate.MarkTested(Now);
+        candidate.NewLicenseClass = LicenseClass.Technician; // the evidence: a graded pass
         await dbContext.SaveChangesAsync();
 
         client.SessionsFor(team.Id)[0].ApplicantCount = 0;
@@ -1130,6 +1131,45 @@ public class SessionIngestionServiceTests
         var untouched = dbContext.Candidates.Single();
         Assert.NotEqual(CandidateApplicationStatus.NotTested, untouched.ApplicationStatus);
         Assert.NotNull(untouched.Name);
+    }
+
+    /// <summary>
+    /// <b>#419's root cause.</b> "Mark session completed" flips every non-terminal candidate to
+    /// Tested — a no-show still on the roster included, since the app cannot know ExamTools is about
+    /// to remove them. That Tested carried no evidence, but it made the row immune to withdrawal
+    /// forever: stranded as Tested + Unmatched, on the Pending FCC grant list, next to the real row
+    /// on the session they actually sat. A Tested that came only from completion — no graded class,
+    /// no terminal verdict, no human marking this specific person — is an assertion, not evidence,
+    /// and the feed saying "this person was removed" is exactly the correction it is entitled to.
+    /// </summary>
+    [Fact]
+    public async Task CompletionTestedCandidateGoneFromFeed_IsWithdrawn_AndTestedIsUndone()
+    {
+        await using var dbContext = CreateContext();
+        await SeedVecAndFeeConfigAsync(dbContext);
+        var team = await SeedTeamAsync(dbContext);
+        var client = new FakeExamToolsClient();
+        client.SessionsFor(team.Id).Add(PendingSession(applicantCount: 1));
+        client.ApplicantsFor(team.Id)["session-1"] = [Applicant(id: "no-show")];
+        await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+
+        // What "Mark session completed" does to everyone still on the roster, and nothing else.
+        var candidate = dbContext.Candidates.Single();
+        candidate.MarkTested(Now);
+        await dbContext.SaveChangesAsync();
+
+        client.SessionsFor(team.Id)[0].ApplicantCount = 0;
+        client.ApplicantsFor(team.Id)["session-1"] = [];
+        var result = await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+
+        Assert.Equal(1, result.CandidatesWithdrawn);
+        var withdrawn = dbContext.Candidates.Single();
+        Assert.Equal(CandidateApplicationStatus.NotTested, withdrawn.ApplicationStatus);
+        Assert.Null(withdrawn.Name);
+        // The false assertion is undone with the row — a NotTested candidate who reads as Tested
+        // would still haunt every Tested-keyed list and trigger.
+        Assert.False(withdrawn.Tested);
+        Assert.Null(withdrawn.TestedUtc);
     }
 
     [Fact]

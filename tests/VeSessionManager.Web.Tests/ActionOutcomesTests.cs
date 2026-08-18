@@ -48,8 +48,8 @@ public class ActionOutcomesTests
     [Fact]
     public void MarkCompleted_TellsAlreadyDoneApartFromNotFound()
     {
-        var already = ActionOutcomes.MarkCompleted(new SessionCompletionResult(SessionActionResult.AlreadyDone, 0, 0));
-        var missing = ActionOutcomes.MarkCompleted(new SessionCompletionResult(SessionActionResult.NotFound, 0, 0));
+        var already = ActionOutcomes.MarkCompleted(new SessionCompletionResult(SessionActionResult.AlreadyDone, 0));
+        var missing = ActionOutcomes.MarkCompleted(new SessionCompletionResult(SessionActionResult.NotFound, 0));
 
         Assert.False(already.Success);
         Assert.False(missing.Success);
@@ -63,8 +63,8 @@ public class ActionOutcomesTests
     [Fact]
     public void MarkCompleted_SaysSoWhenCandidatesAreStillAwaitingFelonyInstructions()
     {
-        var quiet = ActionOutcomes.MarkCompleted(new SessionCompletionResult(SessionActionResult.Success, 5, 0));
-        var waiting = ActionOutcomes.MarkCompleted(new SessionCompletionResult(SessionActionResult.Success, 5, 2));
+        var quiet = ActionOutcomes.MarkCompleted(new SessionCompletionResult(SessionActionResult.Success, 0));
+        var waiting = ActionOutcomes.MarkCompleted(new SessionCompletionResult(SessionActionResult.Success, 2));
 
         Assert.True(quiet.Success);
         Assert.True(waiting.Success);
@@ -131,7 +131,7 @@ public class ActionOutcomesTests
         object[] email = [.. Enum.GetValues<CandidateEmailSendResult>().Cast<object>()];
         object[] vec = [.. Enum.GetValues<VecSubmissionMarkResult>().Cast<object>()];
         object[] completion = [.. Enum.GetValues<SessionActionResult>()
-            .Select(r => (object)new SessionCompletionResult(r, 3, 0))];
+            .Select(r => (object)new SessionCompletionResult(r, 0))];
         object[] deletion = [.. Enum.GetValues<SessionActionResult>()
             .Select(r => (object)new SessionDeleteResult(r, 3, 2, 1))];
         // Success is expanded across every RefundStatus, not just the default: "submitted" and

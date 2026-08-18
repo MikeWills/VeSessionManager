@@ -91,7 +91,11 @@ public class CandidateActionService(
             return CandidateActionResult.AlreadyDone;
         }
 
-        if (candidate.Tested)
+        // Evidence, not the bare flag (#419): a Tested that came only from "Mark session completed"
+        // is an assertion about the roster, not this person, and this button is the only repair for a
+        // no-show stranded by it — a completed-and-closed session's roster is never synced again, so
+        // ingestion cannot withdraw the row itself.
+        if (candidate.TestedWithEvidence)
         {
             return CandidateActionResult.AlreadyTested;
         }
@@ -99,6 +103,7 @@ public class CandidateActionService(
         var now = timeProvider.GetUtcNow().UtcDateTime;
         candidate.ApplicationStatus = CandidateApplicationStatus.NotTested;
         CandidatePiiFields.Clear(candidate, now);
+        candidate.UndoCompletionTested();
         candidate.ResultMarkedByUserId = userId;
         candidate.ResultMarkedUtc = now;
 
