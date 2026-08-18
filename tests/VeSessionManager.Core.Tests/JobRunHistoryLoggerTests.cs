@@ -42,6 +42,46 @@ public class JobRunHistoryLoggerTests
     }
 
     /// <summary>
+    /// <b>#413.</b> <c>DbUpdateException</c>'s own message is "An error occurred while saving the entity
+    /// changes. See the inner exception for details." — an instruction to read something the row did
+    /// not contain. Reconciliation failed three times for one team with exactly that and the cause can
+    /// no longer be identified, which is the whole argument for this.
+    /// </summary>
+    [Fact]
+    public async Task RunAsync_WhenTheFailureHidesInAnInnerException_RecordsTheWholeChain()
+    {
+        await using var dbContext = CreateContext();
+        var sut = new JobRunHistoryLogger(dbContext, NullLogger<JobRunHistoryLogger>.Instance);
+
+        await sut.RunAsync("TestJob",
+            _ => throw new InvalidOperationException(
+                "An error occurred while saving the entity changes. See the inner exception for details.",
+                new ArgumentException("UNIQUE constraint failed: ReconciliationFindings.TeamId")),
+            null, CancellationToken.None);
+
+        var history = Assert.Single(dbContext.JobRunHistories);
+        Assert.False(history.Success);
+        Assert.Contains("An error occurred while saving the entity changes", history.ErrorMessage);
+        Assert.Contains("ArgumentException: UNIQUE constraint failed: ReconciliationFindings.TeamId", history.ErrorMessage);
+    }
+
+    /// <summary>A chain long or verbose enough to bloat the dashboard is cut, not stored whole.</summary>
+    [Fact]
+    public async Task RunAsync_WithAnEnormousMessage_TruncatesRatherThanStoringItAll()
+    {
+        await using var dbContext = CreateContext();
+        var sut = new JobRunHistoryLogger(dbContext, NullLogger<JobRunHistoryLogger>.Instance);
+
+        await sut.RunAsync("TestJob", _ => throw new InvalidOperationException(new string('x', 5000)),
+            null, CancellationToken.None);
+
+        var history = Assert.Single(dbContext.JobRunHistories);
+        Assert.True(history.ErrorMessage!.Length <= JobRunHistoryLogger.MaxErrorMessageLength,
+            $"was {history.ErrorMessage.Length}");
+        Assert.EndsWith("...", history.ErrorMessage);
+    }
+
+    /// <summary>
     /// The guard above keys off the token, not the exception type — an OperationCanceledException
     /// thrown by the job's own logic while nobody asked for cancellation is a real fault and must
     /// still be recorded as one.

@@ -23,10 +23,21 @@ public sealed class ExamToolsClient : IExamToolsClient, IDisposable
 
     private readonly ILogger<ExamToolsClient> _logger;
     private readonly ConcurrentDictionary<int, TeamSession> _sessionsByTeamId = new();
+    private readonly HttpMessageHandler? _handlerForTests;
 
-    public ExamToolsClient(ILogger<ExamToolsClient> logger)
+    public ExamToolsClient(ILogger<ExamToolsClient> logger) : this(logger, null)
+    {
+    }
+
+    /// <summary>
+    /// Test seam, matching <c>ZoomClient</c>'s. A supplied handler is shared by every team rather than
+    /// one per team with its own <c>CookieContainer</c>, so it is for tests only — DI resolves the
+    /// single-argument constructor, since <c>HttpMessageHandler</c> is not registered.
+    /// </summary>
+    public ExamToolsClient(ILogger<ExamToolsClient> logger, HttpMessageHandler? handlerForTests)
     {
         _logger = logger;
+        _handlerForTests = handlerForTests;
     }
 
     public async Task<IReadOnlyList<ExamToolsSession>> GetTeamSessionsAsync(ExamToolsCredentials credentials, CancellationToken cancellationToken)
@@ -96,11 +107,23 @@ public sealed class ExamToolsClient : IExamToolsClient, IDisposable
         await EnsureLoggedInAsync(teamSession, credentials, forceRelogin: false, cancellationToken);
 
         var response = await teamSession.HttpClient.GetAsync(relativeUrl, cancellationToken);
-        if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
+        var body = await response.Content.ReadAsStringAsync(cancellationToken);
+
+        // 401/403 is the documented way to be told the cookie has expired. HTML is the undocumented
+        // one (#412): ExamTools answers an unauthenticated or unroutable request with its SPA shell
+        // and redirects a bare fetch to /portal/veLogin, which HttpClient follows — so "signed out"
+        // arrives as 200 with a web page in it. Both mean the same thing, so both take the same
+        // recovery: one forced re-login and one retry.
+        var signedOut = response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden;
+        if (signedOut || IsHtml(response, body))
         {
-            _logger.LogInformation("ExamTools returned {StatusCode} for team {TeamId} — session cookie likely expired, re-authenticating", (int)response.StatusCode, credentials.TeamId);
+            _logger.LogInformation(
+                "ExamTools returned {StatusCode}{Html} for {RelativeUrl} (team {TeamId}) — session cookie likely expired, re-authenticating",
+                (int)response.StatusCode, signedOut ? "" : " with an HTML body", relativeUrl, credentials.TeamId);
             await EnsureLoggedInAsync(teamSession, credentials, forceRelogin: true, cancellationToken);
+            response.Dispose();
             response = await teamSession.HttpClient.GetAsync(relativeUrl, cancellationToken);
+            body = await response.Content.ReadAsStringAsync(cancellationToken);
         }
 
         if (treatNotFoundAsEmpty && response.StatusCode == HttpStatusCode.NotFound)
@@ -110,8 +133,34 @@ public sealed class ExamToolsClient : IExamToolsClient, IDisposable
         }
 
         response.EnsureSuccessStatusCode();
-        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-        return await JsonSerializer.DeserializeAsync<T>(stream, JsonOptions, cancellationToken);
+
+        // Once, not in a loop: a second HTML answer after re-authenticating is not a stale cookie, and
+        // retrying it would spin. Fail here instead, naming the endpoint and quoting what came back —
+        // the parser's own complaint names neither, and that is what turns a five-minute diagnosis
+        // into an evening.
+        if (IsHtml(response, body) || string.IsNullOrWhiteSpace(body))
+        {
+            throw new ExamToolsResponseException(relativeUrl, credentials.TeamId,
+                response.Content.Headers.ContentType?.MediaType, body);
+        }
+
+        return JsonSerializer.Deserialize<T>(body, JsonOptions);
+    }
+
+    /// <summary>
+    /// Content type first, since that is the honest answer, with a first-character check behind it for
+    /// a server that mislabels a page as JSON. Deliberately not "does it fail to parse" — genuinely
+    /// malformed JSON is a different fault and should keep saying so.
+    /// </summary>
+    private static bool IsHtml(HttpResponseMessage response, string body)
+    {
+        var mediaType = response.Content.Headers.ContentType?.MediaType;
+        if (mediaType is not null && mediaType.Contains("html", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        return body.AsSpan().TrimStart().StartsWith("<");
     }
 
     private async Task EnsureLoggedInAsync(TeamSession teamSession, ExamToolsCredentials credentials, bool forceRelogin, CancellationToken cancellationToken)
@@ -185,13 +234,13 @@ public sealed class ExamToolsClient : IExamToolsClient, IDisposable
         return replacement;
     }
 
-    private static TeamSession CreateTeamSession(string baseUrl) =>
-        new(new HttpClient(new SocketsHttpHandler
+    private TeamSession CreateTeamSession(string baseUrl) =>
+        new(new HttpClient(_handlerForTests ?? new SocketsHttpHandler
         {
             CookieContainer = new CookieContainer(),
             // Long-lived cached client: recycle pooled connections so DNS changes are picked up.
             PooledConnectionLifetime = TimeSpan.FromMinutes(15)
-        })
+        }, disposeHandler: _handlerForTests is null)
         {
             BaseAddress = new Uri(baseUrl)
         }, baseUrl);
