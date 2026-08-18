@@ -224,6 +224,13 @@ public class CandidateDetailModel(
 
         CanEdit = accessScope.CanEdit(user, candidate.Session);
 
+        // What the rule engine has actually sent this candidate (#415). One candidate, so the batch
+        // loader is overkill here — but it is the same query, and having one definition of "which
+        // runs count as received" is the point.
+        var ruleSends = CandidateRuleSends.For(
+            await CandidateRuleSends.LoadAsync(dbContext, [candidate.Id], HttpContext.RequestAborted),
+            candidate.Id);
+
         var isWithdrawn = candidate.IsWithdrawn;
         var can = CandidateCapabilities.For(
             candidate, candidate.Session.Vec.SupportsYouthProgram, candidate.Payments.Count > 0);
@@ -283,7 +290,7 @@ public class CandidateDetailModel(
             HasFelonyDisclosure: isWithdrawn ? null : candidate.HasFelonyDisclosure,
             Payments: candidate.Payments.OrderByDescending(p => p.CreatedUtc)
                 .Select(p => ToPaymentRow(p, timeProvider.GetUtcNow().UtcDateTime)).ToList(),
-            EmailHistory: CandidateEmailHistoryFormatter.Build(candidate),
+            EmailHistory: CandidateEmailHistoryFormatter.Build(candidate, ruleSends),
             OtherAttempts: otherAttempts,
             CanResendConfirmation: can.CanResendConfirmation,
             CanDelete: can.CanDelete,
