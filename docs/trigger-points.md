@@ -296,6 +296,46 @@ is only the three on-demand templates, which no rule can describe because a pers
 `Retired` set stays — "nothing in the code sends this" is a different fact from "this team has no rule
 for it", and only the first is the app's to state.
 
+## One dispatcher, several kinds of trigger (#417)
+
+#415 fixed the history but left the cause: a candidate-facing email could be sent from two unrelated
+code paths that recorded it two different ways. The formatter needed per-column fallbacks and a dedup
+rule because the felony column had **two writers** and the youth column had one the engine knew
+nothing about.
+
+This should have been part of #401. PR1's plan listed the hand-sends as *untouched* to keep that PR
+behaviour-frozen, and #396 was then answered by bolting a mute check onto each of them rather than
+moving them. That was defensible for PR1; not following through in PR4 is what cost #415.
+
+**Scanning and dispatching are separable, and only scanning is scan-shaped.** A button press is a
+perfectly good trigger — it is just not a scheduled one. `CandidateNotificationService.TrySendAsync`
+was already the single funnel for every templated candidate email that service sends, so it is the
+one place that changed: on a successful send it now writes a `MessageRuleRun` with
+`MessageRuleId = null`, the same nullable column that lets a run outlive a deleted rule.
+
+Three things worth carrying forward:
+
+- **`MessageTrigger.SentByHand = 100` is not a trigger point.** It is a note on a run saying a person
+  pressed a button. Numbered clear of the scan triggers and deliberately absent from
+  `MessageTriggerDefinitions.All`, so the admin screens — which iterate that list — can never offer it
+  as something configurable. `For()` throws for it because nothing should ask, and
+  `MessageRuleAdminService` now refuses it as validation rather than letting that throw become a 500.
+- **A hand-send records the real trigger where one exists.** A resent confirmation is a
+  `CandidateRegistered` message however it was set off, and the felony instructions record
+  `FelonyDisclosureDeclared` whether the button or the scanner sent them — which is what makes the two
+  paths indistinguishable to everything downstream. Only the youth instructions, which no trigger can
+  send, carry the marker.
+- **The run is written after the send, inside the funnel.** A missing template leaves no trace claiming
+  otherwise — the same property #396 was about, arrived at from the other direction.
+
+The backfill migration covers rows written before this, guarded by `NOT EXISTS` so a felony email a
+rule already recorded is not listed a second time under a different name. **It is a no-op on the
+current beta data** — all three columns are empty there — so it was verified against synthesized rows
+on a copy of that database rather than trusted to run clean.
+
+The legacy columns are still written and now have no readers. Dropping them is a separate change,
+once that has been confirmed; leaving them means a rollback here is a code revert.
+
 ## Email history reads the run log (#415)
 
 A candidate's Email history was built from the legacy `Candidate.*SentUtc` columns. It kept working

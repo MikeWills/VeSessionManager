@@ -155,6 +155,88 @@ public class CandidateNotificationServiceTests
         Assert.Single(sender.SentMessages);
     }
 
+    /// <summary>
+    /// <b>#417: a hand-send is a run now.</b> Before this, pressing a button recorded the send only in
+    /// a <c>Candidate.*SentUtc</c> column, which is what forced the candidate's email history to carry
+    /// per-column fallbacks and a dedup rule (#415). A button is a perfectly good trigger; it is just
+    /// not a scheduled one.
+    /// </summary>
+    [Fact]
+    public async Task ResendRegistrationConfirmationAsync_RecordsARunSoTheSendIsVisibleInHistory()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        await SeedEmailSettingsAndTemplatesAsync(dbContext, team);
+        var session = await SeedSessionAsync(dbContext, team, Now.AddDays(5));
+        var candidate = NewCandidate(session);
+        dbContext.Candidates.Add(candidate);
+        await dbContext.SaveChangesAsync();
+
+        await CreateService(dbContext, new FakeEmailSender())
+            .ResendRegistrationConfirmationAsync(candidate.Id, CancellationToken.None);
+
+        var run = Assert.Single(dbContext.MessageRuleRuns);
+        Assert.Equal(candidate.Id, run.SubjectId);
+        Assert.Equal(MessageSubjectType.Candidate, run.SubjectType);
+        Assert.Equal(MessageRuleOutcome.Sent, run.Outcome);
+        Assert.Equal(CandidateNotificationService.ResentConfirmationLabel, run.RuleName);
+        // No rule produced it — the same nullable column that lets a run outlive a deleted rule.
+        Assert.Null(run.MessageRuleId);
+        // The message *is* a registration confirmation, however it was set off.
+        Assert.Equal(MessageTrigger.CandidateRegistered, run.Trigger);
+    }
+
+    /// <summary>
+    /// The Youth Program instructions mirror no trigger point — nothing can send them on a scan — so
+    /// they carry the marker value rather than borrowing a trigger that would read as a lie.
+    /// </summary>
+    [Fact]
+    public async Task SendYouthProgramInstructionsAsync_RecordsARunMarkedSentByHand()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        await SeedEmailSettingsAndTemplatesAsync(dbContext, team);
+        var session = await SeedSessionAsync(dbContext, team, Now.AddDays(5));
+        session.Vec.SupportsYouthProgram = true;
+        dbContext.EmailTemplates.Add(new EmailTemplate
+        {
+            TeamId = team.Id, Key = "ArrlYouthProgramInstructions", Subject = "Youth Program", Body = "Hi"
+        });
+        var candidate = NewCandidate(session);
+        candidate.CallSign = "KE0ABC";
+        dbContext.Candidates.Add(candidate);
+        await dbContext.SaveChangesAsync();
+
+        await CreateService(dbContext, new FakeEmailSender())
+            .SendYouthProgramInstructionsAsync(candidate.Id, CancellationToken.None);
+
+        var run = Assert.Single(dbContext.MessageRuleRuns);
+        Assert.Equal(MessageTrigger.SentByHand, run.Trigger);
+        Assert.Equal(CandidateNotificationService.YouthProgramLabel, run.RuleName);
+    }
+
+    /// <summary>
+    /// A send that never happened records nothing. The run is written inside the funnel, after the
+    /// send — so a missing template leaves no trace claiming otherwise, which is the same property
+    /// #396 was about.
+    /// </summary>
+    [Fact]
+    public async Task AFailedSend_RecordsNoRun()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        // Deliberately no templates seeded.
+        var session = await SeedSessionAsync(dbContext, team, Now.AddDays(5));
+        var candidate = NewCandidate(session);
+        dbContext.Candidates.Add(candidate);
+        await dbContext.SaveChangesAsync();
+
+        await CreateService(dbContext, new FakeEmailSender())
+            .ResendRegistrationConfirmationAsync(candidate.Id, CancellationToken.None);
+
+        Assert.Empty(dbContext.MessageRuleRuns);
+    }
+
     // ---- Youth Program instructions ----
 
     [Fact]

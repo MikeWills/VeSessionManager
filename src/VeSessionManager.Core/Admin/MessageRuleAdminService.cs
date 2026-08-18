@@ -328,6 +328,14 @@ public class MessageRuleAdminService(AppDbContext dbContext, TimeProvider timePr
             return MessageRuleActionResult.NameRequired;
         }
 
+        // MessageTriggerDefinitions.For throws for anything not in All, which now includes
+        // MessageTrigger.SentByHand (#417) as well as a value someone posted by hand. Refused as
+        // validation rather than escaping as a 500.
+        if (!MessageTriggerDefinitions.All.Any(d => d.Trigger == trigger))
+        {
+            return MessageRuleActionResult.TriggerNotConfigurable;
+        }
+
         var definition = MessageTriggerDefinitions.For(trigger);
 
         // A time-relative trigger with no parameter has not been answered — the parameter *is* the
@@ -462,6 +470,12 @@ public enum MessageRuleActionResult
     /// <c>MessageTriggerDefinitions</c>, which is also what the form offers.
     /// </summary>
     RecipientNotLegal,
+
+    /// <summary>
+    /// No trigger point is registered for that value — either <c>SentByHand</c>, which is a marker on a
+    /// run rather than something a rule can use, or a value somebody posted by hand.
+    /// </summary>
+    TriggerNotConfigurable,
 
     /// <summary>No template with that key on this team. A rule pointing at nothing records Failed on every tick with only a log line to show for it.</summary>
     TemplateNotFound,
