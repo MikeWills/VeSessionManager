@@ -296,6 +296,44 @@ is only the three on-demand templates, which no rule can describe because a pers
 `Retired` set stays — "nothing in the code sends this" is a different fact from "this team has no rule
 for it", and only the first is the app's to state.
 
+## Email history reads the run log (#415)
+
+A candidate's Email history was built from the legacy `Candidate.*SentUtc` columns. It kept working
+after #401 only because the dispatcher still stamps those columns for the four migrated triggers —
+and it failed the moment a team used anything #401 added. Three symptoms, one cause:
+
+- a rule on `CandidateTested` or `LicenseGranted` has **no column at all**, so its mail was sent and
+  the candidate's page showed nothing;
+- **two rules on one trigger share one column**, so "remind at seven days" and "remind at one day"
+  collapsed into a single line carrying whichever timestamp landed last — a team configured two sends
+  and could see one;
+- the FCC fee reminder stamps `Candidate.FccFeeReminderSentUtc`, which this list **never read**, so it
+  has never appeared at all.
+
+It reads `MessageRuleRun` now, labelled with the rule's own name — "Reminder 24 hours before the
+session" rather than "Reminder email", which says *which* rule. Four things about the filter:
+
+- **Only `Sent`.** A `Suppressed` or `Failed` row is real history, but this list answers "what has this
+  person received", and listing either as received is the same lie #396 was about.
+- **Only mail addressed to the candidate, over email.** `CandidateTested` and `LicenseGranted` may both
+  address the team's own inbox — a message *about* someone, which they never saw — and a Discord rule
+  reaches a room rather than a person.
+- **`PaymentUnpaid` needs no exclusion**, because its subject is the *payment*, not the candidate, so
+  it never matches. Structural rather than a filter somebody has to remember.
+- **A run whose rule was deleted is kept.** `MessageRuleId` is nullable precisely so history outlives
+  the rule; dropping those would undo that on the page where it matters most.
+
+Three sends still come from a column, because no run exists for them: the Youth Program instructions
+(no trigger can send it), the payment reminder (whose column has no writer left at all — purely
+historical), and the felony instructions when sent by hand. That last is written by **both** the
+button and `FelonyDisclosureDeclaredScanner`, so the column is shown only when no run covers it.
+
+The loader is batched (`CandidateRuleSends.LoadAsync`) because the session Detail page renders a row
+per candidate; per-row lookup would be an N+1 across a full roster.
+
+**Once nothing reads them, the four legacy `...SentUtc` columns can be dropped** — but not in the same
+change, and only after confirming nothing else does.
+
 ## Attaching a rule from the template (#409)
 
 Two objects — a template holds the wording, a rule holds the timing — read as two *steps*, and the

@@ -429,8 +429,13 @@ public class DetailModel(
         // disclosure, and the delete warning still has to count them.
         // session.Vec is Included above; passing the flag rather than reading it inside ToRow is what
         // makes the requirement visible here — omitting it is exactly what #274 was.
+        // One query for the whole roster, not one per row (#415): this page renders a row per
+        // candidate, so a per-candidate history lookup would be an N+1 across a full session.
+        var ruleSends = await CandidateRuleSends.LoadAsync(
+            dbContext, [.. session.Candidates.Select(c => c.Id)], HttpContext.RequestAborted);
+
         var rows = session.Candidates.OrderBy(c => c.Name)
-            .Select(c => ToRow(c, session.Vec.SupportsYouthProgram)).ToList();
+            .Select(c => ToRow(c, session.Vec.SupportsYouthProgram, CandidateRuleSends.For(ruleSends, c.Id))).ToList();
         Candidates = [.. rows.Where(r => !r.IsWithdrawn)];
         WithdrawnCandidates = [.. rows.Where(r => r.IsWithdrawn)];
 
@@ -449,7 +454,7 @@ public class DetailModel(
         return true;
     }
 
-    private static CandidateRow ToRow(Candidate candidate, bool vecSupportsYouthProgram)
+    private static CandidateRow ToRow(Candidate candidate, bool vecSupportsYouthProgram, IReadOnlyList<RuleSend> ruleSends)
     {
         var isWithdrawn = candidate.IsWithdrawn;
         var primaryPayment = candidate.Payments.OrderByDescending(p => p.CreatedUtc).FirstOrDefault(p => p.Status == PaymentStatus.Unpaid)
@@ -480,7 +485,7 @@ public class DetailModel(
             ? $"Paid {Usd.Format(primaryPayment.SquareAmountPaidUsd!.Value)} against {Usd.Format(primaryPayment.Amount)} owed"
             : null;
 
-        var emailHistory = CandidateEmailHistoryFormatter.Build(candidate);
+        var emailHistory = CandidateEmailHistoryFormatter.Build(candidate, ruleSends);
         var can = CandidateCapabilities.For(candidate, vecSupportsYouthProgram, primaryPayment is not null);
 
         return new CandidateRow(
