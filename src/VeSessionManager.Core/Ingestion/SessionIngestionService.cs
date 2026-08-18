@@ -846,7 +846,10 @@ public class SessionIngestionService(
         var missing = local.Candidates
             .Where(c => c.ExamToolsApplicantId is not null            // never came from the feed
                         && !remoteApplicantIds.Contains(c.ExamToolsApplicantId)
-                        && !c.Tested                                  // same refusal DeleteAsync makes
+                        && !c.TestedWithEvidence                      // same refusal DeleteAsync makes (#419):
+                                                                      // a completion-only Tested is an assertion
+                                                                      // about the roster, and the feed removing
+                                                                      // this person is the correction
                         && !c.ApplicationStatus.IsTerminal()          // already settled (incl. a previous withdrawal)
                         && c.PiiPurgedUtc is null)
             .ToList();
@@ -855,6 +858,7 @@ public class SessionIngestionService(
         {
             candidate.ApplicationStatus = CandidateApplicationStatus.NotTested;
             CandidatePiiFields.Clear(candidate, now);
+            candidate.UndoCompletionTested();
             candidate.ResultMarkedUtc = now;
             // ResultMarkedByUserId deliberately left null — no human made this call.
 

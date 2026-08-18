@@ -222,17 +222,47 @@ public class CandidateActionServiceTests
     }
 
     [Fact]
-    public async Task Delete_WhenAlreadyTested_Refuses_NoChanges()
+    public async Task Delete_WhenTestedWithAGradedResult_Refuses_NoChanges()
     {
         await using var dbContext = CreateContext();
         var (team, user, vec) = await SeedTeamAsync(dbContext);
         var session = await SeedSessionAsync(dbContext, team, vec, user);
         var candidate = await SeedCandidateAsync(dbContext, session, tested: true);
+        candidate.NewLicenseClass = LicenseClass.Technician; // the evidence
+        await dbContext.SaveChangesAsync();
 
         var result = await CreateService(dbContext).DeleteAsync(candidate.Id, user.Id, CancellationToken.None);
 
         Assert.Equal(CandidateActionResult.AlreadyTested, result);
         Assert.NotNull(dbContext.Candidates.Single().Name);
+    }
+
+    /// <summary>
+    /// <b>#419: a Tested that came only from "Mark session completed" is an assertion, not
+    /// evidence</b> — no graded class, no terminal verdict, no human marked this specific person. It
+    /// used to make the row undeletable forever, which is how a no-show ended up stranded on the
+    /// Pending FCC grant list next to their real row on the session they actually sat. This button is
+    /// also the only repair for a row already stranded that way: a completed-and-closed session's
+    /// roster is never synced again, so ingestion cannot withdraw it.
+    /// </summary>
+    [Fact]
+    public async Task Delete_WhenTestedOnlyByCompletion_Proceeds_AndUndoesTheTestedMark()
+    {
+        await using var dbContext = CreateContext();
+        var (team, user, vec) = await SeedTeamAsync(dbContext);
+        var session = await SeedSessionAsync(dbContext, team, vec, user);
+        var candidate = await SeedCandidateAsync(dbContext, session);
+        candidate.MarkTested(Now); // what Mark session completed does, and nothing else
+        await dbContext.SaveChangesAsync();
+
+        var result = await CreateService(dbContext).DeleteAsync(candidate.Id, user.Id, CancellationToken.None);
+
+        Assert.Equal(CandidateActionResult.Success, result);
+        var updated = dbContext.Candidates.Single();
+        Assert.Equal(CandidateApplicationStatus.NotTested, updated.ApplicationStatus);
+        Assert.Null(updated.Name);
+        Assert.False(updated.Tested);
+        Assert.Null(updated.TestedUtc);
     }
 
     [Fact]

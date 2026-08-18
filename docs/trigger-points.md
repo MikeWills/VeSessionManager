@@ -296,6 +296,33 @@ is only the three on-demand templates, which no rule can describe because a pers
 `Retired` set stays — "nothing in the code sends this" is a different fact from "this team has no rule
 for it", and only the first is the app's to state.
 
+## A completion-only Tested is an assertion, not evidence (#419)
+
+"Mark session completed" flips every non-terminal candidate on the roster to Tested — including a
+no-show whose ExamTools removal has not ingested yet, which the app cannot know is coming. Found live
+the first night on `v0.13.0`: a no-show was marked Tested by the completion click, then deleted in
+ExamTools and re-registered on a new session, and the old row was stranded — `Tested + Unmatched`,
+immune to withdrawal (`!c.Tested`), immune to Delete (same refusal), permanently on the Pending FCC
+grant list beside the real row on the session they actually sat. Left alone it would eventually have
+become a **phantom grant**: the ULS watcher matches by FRN, both rows march to Granted together, and
+the purge scrubs both.
+
+`Candidate.TestedWithEvidence` is the distinction both guards now use: a graded result
+(`NewLicenseClass`), a terminal verdict, or a human marking **this specific candidate**
+(`ResultMarkedByUserId`). A Tested with none of those came only from completion — an assertion about
+the roster, not about a person — and the feed removing that person is exactly the correction it is
+entitled to make. Withdrawal and Delete both proceed for such a row and undo the Tested mark
+(`UndoCompletionTested`, in the one file allowed to assign `Tested`), because a NotTested row still
+reading Tested would haunt every Tested-keyed list and trigger.
+
+Two boundaries deliberately kept:
+
+- **A graded candidate is still never withdrawn or deleted.** The evidence predicate is the fence;
+  weakening it re-opens the original data-loss risk the `!c.Tested` guard existed for.
+- **An already-stranded row needs the Delete button, not a poll.** A completed-and-closed session's
+  roster is never synced again, so ingestion cannot repair rows stranded before this fix — the row's
+  own Delete action, which now accepts completion-only Tested, is the repair.
+
 ## One dispatcher, several kinds of trigger (#417)
 
 #415 fixed the history but left the cause: a candidate-facing email could be sent from two unrelated

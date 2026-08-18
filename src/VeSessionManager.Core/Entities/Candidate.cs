@@ -84,6 +84,38 @@ public class Candidate
         Tested = true;
     }
 
+    /// <summary>
+    /// Whether <see cref="Tested"/> has something behind it: a graded result, a terminal verdict, or a
+    /// human marking <b>this specific candidate</b> (#419).
+    ///
+    /// <para>"Mark session completed" flips everyone still on the roster to Tested — including a
+    /// no-show whose ExamTools removal has not ingested yet, since the app cannot know it is coming.
+    /// That Tested is an <i>assertion about the roster</i>, not evidence about a person, and treating
+    /// the two the same is what stranded a no-show as Tested + Unmatched forever: immune to
+    /// withdrawal, immune to Delete, permanently on the Pending FCC grant list beside their real row
+    /// on the session they actually sat.</para>
+    ///
+    /// <para>Not EF-mapped — evaluate on a materialized candidate. The withdrawal scan and DeleteAsync
+    /// both do.</para>
+    /// </summary>
+    public bool TestedWithEvidence => Tested
+        && (NewLicenseClass is not null            // a graded pass recorded the class it earned
+            || ResultMarkedByUserId is not null    // a human marked this candidate by hand
+            || ApplicationStatus.IsTerminal());    // Failed/Granted/NotTested — already adjudicated
+
+    /// <summary>
+    /// Undoes a completion-only <see cref="MarkTested"/> when the candidate is being withdrawn (#419).
+    /// A row left NotTested while still reading Tested = true would haunt every Tested-keyed list and
+    /// trigger. Lives here because this file is the one place allowed to assign <see cref="Tested"/> —
+    /// see <c>NoRawTestedAssignmentTests</c>. Callers must have checked <see cref="TestedWithEvidence"/>
+    /// first; unmaking a graded result is never correct.
+    /// </summary>
+    public void UndoCompletionTested()
+    {
+        Tested = false;
+        TestedUtc = null;
+    }
+
     /// <summary>From ULS HD status date — only applies to the Received/Granted path.</summary>
     public DateTime? ApplicationDateEnteredUtc { get; set; }
 
