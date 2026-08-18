@@ -176,6 +176,14 @@ public class ApplicantStatusModel(
             LicenseClassFormatter.FormatTransition(c.InitialLicenseClass, c.NewLicenseClass) ?? "—",
             FccStatusLabel(c),
             FccFeeLabel(c),
+            // Formatted raw, NOT through EasternTimeFormatter like the session date above — and the
+            // difference is not stylistic. Every FCC date arrives date-only and is stamped at UTC
+            // midnight by ExamToolsUlsLookupClient.AsUtcDate, so it already *is* a wall-clock date;
+            // converting it to Eastern renders 8pm the previous day, i.e. every application would
+            // read as received a day early. The session date beside it is a real instant, so it
+            // must be converted. Same distinction daysPending relies on by comparing .Date.
+            c.ApplicationDateEnteredUtc?.ToString("MMM d, yyyy", CultureInfo.InvariantCulture) ?? "—",
+            c.ApplicationDateEnteredUtc?.ToString("o", CultureInfo.InvariantCulture) ?? "",
             daysPending,
             DaysPendingCssClass(daysPending, hasUnpaidPayment, c.Session.TeamId),
             FccUlsLinks.License(c.FccUlsLicenseKey));
@@ -274,7 +282,8 @@ public class ApplicantStatusModel(
     // The ...SortValue members carry the raw date behind each formatted *Line, for the table's
     // click-to-sort headers (see app.js). "MMM d, yyyy" sorts alphabetically as text — Apr before
     // Mar — so a date column has to sort on something round-trippable instead of what it displays.
-    public record PendingRow(int CandidateId, int SessionId, string TeamName, string Name, string Frn, string SessionDateLine, string SessionDateSortValue, string LicenseClassLine, string StatusLabel, string FeeLabel, int? DaysPending, string DaysPendingCssClass, string? LicenseUrl);
+    /// <param name="ApplicationReceivedLine">The date FCC entered the application — what "days pending" counts from, so the reader can see the anchor and not just the elapsed number. "—" while still Unmatched, because FCC has nothing on file yet.</param>
+    public record PendingRow(int CandidateId, int SessionId, string TeamName, string Name, string Frn, string SessionDateLine, string SessionDateSortValue, string LicenseClassLine, string StatusLabel, string FeeLabel, string ApplicationReceivedLine, string ApplicationReceivedSortValue, int? DaysPending, string DaysPendingCssClass, string? LicenseUrl);
 
     public record RecentlyIssuedRow(int CandidateId, int SessionId, string TeamName, string Name, string SessionDateLine, string SessionDateSortValue, string CallSign, string LicenseClassLine, string GrantDateLine, string GrantDateSortValue, string? LicenseUrl);
 }
