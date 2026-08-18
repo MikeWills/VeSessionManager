@@ -33,7 +33,7 @@
     }
 
     var badges = currentUser is null
-        ? new NavBadgeCounts(0, 0, 0, 0)
+        ? new NavBadgeCounts(0, 0, 0, 0, 0)
         : await NavBadgeCounts.GetAsync(effectiveTeamIds, Context.RequestAborted);
 
     var roleLabel = currentUser?.Role switch
@@ -131,18 +131,34 @@
             <div class="nav-group">
                 <button type="button" class="kebab @(applicantsGroupActive ? "active" : "")">
                     Applicants
-                    @if (badges.ApplicantsPendingGrant > 0)
+                    @* The trigger carries the SUM of its items, and each item carries its own share —
+                       so the number on the closed menu always equals what opening it accounts for.
+                       A total that disagreed with its parts is exactly what made a stale-looking chip
+                       read as a bug rather than as two lists. *@
+                    @if (badges.ApplicantsTotal > 0)
                     {
-                        <span class="nav-badge">@badges.ApplicantsPendingGrant</span>
+                        <span class="nav-badge">@badges.ApplicantsTotal</span>
                     }
                     <i class="bi bi-caret-down-fill" aria-hidden="true"></i>
                 </button>
                 <div class="menu">
-                    <a class="item @(activeNav == "ApplicantStatus" ? "active" : "")" asp-page="/SessionManager/ApplicantStatus">Applicant Status</a>
+                    <a class="item @(activeNav == "ApplicantStatus" ? "active" : "")" asp-page="/SessionManager/ApplicantStatus">
+                        Applicant Status
+                        @if (badges.ApplicantsPendingGrant > 0)
+                        {
+                            <span class="nav-badge">@badges.ApplicantsPendingGrant</span>
+                        }
+                    </a>
                     @* Filed under Applicants because a renewal is, technically, an application —
                        and it keeps every "waiting on FCC" screen in one place. No role gate, matching
                        RenewalMonitor's bare [Authorize]; the two must stay in step. *@
-                    <a class="item @(activeNav == "RenewalMonitor" ? "active" : "")" asp-page="/SessionManager/RenewalMonitor">Renewal Monitor</a>
+                    <a class="item @(activeNav == "RenewalMonitor" ? "active" : "")" asp-page="/SessionManager/RenewalMonitor">
+                        Renewal Monitor
+                        @if (badges.RenewalsNeedingAttention > 0)
+                        {
+                            <span class="nav-badge">@badges.RenewalsNeedingAttention</span>
+                        }
+                    </a>
                 </div>
             </div>
             @* Gated to match VeRoster.cshtml.cs's own [Authorize] — the roster is a full VE contact
