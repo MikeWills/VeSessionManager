@@ -140,7 +140,7 @@ public class SessionIngestionService(
             try
             {
                 var applicants = await examToolsClient.GetSessionApplicantsAsync(credentials, remote.Id, cancellationToken);
-                SyncCandidates(created, applicants, remote.ApplicantCount, now, result);
+                await SyncCandidatesAsync(created, applicants, remote.ApplicantCount, now, result, cancellationToken);
                 MarkHistoricalCandidatesGranted(created, result);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
@@ -447,7 +447,7 @@ public class SessionIngestionService(
             try
             {
                 var applicants = await examToolsClient.GetSessionApplicantsAsync(credentials, remote.Id, cancellationToken);
-                SyncCandidates(local, applicants, remote.ApplicantCount, now, result);
+                await SyncCandidatesAsync(local, applicants, remote.ApplicantCount, now, result, cancellationToken);
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -547,7 +547,7 @@ public class SessionIngestionService(
             // No per-session try/catch here, unlike RunAsync's loop: there is only this one session,
             // and the caller (JobRunHistoryLogger) records the failure — nothing else to protect.
             var applicants = await examToolsClient.GetSessionApplicantsAsync(credentials, local.ExamToolsSessionId, cancellationToken);
-            SyncCandidates(local, applicants, remote?.ApplicantCount, now, result);
+            await SyncCandidatesAsync(local, applicants, remote?.ApplicantCount, now, result, cancellationToken);
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);
@@ -680,8 +680,12 @@ public class SessionIngestionService(
             local.ExamToolsSessionId, local.ScheduledStartUtc, remote.Date);
     }
 
-    private void SyncCandidates(Session local, IReadOnlyList<ExamToolsApplicant> applicants, int? remoteApplicantCount, DateTime now, IngestionResult result)
+    private async Task SyncCandidatesAsync(
+        Session local, IReadOnlyList<ExamToolsApplicant> applicants, int? remoteApplicantCount, DateTime now,
+        IngestionResult result, CancellationToken cancellationToken)
     {
+        var countBefore = local.Candidates.Count;
+
         foreach (var applicant in applicants)
         {
             var existing = local.Candidates.FirstOrDefault(c => c.ExamToolsApplicantId == applicant.Id);
@@ -753,6 +757,55 @@ public class SessionIngestionService(
             }
         }
         WithdrawMissingCandidates(local, applicants, remoteApplicantCount, now, result);
+
+        // Only when this sync actually added somebody: a count that did not move cannot have closed a
+        // gap, and skipping the query keeps a steady-state tick from asking about every session in the
+        // feed every five minutes.
+        if (local.Candidates.Count > countBefore)
+        {
+            await ResolveCountMismatchAsync(local, remoteApplicantCount, now, cancellationToken);
+        }
+    }
+
+    /// <summary>
+    /// Closes a <c>CandidateCountMismatch</c> this sync has just fixed.
+    ///
+    /// <para><b>Reconciliation reports and never repairs, deliberately — but nothing closed the report
+    /// once the thing was repaired.</b> <c>ResolvedUtc</c> was stamped only inside
+    /// <c>ReconciliationService.RunAsync</c>, which runs every 24 hours, so pressing "Refresh
+    /// candidates" fixed the roster in front of you and left the alert lit for the rest of the day.
+    /// On the one job whose whole purpose is to be believed when it disagrees with the database, an
+    /// alert outliving its cause is how the bell stops being read.</para>
+    ///
+    /// <para>The test is the negation of the one that raises it: reconciliation flags only when remote
+    /// has <i>more</i> than local (fewer is normal — a withdrawn candidate is removed there and kept
+    /// here), so this closes only when remote no longer exceeds local. Being wrong is cheap in the safe
+    /// direction: <c>RecordAsync</c> sets <c>ResolvedUtc</c> back to null if the next reconciliation
+    /// still sees the mismatch, so a premature close reappears within a day rather than hiding.</para>
+    /// </summary>
+    private async Task ResolveCountMismatchAsync(
+        Session local, int? remoteApplicantCount, DateTime now, CancellationToken cancellationToken)
+    {
+        if (local.ExamToolsSessionId is null
+            || (remoteApplicantCount is { } remoteCount && remoteCount > local.Candidates.Count))
+        {
+            return;
+        }
+
+        var open = await dbContext.ReconciliationFindings
+            .Where(f => f.TeamId == local.TeamId
+                        && f.Kind == ReconciliationFindingKind.CandidateCountMismatch
+                        && f.ExamToolsSessionId == local.ExamToolsSessionId
+                        && f.ResolvedUtc == null)
+            .ToListAsync(cancellationToken);
+
+        foreach (var finding in open)
+        {
+            finding.ResolvedUtc = now;
+            logger.LogInformation(
+                "Reconciliation finding {FindingId} for session {ExamToolsSessionId} closed — ingestion brought this app's roster up to ExamTools' count",
+                finding.Id, local.ExamToolsSessionId);
+        }
     }
 
     /// <summary>
