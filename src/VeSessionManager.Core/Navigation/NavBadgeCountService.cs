@@ -91,8 +91,9 @@ public class NavBadgeCountService(AppDbContext dbContext, TimeProvider timeProvi
 
     /// <summary>
     /// Backs both the nav badge and the Sessions page's "Pending VEC submission" filter — a session
-    /// counts as pending when at least one candidate has reached a terminal state (there's something
-    /// concrete to submit) but the session itself is still NotSubmitted. Cancelled sessions never
+    /// counts as pending when at least one candidate has a result worth submitting -- Granted or
+    /// Failed, see SubmittableStatuses -- but the session itself is still NotSubmitted. A withdrawal
+    /// does not count: it is settled, and there is nothing to file (#423). Cancelled sessions never
     /// count. Same teamIds convention as GetCountsAsync.
     /// </summary>
     public Task<int> CountSessionsPendingVecSubmissionAsync(IReadOnlyList<int>? teamIds, CancellationToken cancellationToken) =>
@@ -100,7 +101,9 @@ public class NavBadgeCountService(AppDbContext dbContext, TimeProvider timeProvi
             .Where(s => (teamIds == null || teamIds.Contains(s.TeamId))
                 && s.Status == SessionStatus.Active
                 && s.VecSubmissionStatus == VecSubmissionStatus.NotSubmitted
-                && s.Candidates.Any(c => CandidateApplicationStatusExtensions.TerminalStatuses.Contains(c.ApplicationStatus)))
+                // Submittable, not merely terminal (#423): a withdrawal is settled but produces no
+                // paperwork, so a session whose only settled candidate withdrew has nothing to send.
+                && s.Candidates.Any(c => CandidateApplicationStatusExtensions.SubmittableStatuses.Contains(c.ApplicationStatus)))
             .CountAsync(cancellationToken);
 
     /// <summary>

@@ -117,8 +117,17 @@
             @* The VEC-submission badge rides on Sessions since the standalone VEC Submission page was
                removed as redundant — that worklist is now the Sessions page's "Pending VEC submission"
                status filter. Titled because a bare number next to "Sessions" wouldn't say what it counts. *@
+            @* When the badge is showing, the link carries the filter that reproduces it: the status,
+               and an explicit "any time" date range (#423). The badge has no date bound, while the
+               page defaults to "Last 7 + Upcoming" — so without this, clicking a chip that says 2
+               could land on a list showing 1, and the honest number looked like the broken one.
+               applied=true is the page's own marker that the query string, not the saved cookie,
+               decides the filters. *@
             <a asp-page="/SessionManager/Index" class="@(activeNav == "Sessions" ? "active" : "")"
-               title="@(badges.SessionsPendingVecSubmission > 0 ? $"{badges.SessionsPendingVecSubmission} session(s) pending VEC submission" : null)">
+               asp-route-applied="@(badges.SessionsPendingVecSubmission > 0 ? "true" : null)"
+               asp-route-status="@(badges.SessionsPendingVecSubmission > 0 ? "PendingVecSubmission" : null)"
+               asp-route-dateRange="@(badges.SessionsPendingVecSubmission > 0 ? "" : null)"
+               title="@(badges.SessionsPendingVecSubmission > 0 ? $"{badges.SessionsPendingVecSubmission} session(s) pending VEC submission — click to see them" : null)">
                 Sessions
                 @if (badges.SessionsPendingVecSubmission > 0)
                 {

@@ -324,7 +324,7 @@ public class IndexModel(
                 || (wantPendingVecSubmission
                     && s.Status == SessionStatus.Active
                     && s.VecSubmissionStatus == VecSubmissionStatus.NotSubmitted
-                    && s.Candidates.Any(c => CandidateApplicationStatusExtensions.TerminalStatuses.Contains(c.ApplicationStatus))));
+                    && s.Candidates.Any(c => CandidateApplicationStatusExtensions.SubmittableStatuses.Contains(c.ApplicationStatus))));
         }
 
         var (dateFromUtc, dateToUtc) = ResolveDateRange(now);

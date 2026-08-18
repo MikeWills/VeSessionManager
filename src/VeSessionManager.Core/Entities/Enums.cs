@@ -55,6 +55,27 @@ public static class CandidateApplicationStatusExtensions
         CandidateApplicationStatus.NotTested
     ];
 
+    /// <summary>
+    /// Statuses that represent <b>a result worth sending to the VEC</b> — deliberately not the same
+    /// set as <see cref="TerminalStatuses"/> (#423).
+    ///
+    /// <para>"Settled, stop chasing" and "there is paperwork to file" are different questions, and
+    /// <c>NotTested</c> answers them differently: a no-show is settled, and produces nothing to
+    /// submit. Counting it as submittable flagged sessions whose only candidate had withdrawn as
+    /// pending submission — permanently, since the only way to clear the flag is to record a
+    /// submission that never happened. Two upcoming sessions showed exactly that on beta, each
+    /// reading "0 candidates" because the roster count excludes the withdrawn row that flagged it.</para>
+    ///
+    /// <para><b>Do not merge this back into <see cref="TerminalStatuses"/>.</b> That set is right for
+    /// its own callers — the withdrawal guard and the scan filters, where a no-show genuinely is
+    /// settled. Two questions, two lists.</para>
+    /// </summary>
+    public static readonly CandidateApplicationStatus[] SubmittableStatuses =
+    [
+        CandidateApplicationStatus.Granted,
+        CandidateApplicationStatus.Failed
+    ];
+
     public static bool IsTerminal(this CandidateApplicationStatus status) => TerminalStatuses.Contains(status);
 }
 

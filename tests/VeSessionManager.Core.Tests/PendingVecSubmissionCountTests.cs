@@ -76,14 +76,56 @@ public class PendingVecSubmissionCountTests
     [Theory]
     [InlineData(CandidateApplicationStatus.Granted)]
     [InlineData(CandidateApplicationStatus.Failed)]
-    [InlineData(CandidateApplicationStatus.NotTested)]
-    public async Task CountsSessions_WithTerminalCandidate_StillNotSubmitted(CandidateApplicationStatus terminalStatus)
+    public async Task CountsSessions_WithSubmittableCandidate_StillNotSubmitted(CandidateApplicationStatus terminalStatus)
     {
         await using var dbContext = CreateContext();
         var team = await SeedTeamAsync(dbContext);
         var (vec, feeConfiguration) = await SeedVecAndFeeConfigAsync(dbContext);
         var session = await SeedSessionAsync(dbContext, team, vec, feeConfiguration);
         AddCandidate(dbContext, session, terminalStatus);
+        await dbContext.SaveChangesAsync();
+
+        var count = await new NavBadgeCountService(dbContext, TimeProvider.System).CountSessionsPendingVecSubmissionAsync([team.Id], CancellationToken.None);
+
+        Assert.Equal(1, count);
+    }
+
+    /// <summary>
+    /// <b>#423.</b> This counted any <i>terminal</i> candidate, and <c>TerminalStatuses</c> includes
+    /// <c>NotTested</c> — a withdrawal. A no-show produces no paperwork, so a session whose only
+    /// settled candidate withdrew has nothing to submit, yet it was flagged permanently and could only
+    /// be cleared by recording a submission that never happened. Found on beta as two upcoming
+    /// sessions showing "0 candidates" in a pending-submission list, the roster count excluding the
+    /// withdrawn rows that put them there.
+    ///
+    /// <para>Sharpened by #419/#420: withdrawal works properly now, so every no-show leaves a
+    /// <c>NotTested</c> row and this would have grown rather than stayed rare.</para>
+    /// </summary>
+    [Fact]
+    public async Task ExcludesSessions_WhereTheOnlySettledCandidateWithdrew()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        var (vec, feeConfiguration) = await SeedVecAndFeeConfigAsync(dbContext);
+        var session = await SeedSessionAsync(dbContext, team, vec, feeConfiguration);
+        AddCandidate(dbContext, session, CandidateApplicationStatus.NotTested);
+        await dbContext.SaveChangesAsync();
+
+        var count = await new NavBadgeCountService(dbContext, TimeProvider.System).CountSessionsPendingVecSubmissionAsync([team.Id], CancellationToken.None);
+
+        Assert.Equal(0, count);
+    }
+
+    /// <summary>A withdrawal alongside a real result changes nothing — the result is still submittable.</summary>
+    [Fact]
+    public async Task CountsSessions_WhereAWithdrawalSitsBesideARealResult()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        var (vec, feeConfiguration) = await SeedVecAndFeeConfigAsync(dbContext);
+        var session = await SeedSessionAsync(dbContext, team, vec, feeConfiguration);
+        AddCandidate(dbContext, session, CandidateApplicationStatus.NotTested);
+        AddCandidate(dbContext, session, CandidateApplicationStatus.Granted);
         await dbContext.SaveChangesAsync();
 
         var count = await new NavBadgeCountService(dbContext, TimeProvider.System).CountSessionsPendingVecSubmissionAsync([team.Id], CancellationToken.None);
