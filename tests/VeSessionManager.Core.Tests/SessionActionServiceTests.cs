@@ -137,24 +137,28 @@ public class SessionActionServiceTests
 
     // ---- MarkCompletedAsync ----
 
+    /// <summary>
+    /// <b>The inversion (#419, Mike's ruling: "If it's not from the feed, it's not truth.").</b> This
+    /// used to assert that completion flipped every non-terminal candidate to Tested — which is how a
+    /// no-show still on the roster got an unwithdrawable Tested and ended up stranded on the Pending
+    /// FCC grant list. Completion now marks the <i>session</i> and nothing about any person: Tested
+    /// comes from ExamTools' graded results (ExamResultSyncService) or a human marking a specific
+    /// candidate, never from a bulk assertion about whoever happened to still be on the roster.
+    /// </summary>
     [Fact]
-    public async Task MarkCompleted_FlipsNonTerminalCandidatesToTested_LeavesTerminalOnesAlone()
+    public async Task MarkCompleted_MarksTheSession_AndNoCandidate()
     {
         await using var dbContext = CreateContext();
         var (_, user, session) = await SeedSessionAsync(dbContext);
         var unmatched = AddCandidate(dbContext, session, CandidateApplicationStatus.Unmatched);
         var received = AddCandidate(dbContext, session, CandidateApplicationStatus.Received);
-        var alreadyFailed = AddCandidate(dbContext, session, CandidateApplicationStatus.Failed);
-        var alreadyNotTested = AddCandidate(dbContext, session, CandidateApplicationStatus.NotTested);
 
         var result = await CreateService(dbContext, new FakeEmailSender()).MarkCompletedAsync(session.Id, user.Id, CancellationToken.None);
 
         Assert.Equal(SessionActionResult.Success, result.Result);
-        Assert.Equal(2, result.CandidatesTested);
-        Assert.True(dbContext.Candidates.Single(c => c.Id == unmatched.Id).Tested);
-        Assert.True(dbContext.Candidates.Single(c => c.Id == received.Id).Tested);
-        Assert.False(dbContext.Candidates.Single(c => c.Id == alreadyFailed.Id).Tested);
-        Assert.False(dbContext.Candidates.Single(c => c.Id == alreadyNotTested.Id).Tested);
+        Assert.False(dbContext.Candidates.Single(c => c.Id == unmatched.Id).Tested);
+        Assert.False(dbContext.Candidates.Single(c => c.Id == received.Id).Tested);
+        Assert.All(dbContext.Candidates, c => Assert.Null(c.TestedUtc));
         var updatedSession = dbContext.Sessions.Single();
         Assert.Equal(Now, updatedSession.TestingCompletedUtc);
         Assert.Equal(user.Id, updatedSession.TestingCompletedByUserId);
@@ -178,8 +182,8 @@ public class SessionActionServiceTests
 
         Assert.Empty(sender.SentMessages);
         Assert.Null((await dbContext.Candidates.FindAsync(withDisclosure.Id))!.FelonyDisclosureInstructionsSentUtc);
-        // The status flip is untouched by the removal.
-        Assert.True((await dbContext.Candidates.FindAsync(withDisclosure.Id))!.Tested);
+        // No status flip either — completion marks the session and nobody else (#419).
+        Assert.False((await dbContext.Candidates.FindAsync(withDisclosure.Id))!.Tested);
     }
 
     /// <summary>

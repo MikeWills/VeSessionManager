@@ -47,29 +47,26 @@ public class SessionActionService(
             .FirstOrDefaultAsync(s => s.Id == sessionId, cancellationToken);
         if (session is null)
         {
-            return new SessionCompletionResult(SessionActionResult.NotFound, 0, 0);
+            return new SessionCompletionResult(SessionActionResult.NotFound, 0);
         }
 
         if (session.TestingCompletedUtc is not null)
         {
-            return new SessionCompletionResult(SessionActionResult.AlreadyDone, 0, 0);
+            return new SessionCompletionResult(SessionActionResult.AlreadyDone, 0);
         }
 
         var now = timeProvider.GetUtcNow().UtcDateTime;
         session.TestingCompletedUtc = now;
         session.TestingCompletedByUserId = userId;
 
-        var candidatesJustTested = session.Candidates
-            .Where(c => !c.ApplicationStatus.IsTerminal())
-            .ToList();
-
-        foreach (var candidate in candidatesJustTested)
-        {
-            candidate.MarkTested(now);
-        }
-
+        // Deliberately touches no candidate (#419 — "If it's not from the feed, it's not truth").
+        // This used to flip every non-terminal candidate to Tested, which is how a no-show still on
+        // the roster — the app cannot know an ExamTools removal is coming — got an unwithdrawable
+        // Tested and was stranded on the Pending FCC grant list. Tested comes from ExamTools' graded
+        // results (ExamResultSyncService) or a human marking a specific candidate, never from a bulk
+        // assertion about whoever happened to still be on the roster when the button was pressed.
         dbContext.AddAuditLog(userId, "SessionMarkedCompleted", nameof(Session), session.Id,
-            $"Session {session.ExamToolsSessionId} marked completed; {candidatesJustTested.Count} candidate(s) flipped to Tested.", now);
+            $"Session {session.ExamToolsSessionId} marked completed. Candidates are marked Tested by graded results from ExamTools, not by this action.", now);
         await dbContext.SaveChangesAsync(cancellationToken);
 
         // Completes the Square order for any already-Paid payment on this session that arrived
@@ -84,9 +81,9 @@ public class SessionActionService(
         var awaitingFelonyInstructions = session.Candidates
             .Count(c => c.HasFelonyDisclosure == true && c.FelonyDisclosureInstructionsSentUtc is null);
 
-        logger.LogInformation("Session {SessionId} marked completed by user {UserId}: {TestedCount} candidate(s) tested, {AwaitingCount} awaiting felony disclosure instructions",
-            session.Id, userId, candidatesJustTested.Count, awaitingFelonyInstructions);
-        return new SessionCompletionResult(SessionActionResult.Success, candidatesJustTested.Count, awaitingFelonyInstructions);
+        logger.LogInformation("Session {SessionId} marked completed by user {UserId}: {AwaitingCount} candidate(s) awaiting felony disclosure instructions",
+            session.Id, userId, awaitingFelonyInstructions);
+        return new SessionCompletionResult(SessionActionResult.Success, awaitingFelonyInstructions);
     }
 
     /// <summary>
@@ -219,6 +216,6 @@ public enum SessionActionResult
 /// instructions. Replaces the old "emails sent" count, which counted an automatic send that no longer
 /// happens (#221) — reporting zero sends forever would read as a failure rather than a design change.
 /// </param>
-public record SessionCompletionResult(SessionActionResult Result, int CandidatesTested, int CandidatesAwaitingFelonyInstructions);
+public record SessionCompletionResult(SessionActionResult Result, int CandidatesAwaitingFelonyInstructions);
 
 public record SessionDeleteResult(SessionActionResult Result, int CandidatesRemoved, int PaymentsRemoved, int VeAssignmentsRemoved);

@@ -39,8 +39,8 @@ public static class MessageTriggerLabels
         MessageTrigger.PaymentUnpaid =>
             "Fires once an exam fee has gone unpaid for the set time. The payment link is marked expired on the same clock, so changing this changes both.",
         MessageTrigger.CandidateTested =>
-            "Fires once a candidate has sat their exam — either when you mark the session completed, or automatically when the graded result arrives from ExamTools, whichever happens first. "
-            + "Note this says nothing about whether they passed; the result is often not known yet.",
+            "Fires once a candidate's graded result arrives from ExamTools — the feed is what says somebody tested, not the session being marked completed. "
+            + "Note this says nothing about whether they passed.",
         MessageTrigger.LicenseGranted =>
             "Fires once the FCC has granted a license from this session. The only point at which {{CallSign}} resolves to anything — everywhere earlier it renders blank. "
             + "A candidate who was already licensed walking in does not fire this: their grant date predates the session.",

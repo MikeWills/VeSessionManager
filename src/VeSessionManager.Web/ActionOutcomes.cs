@@ -59,11 +59,12 @@ public static class ActionOutcomes
     public static ActionOutcome MarkCompleted(SessionCompletionResult result) => result.Result switch
     {
         SessionActionResult.Success when result.CandidatesAwaitingFelonyInstructions > 0 => new(true,
-            $"Session marked completed — {result.CandidatesTested} candidate(s) tested. "
+            "Session marked completed. "
             + $"{result.CandidatesAwaitingFelonyInstructions} candidate(s) declared a felony disclosure "
             + "and have not been sent the FCC instructions — send them from the candidate's row."),
-        SessionActionResult.Success => new(true,
-            $"Session marked completed — {result.CandidatesTested} candidate(s) tested."),
+        // Says what it did and nothing more (#419): it used to claim "N candidate(s) tested", which
+        // was an assertion about whoever was still on the roster, not a fact from the feed.
+        SessionActionResult.Success => new(true, "Session marked completed."),
         SessionActionResult.AlreadyDone => new(false, "Session is already marked completed."),
         SessionActionResult.NotFound => new(false, "Session not found."),
         _ => new(false, "Could not mark session completed.")
