@@ -63,6 +63,35 @@ another would be a permissions bug rather than a stale number. The 30-second win
 finding can linger in the bell briefly; these alerts come from a nightly sweep, so that is well below
 the resolution of the data itself.
 
+## An alert has to end when its cause does
+
+**Found live 2026-08-17.** Reconciliation flagged a candidate-count mismatch on an HRCC session,
+Mike pressed **Refresh candidates**, the roster came back with all three — and the alert stayed lit.
+
+`ReconciliationFinding.ResolvedUtc` was stamped in exactly one place, `ReconciliationService.RunAsync`,
+which is on a 24-hour cadence. `TeamPipeline` — what the refresh button runs — has no reconciliation
+step, by design: the job describes itself as *"Read-only — it reports, it never repairs."* That is the
+right split. The gap was its unwritten converse: **the repair never closed the report.**
+
+This is worse here than on most screens. Reconciliation is the one job whose entire purpose is to be
+believed when it disagrees with the database, and an alert that survives the fix teaches the reader
+that the bell is not worth opening — which is the exact failure the bell replaced.
+
+Ingestion now closes what it fixes (`SessionIngestionService.ResolveCountMismatchAsync`). Three things
+about the shape:
+
+- **It tests the negation of the condition that raises the finding**, not "did I sync this session".
+  Reconciliation flags only when remote has *more* than local, so this closes only when remote no
+  longer exceeds local. Closing on "I synced it" would silence the finding on every poll and it would
+  never be seen again — there is a test pinning that.
+- **It only runs when the sync actually added somebody.** A count that did not move cannot have closed
+  a gap, so a steady-state tick asks nothing of the database.
+- **Being wrong is cheap, in the safe direction.** `RecordAsync` sets `ResolvedUtc` back to null when a
+  finding is seen again, so a premature close reappears within the day rather than hiding something.
+
+The general rule for any future source: whatever repairs the condition should close the alert, and the
+close should re-test the condition rather than assume the repair worked.
+
 ## Adding a second source
 
 1. Query it in `AlertFeedService.GetAsync`, returning `AlertItem`s with the target page and row id.

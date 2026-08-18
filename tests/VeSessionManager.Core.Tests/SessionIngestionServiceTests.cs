@@ -1352,6 +1352,85 @@ public class SessionIngestionServiceTests
     // ---- RefreshSessionCandidatesAsync (session-scoped Detail-page refresh, 2026-08-03) ----
 
     /// <summary>
+    /// <b>The repair closes the report.</b> Reconciliation is deliberately read-only — "it reports, it
+    /// never repairs" — but nothing closed a finding once the thing it reported was fixed, and only
+    /// <c>ReconciliationService.RunAsync</c> ever stamped <c>ResolvedUtc</c>. That job runs every 24
+    /// hours, so pressing Refresh candidates fixed the roster in front of you and left the alert lit
+    /// for the rest of the day. On the one job whose whole purpose is to be believed when it disagrees
+    /// with the database, an alert that outlives its cause is how the bell stops being read.
+    /// </summary>
+    [Fact]
+    public async Task RefreshSessionCandidates_ClosesACountMismatchFindingItHasJustFixed()
+    {
+        await using var dbContext = CreateContext();
+        await SeedVecAndFeeConfigAsync(dbContext);
+        var team = await SeedTeamAsync(dbContext);
+        var client = new FakeExamToolsClient();
+        client.SessionsFor(team.Id).Add(PendingSession(id: "session-1", applicantCount: 1));
+        client.ApplicantsFor(team.Id)["session-1"] = [Applicant(id: "a1")];
+        await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+
+        // Reconciliation saw ExamTools reporting two while this app had one, and said so.
+        dbContext.ReconciliationFindings.Add(new ReconciliationFinding
+        {
+            TeamId = team.Id,
+            Kind = ReconciliationFindingKind.CandidateCountMismatch,
+            ExamToolsSessionId = "session-1",
+            SessionDateUtc = SessionStart,
+            Detail = "ExamTools reports 2 applicant(s); this app has 1.",
+            FirstSeenUtc = Now,
+            LastSeenUtc = Now
+        });
+        await dbContext.SaveChangesAsync();
+
+        // The missing applicant arrives, which is what the refresh is for.
+        client.SessionsFor(team.Id).Clear();
+        client.SessionsFor(team.Id).Add(PendingSession(id: "session-1", applicantCount: 2));
+        client.ApplicantsFor(team.Id)["session-1"] = [Applicant(id: "a1"), Applicant(id: "a2", email: "second@example.com")];
+
+        var target = dbContext.Sessions.Single(s => s.ExamToolsSessionId == "session-1");
+        await CreateService(dbContext, client).RefreshSessionCandidatesAsync(team, target.Id, CancellationToken.None);
+
+        var finding = dbContext.ReconciliationFindings.Single();
+        Assert.NotNull(finding.ResolvedUtc);
+    }
+
+    /// <summary>
+    /// And it must not close one that is still true. Closing on "I synced this session" rather than on
+    /// "the counts now agree" would silence the finding on every poll and never show it again.
+    /// </summary>
+    [Fact]
+    public async Task RefreshSessionCandidates_LeavesACountMismatchThatIsStillTrue()
+    {
+        await using var dbContext = CreateContext();
+        await SeedVecAndFeeConfigAsync(dbContext);
+        var team = await SeedTeamAsync(dbContext);
+        var client = new FakeExamToolsClient();
+        // ExamTools claims three, but its applicant list only ever hands back one — the shape of a real
+        // mismatch, and the reason WithdrawMissingCandidates refuses to act on it either.
+        client.SessionsFor(team.Id).Add(PendingSession(id: "session-1", applicantCount: 3));
+        client.ApplicantsFor(team.Id)["session-1"] = [Applicant(id: "a1")];
+        await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+
+        dbContext.ReconciliationFindings.Add(new ReconciliationFinding
+        {
+            TeamId = team.Id,
+            Kind = ReconciliationFindingKind.CandidateCountMismatch,
+            ExamToolsSessionId = "session-1",
+            SessionDateUtc = SessionStart,
+            Detail = "ExamTools reports 3 applicant(s); this app has 1.",
+            FirstSeenUtc = Now,
+            LastSeenUtc = Now
+        });
+        await dbContext.SaveChangesAsync();
+
+        var target = dbContext.Sessions.Single(s => s.ExamToolsSessionId == "session-1");
+        await CreateService(dbContext, client).RefreshSessionCandidatesAsync(team, target.Id, CancellationToken.None);
+
+        Assert.Null(dbContext.ReconciliationFindings.Single().ResolvedUtc);
+    }
+
+    /// <summary>
     /// The key behavioral guarantee versus RunAsync: a session-scoped refresh must never run
     /// cancellation detection or create sessions. Another local Active session that happens to be
     /// absent from the feed at that moment would be flipped to Cancelled by RunAsync's diff — a
