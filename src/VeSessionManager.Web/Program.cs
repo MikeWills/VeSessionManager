@@ -117,6 +117,9 @@ builder.Services.AddScoped<MessageThresholdService>();
 builder.Services.AddScoped<MessageRuleAdminService>();
 
 builder.Services.AddScoped<VecSubmissionService>();
+// Reads and reports only — it never posts to ARRL. The submitting service is a separate
+// registration (#197) so nothing can reach ARRL by resolving the thing that builds the preview.
+builder.Services.AddScoped<ArrlSubmissionPreviewService>();
 builder.Services.AddScoped<VolunteerExaminerReportService>();
 builder.Services.AddScoped<SessionStatsService>();
 builder.Services.AddScoped<VolunteerExaminerDirectoryService>();
