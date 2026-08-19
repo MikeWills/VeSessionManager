@@ -362,7 +362,10 @@ public class DetailModel(
             .Include(s => s.Vec)
             .Include(s => s.Team)
             .Include(s => s.FeeConfiguration)
-            .Include(s => s.Candidates).ThenInclude(c => c.Payments)
+            // Refunds come with the payments because GetFeeSummary nets them out of what is owed
+            // to the VEC. An unloaded collection is empty rather than absent, so leaving this off
+            // silently restores the old, too-high remit figure.
+            .Include(s => s.Candidates).ThenInclude(c => c.Payments).ThenInclude(p => p.Refunds)
             // The hand-composed sends behind each candidate's Email history line (#144).
             .Include(s => s.Candidates).ThenInclude(c => c.EmailSends)
             .Include(s => s.SessionVolunteerExaminers).ThenInclude(l => l.VolunteerExaminer).ThenInclude(v => v.VecAccreditations)
