@@ -54,6 +54,11 @@ public class TeamPipelineTests
         public Task<IReadOnlyList<ExamToolsVe>> GetSessionVeRosterAsync(ExamToolsCredentials credentials, string examToolsSessionId, CancellationToken cancellationToken) =>
             Task.FromResult<IReadOnlyList<ExamToolsVe>>([]);
 
+        // Not served by this fake: the VEC archive is only reached from the ARRL submission
+        // path (#197), which none of these tests exercise.
+        public Task<VecArchiveDownload> DownloadVecArchiveAsync(ExamToolsCredentials credentials, string examToolsSessionId, string vecCode, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
         public Task<ExamToolsApplicantDetail?> GetApplicantDetailAsync(ExamToolsCredentials credentials, string examToolsSessionId, string applicantId, CancellationToken cancellationToken) =>
             Task.FromResult<ExamToolsApplicantDetail?>(null);
     }
@@ -277,6 +282,11 @@ public class TeamPipelineTests
 
         public Task<IReadOnlyList<ExamToolsVe>> GetSessionVeRosterAsync(ExamToolsCredentials credentials, string examToolsSessionId, CancellationToken cancellationToken) =>
             throw Boom();
+
+        // Not served by this fake: the VEC archive is only reached from the ARRL submission
+        // path (#197), which none of these tests exercise.
+        public Task<VecArchiveDownload> DownloadVecArchiveAsync(ExamToolsCredentials credentials, string examToolsSessionId, string vecCode, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
 
         public Task<ExamToolsApplicantDetail?> GetApplicantDetailAsync(ExamToolsCredentials credentials, string examToolsSessionId, string applicantId, CancellationToken cancellationToken) =>
             throw Boom();

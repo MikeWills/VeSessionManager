@@ -97,6 +97,87 @@ public sealed class ExamToolsClient : IExamToolsClient, IDisposable
         GetJsonAsync<ExamToolsApplicantDetail>(
             credentials, $"/api/veUser/sessions/{Uri.EscapeDataString(examToolsSessionId)}/applicant/{Uri.EscapeDataString(applicantId)}", cancellationToken);
 
+    /// <summary>
+    /// The one endpoint here that returns bytes rather than JSON, so it cannot go through
+    /// <see cref="GetJsonAsync{T}"/> — and must not, for a reason beyond the payload type: that
+    /// helper reads 401/403 as an expired cookie and recovers by re-authenticating, while <b>a 403
+    /// here is a legitimate answer</b> meaning the session is not finished. Re-logging in would retry,
+    /// collect the same 403, and report an authentication problem for something that is nothing of
+    /// the kind.
+    ///
+    /// <para>An HTML body still means "signed out" (#412) and still takes one forced re-login and one
+    /// retry, so that recovery is duplicated here deliberately rather than shared: the two helpers
+    /// agree on HTML and disagree on 403, and collapsing them would lose the disagreement.</para>
+    /// </summary>
+    public async Task<VecArchiveDownload> DownloadVecArchiveAsync(
+        ExamToolsCredentials credentials, string examToolsSessionId, string vecCode, CancellationToken cancellationToken)
+    {
+        var relativeUrl =
+            $"/api/veUser/sessions/{Uri.EscapeDataString(examToolsSessionId)}" +
+            $"/vecDownload/ExamSession_{Uri.EscapeDataString(vecCode.ToLowerInvariant())}_archive.zip";
+
+        var teamSession = GetOrCreateTeamSession(credentials.TeamId, credentials.BaseUrl);
+        await EnsureLoggedInAsync(teamSession, credentials, forceRelogin: false, cancellationToken);
+
+        var response = await teamSession.HttpClient.GetAsync(relativeUrl, cancellationToken);
+        if (IsHtmlResponse(response))
+        {
+            _logger.LogInformation(
+                "ExamTools returned an HTML body for {RelativeUrl} (team {TeamId}) — session cookie likely expired, re-authenticating",
+                relativeUrl, credentials.TeamId);
+            await EnsureLoggedInAsync(teamSession, credentials, forceRelogin: true, cancellationToken);
+            response.Dispose();
+            response = await teamSession.HttpClient.GetAsync(relativeUrl, cancellationToken);
+        }
+
+        if (response.StatusCode == HttpStatusCode.Forbidden
+            && TryReadErrorMessage(await response.Content.ReadAsStringAsync(cancellationToken)) is { } message)
+        {
+            _logger.LogInformation(
+                "ExamTools declined the VEC archive for session {ExamToolsSessionId} (team {TeamId}): {Message}",
+                examToolsSessionId, credentials.TeamId, message);
+            return VecArchiveDownload.SessionNotComplete(message);
+        }
+
+        response.EnsureSuccessStatusCode();
+
+        // Straight from Content-Disposition, never from the request path — the filename in the URL is
+        // the generic ExamSession_{vec}_archive.zip, identical for every session of every team.
+        var fileName = response.Content.Headers.ContentDisposition?.FileName?.Trim('"');
+        var content = await response.Content.ReadAsByteArrayAsync(cancellationToken);
+
+        _logger.LogInformation(
+            "Downloaded the VEC archive for session {ExamToolsSessionId} (team {TeamId}): {FileName}, {ByteCount} bytes",
+            examToolsSessionId, credentials.TeamId, fileName ?? "(no filename header)", content.Length);
+
+        return VecArchiveDownload.Succeeded(content, fileName);
+    }
+
+    /// <summary>
+    /// Content type only — unlike <see cref="IsHtml"/>, which also sniffs the first character. This
+    /// endpoint's success case is a multi-hundred-kilobyte binary, and reading it into a string to
+    /// look at one character would be the wrong trade.
+    /// </summary>
+    private static bool IsHtmlResponse(HttpResponseMessage response) =>
+        response.Content.Headers.ContentType?.MediaType?.Contains("html", StringComparison.OrdinalIgnoreCase) == true;
+
+    /// <summary>ExamTools' structured error shape, e.g. <c>{"type":"ForbiddenError","message":"Exam Session needs to be completed",…}</c>. Null when the body is not that, which leaves the caller to treat the status as unexpected.</summary>
+    private static string? TryReadErrorMessage(string body)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(body);
+            return document.RootElement.ValueKind == JsonValueKind.Object
+                   && document.RootElement.TryGetProperty("message", out var message)
+                ? message.GetString()
+                : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
     /// <param name="treatNotFoundAsEmpty">
     /// Return default(T) on a 404 instead of throwing. Only for endpoints where "not found" is a
     /// legitimate state rather than an error — see GetSessionApplicantsAsync.

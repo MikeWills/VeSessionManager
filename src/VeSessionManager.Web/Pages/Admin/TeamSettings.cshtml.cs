@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
@@ -126,6 +126,24 @@ public class TeamSettingsModel(AppDbContext dbContext, UserManager<User> userMan
         SetStatus(result, veEmailSubscriptionsEnabled
             ? "VEs can now subscribe to session email for this team."
             : "VEs can no longer subscribe to session email for this team.");
+        return RedirectToPage(new { teamId = auth.Value.Team.Id });
+    }
+
+    /// <summary>
+    /// How this team fills in ARRL's session upload form (#197). The whole panel posts at once, so
+    /// unlike the credential handlers there is no "blank means leave it alone" rule to preserve.
+    /// </summary>
+    public async Task<IActionResult> OnPostUpdateArrlSubmissionAsync(
+        string? namePostfix, ArrlSubmissionEmailSource emailSource, string? email,
+        string? location, ArrlPaymentMethod paymentMethod, string? note)
+    {
+        var auth = await AuthorizeAsync();
+        if (auth is null) return Forbid();
+
+        var result = await teamSettingsService.UpdateArrlSubmissionAsync(
+            auth.Value.Team.Id, namePostfix, emailSource, email, location, paymentMethod, note,
+            auth.Value.User.Id, CancellationToken.None);
+        SetStatus(result, "ARRL submission settings updated.");
         return RedirectToPage(new { teamId = auth.Value.Team.Id });
     }
 
@@ -257,6 +275,13 @@ public class TeamSettingsModel(AppDbContext dbContext, UserManager<User> userMan
             TeamActionResult.InvalidSmtpHost =>
                 "That SMTP server name wasn't accepted. It must be a public mail server's hostname — "
                 + "not a URL, and not an address inside this network.",
+
+            TeamActionResult.ArrlSubmissionLocationRequired =>
+                "ARRL needs an exam session location. Enter \"Remote Online\" for a remote session, "
+                + "or the city and state where you meet.",
+
+            TeamActionResult.ArrlSubmissionEmailRequired =>
+                "You chose a team email address for ARRL submissions but didn't enter one.",
 
             TeamActionResult.LogoTooLarge =>
                 $"That logo is larger than {TeamSettingsService.MaxLogoBytes / 1024} KB.",

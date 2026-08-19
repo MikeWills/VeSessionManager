@@ -1,4 +1,4 @@
-﻿@page
+@page
 @using VeSessionManager.Core.Entities
 @model VeSessionManager.Web.Pages.Admin.TeamSettingsModel
 @{
@@ -189,6 +189,73 @@ else
             <div class="field" style="max-width:160px;"><label for="purgeUnpaidLinkDays">Purge unpaid links after (days)</label><input id="purgeUnpaidLinkDays" name="purgeUnpaidLinkDays" type="number" min="1" value="@Model.Team.PurgeUnpaidLinkDays" required /></div>
             <p class="session-sub">An Unpaid payment's Square link is deleted once it's been outstanding this many days — Square links never auto-expire otherwise.</p>
             <button type="submit" class="btn-primary btn-sm" style="margin-top:8px;">Save</button>
+        </form>
+
+        <div class="section-head" style="margin-top:28px;"><h2>ARRL submissions</h2></div>
+        @* ARRL only, deliberately: every VEC has its own process and there is no shared shape to
+           abstract over, so this panel is not "VEC submissions" with ARRL as one case. Nothing here
+           has a default value — "Remote Online" is right for both teams on this deployment and would
+           still be wrong to prefill, because a team that meets in person and never opened this screen
+           would then file "Remote Online" with ARRL and nothing would look broken. *@
+        <form method="post" asp-page-handler="UpdateArrlSubmission">
+            <input type="hidden" name="TeamId" value="@Model.TeamId" />
+
+            <div class="field" style="max-width:420px;">
+                <label for="arrlNamePostfix">Add after the session lead's name</label>
+                <input id="arrlNamePostfix" name="namePostfix" type="text" value="@Model.Team.ArrlSubmissionNamePostfix" />
+            </div>
+            <p class="session-sub">
+                ARRL's form asks for one name. This app fills in whoever led the session in ExamTools, then
+                adds this text exactly as typed &mdash; no space is inserted. Leave it blank to file the
+                lead's name on its own. Example: <code>/Nick Booth (CC)/HRCC VE Team</code>.
+            </p>
+
+            <div class="field" style="max-width:420px;">
+                <label for="arrlEmailSource">Email address to give ARRL</label>
+                <select id="arrlEmailSource" name="emailSource">
+                    <option value="@ArrlSubmissionEmailSource.SessionLead" selected="@(Model.Team.ArrlSubmissionEmailSource == ArrlSubmissionEmailSource.SessionLead)">The session lead's own address</option>
+                    <option value="@ArrlSubmissionEmailSource.TeamAddress" selected="@(Model.Team.ArrlSubmissionEmailSource == ArrlSubmissionEmailSource.TeamAddress)">A team address</option>
+                </select>
+            </div>
+            <div class="field" style="max-width:420px;">
+                <label for="arrlEmail">Team address</label>
+                <input id="arrlEmail" name="email" type="email" value="@Model.Team.ArrlSubmissionEmail" />
+            </div>
+            <p class="session-sub">Only used when "a team address" is chosen above.</p>
+
+            <div class="field" style="max-width:420px;">
+                <label for="arrlLocation">Exam session location</label>
+                <input id="arrlLocation" name="location" type="text" value="@Model.Team.ArrlSubmissionLocation" required />
+            </div>
+            <p class="session-sub">
+                <code>Remote Online</code> for a remote session. If you test in person, ARRL wants city and
+                state (or city and country outside the USA).
+            </p>
+
+            <div class="field" style="max-width:420px;">
+                <label for="arrlPaymentMethod">Method of payment for test fees</label>
+                <select id="arrlPaymentMethod" name="paymentMethod">
+                    <option value="@ArrlPaymentMethod.MailIn" selected="@(Model.Team.ArrlSubmissionPaymentMethod == ArrlPaymentMethod.MailIn)">Mail in payment</option>
+                    <option value="@ArrlPaymentMethod.PhoneIn" selected="@(Model.Team.ArrlSubmissionPaymentMethod == ArrlPaymentMethod.PhoneIn)">Phone in payment</option>
+                    <option value="@ArrlPaymentMethod.CreditCardOnFile" selected="@(Model.Team.ArrlSubmissionPaymentMethod == ArrlPaymentMethod.CreditCardOnFile)">Credit card on file with VEC</option>
+                </select>
+            </div>
+
+            <div class="field" style="max-width:640px;">
+                <label for="arrlNote">Starting text for the Notes field</label>
+                <textarea id="arrlNote" name="note" rows="3">@Model.Team.ArrlSubmissionNote</textarea>
+            </div>
+            <p class="session-sub">
+                Prefilled into every submission and editable before it is sent, so put what you write most
+                times here. Leave it blank if you usually send nothing.
+            </p>
+
+            @if (!Model.Team.IsArrlSubmissionConfigured)
+            {
+                <p class="session-sub"><strong>Not set up yet.</strong> A location, a payment method and an email choice are all needed before a session can be filed with ARRL from this app.</p>
+            }
+
+            <button type="submit" class="btn-primary btn-sm" style="margin-top:12px;">Save ARRL submissions</button>
         </form>
 
         <div class="section-head" style="margin-top:28px;"><h2>Email logo</h2></div>

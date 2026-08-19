@@ -50,6 +50,11 @@ public class ReconciliationServiceTests
             throw new NotSupportedException("Not used by ReconciliationService.");
         public Task<IReadOnlyList<ExamToolsVe>> GetSessionVeRosterAsync(ExamToolsCredentials c, string s, CancellationToken ct) =>
             throw new NotSupportedException("Not used by ReconciliationService.");
+        // Not served by this fake: the VEC archive is only reached from the ARRL submission
+        // path (#197), which none of these tests exercise.
+        public Task<VecArchiveDownload> DownloadVecArchiveAsync(ExamToolsCredentials credentials, string examToolsSessionId, string vecCode, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
         public Task<ExamToolsApplicantDetail?> GetApplicantDetailAsync(ExamToolsCredentials c, string s, string a, CancellationToken ct) =>
             throw new NotSupportedException("Not used by ReconciliationService.");
     }

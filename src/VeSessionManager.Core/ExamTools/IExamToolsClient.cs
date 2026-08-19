@@ -38,4 +38,18 @@ public interface IExamToolsClient
 
     /// <summary>One applicant's full detail, including graded exam results — see ExamToolsApplicantDetail. Handle results per the PII logging rules, same as GetSessionApplicantsAsync.</summary>
     Task<ExamToolsApplicantDetail?> GetApplicantDetailAsync(ExamToolsCredentials credentials, string examToolsSessionId, string applicantId, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// One session's <b>VEC archive</b> — the zip a Session Manager uploads to their VEC (issue #197).
+    /// The only endpoint on this interface that returns bytes; <paramref name="vecCode"/> is
+    /// <c>Vec.MatchCode</c>, lower-cased by the implementation.
+    ///
+    /// <para>Contains the session's signed paperwork, so the bytes are <b>candidate PII</b> — never
+    /// log them, and see docs/pii-purge.md before storing them anywhere.</para>
+    ///
+    /// <para>A session ExamTools has not marked complete answers
+    /// <see cref="VecArchiveDownloadOutcome.SessionNotComplete"/> rather than throwing: it is the
+    /// expected, self-correcting case, and the operator can fix it themselves.</para>
+    /// </summary>
+    Task<VecArchiveDownload> DownloadVecArchiveAsync(ExamToolsCredentials credentials, string examToolsSessionId, string vecCode, CancellationToken cancellationToken);
 }

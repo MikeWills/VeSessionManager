@@ -45,6 +45,11 @@ public class VolunteerExaminerSyncServiceTests
                 RostersByTeamAndSession.TryGetValue((credentials.TeamId, examToolsSessionId), out var list) ? list : []);
         }
 
+        // Not served by this fake: the VEC archive is only reached from the ARRL submission
+        // path (#197), which none of these tests exercise.
+        public Task<VecArchiveDownload> DownloadVecArchiveAsync(ExamToolsCredentials credentials, string examToolsSessionId, string vecCode, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
         public Task<ExamToolsApplicantDetail?> GetApplicantDetailAsync(ExamToolsCredentials credentials, string examToolsSessionId, string applicantId, CancellationToken cancellationToken) =>
             throw new NotSupportedException("Not used by VolunteerExaminerSyncService.");
     }
