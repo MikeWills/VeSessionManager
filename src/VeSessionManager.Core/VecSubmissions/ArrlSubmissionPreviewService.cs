@@ -186,6 +186,42 @@ public class ArrlSubmissionPreviewService(
             .Any(p => p.Amount == youthAmount || p.SquareAmountPaidUsd == youthAmount);
     }
 
+    /// <summary>
+    /// Fetches the archive again at submission time, for the bytes this time rather than a
+    /// description of them.
+    ///
+    /// <para><b>Re-fetched rather than carried over from the preview.</b> A page render and a confirm
+    /// are two requests, and holding several hundred kilobytes across them to save one call would
+    /// trade a real cost for a false economy — and would file whatever the archive looked like when
+    /// the page was opened rather than when the button was pressed.</para>
+    /// </summary>
+    public async Task<ArrlSubmissionFile?> FetchArchiveFileAsync(int sessionId, CancellationToken cancellationToken)
+    {
+        var session = await dbContext.Sessions
+            .Include(s => s.Team)
+            .Include(s => s.Vec)
+            .FirstOrDefaultAsync(s => s.Id == sessionId, cancellationToken);
+
+        if (session is null || !session.Team.IsExamToolsConfigured)
+        {
+            return null;
+        }
+
+        var credentials = ExamToolsCredentials.For(session.Team, examToolsOptions.Value.BaseUrl);
+        var download = await examToolsClient.DownloadVecArchiveAsync(
+            credentials, session.ExamToolsSessionId, session.Vec.MatchCode, cancellationToken);
+
+        if (download.Outcome != VecArchiveDownloadOutcome.Succeeded || download.Content is null)
+        {
+            return null;
+        }
+
+        var fileName = download.FileName
+                       ?? VecArchiveFileName.Build(session.Team.ExamToolsTeamCode!, session.ScheduledStartUtc, session.Vec.MatchCode);
+
+        return new ArrlSubmissionFile(fileName, download.Content);
+    }
+
     private async Task<ArrlSubmissionPreview> AttachArchiveAsync(
         ArrlSubmissionPreview preview, Session session, Team team, CancellationToken cancellationToken)
     {

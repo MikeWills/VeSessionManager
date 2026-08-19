@@ -30,6 +30,10 @@ public class AppDbContext(DbContextOptions<AppDbContext> options, IDataProtectio
     public DbSet<EmailTemplate> EmailTemplates => Set<EmailTemplate>();
     public DbSet<EmailSettings> EmailSettings => Set<EmailSettings>();
     public DbSet<FeeConfiguration> FeeConfigurations => Set<FeeConfiguration>();
+    /// <summary>What was filed with ARRL-VEC and what came back (#197). A row exists even for an
+    /// unconfirmed attempt — that is the case it matters most for.</summary>
+    public DbSet<ArrlVecSubmission> ArrlVecSubmissions => Set<ArrlVecSubmission>();
+
     public DbSet<Session> Sessions => Set<Session>();
     public DbSet<Candidate> Candidates => Set<Candidate>();
     public DbSet<Payment> Payments => Set<Payment>();

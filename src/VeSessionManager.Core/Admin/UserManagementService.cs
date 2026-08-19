@@ -577,6 +577,7 @@ public class UserManagementService(UserManager<User> userManager, AppDbContext d
         await CheckAsync("fee configuration created", dbContext.FeeConfigurations.Where(f => f.CreatedByUserId == userId).Select(f => f.Id));
         await CheckAsync("session marked complete", dbContext.Sessions.Where(s => s.TestingCompletedByUserId == userId).Select(s => s.Id));
         await CheckAsync("session submitted to a VEC", dbContext.Sessions.Where(s => s.VecSubmittedByUserId == userId).Select(s => s.Id));
+        await CheckAsync("session filed with ARRL-VEC", dbContext.ArrlVecSubmissions.Where(a => a.SubmittedByUserId == userId).Select(a => a.Id));
         await CheckAsync("session fee override", dbContext.Sessions.Where(s => s.RetainedAmountOverrideByUserId == userId).Select(s => s.Id));
         await CheckAsync("candidate result recorded", dbContext.Candidates.Where(c => c.ResultMarkedByUserId == userId).Select(c => c.Id));
         await CheckAsync("payment refund flagged", dbContext.Payments.Where(p => p.RefundRequestedByUserId == userId).Select(p => p.Id));
