@@ -184,7 +184,7 @@ public class Session
     public bool HasEnded(DateTime now) => ScheduledStartUtc.AddMinutes(DurationMinutes) <= now;
 
     /// <summary>
-    /// Session-level fee reconciliation — TotalCollected sums every Paid payment's Amount across
+    /// Session-level fee reconciliation — TotalCollected sums every Paid payment's Amount **net of any refund against it** across
     /// every candidate in the session (only money actually in hand can be remitted). Without an
     /// override, TotalRemitToVec is the sum of each individual payment's own
     /// FeeConfiguration.RemitToVecAmount (the normal per-candidate default, clamped per-payment so a
@@ -195,13 +195,52 @@ public class Session
     /// </summary>
     public SessionFeeSummary GetFeeSummary()
     {
-        var paidPayments = Candidates.SelectMany(c => c.Payments).Where(p => p.Status == PaymentStatus.Paid).ToList();
-        var totalCollected = paidPayments.Sum(p => p.Amount);
+        var netAmounts = Candidates
+            .SelectMany(c => c.Payments)
+            .Where(p => p.Status == PaymentStatus.Paid)
+            .Select(NetOfRefunds)
+            .ToList();
+
+        var totalCollected = netAmounts.Sum();
         var totalRemitToVec = RetainedAmountOverride is { } overrideAmount
             ? Math.Max(0m, totalCollected - overrideAmount)
-            : paidPayments.Sum(p => FeeConfiguration.RemitToVecAmount(p.Amount) ?? 0m);
+            : netAmounts.Sum(amount => FeeConfiguration.RemitToVecAmount(amount) ?? 0m);
 
         return new SessionFeeSummary(totalCollected, totalCollected - totalRemitToVec, totalRemitToVec);
+    }
+
+    /// <summary>
+    /// What a payment actually left with the team, once refunds are taken off.
+    ///
+    /// <para><b>A refunded fee is not owed to the VEC</b> (Mike, 2026-08-19): "when we refund, ARRL
+    /// does not get that fee — the person has not tested." This used to count a refunded payment in
+    /// full, because a refund deliberately does not move a <see cref="Payment"/> off
+    /// <see cref="PaymentStatus.Paid"/> (see #375 — otherwise the "unpaid and no link" scan would
+    /// issue the candidate a fresh checkout link) and the summary read Paid as "money the team
+    /// kept".</para>
+    ///
+    /// <para><b>Netted rather than excluded</b>, because the one partial refund this team issues is
+    /// someone who paid the adult fee and turned out to qualify as youth. They <i>did</i> test, so
+    /// the VEC is owed the youth-rate amount, not nothing — and $15 less a $10 refund lands on the
+    /// same $5 the youth rate would have charged, which then falls under the retained cap on its own.
+    /// One rule, both cases.</para>
+    ///
+    /// <para><b>Anything not rejected or failed counts.</b> Deciding to refund somebody is deciding
+    /// not to remit for them, and a card refund sits at <c>Pending</c> for up to 14 days — long
+    /// enough to file a session in the middle of one. A refund Square turned down means the money
+    /// stayed, so it is owed after all.</para>
+    ///
+    /// <para>⚠️ <b>Requires <c>Payment.Refunds</c> to be loaded.</b> An unloaded collection is empty,
+    /// not absent, so a caller that forgets the Include gets the old, too-high figure back with
+    /// nothing to indicate it.</para>
+    /// </summary>
+    private static decimal NetOfRefunds(Payment payment)
+    {
+        var refunded = payment.Refunds
+            .Where(r => r.Status is not (RefundStatus.Rejected or RefundStatus.Failed))
+            .Sum(r => r.AmountUsd);
+
+        return Math.Max(0m, payment.Amount - refunded);
     }
 }
 

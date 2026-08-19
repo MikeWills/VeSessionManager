@@ -153,12 +153,14 @@ public class ArrlSubmissionPreviewService(
         var warnings = new List<string>();
         var paid = session.Candidates.SelectMany(c => c.Payments).Where(p => p.Status == PaymentStatus.Paid).ToList();
 
-        // A refund deliberately does not move a payment off Paid (#375) — otherwise the "unpaid and
-        // no link" scan would issue the candidate a fresh checkout link — so the total still counts it.
-        var refunded = paid.Count(p => p.Refunds.Count > 0);
+        // Refunds are netted out of the amount now (Mike, 2026-08-19: a refunded fee is not owed to
+        // the VEC, because the person did not test). Still surfaced, because a total that is lower
+        // than the session's headcount implies is exactly the figure somebody will query — this says
+        // why before they ask, rather than warning them about something the code has handled.
+        var refunded = paid.Count(p => p.Refunds.Any(r => r.Status is not (RefundStatus.Rejected or RefundStatus.Failed)));
         if (refunded > 0)
         {
-            warnings.Add($"{refunded} payment(s) feeding this total have a refund against them, which does not reduce the amount above.");
+            warnings.Add($"{refunded} refunded payment(s) have been left out of this amount — a refunded candidate did not test, so nothing is owed for them.");
         }
 
         // Square reported a different figure than was owed — the out-of-band youth rate is the routine
