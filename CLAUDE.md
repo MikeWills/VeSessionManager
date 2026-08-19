@@ -126,6 +126,32 @@ would be pure duplication — and goes straight to `CHANGELOG.md` instead. Non-p
 redesigns, hardening passes) start here and move to `CHANGELOG.md` once the section is at/over the
 cap and a newer entry needs to be added; oldest goes first.
 
+- **Sessions are filed with ARRL-VEC from the app now (2026-08-19).** Issue #197, five stacked PRs.
+  See `docs/arrl-vec-submission.md`. **ARRL only, and that is the design rather than a first step** —
+  every VEC has its own process, so a session under any other finds no submitter and is told so.
+  Three things worth carrying forward. **There is no sandbox and no dry-run**, so the safeguards are
+  the feature: the endpoint is configuration and blank outside production (a source scan fails the
+  build if the host appears anywhere else), the preview is the *only* route to the POST rather than a
+  mode beside it, and the Worker deliberately cannot reach ARRL at all. **Success is recognized and
+  failure deliberately is not** — the only positive signal is the filename we posted echoed back, and
+  everything else is `Unknown` and goes to a human, because nobody has ever seen ARRL's failure page
+  and a matcher built from zero samples would guess in the expensive direction. And **there is no
+  retry**: a fire-and-forget form POST supports neither query-before-create nor an idempotency key, so
+  absence of a receipt is not absence of a filing, and an earlier unconfirmed attempt blocks a second
+  press — which matters because an `Unknown` outcome leaves the session unsubmitted, so nothing else
+  would stop one.
+
+- **A refunded exam fee was being counted as owed to the VEC (2026-08-19).** PR #430, found by Mike
+  while reviewing #197: "when we refund, ARRL does not get that fee — the person has not tested."
+  `GetFeeSummary()` had overstated "Remit to VEC" on session detail for any session with a refund
+  since refunds shipped four days earlier. **The premise was wrong, not the code**: a refund
+  deliberately does not move a Payment off `Paid` (#375, or the "unpaid and no link" scan reissues a
+  checkout link), and the summary read `Paid` as "money the team kept". Netted rather than excluded,
+  because the one partial refund this team issues is somebody who paid the adult fee and turned out to
+  be youth — they *did* test. ⚠️ **It only works if `Payment.Refunds` is loaded**, and session detail
+  was not loading it: an unloaded EF collection is empty rather than absent, so the fix would have
+  silently restored the old figure with nothing to indicate it.
+
 - **Rules can post to Discord, and carry their own Reply-To (2026-08-17).** Issue #401, PR4 — the last
   of it. See `docs/trigger-points.md`. Three things worth carrying forward: **nothing per-person can
   reach a channel post because that path builds no `EmailMessage` at all** — the unsubscribe and
@@ -230,40 +256,6 @@ cap and a newer entry needs to be added; oldest goes first.
   hiding the other findings answers a narrower question than the one asked and a stale id then
   costs nothing (nothing is looked up by it); and **the bell renders for every role, empty state and
   all** — a control that appears and disappears by role is one nobody learns to look at.
-
-- **A TeamAdmin could not see anything the background jobs did (2026-08-15).** Issue #86, part 3 and
-  the last of it. See `docs/audit-log.md`. `AuditLog.UserId` is null whenever a job wrote the row, and
-  `ScopeAuditLog` narrowed a TeamAdmin to "actions taken by users on my team" — so every automated
-  entry (candidates withdrawn from the feed, PII purged, Zoom/Discord cancellations, results
-  auto-marked) matched nothing and was **invisible, with nothing on the page to say so**. Not filtered
-  out as a decision: unreachable, because the row carried nothing to filter on. New nullable
-  `AuditLog.TeamId`, set at the background call sites only — a user-attributed row already scopes
-  through the person who acted, and filling both would make one question answerable two ways. Three
-  things worth carrying forward: **null means "not attributable", not "no team"** — anything acting on
-  a `VolunteerExaminer` stays null on purpose, since a VE is global here and belongs to no single
-  team; **the backfill is the difference between fixing this and fixing it going forward**, because
-  the entries anyone wants to review are already written, so the migration resolves a team for old
-  Session/Candidate/Payment rows in SQL; and **that SQL is invisible to both the compiler and EF
-  InMemory** — a backfill that resolves nothing looks exactly like one with nothing to do, which is
-  why it is driven against real SQLite. Parts 1 and 2 (the 200-row window, retention) landed in #367.
-
-- **Refunds are issued from the app now, not the Square dashboard (2026-08-15).** Issue #375. See
-  `docs/square-refunds.md`. Full or partial, from a candidate's payment and from Unmatched Payments —
-  where the dismiss modal's bold "this does not refund the payment" finally has an alternative to
-  point at. **The blocker turned out to be half a blocker**: `RefundPayment` is keyed by Square's
-  *payment* id and only the order id was stored, but `SquareWebhookHandler` had been parsing the
-  payment id all along and discarding it on the matched branch — one assignment plus a nullable
-  column. It still only helps going forward; nothing backfills the old rows, and the UI says so.
-  **The thing most likely to be carried in by accident: a refund is not finished when the call
-  returns.** Square answers `PENDING` and takes up to 14 days for a card, and can still end
-  `REJECTED` — so there is an hourly `RefundStatusJob`, success says "submitted" rather than
-  "refunded", and a transport failure deliberately does *not* settle the row (settling is what makes
-  the job stop looking, which would strand a refund Square had accepted). Three more worth carrying:
-  refunding **must not** move a Payment off `Paid` (the "Unpaid and no link" scan would issue the
-  candidate a fresh checkout link), in-flight refunds count against the refundable balance even
-  though Square's own rule counts only completed ones, and the ceiling is `SquareAmountPaidUsd`, not
-  `Amount` — a $5 youth payment against a $15 row is routine here. Still unverified: whether each
-  team's existing token carries `PAYMENTS_WRITE`, which only a live Sandbox call settles.
 
 Everything through Phase 0-10's initial build (ExamTools ingestion, Zoom/Discord, Square, email
 notifications, FCC ULS watcher, payment reminders, VE tracking, VEC submission tracker, admin
