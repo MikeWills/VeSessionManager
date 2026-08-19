@@ -157,6 +157,72 @@ public class Team
         !string.IsNullOrWhiteSpace(SmtpHost)
         && !string.IsNullOrWhiteSpace(SmtpUsername);
 
+    // ---- ARRL-VEC submission (#197) ----
+    //
+    // How this team fills in ARRL's session upload form. **ARRL only, and that is not a
+    // simplification to be tidied up later** — every VEC has its own process, there is no shared
+    // shape to abstract over, and inventing one from a sample size of one would be guessing at the
+    // other thirteen. Hence the Arrl- prefix rather than a neutral Vec-.
+    //
+    // **Nothing here has a default, deliberately.** `Remote Online` is right for both of this
+    // deployment's teams and would still be wrong to bake in: a team that meets in person and never
+    // opened the screen would file "Remote Online" with ARRL, and nothing on either side would look
+    // broken. Same distinction the SmtpHost gotcha in CLAUDE.md exists for — "an admin did
+    // something" is not "a shipped value is non-empty."
+    //
+    // The rest of the form is derived per session (the lead VE's name/call sign/phone, the session
+    // date, the remit-to-VEC amount) or attached at submission time. Only the parts that describe
+    // how a *team* operates live here.
+
+    /// <summary>
+    /// Appended to the session lead's name for the form's Full Name field. HRCC files as
+    /// <c>Mike Wills/Nick Booth (CC)/HRCC VE Team</c>, so this holds
+    /// <c>/Nick Booth (CC)/HRCC VE Team</c>; MARC files the bare name and leaves this empty.
+    ///
+    /// <para><b>Concatenated verbatim — no separator is inserted.</b> The real value has no space
+    /// before the slash, and helpfully adding one would silently change what is filed.</para>
+    ///
+    /// <para>A postfix rather than a <c>{{…}}</c> template: in both real samples the addition sits
+    /// strictly at the end, and placeholder syntax would be generality invented for a case nobody
+    /// has. Optional — blank is a complete configuration, not an unfinished one.</para>
+    /// </summary>
+    public string? ArrlSubmissionNamePostfix { get; set; }
+
+    /// <summary>Whether the form's email address is the session lead's or one fixed team address. Null means nobody has chosen, which is <b>not</b> the same as choosing the lead.</summary>
+    public ArrlSubmissionEmailSource? ArrlSubmissionEmailSource { get; set; }
+
+    /// <summary>Required when, and only when, <see cref="ArrlSubmissionEmailSource"/> is <see cref="Entities.ArrlSubmissionEmailSource.TeamAddress"/>. Ignored otherwise rather than treated as a conflict.</summary>
+    public string? ArrlSubmissionEmail { get; set; }
+
+    /// <summary>The form's Exam Session Location. <c>Remote Online</c> for both teams here; free text, because ARRL asks for "city and state" from a team that meets in person.</summary>
+    public string? ArrlSubmissionLocation { get; set; }
+
+    /// <summary>How this team pays ARRL its share of the test fees.</summary>
+    public ArrlPaymentMethod? ArrlSubmissionPaymentMethod { get; set; }
+
+    /// <summary>
+    /// Starting text for the form's Notes field. Prefilled and then <b>edited most times</b>, not
+    /// posted unchanged: HRCC's real note names a specific person and card for one session
+    /// (<c>Bill credit card ending in NNNN on file for CALLSIGN</c>), and ARRL's own page asks for
+    /// "1 of 2" here when a session is split across uploads. Optional.
+    /// </summary>
+    public string? ArrlSubmissionNote { get; set; }
+
+    /// <summary>
+    /// Whether this team can file with ARRL at all. Location, payment method and email source are
+    /// required; the postfix and the note are legitimately blank (MARC files with both empty — see
+    /// the receipts on #197), so neither may be read as "not set up yet".
+    /// </summary>
+    public bool IsArrlSubmissionConfigured =>
+        !string.IsNullOrWhiteSpace(ArrlSubmissionLocation)
+        && ArrlSubmissionPaymentMethod is not null
+        && ArrlSubmissionEmailSource switch
+        {
+            Entities.ArrlSubmissionEmailSource.SessionLead => true,
+            Entities.ArrlSubmissionEmailSource.TeamAddress => !string.IsNullOrWhiteSpace(ArrlSubmissionEmail),
+            _ => false
+        };
+
     // ---- Per-integration mute switches (#64) ----
     //
     // The point is running a real production team, a live-monitoring team and a dev team against
@@ -245,4 +311,35 @@ public enum TeamIntegration
     Discord,
     Square,
     Email
+}
+
+/// <summary>
+/// Where the ARRL submission form's email address comes from (#197). Some teams want replies going to
+/// whoever led the session; others to a shared team address.
+///
+/// <para>An enum plus an address, rather than one nullable string where blank means "fall back to the
+/// lead" — that shape reads identically to "nobody has filled this in yet", and the whole point of
+/// leaving these columns undefaulted is keeping those two apart.</para>
+/// </summary>
+public enum ArrlSubmissionEmailSource
+{
+    /// <summary>The lead VE resolved from <c>Session.TeamLeadCallSign</c> — the same resolution <c>MessageDispatchService</c> does for a rule's Reply-To.</summary>
+    SessionLead = 0,
+
+    /// <summary>One fixed address on the team, in <c>Team.ArrlSubmissionEmail</c>.</summary>
+    TeamAddress = 1
+}
+
+/// <summary>
+/// ARRL's own "Method of Payment for Test Fees" options (#197), named for the values their form
+/// posts: <c>mail-in</c>, <c>phone-in</c>, <c>credit-card-filed</c>.
+///
+/// <para>Both teams on this deployment use <see cref="CreditCardOnFile"/>. Configurable anyway,
+/// because a team that mails a check is not misconfigured.</para>
+/// </summary>
+public enum ArrlPaymentMethod
+{
+    MailIn = 0,
+    PhoneIn = 1,
+    CreditCardOnFile = 2
 }

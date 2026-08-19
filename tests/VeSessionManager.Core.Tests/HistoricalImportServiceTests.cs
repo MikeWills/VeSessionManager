@@ -71,6 +71,11 @@ public class HistoricalImportServiceTests
         /// <summary>Applicant ids that should throw, for the "one bad session must not abandon the import" case.</summary>
         public HashSet<string> ThrowOnApplicantDetail { get; } = [];
 
+        // Not served by this fake: the VEC archive is only reached from the ARRL submission
+        // path (#197), which none of these tests exercise.
+        public Task<VecArchiveDownload> DownloadVecArchiveAsync(ExamToolsCredentials credentials, string examToolsSessionId, string vecCode, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
         public Task<ExamToolsApplicantDetail?> GetApplicantDetailAsync(ExamToolsCredentials credentials, string examToolsSessionId, string applicantId, CancellationToken cancellationToken)
         {
             ApplicantDetailCalls.Add(applicantId);

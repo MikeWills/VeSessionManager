@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Email;
@@ -304,6 +304,53 @@ public class TeamSettingsService(AppDbContext dbContext, TimeProvider timeProvid
         return null;
     }
 
+    /// <summary>
+    /// How this team fills in ARRL's session upload form (#197). Unlike the credential methods above,
+    /// every value here is plain configuration, so there is no "null means leave unchanged" rule — the
+    /// screen posts the whole panel and this writes the whole panel.
+    ///
+    /// <para>The two optional fields are stored as null when blank rather than as empty strings, so
+    /// "never filled in" and "deliberately empty" cannot drift apart in the database. Both are
+    /// legitimately blank: MARC files with an empty postfix and empty Notes.</para>
+    /// </summary>
+    public async Task<TeamActionResult> UpdateArrlSubmissionAsync(
+        int teamId, string? namePostfix, ArrlSubmissionEmailSource emailSource, string? email,
+        string? location, ArrlPaymentMethod paymentMethod, string? note, int userId, CancellationToken cancellationToken)
+    {
+        var team = await dbContext.Teams.FirstOrDefaultAsync(t => t.Id == teamId, cancellationToken);
+        if (team is null)
+        {
+            return TeamActionResult.NotFound;
+        }
+
+        // Guarded here rather than on the page (#275): a service guard covers every future caller, and
+        // both of these are required for the submission preview to render a complete form at all.
+        location = location?.Trim();
+        if (string.IsNullOrEmpty(location))
+        {
+            return TeamActionResult.ArrlSubmissionLocationRequired;
+        }
+
+        email = email?.Trim();
+        if (emailSource == ArrlSubmissionEmailSource.TeamAddress && string.IsNullOrEmpty(email))
+        {
+            return TeamActionResult.ArrlSubmissionEmailRequired;
+        }
+
+        team.ArrlSubmissionNamePostfix = NullIfBlank(namePostfix);
+        team.ArrlSubmissionEmailSource = emailSource;
+        team.ArrlSubmissionEmail = NullIfBlank(email);
+        team.ArrlSubmissionLocation = location;
+        team.ArrlSubmissionPaymentMethod = paymentMethod;
+        team.ArrlSubmissionNote = NullIfBlank(note);
+
+        return await SaveTeamUpdateAsync(team, "TeamArrlSubmissionUpdated", userId, cancellationToken);
+    }
+
+    /// <summary>Trims the ends and collapses "" to null — the postfix's own internal punctuation is left exactly as typed, since HRCC's real value opens with a slash and no space.</summary>
+    private static string? NullIfBlank(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
     public async Task<TeamActionResult> UpdatePurgeSettingsAsync(int teamId, int purgeUnpaidLinkDays, int userId, CancellationToken cancellationToken)
     {
         var team = await dbContext.Teams.FirstOrDefaultAsync(t => t.Id == teamId, cancellationToken);
@@ -508,5 +555,11 @@ public enum TeamActionResult
     InvalidSmtpHost,
 
     /// <summary>Uploaded logo's own bytes were neither PNG nor JPEG, whatever the browser declared.</summary>
-    LogoUnsupportedFormat
+    LogoUnsupportedFormat,
+
+    /// <summary>The ARRL submission form's Exam Session Location was blank (#197).</summary>
+    ArrlSubmissionLocationRequired,
+
+    /// <summary>An ARRL submission email source of TeamAddress was chosen with no address to go with it (#197).</summary>
+    ArrlSubmissionEmailRequired
 }

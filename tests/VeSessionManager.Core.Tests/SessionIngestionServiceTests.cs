@@ -72,6 +72,11 @@ public class SessionIngestionServiceTests
 
         // Not exercised by these tests (ExamResultSyncService has its own test file/fake) —
         // implemented only to satisfy the interface.
+        // Not served by this fake: the VEC archive is only reached from the ARRL submission
+        // path (#197), which none of these tests exercise.
+        public Task<VecArchiveDownload> DownloadVecArchiveAsync(ExamToolsCredentials credentials, string examToolsSessionId, string vecCode, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
         public Task<ExamToolsApplicantDetail?> GetApplicantDetailAsync(ExamToolsCredentials credentials, string examToolsSessionId, string applicantId, CancellationToken cancellationToken) =>
             Task.FromResult<ExamToolsApplicantDetail?>(null);
     }

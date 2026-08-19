@@ -71,6 +71,11 @@ public class IngestionStampTests
         public Task<IReadOnlyList<ExamToolsSession>> GetTeamClosedSessionsAsync(ExamToolsCredentials c, DateOnly s, DateOnly e, CancellationToken ct) => Fail<IReadOnlyList<ExamToolsSession>>();
         public Task<IReadOnlyList<ExamToolsApplicant>> GetSessionApplicantsAsync(ExamToolsCredentials c, string s, CancellationToken ct) => Fail<IReadOnlyList<ExamToolsApplicant>>();
         public Task<IReadOnlyList<ExamToolsVe>> GetSessionVeRosterAsync(ExamToolsCredentials c, string s, CancellationToken ct) => Fail<IReadOnlyList<ExamToolsVe>>();
+        // Not served by this fake: the VEC archive is only reached from the ARRL submission
+        // path (#197), which none of these tests exercise.
+        public Task<VecArchiveDownload> DownloadVecArchiveAsync(ExamToolsCredentials credentials, string examToolsSessionId, string vecCode, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
         public Task<ExamToolsApplicantDetail?> GetApplicantDetailAsync(ExamToolsCredentials c, string s, string a, CancellationToken ct) => Fail<ExamToolsApplicantDetail?>();
     }
 
@@ -85,6 +90,11 @@ public class IngestionStampTests
         public Task<IReadOnlyList<ExamToolsSession>> GetTeamClosedSessionsAsync(ExamToolsCredentials c, DateOnly s, DateOnly e, CancellationToken ct) => Task.FromResult<IReadOnlyList<ExamToolsSession>>([]);
         public Task<IReadOnlyList<ExamToolsApplicant>> GetSessionApplicantsAsync(ExamToolsCredentials c, string s, CancellationToken ct) => Task.FromResult<IReadOnlyList<ExamToolsApplicant>>([]);
         public Task<IReadOnlyList<ExamToolsVe>> GetSessionVeRosterAsync(ExamToolsCredentials c, string s, CancellationToken ct) => Task.FromResult<IReadOnlyList<ExamToolsVe>>([]);
+        // Not served by this fake: the VEC archive is only reached from the ARRL submission
+        // path (#197), which none of these tests exercise.
+        public Task<VecArchiveDownload> DownloadVecArchiveAsync(ExamToolsCredentials credentials, string examToolsSessionId, string vecCode, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
+
         public Task<ExamToolsApplicantDetail?> GetApplicantDetailAsync(ExamToolsCredentials c, string s, string a, CancellationToken ct) => Task.FromResult<ExamToolsApplicantDetail?>(null);
     }
 
