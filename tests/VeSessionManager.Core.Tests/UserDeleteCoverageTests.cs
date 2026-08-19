@@ -32,6 +32,7 @@ public class UserDeleteCoverageTests
         "FeeConfiguration.CreatedByUserId",
         "Session.TestingCompletedByUserId",
         "Session.VecSubmittedByUserId",
+        "ArrlVecSubmission.SubmittedByUserId",
         "Session.RetainedAmountOverrideByUserId",
         "Candidate.ResultMarkedByUserId",
         "Payment.RefundRequestedByUserId",

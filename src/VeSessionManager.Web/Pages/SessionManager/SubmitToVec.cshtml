@@ -48,11 +48,10 @@ else
         send ARRL a second copy &mdash; there is no way to withdraw one.</p>
     }
 
-    @* Not yet a submit control of any kind: this increment renders what would be sent so it can be
-       checked against what a human would file by hand. See the page model's remarks. *@
     <p class="session-sub">
-        This is exactly what would be sent to ARRL. Nothing is submitted from this screen yet &mdash;
-        keep filing by hand, and use this to check the two agree.
+        This is exactly what will be sent to ARRL. Everything is editable &mdash; what is on screen is
+        what gets filed. <strong>There is no way to withdraw a submission</strong>, so read it before
+        pressing the button.
     </p>
 
     @if (preview.MissingRequiredFields.Count > 0)
@@ -73,77 +72,112 @@ else
         </p>
     }
 
-    <div class="section-head" style="margin-top:20px;"><h2>The form</h2></div>
-    <div class="meta-grid">
-        <div class="meta-item"><span class="k">Full name</span><span class="v">@(preview.FullName ?? "—")</span></div>
-        <div class="meta-item"><span class="k">Call sign</span><span class="v mono">@(preview.CallSign ?? "—")</span></div>
-        <div class="meta-item"><span class="k">Email</span><span class="v">@(preview.Email ?? "—")</span></div>
-        <div class="meta-item"><span class="k">Phone</span><span class="v mono">@(preview.Phone ?? "—")</span></div>
-        <div class="meta-item"><span class="k">Exam session date</span><span class="v mono">@preview.SessionDate</span></div>
-        <div class="meta-item"><span class="k">Exam session location</span><span class="v">@preview.Location</span></div>
-        <div class="meta-item">
-            <span class="k">Method of payment</span>
-            <span class="v">
-                @(preview.PaymentMethod switch
-                {
-                    ArrlPaymentMethod.MailIn => "Mail in payment",
-                    ArrlPaymentMethod.PhoneIn => "Phone in payment",
-                    ArrlPaymentMethod.CreditCardOnFile => "Credit card on file with VEC",
-                    _ => "—"
-                })
-            </span>
+    @* Explicit action + asp-antiforgery: asp-page-handler builds the action from the route only and
+       drops the query string, and an explicit action stops FormTagHelper emitting the token, which
+       then 400s in the antiforgery middleware before reaching the app with nothing logged. Both
+       halves are needed together (CLAUDE.md, Known Constraints). *@
+    <form method="post" asp-page-handler="Submit" enctype="multipart/form-data" asp-antiforgery="true">
+        <input type="hidden" name="Id" value="@Model.Id" />
+
+        <div class="section-head" style="margin-top:20px;"><h2>The form</h2></div>
+
+        <div class="field" style="max-width:520px;">
+            <label for="fullName">Full name</label>
+            <input id="fullName" name="fullName" type="text" value="@preview.FullName" required />
         </div>
-        <div class="meta-item"><span class="k">Amount forwarded to ARRL VEC</span><span class="v mono">@preview.AmountCharged</span></div>
-    </div>
-
-    <div class="section-head" style="margin-top:20px;"><h2>Notes</h2></div>
-    @if (string.IsNullOrWhiteSpace(preview.Note))
-    {
-        <p class="session-sub">Empty &mdash; nothing would be sent in this field.</p>
-    }
-    else
-    {
-        <p style="white-space:pre-wrap;">@preview.Note</p>
-    }
-
-    @* The arithmetic, not just the total: the figure is derived from payments received, and two
-       ordinary situations make that differ from what is owed. *@
-    <div class="section-head" style="margin-top:20px;"><h2>How the amount was worked out</h2></div>
-    @if (preview.Fees is { } fees)
-    {
-        <div class="meta-grid">
-            <div class="meta-item"><span class="k">Collected</span><span class="v mono">@Usd.Format(fees.TotalCollected)</span></div>
-            <div class="meta-item"><span class="k">Retained by the team</span><span class="v mono">@Usd.Format(fees.TotalRetained)</span></div>
-            <div class="meta-item"><span class="k">Forwarded to ARRL</span><span class="v mono">@Usd.Format(fees.TotalRemitToVec)</span></div>
+        <div class="field" style="max-width:260px;">
+            <label for="callSign">Call sign</label>
+            <input id="callSign" name="callSign" type="text" value="@preview.CallSign" required />
         </div>
-    }
-    @foreach (var warning in preview.AmountWarnings)
-    {
-        <p><strong>Check this:</strong> @warning</p>
-    }
+        <div class="field" style="max-width:420px;">
+            <label for="email">Email</label>
+            <input id="email" name="email" type="email" value="@preview.Email" required />
+        </div>
+        <div class="field" style="max-width:260px;">
+            <label for="phone">Phone</label>
+            <input id="phone" name="phone" type="text" value="@preview.Phone" required />
+        </div>
+        <div class="field" style="max-width:220px;">
+            <label for="sessionDate">Exam session date</label>
+            <input id="sessionDate" name="sessionDate" type="date" value="@preview.SessionDate" required />
+        </div>
+        <div class="field" style="max-width:420px;">
+            <label for="location">Exam session location</label>
+            <input id="location" name="location" type="text" value="@preview.Location" required />
+        </div>
+        <div class="field" style="max-width:420px;">
+            <label for="paymentMethod">Method of payment</label>
+            <select id="paymentMethod" name="paymentMethod">
+                <option value="@ArrlPaymentMethod.MailIn" selected="@(preview.PaymentMethod == ArrlPaymentMethod.MailIn)">Mail in payment</option>
+                <option value="@ArrlPaymentMethod.PhoneIn" selected="@(preview.PaymentMethod == ArrlPaymentMethod.PhoneIn)">Phone in payment</option>
+                <option value="@ArrlPaymentMethod.CreditCardOnFile" selected="@(preview.PaymentMethod == ArrlPaymentMethod.CreditCardOnFile)">Credit card on file with VEC</option>
+            </select>
+        </div>
+        <div class="field" style="max-width:200px;">
+            <label for="amountCharged">Amount forwarded to ARRL VEC</label>
+            <input id="amountCharged" name="amountCharged" type="text" value="@preview.AmountCharged" inputmode="decimal" />
+        </div>
 
-    <div class="section-head" style="margin-top:20px;"><h2>Files</h2></div>
-    @if (preview.ArchiveOutcome == VecArchiveDownloadOutcome.Succeeded)
-    {
-        <p><span class="mono">@preview.ArchiveFileName</span> &mdash; @(preview.ArchiveByteCount / 1024)KB, fetched from ExamTools.</p>
-    }
-    else if (preview.ArchiveOutcome == VecArchiveDownloadOutcome.SessionNotComplete)
-    {
-        <p><strong>ExamTools has no archive for this session yet.</strong></p>
+        @* The arithmetic, not just the total: the figure comes from payments received, and two
+           ordinary situations make that differ from what is owed. *@
+        @if (preview.Fees is { } fees)
+        {
+            <p class="session-sub">
+                Collected @Usd.Format(fees.TotalCollected) &middot; retained @Usd.Format(fees.TotalRetained)
+                &middot; forwarded @Usd.Format(fees.TotalRemitToVec).
+            </p>
+        }
+        @foreach (var warning in preview.AmountWarnings)
+        {
+            <p><strong>Check this:</strong> @warning</p>
+        }
+
+        <div class="field" style="max-width:640px;">
+            <label for="note">Notes</label>
+            <textarea id="note" name="note" rows="3">@preview.Note</textarea>
+        </div>
+
+        <div class="section-head" style="margin-top:20px;"><h2>Files</h2></div>
+        @if (preview.ArchiveOutcome == VecArchiveDownloadOutcome.Succeeded)
+        {
+            <p><span class="mono">@preview.ArchiveFileName</span> &mdash; @(preview.ArchiveByteCount / 1024)KB, fetched from ExamTools. It is downloaded again when you press the button, so it is never stale.</p>
+        }
+        else if (preview.ArchiveOutcome == VecArchiveDownloadOutcome.SessionNotComplete)
+        {
+            <p><strong>ExamTools has no archive for this session yet.</strong></p>
+            <p class="session-sub">It said: &ldquo;@preview.ArchiveMessage&rdquo; &mdash; close the session in ExamTools and this page will find it.</p>
+        }
+        else
+        {
+            <p><strong>The VEC archive could not be downloaded.</strong> @preview.ArchiveMessage</p>
+        }
+
+        <div class="field" style="max-width:520px;">
+            <label for="attachment">One more file (optional)</label>
+            <input id="attachment" name="attachment" type="file" accept=".pdf,.doc,.docx,.json,.zip" />
+        </div>
         <p class="session-sub">
-            It said: &ldquo;@preview.ArchiveMessage&rdquo; &mdash; close the session in ExamTools and this
-            page will find it.
+            For the youth grant program form. PDF, DOC, DOCX, JSON or ZIP, up to 40MB. ARRL takes at
+            most two files, so this is the second.
         </p>
-    }
-    else
-    {
-        <p><strong>The VEC archive could not be downloaded.</strong> @preview.ArchiveMessage</p>
-    }
+        @if (preview.YouthFormExpected)
+        {
+            <p><strong>This session has a youth-rate payment</strong>, so ARRL will be expecting the youth grant program form here.</p>
+        }
 
-    @if (preview.YouthFormExpected)
-    {
-        <p><strong>This session has a youth-rate payment</strong>, so ARRL will also want the youth grant
-        program form alongside the archive. Attaching it will be possible once this screen can submit.</p>
-    }
+        @if (Model.CanEdit && preview.CanSubmit)
+        {
+            <p style="margin-top:20px;"><strong>This cannot be undone.</strong> Once sent, correcting a filing means contacting ARRL.</p>
+            <button type="submit" class="btn-primary">Send to ARRL-VEC</button>
+        }
+        else if (!Model.CanEdit)
+        {
+            <p class="session-sub" style="margin-top:20px;">You have read-only access to this session.</p>
+        }
+        else
+        {
+            <p class="session-sub" style="margin-top:20px;">This cannot be sent yet &mdash; see above.</p>
+        }
+    </form>
 }
 </div>

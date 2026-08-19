@@ -120,6 +120,16 @@ builder.Services.AddScoped<VecSubmissionService>();
 // Reads and reports only — it never posts to ARRL. The submitting service is a separate
 // registration (#197) so nothing can reach ARRL by resolving the thing that builds the preview.
 builder.Services.AddScoped<ArrlSubmissionPreviewService>();
+builder.Services.Configure<ArrlSubmissionOptions>(
+    builder.Configuration.GetSection(ArrlSubmissionOptions.SectionName));
+// The only thing in this app that talks to ARRL. Its URL is blank outside production, so a
+// developer machine has nowhere to post rather than relying on nobody pressing the wrong button.
+builder.Services.AddHttpClient<ArrlSubmissionClient>();
+builder.Services.AddScoped<ArrlSubmissionArchiveStore>();
+// The only service that causes a filing. Every call is irreversible, so nothing resolves this
+// except the confirm handler on a screen showing exactly what would be sent.
+builder.Services.AddScoped<ArrlSubmissionService>();
+
 builder.Services.AddScoped<VolunteerExaminerReportService>();
 builder.Services.AddScoped<SessionStatsService>();
 builder.Services.AddScoped<VolunteerExaminerDirectoryService>();
