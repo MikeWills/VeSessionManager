@@ -43,7 +43,7 @@
                     @* asp-route-highlight is the whole point: the link lands on the row itself, which
                        the target page marks and scrolls to (see app.js), rather than on a list the
                        reader then has to search. *@
-                    <a class="item alert-item" asp-page="@item.PageName" asp-route-highlight="@item.HighlightId">
+                    <a class="item alert-item" asp-page="@item.PageName" asp-route-id="@item.RouteId" asp-route-highlight="@item.HighlightId">
                         <span class="alert-item-title">@item.Title</span>
                         <span class="alert-item-detail">@item.Detail</span>
                         <span class="alert-item-meta">@item.Category &middot; @item.TeamName &middot; @EasternTimeFormatter.Format(item.OccurredUtc, "MMM d")</span>

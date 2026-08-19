@@ -2,6 +2,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using VeSessionManager.Core.Admin;
 using VeSessionManager.Core.Data;
+using VeSessionManager.Core.Entities;
+using VeSessionManager.Core.VecSubmissions;
 
 namespace VeSessionManager.Core.Retention;
 
@@ -30,6 +32,7 @@ namespace VeSessionManager.Core.Retention;
 public class RecordRetentionService(
     AppDbContext dbContext,
     SystemSettingsService systemSettingsService,
+    ArrlSubmissionArchiveStore arrlArchiveStore,
     TimeProvider timeProvider,
     ILogger<RecordRetentionService> logger)
 {
@@ -73,7 +76,75 @@ public class RecordRetentionService(
             logger.LogInformation("Job run history retention skipped: SystemSettings.JobRunHistoryRetentionDays is not configured (keeping everything)");
         }
 
+        await PurgeArrlArchivesAsync(result, settings, now, cancellationToken);
+
         return result;
+    }
+
+    /// <summary>
+    /// Deletes the files filed with ARRL once the window has passed, leaving the row behind.
+    ///
+    /// <para><b>File first, then the row.</b> Split across two stores there is no transaction, so the
+    /// order decides which way an interrupted run fails: this way leaves a deleted file with an
+    /// unmarked row, which the next run settles harmlessly. The reverse would mark the row purged and
+    /// leave the file on disk forever, with nothing left pointing at it.</para>
+    ///
+    /// <para><b>Known gap:</b> a crash between writing the files and saving the row leaves orphans no
+    /// row can name. Catching those needs a walk of an unbounded directory tree to cover a window of
+    /// milliseconds, which is not worth it — recorded here rather than left for someone to rediscover.</para>
+    /// </summary>
+    private async Task PurgeArrlArchivesAsync(
+        RecordRetentionResult result, SystemSettings settings, DateTime now, CancellationToken cancellationToken)
+    {
+        if (settings.VecSubmissionArchiveRetentionDays is not { } archiveDays)
+        {
+            logger.LogInformation("ARRL archive retention skipped: SystemSettings.VecSubmissionArchiveRetentionDays is not configured (keeping everything)");
+            return;
+        }
+
+        var cutoff = now - TimeSpan.FromDays(archiveDays);
+        var stale = await dbContext.ArrlVecSubmissions
+            .Where(s => s.FilesPurgedUtc == null && s.SubmittedUtc < cutoff)
+            .ToListAsync(cancellationToken);
+
+        foreach (var submission in stale)
+        {
+            DeleteIfPresent(submission.ArchiveStoredPath);
+            DeleteIfPresent(submission.AttachmentStoredPath);
+
+            // The stored paths are kept: "there was an archive here and it aged out" is a different
+            // answer from "there never was one", and only the first is true.
+            submission.FilesPurgedUtc = now;
+        }
+
+        if (stale.Count > 0)
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+
+        result.ArrlSubmissionArchivesPurged = stale.Count;
+        logger.LogInformation(
+            "ARRL archive retention: cleared the files of {Count} submission(s) older than {Days} day(s) (before {CutoffUtc:u}); the submission records themselves are kept",
+            stale.Count, archiveDays, cutoff);
+
+        void DeleteIfPresent(string? relativePath)
+        {
+            // Already gone is success, not a retry: a run interrupted between the delete and the save
+            // must settle on its next pass rather than loop forever.
+            if (arrlArchiveStore.ResolveFullPath(relativePath) is not { } fullPath)
+            {
+                return;
+            }
+
+            try
+            {
+                File.Delete(fullPath);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                logger.LogError(ex, "Could not delete an aged-out ARRL archive at {RelativePath}", relativePath);
+            }
+        }
     }
 }
 
@@ -82,6 +153,9 @@ public class RecordRetentionResult
     public int AuditLogsDeleted { get; set; }
     public int JobRunHistoriesDeleted { get; set; }
 
+    /// <summary>Submissions whose filed files were cleared. The rows themselves are never deleted.</summary>
+    public int ArrlSubmissionArchivesPurged { get; set; }
+
     public override string ToString() =>
-        $"audit entries deleted {AuditLogsDeleted}, job runs deleted {JobRunHistoriesDeleted}";
+        $"audit entries deleted {AuditLogsDeleted}, job runs deleted {JobRunHistoriesDeleted}, ARRL archives purged {ArrlSubmissionArchivesPurged}";
 }

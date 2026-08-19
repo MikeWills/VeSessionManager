@@ -34,14 +34,78 @@ public class AlertFeedService(AppDbContext dbContext)
 
     public async Task<AlertFeed> GetAsync(UserRole role, IReadOnlyList<int>? teamIds, CancellationToken cancellationToken)
     {
-        // Mirrors Reconciliation.cshtml.cs's [Authorize(Roles = RoleGroups.Admins)]. RoleGroups lives
-        // in Web and cannot be referenced from Core, which is exactly why the mirror is guarded by a
-        // test instead of by a shared constant.
-        if (role is not (UserRole.SystemAdmin or UserRole.TeamAdmin))
+        // The gate is per source now that there are two, and they differ. Reconciliation is
+        // admin-only; an unconfirmed ARRL submission points at session detail, which every role can
+        // open. A single gate at the top would have silently hidden the second source from the
+        // Session Managers who actually press the button.
+        var (reconciliationItems, reconciliationTotal) = role is UserRole.SystemAdmin or UserRole.TeamAdmin
+            ? await GetReconciliationAlertsAsync(teamIds, cancellationToken)
+            : ([], 0);
+
+        var (submissionItems, submissionTotal) = await GetUnconfirmedSubmissionAlertsAsync(teamIds, cancellationToken);
+
+        var items = submissionItems
+            .Concat(reconciliationItems)
+            .OrderByDescending(i => i.OccurredUtc)
+            .Take(MaxItems)
+            .ToList();
+
+        return items.Count == 0 ? AlertFeed.Empty : new AlertFeed(items, reconciliationTotal + submissionTotal);
+    }
+
+    /// <summary>
+    /// Submissions ARRL never confirmed (#197).
+    ///
+    /// <para><b>Exactly the class of problem the bell exists for.</b> An unconfirmed submission leaves
+    /// the session looking unsubmitted, which is correct — it may or may not have been filed — but
+    /// there is nothing anywhere else that would make anyone go and look. It cannot be retried and it
+    /// cannot be resent, so the only resolution is a person telephoning ARRL, and the only thing that
+    /// prompts that is this.</para>
+    ///
+    /// <para>No "resolved" flag to filter on, unlike a reconciliation finding: it clears when the
+    /// session is marked submitted by hand, which is what a human does once ARRL confirms.</para>
+    /// </summary>
+    private async Task<(List<AlertItem> Items, int Total)> GetUnconfirmedSubmissionAlertsAsync(
+        IReadOnlyList<int>? teamIds, CancellationToken cancellationToken)
+    {
+        var unconfirmed = dbContext.ArrlVecSubmissions
+            .Where(s => s.Outcome == VecSubmissions.ArrlReceiptOutcome.Unknown)
+            .Where(s => s.Session != null && s.Session.VecSubmissionStatus != VecSubmissionStatus.Submitted)
+            .Where(s => teamIds == null || (s.TeamId != null && teamIds.Contains(s.TeamId.Value)));
+
+        var total = await unconfirmed.CountAsync(cancellationToken);
+        if (total == 0)
         {
-            return AlertFeed.Empty;
+            return ([], 0);
         }
 
+        var rows = await unconfirmed
+            .Include(s => s.Team)
+            .OrderByDescending(s => s.SubmittedUtc)
+            .ThenByDescending(s => s.Id)
+            .Take(MaxItems)
+            .ToListAsync(cancellationToken);
+
+        var items = rows
+            .Select(s => new AlertItem(
+                Category: "ARRL submission",
+                Title: "ARRL never confirmed this filing",
+                Detail: s.TransportError is not null
+                    ? $"The upload did not complete ({s.TransportError}). It may still have been filed — check with ARRL before sending it again."
+                    : $"ARRL's reply did not confirm {s.UnconfirmedFileNames ?? s.ArchiveFileName}. It may still have been filed — check with ARRL before sending it again.",
+                TeamName: s.Team?.Name ?? "—",
+                OccurredUtc: s.SubmittedUtc,
+                PageName: "/SessionManager/Detail",
+                HighlightId: s.Id,
+                RouteId: s.SessionId))
+            .ToList();
+
+        return (items, total);
+    }
+
+    private async Task<(List<AlertItem> Items, int Total)> GetReconciliationAlertsAsync(
+        IReadOnlyList<int>? teamIds, CancellationToken cancellationToken)
+    {
         var openFindings = dbContext.ReconciliationFindings
             .Where(f => f.ResolvedUtc == null)
             .Where(f => teamIds == null || teamIds.Contains(f.TeamId));
@@ -49,7 +113,7 @@ public class AlertFeedService(AppDbContext dbContext)
         var totalCount = await openFindings.CountAsync(cancellationToken);
         if (totalCount == 0)
         {
-            return AlertFeed.Empty;
+            return ([], 0);
         }
 
         // Newest first: a finding that appeared last night is the one still worth acting on, while
@@ -75,7 +139,7 @@ public class AlertFeedService(AppDbContext dbContext)
                 HighlightId: f.Id))
             .ToList();
 
-        return new AlertFeed(items, totalCount);
+        return (items, totalCount);
     }
 }
 
@@ -88,6 +152,11 @@ public class AlertFeedService(AppDbContext dbContext)
 /// <param name="OccurredUtc">When the problem was first noticed, not when it happened.</param>
 /// <param name="PageName">The Razor page the alert navigates to — a real page path, since the link is built with <c>asp-page</c>.</param>
 /// <param name="HighlightId">The id of the row to highlight once there. Passed as <c>?highlight=</c>; the page scrolls to it and marks it.</param>
+/// <param name="RouteId">
+/// The target page's own <c>{id:int}</c> route value, for a page that is about one record rather than
+/// a list — session detail, say. Null for a list page, which is what the first alert source needed and
+/// why this did not exist until the second one arrived.
+/// </param>
 public record AlertItem(
     string Category,
     string Title,
@@ -95,7 +164,8 @@ public record AlertItem(
     string TeamName,
     DateTime OccurredUtc,
     string PageName,
-    int HighlightId);
+    int HighlightId,
+    int? RouteId = null);
 
 /// <summary><see cref="TotalCount"/> is every open alert; <see cref="Items"/> is the first <see cref="AlertFeedService.MaxItems"/> of them.</summary>
 public record AlertFeed(IReadOnlyList<AlertItem> Items, int TotalCount)

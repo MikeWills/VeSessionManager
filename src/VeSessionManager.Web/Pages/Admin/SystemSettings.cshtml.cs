@@ -24,6 +24,8 @@ public class SystemSettingsModel(UserManager<User> userManager, SystemSettingsSe
 
     /// <summary>Days of job-run history to keep. Null = keep forever, and that is the default (#296).</summary>
     public int? JobRunHistoryRetentionDays { get; private set; }
+
+    public int? VecSubmissionArchiveRetentionDays { get; private set; }
     public bool TestModeEnabled { get; private set; }
     public string? TestModeOverrideEmail { get; private set; }
     public DateTime? UpdatedUtc { get; private set; }
@@ -58,13 +60,14 @@ public class SystemSettingsModel(UserManager<User> userManager, SystemSettingsSe
         VeContactRetentionYears = settings.VeContactRetentionYears;
         AuditLogRetentionDays = settings.AuditLogRetentionDays;
         JobRunHistoryRetentionDays = settings.JobRunHistoryRetentionDays;
+        VecSubmissionArchiveRetentionDays = settings.VecSubmissionArchiveRetentionDays;
         TestModeEnabled = settings.TestModeEnabled;
         TestModeOverrideEmail = settings.TestModeOverrideEmail;
         UpdatedUtc = settings.UpdatedUtc;
     }
 
     public async Task<IActionResult> OnPostAsync(
-        int? piiRetentionWindowDays, int? veContactRetentionYears, int? auditLogRetentionDays, int? jobRunHistoryRetentionDays,
+        int? piiRetentionWindowDays, int? veContactRetentionYears, int? auditLogRetentionDays, int? jobRunHistoryRetentionDays, int? vecSubmissionArchiveRetentionDays,
         int ulsWatcherIntervalHours, int ulsWatcherStartHourEt,
         int sessionIngestionIntervalMinutes, bool testModeEnabled, string? testModeOverrideEmail)
     {
@@ -81,6 +84,7 @@ public class SystemSettingsModel(UserManager<User> userManager, SystemSettingsSe
 
         var result = await systemSettingsService.UpdateAsync(
             piiRetentionWindowDays, veContactRetentionYears, auditLogRetentionDays, jobRunHistoryRetentionDays,
+            vecSubmissionArchiveRetentionDays,
             ulsWatcherIntervalHours, ulsWatcherStartHourEt,
             sessionIngestionIntervalMinutes, testModeEnabled, testModeOverrideEmail, user.Id, CancellationToken.None);
         TempData[result == SystemSettingsActionResult.Success ? "StatusMessage" : "ErrorMessage"] = result switch
