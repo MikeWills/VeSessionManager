@@ -44,6 +44,13 @@
                 <label for="jobRunHistoryRetentionDays">Job run history retention (days)</label>
                 <input id="jobRunHistoryRetentionDays" name="jobRunHistoryRetentionDays" type="number" min="1" value="@Model.JobRunHistoryRetentionDays" placeholder="Keep forever" />
             </div>
+            @* Blank means keep forever, like the two above — and here that may well be the right
+               permanent answer rather than a placeholder: these are the legal record of what was
+               filed with a VEC, and this team has had to go back to one after the fact. *@
+            <div class="field" style="max-width:240px;">
+                <label for="vecSubmissionArchiveRetentionDays">ARRL archive retention (days)</label>
+                <input id="vecSubmissionArchiveRetentionDays" name="vecSubmissionArchiveRetentionDays" type="number" min="1" value="@Model.VecSubmissionArchiveRetentionDays" placeholder="Keep forever" />
+            </div>
         </div>
         <p class="session-sub">
             Both are <strong>blank by default, meaning keep everything</strong>, and nothing is deleted until you set

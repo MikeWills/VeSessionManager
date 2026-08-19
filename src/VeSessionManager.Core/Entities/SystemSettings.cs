@@ -46,6 +46,26 @@ public class SystemSettings
     public int? JobRunHistoryRetentionDays { get; set; }
 
     /// <summary>
+    /// How many days the files filed with ARRL-VEC are kept (#197) — the VEC archive and any second
+    /// document that went with it. Null means keep forever, and that is the shipped default: the same
+    /// opt-in rule as the settings above, and with a stronger case here, since these are the legal
+    /// record of what was filed and Mike has had to go back to one after the fact.
+    ///
+    /// <para><b>Only the files age out; the submission row never does.</b> The row is the record that
+    /// a filing happened, and for a submission whose receipt could not be read it is the only account
+    /// of what went.</para>
+    ///
+    /// <para>⚠️ <b>A window longer than PiiRetentionWindowDays or VeContactRetentionYears means the
+    /// archive outlives those purges</b> — the zip is the session's paperwork and carries candidate
+    /// PII. That may be the right answer, since a filing record plausibly outranks a retention policy,
+    /// but it is a deliberate exception rather than an oversight. Note the receipt stored in
+    /// ArrlVecSubmission.ResponseBody is <b>not</b> covered by this window: it is a database column
+    /// rather than a file, it carries the submitting VE's contact details, and whether it should age
+    /// out with them is an open question on #197.</para>
+    /// </summary>
+    public int? VecSubmissionArchiveRetentionDays { get; set; }
+
+    /// <summary>
     /// Hours between UlsWatcherJob checks, anchored to UlsWatcherStartHourEt rather than Worker start
     /// time (default 8/12 -> checks at 08:00 and 20:00 ET). Anchored to wall-clock ET because FCC
     /// issues licenses at 02:00 ET, so a morning slot lands after that day's grants exist.

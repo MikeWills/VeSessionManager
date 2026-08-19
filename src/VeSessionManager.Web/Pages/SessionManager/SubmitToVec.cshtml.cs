@@ -33,7 +33,8 @@ public class SubmitToVecModel(
     UserManager<User> userManager,
     SessionAccessScope accessScope,
     ArrlSubmissionPreviewService previewService,
-    ArrlSubmissionService submissionService) : PageModel
+    ArrlSubmissionService submissionService,
+    ArrlSubmissionArchiveStore archiveStore) : PageModel
 {
     /// <summary>ARRL's own list, and the browser hint on the file input. Enforced server-side too — the accept attribute is a convenience, not a check.</summary>
     private static readonly string[] AllowedAttachmentExtensions = [".pdf", ".doc", ".docx", ".json", ".zip"];
@@ -45,6 +46,18 @@ public class SubmitToVecModel(
     public int Id { get; set; }
 
     public ArrlSubmissionPreview? Preview { get; private set; }
+
+    /// <summary>
+    /// The filing, once one exists. <b>Its presence turns this page from a form into a record</b> —
+    /// there is no second submission, confirmed or not, so offering the form again would offer the one
+    /// action that cannot be undone.
+    /// </summary>
+    public ArrlVecSubmission? Submission { get; private set; }
+
+    /// <summary>Whether the archive is still on disk, or has aged out under the retention window.</summary>
+    public bool ArchiveAvailable { get; private set; }
+
+    public bool AttachmentAvailable { get; private set; }
 
     /// <summary>False for a TeamLead, who may read this page but takes no action on it — same split as session detail.</summary>
     public bool CanEdit { get; private set; }
@@ -66,8 +79,102 @@ public class SubmitToVecModel(
         }
 
         CanEdit = accessScope.CanEdit(user, session);
+
+        Submission = await dbContext.ArrlVecSubmissions
+            .Where(a => a.SessionId == Id)
+            .OrderByDescending(a => a.Id)
+            .FirstOrDefaultAsync();
+
+        if (Submission is not null)
+        {
+            ArchiveAvailable = archiveStore.ResolveFullPath(Submission.ArchiveStoredPath) is not null;
+            AttachmentAvailable = archiveStore.ResolveFullPath(Submission.AttachmentStoredPath) is not null;
+            return Page();
+        }
+
         Preview = await previewService.BuildAsync(Id, HttpContext.RequestAborted);
         return Page();
+    }
+
+    /// <summary>
+    /// Hands back one of the stored files.
+    ///
+    /// <para>The path comes from the database, never from the request: the caller names
+    /// <c>archive</c> or <c>attachment</c>, not a filename. <see cref="ArrlSubmissionArchiveStore"/>
+    /// refuses a stored path that escapes its root as a second line, but the first is simply never
+    /// letting a client choose one.</para>
+    /// </summary>
+    public async Task<IActionResult> OnGetFileAsync(string which)
+    {
+        var user = await userManager.GetUserWithManagerAsync(dbContext, User);
+        if (user is null)
+        {
+            return Forbid();
+        }
+
+        var session = await dbContext.Sessions.FirstOrDefaultAsync(s => s.Id == Id);
+        if (session is null || !accessScope.CanView(user, session))
+        {
+            return NotFound();
+        }
+
+        var submission = await dbContext.ArrlVecSubmissions
+            .Where(a => a.SessionId == Id)
+            .OrderByDescending(a => a.Id)
+            .FirstOrDefaultAsync();
+
+        if (submission is null)
+        {
+            return NotFound();
+        }
+
+        var (relativePath, downloadName) = which switch
+        {
+            "attachment" => (submission.AttachmentStoredPath, submission.AttachmentFileName),
+            _ => (submission.ArchiveStoredPath, submission.ArchiveFileName)
+        };
+
+        if (archiveStore.ResolveFullPath(relativePath) is not { } fullPath)
+        {
+            return NotFound();
+        }
+
+        return PhysicalFile(fullPath, "application/octet-stream", downloadName);
+    }
+
+    /// <summary>
+    /// ARRL's confirmation page, as a download rather than a rendering.
+    ///
+    /// <para><b>Never echoed into the page.</b> A document fetched from a third party and rendered
+    /// into an authenticated admin view is a stored-XSS vector however benign its content, and this
+    /// codebase has zero <c>Html.Raw</c> and should keep it. Served as an attachment so the browser
+    /// saves it instead of executing it.</para>
+    /// </summary>
+    public async Task<IActionResult> OnGetReceiptAsync()
+    {
+        var user = await userManager.GetUserWithManagerAsync(dbContext, User);
+        if (user is null)
+        {
+            return Forbid();
+        }
+
+        var session = await dbContext.Sessions.FirstOrDefaultAsync(s => s.Id == Id);
+        if (session is null || !accessScope.CanView(user, session))
+        {
+            return NotFound();
+        }
+
+        var submission = await dbContext.ArrlVecSubmissions
+            .Where(a => a.SessionId == Id)
+            .OrderByDescending(a => a.Id)
+            .FirstOrDefaultAsync();
+
+        if (submission?.ResponseBody is not { Length: > 0 } body)
+        {
+            return NotFound();
+        }
+
+        return File(System.Text.Encoding.UTF8.GetBytes(body), "text/plain", $"arrl-receipt-session-{Id}.html");
     }
 
     /// <summary>

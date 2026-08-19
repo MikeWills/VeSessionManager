@@ -171,6 +171,12 @@ builder.Services.AddScoped<PiiPurgeService>();
 builder.Services.AddScoped<VeSelfServiceLinkService>();
 
 builder.Services.AddScoped<RecordRetentionService>();
+// The retention sweep clears the files filed with ARRL once their window passes (#197), so the
+// Worker needs the store and its options too. Not the submitting client: nothing in the Worker
+// files anything, and a background job must never be able to reach ARRL.
+builder.Services.Configure<ArrlSubmissionOptions>(
+    builder.Configuration.GetSection(ArrlSubmissionOptions.SectionName));
+builder.Services.AddScoped<ArrlSubmissionArchiveStore>();
 
 builder.Services.AddScoped<TeamSecretsMigrationService>();
 

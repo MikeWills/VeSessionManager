@@ -4,6 +4,7 @@ using VeSessionManager.Core.Admin;
 using VeSessionManager.Core.Entities;
 using VeSessionManager.Core.Jobs;
 using VeSessionManager.Core.Retention;
+using VeSessionManager.Core.VecSubmissions;
 
 namespace VeSessionManager.Worker.Tests;
 
@@ -27,6 +28,10 @@ public class RecordRetentionJobTests
             services.AddSingleton<TimeProvider>(new FixedTimeProvider(Now));
             services.AddScoped<JobRunHistoryLogger>();
             services.AddScoped<SystemSettingsService>();
+            // The sweep also clears aged-out ARRL archives (#197). No upload URL is configured
+            // here and none should be: nothing in the Worker files anything.
+            services.Configure<ArrlSubmissionOptions>(_ => { });
+            services.AddScoped<ArrlSubmissionArchiveStore>();
             services.AddScoped<RecordRetentionService>();
         });
 

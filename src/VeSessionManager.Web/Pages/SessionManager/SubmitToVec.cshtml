@@ -16,7 +16,85 @@
         </p>
     </div>
 
-@if (preview is null || preview.Status == ArrlSubmissionPreviewStatus.SessionNotFound)
+@* Once a filing exists this page stops being a form and becomes the record of it. There is no
+   second submission — confirmed or not — so re-offering the form would offer the one action nobody
+   can undo. *@
+@if (Model.Submission is { } submission)
+{
+    <div class="section-head"><h2>Filed with ARRL-VEC</h2></div>
+
+    @if (submission.Outcome == ArrlReceiptOutcome.Succeeded)
+    {
+        <p><strong>ARRL confirmed this filing</strong> on @EasternTimeFormatter.Format(submission.SubmittedUtc, "MMM d, yyyy h:mm tt") ET.</p>
+    }
+    else
+    {
+        @* Not "it failed". The request left this machine and ARRL may well have processed it — saying
+           otherwise is what would produce a duplicate filing. *@
+        <p><strong>This was sent, but ARRL's confirmation could not be read.</strong></p>
+        <p class="session-sub">
+            It may or may not have been filed. @(submission.TransportError is { } error
+                ? $"The upload did not complete: {error}."
+                : $"Their reply did not confirm {submission.UnconfirmedFileNames ?? submission.ArchiveFileName}.")
+            Check with ARRL before sending anything again &mdash; this app will not send it twice, and
+            there is no way to withdraw a filing that did land.
+        </p>
+    }
+
+    <div class="meta-grid">
+        <div class="meta-item"><span class="k">Full name</span><span class="v">@submission.FullName</span></div>
+        <div class="meta-item"><span class="k">Call sign</span><span class="v mono">@submission.CallSign</span></div>
+        <div class="meta-item"><span class="k">Email</span><span class="v">@submission.Email</span></div>
+        <div class="meta-item"><span class="k">Phone</span><span class="v mono">@submission.Phone</span></div>
+        <div class="meta-item"><span class="k">Exam session date</span><span class="v mono">@submission.SessionDate</span></div>
+        <div class="meta-item"><span class="k">Location</span><span class="v">@submission.Location</span></div>
+        <div class="meta-item"><span class="k">Method of payment</span><span class="v">@submission.PaymentMethod</span></div>
+        <div class="meta-item"><span class="k">Amount forwarded</span><span class="v mono">@submission.AmountCharged</span></div>
+    </div>
+    @if (!string.IsNullOrWhiteSpace(submission.Note))
+    {
+        <p style="white-space:pre-wrap;"><strong>Notes:</strong> @submission.Note</p>
+    }
+
+    <div class="section-head" style="margin-top:20px;"><h2>What was kept</h2></div>
+    <ul>
+        <li>
+            @if (Model.ArchiveAvailable)
+            {
+                <a asp-page-handler="File" asp-route-id="@Model.Id" asp-route-which="archive">@submission.ArchiveFileName</a>
+                <text> &mdash; @(submission.ArchiveByteCount / 1024)KB</text>
+            }
+            else
+            {
+                <span class="mono">@submission.ArchiveFileName</span>
+                <text> &mdash; </text>
+                @(submission.FilesPurgedUtc is null ? "not kept" : "aged out under the archive retention window")
+            }
+        </li>
+        @if (submission.AttachmentFileName is { } attachmentName)
+        {
+            <li>
+                @if (Model.AttachmentAvailable)
+                {
+                    <a asp-page-handler="File" asp-route-id="@Model.Id" asp-route-which="attachment">@attachmentName</a>
+                }
+                else
+                {
+                    <span class="mono">@attachmentName</span>
+                    <text> &mdash; </text>
+                    @(submission.FilesPurgedUtc is null ? "not kept" : "aged out under the archive retention window")
+                }
+            </li>
+        }
+        @if (!string.IsNullOrWhiteSpace(submission.ResponseBody))
+        {
+            @* Downloaded, never rendered: a page fetched from a third party and echoed into an
+               authenticated admin view is a stored-XSS vector whatever it contains. *@
+            <li><a asp-page-handler="Receipt" asp-route-id="@Model.Id">ARRL's confirmation page</a> &mdash; downloads; open it in a browser to read or print it</li>
+        }
+    </ul>
+}
+else if (preview is null || preview.Status == ArrlSubmissionPreviewStatus.SessionNotFound)
 {
     <p>That session could not be found.</p>
 }
