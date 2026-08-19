@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Authorization;
+﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
@@ -423,7 +423,8 @@ public class DetailModel(
             session.VecSubmissionStatus == VecSubmissionStatus.Submitted,
             session.RescheduleFlaggedForReview,
             session.TestingCompletedUtc is not null,
-            session.Status == SessionStatus.Cancelled);
+            session.Status == SessionStatus.Cancelled,
+            string.Equals(session.Vec.MatchCode, ArrlSubmissionPreviewService.ArrlMatchCode, StringComparison.OrdinalIgnoreCase));
 
         // Split rather than filtered: the withdrawn rows are still rendered, just behind a
         // disclosure, and the delete warning still has to count them.
@@ -535,7 +536,14 @@ public class DetailModel(
         bool VecSubmitted,
         bool RescheduleFlagged,
         bool TestingCompleted,
-        bool Cancelled);
+        bool Cancelled,
+        /// <summary>
+        /// True when this session's VEC is ARRL, matched on <c>Vec.MatchCode</c> and never the display
+        /// name ("ARRL" here, "ARRL-VEC" upstream). Decides whether the VEC-submission control opens
+        /// the ARRL preview or stays the plain "I filed this by hand" toggle every other VEC uses
+        /// (#197) — one submitter, no fallback.
+        /// </summary>
+        bool IsArrlSession);
 
     public record CandidateRow(
         int Id,

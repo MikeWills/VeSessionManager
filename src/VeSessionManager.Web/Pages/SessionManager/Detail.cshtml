@@ -1,4 +1,4 @@
-@page "{id:int}"
+﻿@page "{id:int}"
 @model VeSessionManager.Web.Pages.SessionManager.DetailModel
 @{
     ViewData["Title"] = Model.Session.BreadcrumbLabel;
@@ -78,9 +78,20 @@
                     <span class="chip @Model.Session.VecSubmissionChipClass">@Model.Session.VecSubmissionChipLabel</span>
                     @if (!Model.Session.VecSubmitted && Model.CanEdit)
                     {
-                        <form method="post" asp-page-handler="ToggleVecSubmission" style="display:inline">
-                            <button type="submit" class="btn-secondary btn-sm">Mark submitted</button>
-                        </form>
+                        @* An ARRL session goes to the preview instead, and goes there as a GET (#197):
+                           the only request that can ever reach ARRL lives on that page, behind a form a
+                           human has read. Every other VEC keeps the toggle, which files nothing and only
+                           records that somebody did it out of band. *@
+                        @if (Model.Session.IsArrlSession)
+                        {
+                            <a asp-page="SubmitToVec" asp-route-id="@Model.Session.Id" class="btn-secondary btn-sm">Submit to ARRL&hellip;</a>
+                        }
+                        else
+                        {
+                            <form method="post" asp-page-handler="ToggleVecSubmission" style="display:inline">
+                                <button type="submit" class="btn-secondary btn-sm">Mark submitted</button>
+                            </form>
+                        }
                     }
                 </span>
             </div>

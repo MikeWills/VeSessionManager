@@ -1,0 +1,149 @@
+@page "{id:int}"
+@using VeSessionManager.Core.Entities
+@using VeSessionManager.Core.ExamTools
+@using VeSessionManager.Core.VecSubmissions
+@model VeSessionManager.Web.Pages.SessionManager.SubmitToVecModel
+@{
+    ViewData["Title"] = "Submit to ARRL-VEC";
+    var preview = Model.Preview;
+}
+
+<div class="vesm">
+    <div class="session-head">
+        <h1>Submit to ARRL-VEC</h1>
+        <p class="session-sub">
+            <a asp-page="Detail" asp-route-id="@Model.Id">&larr; Back to the session</a>
+        </p>
+    </div>
+
+@if (preview is null || preview.Status == ArrlSubmissionPreviewStatus.SessionNotFound)
+{
+    <p>That session could not be found.</p>
+}
+else if (preview.Status == ArrlSubmissionPreviewStatus.NotAnArrlSession)
+{
+    @* One submitter, no fallback. A session under another VEC is told plainly rather than being
+       handed ARRL's form, which would file it with the wrong coordinator. *@
+    <p><strong>This session is not run under ARRL-VEC.</strong></p>
+    <p class="session-sub">
+        Only ARRL sessions can be filed from this app &mdash; every VEC has its own process. Use your
+        VEC's normal method, then mark the session submitted on the session page.
+    </p>
+}
+else if (preview.Status == ArrlSubmissionPreviewStatus.TeamNotConfigured)
+{
+    <p><strong>@preview.TeamName has not set up ARRL submissions yet.</strong></p>
+    <p class="session-sub">
+        A location, a payment method and an email choice are needed before a form can be filled in.
+        Set them under <a asp-page="/Admin/TeamSettings">Team settings &rarr; ARRL submissions</a>.
+    </p>
+}
+else
+{
+    <div class="section-head"><h2>@preview.SessionTitle</h2></div>
+
+    @if (preview.AlreadySubmitted)
+    {
+        <p><strong>This session is already marked as submitted to its VEC.</strong> Filing it again would
+        send ARRL a second copy &mdash; there is no way to withdraw one.</p>
+    }
+
+    @* Not yet a submit control of any kind: this increment renders what would be sent so it can be
+       checked against what a human would file by hand. See the page model's remarks. *@
+    <p class="session-sub">
+        This is exactly what would be sent to ARRL. Nothing is submitted from this screen yet &mdash;
+        keep filing by hand, and use this to check the two agree.
+    </p>
+
+    @if (preview.MissingRequiredFields.Count > 0)
+    {
+        <div class="section-head" style="margin-top:20px;"><h2>Missing information</h2></div>
+        <p>ARRL requires these, and they could not be filled in:</p>
+        <ul>
+            @foreach (var field in preview.MissingRequiredFields)
+            {
+                <li><strong>@field</strong></li>
+            }
+        </ul>
+        <p class="session-sub">
+            The contact details come from the session's lead VE. ExamTools does not supply them, so they
+            are only ever entered by an admin or the VE &mdash; and a VE whose details have been through
+            the retention purge will have none. Fill them in on the VE's own record, or enter them here
+            once this screen can submit.
+        </p>
+    }
+
+    <div class="section-head" style="margin-top:20px;"><h2>The form</h2></div>
+    <div class="meta-grid">
+        <div class="meta-item"><span class="k">Full name</span><span class="v">@(preview.FullName ?? "—")</span></div>
+        <div class="meta-item"><span class="k">Call sign</span><span class="v mono">@(preview.CallSign ?? "—")</span></div>
+        <div class="meta-item"><span class="k">Email</span><span class="v">@(preview.Email ?? "—")</span></div>
+        <div class="meta-item"><span class="k">Phone</span><span class="v mono">@(preview.Phone ?? "—")</span></div>
+        <div class="meta-item"><span class="k">Exam session date</span><span class="v mono">@preview.SessionDate</span></div>
+        <div class="meta-item"><span class="k">Exam session location</span><span class="v">@preview.Location</span></div>
+        <div class="meta-item">
+            <span class="k">Method of payment</span>
+            <span class="v">
+                @(preview.PaymentMethod switch
+                {
+                    ArrlPaymentMethod.MailIn => "Mail in payment",
+                    ArrlPaymentMethod.PhoneIn => "Phone in payment",
+                    ArrlPaymentMethod.CreditCardOnFile => "Credit card on file with VEC",
+                    _ => "—"
+                })
+            </span>
+        </div>
+        <div class="meta-item"><span class="k">Amount forwarded to ARRL VEC</span><span class="v mono">@preview.AmountCharged</span></div>
+    </div>
+
+    <div class="section-head" style="margin-top:20px;"><h2>Notes</h2></div>
+    @if (string.IsNullOrWhiteSpace(preview.Note))
+    {
+        <p class="session-sub">Empty &mdash; nothing would be sent in this field.</p>
+    }
+    else
+    {
+        <p style="white-space:pre-wrap;">@preview.Note</p>
+    }
+
+    @* The arithmetic, not just the total: the figure is derived from payments received, and two
+       ordinary situations make that differ from what is owed. *@
+    <div class="section-head" style="margin-top:20px;"><h2>How the amount was worked out</h2></div>
+    @if (preview.Fees is { } fees)
+    {
+        <div class="meta-grid">
+            <div class="meta-item"><span class="k">Collected</span><span class="v mono">@Usd.Format(fees.TotalCollected)</span></div>
+            <div class="meta-item"><span class="k">Retained by the team</span><span class="v mono">@Usd.Format(fees.TotalRetained)</span></div>
+            <div class="meta-item"><span class="k">Forwarded to ARRL</span><span class="v mono">@Usd.Format(fees.TotalRemitToVec)</span></div>
+        </div>
+    }
+    @foreach (var warning in preview.AmountWarnings)
+    {
+        <p><strong>Check this:</strong> @warning</p>
+    }
+
+    <div class="section-head" style="margin-top:20px;"><h2>Files</h2></div>
+    @if (preview.ArchiveOutcome == VecArchiveDownloadOutcome.Succeeded)
+    {
+        <p><span class="mono">@preview.ArchiveFileName</span> &mdash; @(preview.ArchiveByteCount / 1024)KB, fetched from ExamTools.</p>
+    }
+    else if (preview.ArchiveOutcome == VecArchiveDownloadOutcome.SessionNotComplete)
+    {
+        <p><strong>ExamTools has no archive for this session yet.</strong></p>
+        <p class="session-sub">
+            It said: &ldquo;@preview.ArchiveMessage&rdquo; &mdash; close the session in ExamTools and this
+            page will find it.
+        </p>
+    }
+    else
+    {
+        <p><strong>The VEC archive could not be downloaded.</strong> @preview.ArchiveMessage</p>
+    }
+
+    @if (preview.YouthFormExpected)
+    {
+        <p><strong>This session has a youth-rate payment</strong>, so ARRL will also want the youth grant
+        program form alongside the archive. Attaching it will be possible once this screen can submit.</p>
+    }
+}
+</div>
