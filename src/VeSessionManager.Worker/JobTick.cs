@@ -1,3 +1,5 @@
+using VeSessionManager.Core.Data;
+
 namespace VeSessionManager.Worker;
 
 /// <summary>
@@ -36,7 +38,11 @@ internal static class JobTick
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "{JobName} tick failed outside the job body — abandoning this tick; the job continues on its next one", jobName);
+            // The cause is named (#434) so contention is greppable apart from a real fault without
+            // anyone parsing exception text. Behaviour is unchanged: still swallowed, still
+            // abandoned, still no retry — the next tick re-derives whatever this one missed.
+            logger.LogError(ex, "{JobName} tick failed outside the job body ({Cause}) — abandoning this tick; the job continues on its next one",
+                jobName, DatabaseContention.Describe(ex));
         }
     }
 }
