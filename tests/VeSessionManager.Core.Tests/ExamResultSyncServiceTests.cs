@@ -351,13 +351,25 @@ public class ExamResultSyncServiceTests
         Assert.False((await dbContext.Candidates.SingleAsync()).Tested);
     }
 
+    /// <summary>
+    /// A settled candidate costs nothing — still true, on a new boundary.
+    ///
+    /// <para><b>This used to assert the same thing on an OPEN session</b>, i.e. that a class once
+    /// recorded stopped the candidate ever being fetched again. That was the second half of #437:
+    /// ExamTools grades element by element, so freezing on the first graded element it happened to
+    /// see recorded General for a candidate who passed Element 4 minutes later — and this filter made
+    /// it unobservable as well as permanent. The bound is now the session being closed, where grading
+    /// genuinely cannot still be in progress. The property the test protects is unchanged.</para>
+    /// </summary>
     [Fact]
-    public async Task AlreadyTestedCandidateWithLicenseClassAlreadySet_IsNeverRechecked()
+    public async Task AlreadyTestedCandidateWithLicenseClassAlreadySet_IsNeverRechecked_OnceTheSessionIsClosed()
     {
         await using var dbContext = CreateContext();
         var team = await SeedTeamAsync(dbContext);
         var session = await SeedSessionAsync(dbContext, team);
+        session.ExamToolsClosedUtc = Now;
         await SeedCandidateAsync(dbContext, session, tested: true, newLicenseClass: LicenseClass.Technician);
+        await dbContext.SaveChangesAsync();
         var client = new FakeExamToolsClient();
 
         await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
@@ -424,7 +436,18 @@ public class ExamResultSyncServiceTests
         Assert.Equal(LicenseClass.None, updated.InitialLicenseClass);
         Assert.Equal(LicenseClass.Technician, updated.NewLicenseClass);
 
-        // Second run: NewLicenseClass is now set, so it's never refetched again.
+        // Second run: backfilled ONCE. Since #437 an open session is still re-read (a later-graded
+        // element must be able to land), so the thing that must not repeat is the write, not the
+        // fetch — assert that directly rather than through the fetch as a proxy.
+        client.DetailFetches.Clear();
+        var again = await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+        Assert.Equal(0, again.CandidatesBackfilledLicenseClass);
+        Assert.Equal(0, again.CandidatesLicenseClassRaised);
+        Assert.Equal(LicenseClass.Technician, (await dbContext.Candidates.SingleAsync()).NewLicenseClass);
+
+        // And once the session closes, it is not even fetched.
+        session.ExamToolsClosedUtc = Now;
+        await dbContext.SaveChangesAsync();
         client.DetailFetches.Clear();
         await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
         Assert.Empty(client.DetailFetches);
@@ -616,5 +639,91 @@ public class ExamResultSyncServiceTests
         await CreateService(dbContext, client).SyncSessionAsync(team, session.Id, CancellationToken.None);
 
         Assert.Empty(client.DetailFetches);
+    }
+    // ---- Issue #437: a partially-graded sitting froze the class too low -----------------------
+    // Reported live on Chang Sun (HRCC, 2026-08-18): E2, E3 and E4 all passed, recorded as General.
+
+    private static ExamToolsExamResult PassedElement(int element) =>
+        new() { Element = element, Graded = true, Passed = true };
+
+    /// <summary>The reported case end to end. ExamTools grades element by element as VEs enter
+    /// results, so a poll can legitimately see a partial set — it must not become permanent.</summary>
+    [Fact]
+    public async Task ASecondPollSeeingElement4_RaisesGeneralToExtra()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        var session = await SeedSessionAsync(dbContext, team);
+        var candidate = await SeedCandidateAsync(dbContext, session);
+        var client = new FakeExamToolsClient();
+        var service = CreateService(dbContext, client);
+
+        client.SetDetail("applicant-1", PassedElement(2), PassedElement(3));
+        await service.RunAsync(team, CancellationToken.None);
+        Assert.Equal(LicenseClass.General, candidate.NewLicenseClass);
+
+        client.SetDetail("applicant-1", PassedElement(2), PassedElement(3), PassedElement(4));
+        await service.RunAsync(team, CancellationToken.None);
+
+        Assert.Equal(LicenseClass.Extra, candidate.NewLicenseClass);
+        Assert.Equal(LicenseClass.None, candidate.InitialLicenseClass);
+    }
+
+    /// <summary>The other half of the freeze, and the one that made it unobservable: the scan filter
+    /// stopped fetching a Tested candidate who already had a class, so the later element could not be
+    /// seen even in principle.</summary>
+    [Fact]
+    public async Task AnAlreadyClassifiedCandidate_IsStillFetched_WhileTheSessionIsOpen()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        var session = await SeedSessionAsync(dbContext, team);
+        await SeedCandidateAsync(dbContext, session, tested: true, newLicenseClass: LicenseClass.General);
+        var client = new FakeExamToolsClient();
+        client.SetDetail("applicant-1", PassedElement(2), PassedElement(3));
+
+        await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+
+        Assert.Contains("applicant-1", client.DetailFetches);
+    }
+
+    /// <summary>A revision is a correction, not a fresh result — the ops dashboard must not read it as
+    /// one, the same reason CandidatesAutoFailedCorrected is counted apart.</summary>
+    [Fact]
+    public async Task ARevision_IsCountedSeparatelyFromAFreshResult()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        var session = await SeedSessionAsync(dbContext, team);
+        await SeedCandidateAsync(dbContext, session);
+        var client = new FakeExamToolsClient();
+        var service = CreateService(dbContext, client);
+
+        client.SetDetail("applicant-1", PassedElement(2), PassedElement(3));
+        await service.RunAsync(team, CancellationToken.None);
+
+        client.SetDetail("applicant-1", PassedElement(2), PassedElement(3), PassedElement(4));
+        var second = await service.RunAsync(team, CancellationToken.None);
+
+        Assert.Equal(1, second.CandidatesLicenseClassRaised);
+        Assert.Equal(0, second.CandidatesMarkedTested);
+    }
+
+    /// <summary>An unchanged re-read writes nothing — this now polls every tick while a session is open.</summary>
+    [Fact]
+    public async Task AnUnchangedReRead_RaisesNothing()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        var session = await SeedSessionAsync(dbContext, team);
+        await SeedCandidateAsync(dbContext, session);
+        var client = new FakeExamToolsClient();
+        var service = CreateService(dbContext, client);
+
+        client.SetDetail("applicant-1", PassedElement(2), PassedElement(3));
+        await service.RunAsync(team, CancellationToken.None);
+        var second = await service.RunAsync(team, CancellationToken.None);
+
+        Assert.Equal(0, second.CandidatesLicenseClassRaised);
     }
 }
