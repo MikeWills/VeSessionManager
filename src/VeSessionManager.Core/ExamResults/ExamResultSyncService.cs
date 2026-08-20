@@ -178,7 +178,14 @@ public class ExamResultSyncService(
             .Where(c => c.ExamToolsApplicantId is not null
                 && c.ApplicationStatus != CandidateApplicationStatus.NotTested
                 && (c.ApplicationStatus != CandidateApplicationStatus.Failed || c.ResultMarkedByUserId is null)
-                && (!c.Tested || c.NewLicenseClass is null))
+                // #437: a Tested candidate WITH a class is still re-fetched while the session is
+                // open. ExamTools grades element by element, so the first poll to see any graded
+                // element routinely sees a partial set — and this filter used to stop fetching that
+                // candidate the moment a class was recorded, which made the too-low class
+                // unobservable as well as permanent. Closed is the natural bound: grading cannot
+                // still be in progress on a session ExamTools has closed, so a settled session still
+                // costs zero applicant-detail calls (the property ResultSyncWindow's remarks rely on).
+                && (!c.Tested || c.NewLicenseClass is null || session.ExamToolsClosedUtc is null))
             .ToList();
 
         foreach (var candidate in pendingCandidates)
@@ -266,11 +273,37 @@ public class ExamResultSyncService(
                 result.CandidatesAutoFailedCorrected++;
             }
 
-            if (candidate.NewLicenseClass is null)
+            // Only the passed elements. A failed attempt at a higher class must not drag the
+            // earned class up, and a failed lower element cannot lower it either.
+            var (initial, newClass) = ResolveLicenseClasses(passedElements);
+
+            // #437: revise upward, never downward. This used to be `if (NewLicenseClass is null)`,
+            // which froze whatever the first poll happened to see — General for a candidate who went
+            // on to pass Element 4 minutes later, permanently. See LicenseClassRevision for why the
+            // upward-only rule is safe.
+            //
+            // Both flags are computed from the state BEFORE the write, and the counting block below
+            // keys off them rather than off "is this candidate already Tested". That distinction is
+            // load-bearing now: since an open session is re-read every tick, a counter keyed on
+            // already-Tested would increment for every settled candidate on every tick and report
+            // work that did not happen. An existing test caught exactly that.
+            var hadClassBefore = candidate.NewLicenseClass is not null;
+            var wrote = LicenseClassRevision.ShouldReplace(candidate.NewLicenseClass, newClass);
+            var raised = hadClassBefore && wrote;
+            var backfilled = !hadClassBefore && wrote;
+
+            if (wrote)
             {
-                // Only the passed elements. A failed attempt at a higher class must not drag the
-                // earned class up, and a failed lower element cannot lower it either.
-                var (initial, newClass) = ResolveLicenseClasses(passedElements);
+                if (raised)
+                {
+                    dbContext.AddAuditLog(null, "CandidateLicenseClassRaised", nameof(Candidate), candidate.Id,
+                        $"Candidate {candidate.Id} was recorded as {candidate.NewLicenseClass} and has now passed element(s) {string.Join(", ", passedElements.OrderBy(e => e))} — raised to {newClass}.", now,
+                        teamId: teamId);
+                    result.CandidatesLicenseClassRaised++;
+                }
+
+                // InitialLicenseClass moves with it: both come from the same element set, and a later
+                // element changes what the lowest-passed says about what they walked in with.
                 candidate.InitialLicenseClass = initial;
                 candidate.NewLicenseClass = newClass;
             }
@@ -281,9 +314,20 @@ public class ExamResultSyncService(
             {
                 // counted as CandidatesAutoFailedCorrected
             }
+            else if (raised)
+            {
+                // counted as CandidatesLicenseClassRaised — a correction, not a fresh result, and
+                // reporting it as both would overstate what this run did (#437).
+            }
             else if (wasAlreadyTested)
             {
-                result.CandidatesBackfilledLicenseClass++;
+                // Only when something was actually filled in. An unchanged re-read of a settled
+                // candidate is not work, and counting it as a backfill would put a number on the ops
+                // dashboard every tick for as long as the session stayed open (#437).
+                if (backfilled)
+                {
+                    result.CandidatesBackfilledLicenseClass++;
+                }
             }
             else
             {
@@ -325,6 +369,9 @@ public class ExamResultSyncResult
     /// <summary>Candidates the old any-element-failed logic wrongly marked Failed, put right on this pass. Counted separately so a repair is never mistaken for a fresh result on the ops dashboard.</summary>
     public int CandidatesAutoFailedCorrected { get; set; }
 
+    /// <summary>Candidates whose recorded license class was raised by a later-graded element (#437) — a correction, counted apart from a fresh result for the same reason as the field above.</summary>
+    public int CandidatesLicenseClassRaised { get; set; }
+
     public override string ToString() =>
-        $"marked Failed {CandidatesMarkedFailed}, marked Tested (passed) {CandidatesMarkedTested}, backfilled license class {CandidatesBackfilledLicenseClass}, corrected wrongly-failed {CandidatesAutoFailedCorrected}";
+        $"marked Failed {CandidatesMarkedFailed}, marked Tested (passed) {CandidatesMarkedTested}, backfilled license class {CandidatesBackfilledLicenseClass}, corrected wrongly-failed {CandidatesAutoFailedCorrected}, raised license class {CandidatesLicenseClassRaised}";
 }
