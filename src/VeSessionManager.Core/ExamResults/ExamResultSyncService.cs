@@ -163,42 +163,18 @@ public class ExamResultSyncService(
     }
 
     /// <param name="includeSettled">
-    /// True only on the human-triggered path. A settled candidate — Tested, with a class, on a closed
-    /// session — is skipped by the scheduled scan to keep finished sessions free, and that bound
-    /// closed the repair route for the one population that needs it: a license class frozen too low
-    /// (#437) is almost always noticed AFTER the session is finalized, by somebody comparing the app
-    /// against ExamTools. Somebody pressing "Refresh" is an explicit request to re-read, so it costs
-    /// one applicant-detail call per candidate, once, and is worth it.
+    /// True only on the human-triggered path, where it lifts the scheduled scan's cost bounds and
+    /// nothing else. See <see cref="ExamResultCandidateFilter"/> — which candidates get read, and why
+    /// the two paths differ, lives there rather than here.
     /// </param>
     private async Task SyncSessionCandidatesAsync(ExamToolsCredentials credentials, Session session, DateTime now, ExamResultSyncResult result, bool includeSettled, CancellationToken cancellationToken)
     {
-        // Failed is NOT the permanent exclusion it used to be — that is what made the pass-one-fail-one
-        // bug unrecoverable rather than merely wrong. A candidate the app auto-failed under the old
-        // logic (ResultMarkedByUserId is null, and no license class was ever resolved) is looked at
-        // again, so a re-examined result corrects itself on the next poll with no migration and no
-        // manual intervention. A HUMAN Failed verdict is still final — a Session Manager who marked
-        // someone failed must not be quietly overruled by a feed.
-        //
-        // Cost of re-examining a genuinely failed candidate: one applicant-detail call per poll for
-        // the 14 days their session stays inside ResultSyncWindow, then never again. ApplyResult is
-        // idempotent for them — no repeat audit entry, no repeat count.
+        // ⚠️ Do NOT add a clause here. Every rule about which candidates get read lives in
+        // ExamResultCandidateFilter, in one of its two named buckets, and that split is the whole
+        // guard: a bound written inline here is one the human-triggered path silently inherits,
+        // which has already made SyncSessionAsync's "escape hatch" promise false twice.
         var pendingCandidates = session.Candidates
-            .Where(c => c.ExamToolsApplicantId is not null
-                && c.ApplicationStatus != CandidateApplicationStatus.NotTested
-                && (c.ApplicationStatus != CandidateApplicationStatus.Failed || c.ResultMarkedByUserId is null)
-                // #437: a Tested candidate WITH a class is still re-fetched while the session is
-                // open. ExamTools grades element by element, so the first poll to see any graded
-                // element routinely sees a partial set — and this filter used to stop fetching that
-                // candidate the moment a class was recorded, which made the too-low class
-                // unobservable as well as permanent. Closed is the natural bound for the SCHEDULED
-                // scan: grading cannot still be in progress on a session ExamTools has closed, so a
-                // settled session still costs zero applicant-detail calls (the property
-                // ResultSyncWindow's remarks rely on).
-                //
-                // includeSettled lifts that bound for a human pressing "Refresh" — see the parameter
-                // docs. Note what it does NOT lift: NotTested, and a human Failed verdict, both
-                // excluded above. "Re-read everyone" means everyone the feed is allowed to speak for.
-                && (includeSettled || !c.Tested || c.NewLicenseClass is null || session.ExamToolsClosedUtc is null))
+            .Where(c => ExamResultCandidateFilter.ShouldRead(c, session, includeSettled))
             .ToList();
 
         foreach (var candidate in pendingCandidates)
