@@ -37,6 +37,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options, IDataProtectio
     public DbSet<Session> Sessions => Set<Session>();
     public DbSet<Candidate> Candidates => Set<Candidate>();
     public DbSet<Payment> Payments => Set<Payment>();
+
+    /// <summary>Stored FCC application timelines (#195) — written only when the ULS lookup reports something different.</summary>
+    public DbSet<CandidateUlsHistoryEntry> CandidateUlsHistoryEntries => Set<CandidateUlsHistoryEntry>();
     public DbSet<CandidateEmailSend> CandidateEmailSends => Set<CandidateEmailSend>();
     public DbSet<VolunteerExaminer> VolunteerExaminers => Set<VolunteerExaminer>();
     public DbSet<SessionVolunteerExaminer> SessionVolunteerExaminers => Set<SessionVolunteerExaminer>();

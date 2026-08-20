@@ -90,7 +90,31 @@ public sealed record UlsPendingApplication
     public IReadOnlyList<UlsHistoryEntry> History { get; init; } = [];
 }
 
-public sealed record UlsHistoryEntry(DateTime? LogDateUtc, string Code);
+/// <summary>
+/// One entry in a pending application's ULS history — a code, when it was logged, and FCC's own
+/// words for it.
+///
+/// <para><see cref="CodeText"/> is what #195 is about. It was being discarded at parse time, which
+/// left the app holding jargon (<c>RDLCOM</c>) when the endpoint had already handed it the sentence
+/// (<c>"Redlight Review Completed"</c>). It matters here more than it would elsewhere:
+/// <c>wireless2.fcc.gov</c> Akamai-403s this deployment, so a Session Manager cannot simply go and
+/// read FCC's own page instead.</para>
+/// </summary>
+/// <param name="LogDateUtc">When FCC logged the action. Date-only at source, stamped at UTC midnight.</param>
+/// <param name="Code">The ULS action code, upper-cased and trimmed — <c>ResolveHoldReason</c> matches on exact values.</param>
+/// <param name="CodeText">FCC's human-readable description, exactly as returned. Null when the endpoint omits it.</param>
+public sealed record UlsHistoryEntry(DateTime? LogDateUtc, string Code, string? CodeText = null)
+{
+    /// <summary>
+    /// What to show a human: the text when there is one, the raw code otherwise.
+    ///
+    /// <para>The fallback is not defensive padding. This endpoint is undocumented and
+    /// unauthenticated, and <c>code_text</c> was observed rather than specified — so it can vanish
+    /// in a shape change with no warning. A timeline row rendering jargon is worse than one
+    /// rendering a sentence, and far better than one rendering nothing at all.</para>
+    /// </summary>
+    public string Description => string.IsNullOrWhiteSpace(CodeText) ? Code : CodeText.Trim();
+}
 
 /// <summary>Raw JSON shapes — kept separate from the normalised records above so the mapping stays in one place (UlsLookupMapper) and a shape change surfaces there rather than across the service.</summary>
 internal sealed class UlsLookupResponse
@@ -136,4 +160,7 @@ internal sealed class UlsHistoryResponse
 {
     [JsonPropertyName("log_date")] public DateTime? LogDate { get; set; }
     [JsonPropertyName("code")] public string? Code { get; set; }
+
+    /// <summary>FCC's own words for the code ("Redlight Review Completed"). Surfaced as the application timeline (#195); observed on the live endpoint rather than specified anywhere, so it is treated as optional.</summary>
+    [JsonPropertyName("code_text")] public string? CodeText { get; set; }
 }

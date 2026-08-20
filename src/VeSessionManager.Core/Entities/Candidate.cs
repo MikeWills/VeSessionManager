@@ -200,6 +200,14 @@ public class Candidate
     public List<Payment> Payments { get; } = [];
 
     /// <summary>
+    /// The candidate's FCC application timeline, oldest first (#195) — refreshed by
+    /// <c>UlsWatcherService</c> from data it already fetches, and reconciled rather than rewritten so
+    /// an unchanged timeline costs no write. See <see cref="CandidateUlsHistoryEntry"/> for why these
+    /// are not treated as PII.
+    /// </summary>
+    public List<CandidateUlsHistoryEntry> UlsHistory { get; } = [];
+
+    /// <summary>
     /// Hand-composed emails this candidate has actually received (#144) — the ones somebody wrote on
     /// the Email candidates screen. A collection rather than another <c>...SentUtc</c> column because
     /// a team writes its own templates, so the set of things that can be sent is not fixed by the

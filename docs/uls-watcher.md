@@ -157,11 +157,31 @@ Investigated to a conclusion and abandoned for three independent reasons, any on
 `Candidate.UlsApplicationFileNumber` is still captured — it is real data, cheap to store, and usable
 by anyone who can reach FCC's search — it is simply not rendered as a link.
 
-**Better direction if application visibility is wanted:** `pendingApplications[].history[]` already
-returns human-readable entries (`code_text: "Redlight Review Completed"`) with dates, and the watcher
-currently discards everything but the hold flag. Surfacing that timeline inline would give more than
-the FCC page would, with no dependency on a site that won't load. See
-[issue #195](https://github.com/MikeWills/VeSessionManager/issues/195).
+**Built instead, 2026-08-20 ([#195](https://github.com/MikeWills/VeSessionManager/issues/195)):**
+`pendingApplications[].history[]` returns human-readable entries (`code_text: "Redlight Review
+Completed"`) with dates, and the watcher used to discard everything but the hold flag. Those entries
+are now carried through the mapper, stored as `CandidateUlsHistoryEntry`, and rendered as an **FCC
+application history** block on candidate detail — more than the FCC page would give, with no
+dependency on a site that will not load for us.
+
+Three things worth carrying forward:
+
+- **Stored, not fetched on demand.** The watcher already receives them on every run, so persisting
+  costs no additional polling — which was the condition the issue set. Fetching at render time would
+  put an undocumented, unauthenticated third-party call on a page load.
+- **Reconciled, not rewritten.** `UlsTimeline.Reconcile` returns whether anything actually differs
+  and the caller saves only then. The naive clear-and-re-add would rewrite an unchanged timeline for
+  every open candidate on every run — pure write churn on a single-writer file, on exactly the
+  contended path [#434](https://github.com/MikeWills/VeSessionManager/issues/434) instruments.
+- **`code_text` is optional in the code, though it has always been present in practice.** It was
+  observed on a live response, not specified anywhere, so both `UlsHistoryEntry.Description` and the
+  page fall back to the raw code. A row rendering `RDLCOM` is worse than one rendering a sentence and
+  far better than one rendering blank.
+
+⚠️ **The `code` is still upper-cased and trimmed on the way in.** `ResolveHoldReason` matches exact
+codes (`RDLOFF`/`RDLCOM`, `BQOFF`/`BQCOM`), so a shape change returning `"rdloff"` would silently
+stop detecting holds — the timeline made that normalisation load-bearing for two features rather than
+one. The text is stored exactly as FCC wrote it.
 
 ## Risks worth revisiting
 

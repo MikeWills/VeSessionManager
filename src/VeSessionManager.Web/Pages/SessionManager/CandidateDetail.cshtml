@@ -47,6 +47,30 @@
             <div class="meta-item"><span class="k">Registered</span><span class="v mono">@c.RegisteredLine</span></div>
             <div class="meta-item"><span class="k">FCC application entered</span><span class="v mono">@(c.ApplicationDateLine ?? "—")</span></div>
             <div class="meta-item"><span class="k">License granted</span><span class="v mono">@(c.LicenseGrantDateLine ?? "—")</span></div>
+            @if (c.ApplicationTimeline.Count > 0)
+            {
+                @* #195. FCC's own application history, from the ULS lookup the watcher already makes.
+                   Rendered here rather than linked because wireless2.fcc.gov Akamai-403s this
+                   deployment — there is no FCC page to send anyone to. *@
+                <div class="meta-item" style="flex-basis:100%">
+                    <span class="k">FCC application history</span>
+                    <span class="v">
+                        <ul class="uls-timeline">
+                            @foreach (var entry in c.ApplicationTimeline)
+                            {
+                                <li>
+                                    <span class="mono">@entry.DateLine</span>
+                                    <span>@entry.Description</span>
+                                    @if (entry.Code != entry.Description)
+                                    {
+                                        <span class="mono" style="color:var(--ink-soft)">@entry.Code</span>
+                                    }
+                                </li>
+                            }
+                        </ul>
+                    </span>
+                </div>
+            }
             @if (c.LicenseNote is not null)
             {
                 <div class="meta-item" style="flex-basis:100%"><span class="v" style="color:var(--ink-soft)">@c.LicenseNote</span></div>

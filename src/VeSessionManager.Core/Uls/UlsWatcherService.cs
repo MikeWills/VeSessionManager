@@ -179,6 +179,11 @@ public class UlsWatcherService(
             changed = true;
         }
 
+        // The same history this method already reads for the hold flag, kept rather than discarded
+        // (#195). Reconcile returns false when nothing differs, so an unchanged timeline adds no
+        // write — see UlsTimeline for why that matters on a single-writer file.
+        changed |= UlsTimeline.Reconcile(candidate, application.History);
+
         if (candidate.ApplicationStatus == CandidateApplicationStatus.Unmatched)
         {
             candidate.ApplicationStatus = CandidateApplicationStatus.Received;
