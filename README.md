@@ -131,6 +131,7 @@ and [`docs/deployment.md`](docs/deployment.md#automated-deploy-github-actions) c
 | [`CONTRIBUTING.md`](CONTRIBUTING.md) | Local dev, tests, branching |
 | [`SECURITY.md`](SECURITY.md) | Reporting a vulnerability |
 | [`docs/spec.md`](docs/spec.md) | Full build plan and data model |
+| [`docs/runbooks/`](docs/runbooks/) | Operational procedures: deploy, roll back, restore, and symptom-first diagnostics |
 | [`docs/`](docs/) | One deep-dive per subsystem |
 
 ## Status

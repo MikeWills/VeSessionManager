@@ -315,9 +315,10 @@ top would have hidden it from exactly the Session Managers who press the button.
 - ⚠️ **Create the archive directory** (`/var/lib/vesessionmanager/vec-archives`) owned by the
   `vesessionmanager` account, **outside the app path** — `deploy.yml` runs `rsync --delete` over that
   on every release, which is why the database lives under `/var/lib` too.
-- ⚠️ **Add it to the off-box backup** ([#256](https://github.com/MikeWills/VeSessionManager/issues/256)),
-  which covers the database and key ring only. An unbacked-up archive fails silently: nothing looks
-  wrong until a receipt is wanted and missing.
+- ⚠️ **Add it to the off-box backup.** Done on the live box (confirmed 2026-08-20) — backed up
+  alongside the database and key ring from [#256](https://github.com/MikeWills/VeSessionManager/issues/256),
+  which originally covered those two only. Any other deployment must arrange this itself: an
+  unbacked-up archive fails silently, and nothing looks wrong until a receipt is wanted and missing.
 - Fill in each team's ARRL settings. Nothing is defaulted.
 
 ## Rollout
