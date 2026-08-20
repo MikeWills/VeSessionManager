@@ -328,11 +328,29 @@ entries above has aged out to **`CHANGELOG.md`** — same one-line-pointer forma
 
 ## Rollback / Versioning
 
-- **Versioning**: Use semantic versioning (`v1.2.0`) for tagging releases in Git
-- **Deployment retention**: Keep the previous systemd deployment folder/build untouched for a set period after a new release before cleanup, so rollback is a symlink/service-restart swap rather than a rebuild
-- **Database changes**: Any schema migration must have a documented rollback path (down-migration script or pre-migration backup) — code rollback alone will not undo a schema change
-- **Rollback authority**: Document who can decide to roll back and where that decision/action gets logged (e.g. commit, ticket, or team channel)
-- (Add project-specific rollback steps and retention window once decided)
+Steps are in [`runbooks/roll-back-a-release.md`](runbooks/roll-back-a-release.md); what's here is
+only what shapes decisions elsewhere.
+
+- **Versioning**: semantic version tags (`v1.2.0`). A pushed tag is the *only* deploy trigger — an
+  ordinary commit to `main` builds and tests, and ships nothing.
+- **There is no previous build to swap back to, and no symlink/`releases/` scheme.** `deploy.yml`
+  `rsync --delete`s straight over `/opt/vesessionmanager/{worker,web}/`, so the prior build is gone
+  the moment the sync runs. **Rolling back means deploying an earlier tag** — tag the last good
+  commit and push. *(This bullet used to describe keeping the previous deployment folder for a
+  symlink/service-restart swap. That was template text, never true of this deployment, and it
+  contradicted the workflow for months.)*
+- **Rollback safety comes from the pre-deploy snapshots, not from retained builds.** Each deploy
+  takes a database snapshot (`sqlite3 .backup` + `PRAGMA integrity_check`) and a key-ring snapshot,
+  newest **5** kept, retentions deliberately equal because the pair is taken and restored together.
+  ⚠️ Both live on the same disk as the thing they protect — **rollback points, not backups**. The
+  backup that survives losing the box is the separate off-box job (#256, BackupScripts).
+- **Database changes**: code rollback alone will not undo a schema migration. Any migration needs a
+  rollback path, and on this deployment that path is the snapshot pair — **key ring first, then the
+  database**, since a database restored against a missing or wrong key ring refuses to start.
+  Everything written since that snapshot is lost, so weigh a forward fix against the data loss.
+- **Rollback authority**: the maintainer's call (solo maintainer; branch protection requires 0
+  approvals). Record which tag was rolled back and why in the PR or issue that carried the bad
+  change — there is no other place a rollback is logged.
 
 ## Required Plugins
 
@@ -569,6 +587,7 @@ Keep `README.md` high-level; route deeper technical content to the right file so
 | `SECURITY.md` | Security policy | How to report a vulnerability, security handling policy |
 | `CHANGELOG.md` | The "attic" | Full history of one-line Change Log pointer entries, newest first — overflow for CLAUDE.md's own Change Log once it ages past the recent-only cap (see that section) |
 | `/docs` folder | The "blueprint room" | Deep technical detail: architecture decisions, API specs, DB schemas, troubleshooting playbooks — as individual `.md` files (e.g. `docs/deployment.md`) |
+| `/runbooks` folder | The "toolbox by the door" | Operational procedures read *while doing or fixing* something — deploy, roll back, restore, and symptom-first diagnostics. Steps and warnings only; the reasoning stays in `/docs`, which each runbook links. Index at [`runbooks/README.md`](runbooks/README.md) |
 
 - **README is written for a stranger who found the repo, not for Mike** (2026-08-13, when the repo was found to be public). It covers what the app is, what it needs, and how to stand one up on your own server; per-credential detail moved to `docs/configuration.md`, and the tag-triggered Actions workflow is called out as specific to one box rather than presented as *the* way to deploy. `ARCHITECTURE.md` and `SECURITY.md` now exist — the table above described them for months while neither did.
 - Use a GitHub Wiki or GitHub Pages only if documentation needs to be browsable outside the repo (e.g. for external stakeholders) — not needed for internal City projects by default
