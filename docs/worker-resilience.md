@@ -123,3 +123,78 @@ The unique index and its filter **cannot be verified on the EF InMemory provider
 neither. Those tests use a real `DataSource=:memory:` SQLite context, following
 `VecExamToolsCodeSqliteTests` — the same rule CLAUDE.md's Known Constraints already state for
 provider-dependent behaviour.
+
+---
+
+# Naming contention, so the "is SQLite still right?" question has a graph (#434, 2026-08-20)
+
+Follow-up to [#403](https://github.com/MikeWills/VeSessionManager/issues/403), which asked whether
+this app has outgrown SQLite and concluded **no — and size will never be the reason**. The database
+is single-digit megabytes against a multi-terabyte ceiling. The real constraint is that Web and
+Worker are two processes sharing one file, so only one may write at a time.
+
+That analysis listed rising lock failures as the trigger to revisit the decision, and then ran into
+the problem this change fixes: **contention was handled in three places and named in none.**
+
+| Site | Then | Now |
+|---|---|---|
+| `JobTick.GuardedAsync` | Logged one Error naming the job | Same, plus *which kind* of failure |
+| `JobRunHistoryLogger` (start row, completion row, job body) | Logged an Error | Same, plus the cause — and the start row is now timed |
+| `PaymentGenerationService` | Already distinguishes a lock from the known uniqueness race by re-querying | Unchanged |
+
+**Every existing behaviour is identical.** Faults are still swallowed, jobs still run when their
+bookkeeping write fails, the host still survives, nothing retries. The change is wording plus one
+timer — which is what makes it safe to put on the path that every job step takes on every tick.
+
+## The finding that shaped it: `IsTransient` is a lie on SQLite
+
+The obvious implementation is `DbException.IsTransient`. It is documented as covering "failure to
+acquire a database lock", explicitly so that retry strategies can be written *"without knowledge of
+specific database error codes"* — precisely the provider-agnostic abstraction #434 asked for, and
+precisely what keeps a future move to MySQL/Postgres cheap.
+
+⚠️ **`Microsoft.Data.Sqlite.SqliteException` does not override it.** Verified against the real
+driver, both by constructing `SqliteException("…", 5)` and by provoking an actual `SQLITE_BUSY` with
+two connections: a genuine locked-database error inherits `DbException`'s base implementation and
+reports **`IsTransient == false`**.
+
+A classifier written on `IsTransient` alone would compile, read correctly, pass review, and **never
+once fire on the only provider we run** — instrumentation that silently measures nothing, which is
+worse than none, because the resulting flat graph would read as "no contention".
+
+So `DatabaseContention.IsContention` asks the portable question **first** (a future provider needs
+no change here) and falls back to SQLite's own `SQLITE_BUSY`/`SQLITE_LOCKED` codes only because this
+provider declines to answer it. `DatabaseContentionTests` pins the finding: if a future package
+version implements `IsTransient`, that test fails and the fallback can be deleted rather than left
+to rot.
+
+The fallback is an acceptable coupling *because this is instrumentation, not control flow*. Nothing
+retries or behaves differently on the answer — a misclassification mislabels a log line. Had this
+driven real decisions, the SQLite branch would have been the wrong trade.
+
+## The signal that actually moves first
+
+Not failures — **successful writes that took too long**.
+
+Microsoft.Data.Sqlite retries a busy database internally until the command timeout,
+[30 seconds by default](https://learn.microsoft.com/dotnet/standard/data/sqlite/database-errors),
+and the connection strings set only `Data Source=`, so that default is in force. A save that waited
+twelve seconds and then succeeded raises no exception and logs nothing: it is indistinguishable from
+an instant one. **By the time contention surfaces as a failure it has been getting worse, unseen,
+for a long time.**
+
+`JobRunHistoryLogger` now times its start-row write and logs a Warning past
+`DatabaseContention.SlowWriteThreshold` (1 second). Local SQLite writes are single-digit
+milliseconds when uncontended, so a second-scale one did not do more work — it sat waiting. That
+write happens on every job step, for every team, on every tick, which makes it the best sampling
+point available without instrumenting every query.
+
+## What this deliberately does not do
+
+- **No new table, no counter store.** Logs and the existing dashboard are enough to see a trend;
+  a metrics pipeline is a bigger decision than this earns.
+- **No `Command Timeout` change.** It is a real untouched knob (#403 lists it as a cheap step before
+  any engine move), but raising it *before* measuring would hide the very signal this adds.
+- **No retry.** Every job here is scan-based and idempotent; the next tick re-derives what this one
+  missed. That is the existing design and it is still right.
+- **No engine change.** #403 settled that. This is what tells us when to reopen it.

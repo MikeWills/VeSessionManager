@@ -1,4 +1,6 @@
-﻿using Microsoft.Extensions.Logging;
+﻿using Microsoft.Data.Sqlite;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using VeSessionManager.Worker;
 
 namespace VeSessionManager.Worker.Tests;
@@ -67,6 +69,37 @@ public class JobTickTests
         Assert.Equal(LogLevel.Error, entry.Level);
         Assert.Same(boom, entry.Exception);          // the original, not a wrapper
         Assert.Contains("TestJob", entry.Message);   // says which job, or the log is unusable
+    }
+
+    /// <summary>
+    /// #434 — the tick still logs one Error and still swallows; what is new is that the line says
+    /// <i>which kind</i> of failure it was, so a rising contention trend can be counted without
+    /// anyone grepping exception text. The two tests below are a pair on purpose: if every failure
+    /// said "contention", the word would mean "a tick failed" and counting it would answer nothing.
+    /// </summary>
+    [Fact]
+    public async Task AContendedTick_SaysSo()
+    {
+        var logger = new RecordingLogger();
+        var locked = new DbUpdateException("save failed", new SqliteException("SQLite Error 5: 'database is locked'.", 5));
+
+        await JobTick.GuardedAsync(logger, "TestJob", () => throw locked);
+
+        var entry = Assert.Single(logger.Entries);
+        Assert.Equal(LogLevel.Error, entry.Level);
+        Assert.Contains("database contention", entry.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Same(locked, entry.Exception);
+    }
+
+    [Fact]
+    public async Task AnOrdinaryFailedTick_IsNotLabelledContention()
+    {
+        var logger = new RecordingLogger();
+
+        await JobTick.GuardedAsync(logger, "TestJob", () => throw new InvalidOperationException("a real bug"));
+
+        var entry = Assert.Single(logger.Entries);
+        Assert.DoesNotContain("database contention", entry.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

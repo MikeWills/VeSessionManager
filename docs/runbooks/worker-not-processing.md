@@ -67,6 +67,27 @@ sudo journalctl -u vesessionmanager-worker --no-pager | grep -iE 'unhandled|stop
 | Ingestion is throttled | The per-team refresh throttle is deliberate (see `TeamRefreshThrottle`'s own remarks) |
 | A run reports success and changed nothing | Classic `ChangeTracker.Clear()` signature — a failed row detaching the rest of the batch. Detach the failing entity instead |
 
+## Is it database contention?
+
+Web and Worker share one SQLite file and only one may write at a time. Since #434 the logs say so
+outright — grep rather than guess:
+
+```bash
+sudo journalctl -u vesessionmanager-worker --no-pager | grep -i "database contention"
+sudo journalctl -u vesessionmanager-worker --no-pager | grep -i "took .*ms to write"
+```
+
+- **"(database contention)"** on an error line — a write lost the file to the other process. One is
+  normal and self-correcting: the tick was abandoned and the next one re-derives it.
+- **"took NNNNms to write"** (Warning) — the write *succeeded*, after waiting. This is the earlier
+  and more useful signal: the driver retries internally for up to 30 seconds, so these appear long
+  before anything fails.
+
+Neither needs action on its own. **A rising rate does** — it is trigger #4 in
+[#403](https://github.com/MikeWills/VeSessionManager/issues/403)'s list of things that would mean
+this app has outgrown SQLite. See [`../worker-resilience.md`](../worker-resilience.md) for what the
+two lines mean and what to do before reaching for a different database engine.
+
 ## If it was started by hand and behaves strangely
 
 Two halves of the same trap:

@@ -68,17 +68,32 @@ public class JobRunHistoryLogger(AppDbContext dbContext, ILogger<JobRunHistoryLo
         // BackgroundServiceExceptionBehavior.StopHost — stopped the whole Worker over a missing
         // history row. The job still runs; only its dashboard entry is lost, which is the right way
         // round.
+        // Timed because a *successful* slow write is the earliest evidence of contention there is
+        // (#434). The driver retries a locked database internally until the command timeout, so a
+        // save that waited seconds and then succeeded is otherwise indistinguishable from an instant
+        // one — no exception, nothing logged, no way to see the trend forming. This write happens on
+        // every job step, for every team, on every tick, which makes it the best sampling point in
+        // the app.
         var historyTracked = false;
+        var startRowWatch = Stopwatch.StartNew();
         try
         {
             dbContext.JobRunHistories.Add(history);
             await dbContext.SaveChangesAsync(cancellationToken);
             historyTracked = true;
+            startRowWatch.Stop();
+
+            if (DatabaseContention.IsSlowWrite(startRowWatch.Elapsed))
+            {
+                logger.LogWarning("JobRunHistory start row for {JobLabel} took {ElapsedMs}ms to write — a local write this slow means it waited on the other process for the database; see docs/runbooks/worker-not-processing.md",
+                    jobLabel, startRowWatch.ElapsedMilliseconds);
+            }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             dbContext.Entry(history).State = EntityState.Detached;
-            logger.LogError(ex, "Could not write the JobRunHistory start row for {JobLabel} — running the job anyway; this run will be missing from the ops dashboard", jobLabel);
+            logger.LogError(ex, "Could not write the JobRunHistory start row for {JobLabel} ({Cause}) — running the job anyway; this run will be missing from the ops dashboard",
+                jobLabel, DatabaseContention.Describe(ex));
         }
 
         logger.LogInformation("Starting job: {JobLabel}", jobLabel);
@@ -112,7 +127,7 @@ public class JobRunHistoryLogger(AppDbContext dbContext, ILogger<JobRunHistoryLo
             failed = true;
             history.Success = false;
             history.ErrorMessage = Describe(ex);
-            logger.LogError(ex, "Job {JobName} failed", jobName);
+            logger.LogError(ex, "Job {JobName} failed ({Cause})", jobName, DatabaseContention.Describe(ex));
         }
         finally
         {
@@ -168,7 +183,8 @@ public class JobRunHistoryLogger(AppDbContext dbContext, ILogger<JobRunHistoryLo
             // Catches everything now, including OperationCanceledException. With a None token a
             // cancellation here is not shutdown, it is a genuine fault — and either way, nothing
             // this method does is worth propagating.
-            logger.LogError(ex, "Could not write the JobRunHistory completion row for {JobLabel} — the job itself already ran; only its dashboard entry is incomplete", jobLabel);
+            logger.LogError(ex, "Could not write the JobRunHistory completion row for {JobLabel} ({Cause}) — the job itself already ran; only its dashboard entry is incomplete",
+                jobLabel, DatabaseContention.Describe(ex));
             dbContext.ChangeTracker.Clear();
         }
     }
