@@ -226,7 +226,13 @@ using (var scope = host.Services.CreateScope())
         return await KeyRingVerification.RunAsync(dbContext, verifyLogger, Console.Error);
     }
 
-    dbContext.Database.Migrate();
+    // #443: both hosts migrate at startup, and only deploy.yml's start ordering used to keep them
+    // apart — which does nothing on a reboot, on the HRCC box, or for a self-hoster. See MigrationLock.
+    var startupMigrationLogger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+    MigrationLock.Run(
+        dbContext.Database.GetConnectionString() ?? string.Empty,
+        message => startupMigrationLogger.LogInformation("{Message}", message),
+        dbContext.Database.Migrate);
 
     // Fails the host rather than running with credentials it cannot read — see
     // DataProtectionKeyRingGuard. Deliberately before the one-off switches below: a

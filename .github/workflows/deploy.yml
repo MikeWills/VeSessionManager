@@ -219,6 +219,13 @@ jobs:
           # Worker and Web both call dbContext.Database.Migrate() on startup (see Program.cs in
           # each project) -- starting them serially and confirming Worker is actually up first
           # avoids both processes racing to apply the same SQLite migration concurrently.
+          #
+          # NO LONGER LOAD-BEARING as of #443: MigrationLock takes an exclusive file lock beside the
+          # database, so the hosts serialize themselves. This ordering stays as belt-and-braces, and
+          # because the health gate is worth having anyway -- but it was never protection outside a
+          # deploy on this one box. A reboot starts both units together, the HRCC server runs no
+          # pipeline at all, and a self-hoster following docs/deployment.md's publish-and-copy
+          # install never had it.
           ssh -i ~/.ssh/deploy_key "${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}" "
             sudo systemctl start $WORKER_SERVICE
             sleep 5

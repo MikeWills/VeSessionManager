@@ -149,6 +149,27 @@ secrets there.
 
 ---
 
+## Both hosts migrate at startup, and they serialize themselves (#443)
+
+`VeSessionManager.Web` and `VeSessionManager.Worker` each call `Database.Migrate()` when they start.
+They take an exclusive lock file beside the database first (`<db>.migration-lock`), so whichever gets
+there first migrates and the other waits, then finds nothing to do.
+
+**This used to be enforced only by `deploy.yml` starting Worker, confirming it active, then Web** —
+workflow sequencing, not a guarantee. It did nothing for a reboot (systemd starts both units
+together, with no `After=` between them), nothing for a server attached to no pipeline, and nothing
+for a self-hoster using the manual publish-and-copy install below. Both units are `Restart=always`,
+so a box-wide hiccup could bring them back simultaneously too.
+
+The lock sits beside the **database**, not in the app directory: the service account writes the data
+directory and deliberately cannot write `/opt/vesessionmanager`, and a lock inside a tree that
+`rsync --delete` replaces mid-deploy would be worse than no lock. It is opened `DeleteOnClose`, so a
+killed process does not leave one behind.
+
+⚠️ **A host that waits says so** — `Waiting for the other host to finish applying database migrations
+before starting.` — and gives up after two minutes with an error naming the lock file. If you ever
+see that with neither service running, the file is safe to delete.
+
 ## Build and Publish (manual, if ever needed outside CI)
 
 ```bash

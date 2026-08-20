@@ -59,7 +59,13 @@ public static class BootstrapAdminCommand
 
         // Migrations have not necessarily run yet on a brand-new box — this switch is the very first
         // thing an operator does, quite possibly before the services have ever started.
-        await dbContext.Database.MigrateAsync();
+        // Takes the same lock as the two hosts (#443). This switch is normally run before either
+        // service starts, but nothing guarantees that — an operator adding a second administrator on
+        // a live box runs it while both are up.
+        MigrationLock.Run(
+            dbContext.Database.GetConnectionString() ?? string.Empty,
+            Console.Error.WriteLine,
+            dbContext.Database.Migrate);
 
         if (await userManager.FindByEmailAsync(email) is not null)
         {
