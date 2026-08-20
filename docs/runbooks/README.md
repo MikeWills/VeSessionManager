@@ -3,9 +3,9 @@
 Operational procedures — **read while doing or fixing something**, not while designing it.
 
 The split is by *when it is read*, not by topic. A runbook is steps, checks and the one warning that
-prevents the expensive mistake. The reasoning behind those steps stays in
-[`../docs/`](../docs), which is read when changing how something works. Where a runbook states a
-rule without arguing for it, it links to the design doc that does.
+prevents the expensive mistake. The reasoning behind those steps stays in the design docs beside
+this directory, in [`../`](..) — read when *changing* how something works, not while fixing it.
+Where a runbook states a rule without arguing for it, it links to the doc that does.
 
 ## Deployment and the box
 

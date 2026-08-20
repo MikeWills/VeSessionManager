@@ -2,7 +2,7 @@
 
 **When:** shipping any merged change to the production box.
 **Who:** anyone with push access to `main` and the ability to tag.
-**Why it works this way:** [`docs/deployment.md`](../docs/deployment.md).
+**Why it works this way:** [`docs/deployment.md`](../deployment.md).
 
 ---
 
@@ -46,10 +46,10 @@
 
 | Symptom | Cause | Go to |
 |---|---|---|
-| `sudo: a password is required` on a `systemctl` step | sudoers is one exact rule per unit and matches the **whole** command line | [`docs/deployment.md`](../docs/deployment.md) — do not widen to `systemctl *` |
+| `sudo: a password is required` on a `systemctl` step | sudoers is one exact rule per unit and matches the **whole** command line | [`docs/deployment.md`](../deployment.md) — do not widen to `systemctl *` |
 | Web unit reports failed on a **brand-new** box | no administrator exists yet; the Web app refuses to start | [`stand-up-a-new-server.md`](stand-up-a-new-server.md) |
 | Startup crash naming teams and columns | key ring missing or wrong | [`key-ring-problems.md`](key-ring-problems.md) — **stop, do not re-enter credentials** |
-| Health check never goes healthy | app starts but 500s, or `AllowedHosts` does not include the serving hostname (every request 400s) | [`docs/deployment.md`](../docs/deployment.md), then [`roll-back-a-release.md`](roll-back-a-release.md) |
+| Health check never goes healthy | app starts but 500s, or `AllowedHosts` does not include the serving hostname (every request 400s) | [`docs/deployment.md`](../deployment.md), then [`roll-back-a-release.md`](roll-back-a-release.md) |
 | Deploy is fine but a job is silent afterwards | | [`worker-not-processing.md`](worker-not-processing.md) |
 
 ## Notes worth not forgetting

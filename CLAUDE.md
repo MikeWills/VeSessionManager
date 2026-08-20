@@ -328,7 +328,7 @@ entries above has aged out to **`CHANGELOG.md`** — same one-line-pointer forma
 
 ## Rollback / Versioning
 
-Steps are in [`runbooks/roll-back-a-release.md`](runbooks/roll-back-a-release.md); what's here is
+Steps are in [`docs/runbooks/roll-back-a-release.md`](docs/runbooks/roll-back-a-release.md); what's here is
 only what shapes decisions elsewhere.
 
 - **Versioning**: semantic version tags (`v1.2.0`). A pushed tag is the *only* deploy trigger — an
@@ -587,7 +587,7 @@ Keep `README.md` high-level; route deeper technical content to the right file so
 | `SECURITY.md` | Security policy | How to report a vulnerability, security handling policy |
 | `CHANGELOG.md` | The "attic" | Full history of one-line Change Log pointer entries, newest first — overflow for CLAUDE.md's own Change Log once it ages past the recent-only cap (see that section) |
 | `/docs` folder | The "blueprint room" | Deep technical detail: architecture decisions, API specs, DB schemas, troubleshooting playbooks — as individual `.md` files (e.g. `docs/deployment.md`) |
-| `/runbooks` folder | The "toolbox by the door" | Operational procedures read *while doing or fixing* something — deploy, roll back, restore, and symptom-first diagnostics. Steps and warnings only; the reasoning stays in `/docs`, which each runbook links. Index at [`runbooks/README.md`](runbooks/README.md) |
+| `/docs/runbooks` folder | The "toolbox by the door" | Operational procedures read *while doing or fixing* something — deploy, roll back, restore, and symptom-first diagnostics. Steps and warnings only; the reasoning stays in the design doc beside them, which each runbook links. Index at [`docs/runbooks/README.md`](docs/runbooks/README.md) |
 
 - **README is written for a stranger who found the repo, not for Mike** (2026-08-13, when the repo was found to be public). It covers what the app is, what it needs, and how to stand one up on your own server; per-credential detail moved to `docs/configuration.md`, and the tag-triggered Actions workflow is called out as specific to one box rather than presented as *the* way to deploy. `ARCHITECTURE.md` and `SECURITY.md` now exist — the table above described them for months while neither did.
 - Use a GitHub Wiki or GitHub Pages only if documentation needs to be browsable outside the repo (e.g. for external stakeholders) — not needed for internal City projects by default

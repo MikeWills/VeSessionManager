@@ -4,7 +4,7 @@
 routine sweep no longer reaches (it looks back about a week).
 
 **Who:** an admin, at **Admin → Team Maintenance**.
-**Why it works this way:** [`docs/historical-import.md`](../docs/historical-import.md).
+**Why it works this way:** [`docs/historical-import.md`](../historical-import.md).
 
 ---
 

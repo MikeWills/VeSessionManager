@@ -3,9 +3,9 @@
 **When:** somebody reports a missing registration confirmation, reminder, or instruction email — or
 an email arrived with a blank Zoom or payment link.
 
-**Why it works this way:** [`docs/email-reference.md`](../docs/email-reference.md),
-[`docs/email-notifications.md`](../docs/email-notifications.md),
-[`docs/trigger-points.md`](../docs/trigger-points.md).
+**Why it works this way:** [`docs/email-reference.md`](../email-reference.md),
+[`docs/email-notifications.md`](../email-notifications.md),
+[`docs/trigger-points.md`](../trigger-points.md).
 
 ---
 

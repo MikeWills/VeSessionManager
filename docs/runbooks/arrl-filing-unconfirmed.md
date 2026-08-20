@@ -3,7 +3,7 @@
 **When:** "Submit to VEC" was pressed for an ARRL session and the result was not a confirmed
 success — a timeout, an unrecognized response, or the nav bell showing an unconfirmed submission.
 
-**Why it works this way:** [`docs/arrl-vec-submission.md`](../docs/arrl-vec-submission.md).
+**Why it works this way:** [`docs/arrl-vec-submission.md`](../arrl-vec-submission.md).
 
 ---
 

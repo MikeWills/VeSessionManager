@@ -3,8 +3,8 @@
 **When:** a payment shows as outstanding after the candidate has a Square receipt; or reminders keep
 going out to somebody who has paid.
 
-**Why it works this way:** [`docs/square-payments.md`](../docs/square-payments.md),
-[`docs/reconciliation.md`](../docs/reconciliation.md).
+**Why it works this way:** [`docs/square-payments.md`](../square-payments.md),
+[`docs/reconciliation.md`](../reconciliation.md).
 
 ⚠️ **This failure is silent by design of the parties involved.** Square retries the webhook, gives
 up, and payments stop being recorded with **nothing logged on this side**. The first symptom is a
@@ -71,7 +71,7 @@ attempting, and what it got back.
 |---|---|
 | Payment links **fail to generate** for one team | A Production token being rejected by the Sandbox host (or vice versa) — `Team.SquareEnvironment` disagrees with the credentials. Shows up as failed link generation in Job Run History |
 | The candidate has **no link at all** | Square unconfigured for that team — it skips quietly and `PaymentLinkUrl` stays null, so the next poll retries once configured |
-| A **refund** was issued and the fee still shows as owed | Refunds deliberately do **not** move a Payment off `Paid` (otherwise the "unpaid and no link" scan reissues a checkout link). The VEC remittance figure nets refunds — but only when `Payment.Refunds` is loaded. See [`docs/square-refunds.md`](../docs/square-refunds.md) |
+| A **refund** was issued and the fee still shows as owed | Refunds deliberately do **not** move a Payment off `Paid` (otherwise the "unpaid and no link" scan reissues a checkout link). The VEC remittance figure nets refunds — but only when `Payment.Refunds` is loaded. See [`docs/square-refunds.md`](../square-refunds.md) |
 | A refund "succeeded" but the money has not moved | A Square refund returns `PENDING` for up to **14 days** on card/bank transfer. Read `Refund.Status`, not the fact that the call was made |
 
 ## Resolution of last resort

@@ -1,7 +1,7 @@
 # Runbook — Restore from backup
 
 **When:** the box is lost, the database is corrupt, or a restore test is being proved.
-**Why it works this way:** [`docs/credential-encryption.md`](../docs/credential-encryption.md),
+**Why it works this way:** [`docs/credential-encryption.md`](../credential-encryption.md),
 `BACKUP.md` (gitignored, on this working tree).
 
 ---

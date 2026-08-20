@@ -3,7 +3,7 @@
 **When:** the Worker or Web refuses to start naming teams and columns; every integration suddenly
 fails to authenticate; or the key ring is being moved, restored, or its match is being proved.
 
-**Why it works this way:** [`docs/credential-encryption.md`](../docs/credential-encryption.md).
+**Why it works this way:** [`docs/credential-encryption.md`](../credential-encryption.md).
 
 ---
 

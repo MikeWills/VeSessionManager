@@ -3,9 +3,9 @@
 **When:** sessions stop appearing, emails stop going out, payment links stop being created, or
 Job Run History has gone quiet.
 
-**Why it works this way:** [`docs/worker-resilience.md`](../docs/worker-resilience.md),
-[`docs/job-run-history.md`](../docs/job-run-history.md),
-[`docs/job-schedule.md`](../docs/job-schedule.md).
+**Why it works this way:** [`docs/worker-resilience.md`](../worker-resilience.md),
+[`docs/job-run-history.md`](../job-run-history.md),
+[`docs/job-schedule.md`](../job-schedule.md).
 
 ---
 

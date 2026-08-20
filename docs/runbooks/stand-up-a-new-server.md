@@ -1,8 +1,8 @@
 # Runbook — Stand up a new server
 
 **When:** a fresh box (new deployment, rebuild, or someone self-hosting this app).
-**Why it works this way:** [`docs/deployment.md`](../docs/deployment.md),
-[`docs/configuration.md`](../docs/configuration.md).
+**Why it works this way:** [`docs/deployment.md`](../deployment.md),
+[`docs/configuration.md`](../configuration.md).
 
 ---
 
