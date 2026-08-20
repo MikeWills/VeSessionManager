@@ -131,13 +131,23 @@ Four things worth carrying forward:
   first seen an hour ago, not less: it is a standing fault, and every poll since has dropped another
   session. `OccurredUtc` is first-seen for the same reason — last-seen resets every poll and would
   make a week-old fault look like it started this morning.
-- ⚠️ **SystemAdmin only, and that includes not TeamAdmin.** Both destinations
-  (`/Admin/Vecs`, `/Admin/FeeConfigurations`) carry `RoleGroups.SystemAdminOnly`.
-  `AlertPageRoleGateTests` caught this when the source first shipped gated admin-wide — the guard
-  working exactly as designed. **The cost is real:** a TeamAdmin whose team's sessions are silently
-  vanishing does not see this alert. Both fixes genuinely belong to a SystemAdmin, and an alert
-  linking somewhere the reader cannot open is worse than none — but if TeamAdmins should be told, the
-  answer is a page they can open, not a wider gate.
+- ⚠️ **Both admin roles see it, but they are sent to different pages** — and the first cut got this
+  wrong in an instructive way. Both fix pages (`/Admin/Vecs`, `/Admin/FeeConfigurations`) carry
+  `RoleGroups.SystemAdminOnly`, so the source originally shipped gated admin-wide,
+  `AlertPageRoleGateTests` caught the 403, and the fix was to narrow the gate to SystemAdmin —
+  which protected the no-403 rule **by withholding the information from the person whose sessions
+  were vanishing.** That was the wrong half to give up. Mike's ruling (2026-08-20): *if it is
+  team-related, a TeamAdmin sees it.*
+
+  So the **destination** varies by role rather than the gate excluding anyone: a SystemAdmin goes to
+  the page that fixes it, a TeamAdmin to `/Admin/JobRunHistory` (`RoleGroups.Admins`, and where the
+  ingestion runs that skipped their sessions are listed). The wording differs with it — a TeamAdmin
+  is told to ask a system administrator, because instructing somebody to perform a fix they cannot
+  perform is how an alert becomes noise. The VEC code is quoted for both: it is the actionable fact
+  either way.
+
+  **The general lesson for a fourth source:** when the natural destination excludes a role that needs
+  the alert, route the destination, do not narrow the gate.
 
 The `HighlightId` is `0`: nothing on either page corresponds to the row, because the *missing*
 configuration is the problem. Harmless by design — the highlight marks, it never filters.
