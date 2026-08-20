@@ -475,9 +475,14 @@ if (args.Contains(BootstrapAdminCommand.Switch))
 using (var scope = app.Services.CreateScope())
 {
     var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    dbContext.Database.Migrate();
-
     var startupLogger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+
+    // #443: both hosts migrate at startup, and only deploy.yml's start ordering used to keep them
+    // apart — which does nothing on a reboot, on the HRCC box, or for a self-hoster. See MigrationLock.
+    MigrationLock.Run(
+        dbContext.Database.GetConnectionString() ?? string.Empty,
+        message => startupLogger.LogInformation("{Message}", message),
+        dbContext.Database.Migrate);
 
     // Fails the host rather than running with credentials it cannot read — see
     // DataProtectionKeyRingGuard for why that state is otherwise completely silent.

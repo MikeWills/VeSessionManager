@@ -578,6 +578,17 @@ To pick up updates: `/plugin marketplace update claude-tools`
   `ExamResultEscapeHatchTests` fails if it lands on the wrong one. **Do not add a clause to the
   `Where` in `SyncSessionCandidatesAsync`.** The same shape is worth watching anywhere else a
   scheduled job and a user-triggered button share one query.
+- **Any new code path that calls `Database.Migrate()` must go through `MigrationLock.Run`
+  (#443, 2026-08-20).** Web, Worker and `--create-admin` all migrate at startup, and until this
+  landed nothing in the code kept them apart — the only protection was `deploy.yml` starting Worker,
+  asserting it active, then Web. **That is workflow sequencing, and it never covered a reboot**
+  (systemd starts both units together, no `After=` between them), a server attached to no pipeline
+  (HRCC), a self-hoster using the documented publish-and-copy install, or a crash-restart (both units
+  are `Restart=always`). The failure is not clean: a transient `database is locked` from the migrate
+  call escapes **outside** `JobTick.GuardedAsync`, so `StopHost` takes the whole Worker down. The
+  lock is an exclusive file beside the **database** — never in the app directory, which the service
+  account cannot write and which `rsync --delete` replaces mid-deploy — and it no-ops for
+  `:memory:`/`Mode=Memory`, which is what the entire test suite runs on.
 - (Environment-specific quirks and gotchas go here as they're discovered — e.g. API quirks, IIS behavior, network/DMZ restrictions, auth issues)
 
 ## Definition of Done
