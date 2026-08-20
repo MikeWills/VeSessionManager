@@ -117,20 +117,15 @@ public class SkippedSessionAlertTests
     }
 
     /// <summary>
-    /// ⚠️ <b>SystemAdmin only, including not TeamAdmin</b> — a narrower gate than reconciliation's.
-    /// Both destinations (Admin → VECs, Admin → Fee Configurations) carry
-    /// <c>RoleGroups.SystemAdminOnly</c>, so anyone else offered this alert gets a 403.
-    /// <c>AlertPageRoleGateTests</c> caught this when the source first shipped gated admin-wide.
-    ///
-    /// <para>The cost is deliberate: a TeamAdmin whose team's sessions are silently vanishing does not
-    /// see this. Both fixes genuinely belong to a SystemAdmin, and a link the reader cannot open is
-    /// worse than no link.</para>
+    /// Mike's ruling, 2026-08-20: <b>if it is team-related, a TeamAdmin sees it.</b> Their team's
+    /// sessions are the ones going missing, so being told is not optional — the first cut gated this
+    /// to SystemAdmin because both fix pages are SystemAdmin-only, which protected the no-403 rule by
+    /// withholding the information instead of routing it.
     /// </summary>
     [Theory]
-    [InlineData(UserRole.TeamAdmin)]
     [InlineData(UserRole.SessionManager)]
     [InlineData(UserRole.TeamLead)]
-    public async Task ARoleThatCannotOpenTheFixPage_IsNotOfferedTheAlert(UserRole role)
+    public async Task ARoleWithNoAdminSurface_IsNotOfferedTheAlert(UserRole role)
     {
         await using var dbContext = CreateContext();
         var team = await SeedTeamAsync(dbContext);
@@ -143,7 +138,8 @@ public class SkippedSessionAlertTests
 
     [Theory]
     [InlineData(UserRole.SystemAdmin)]
-    public async Task ARoleThatCanFixIt_IsOfferedTheAlert(UserRole role)
+    [InlineData(UserRole.TeamAdmin)]
+    public async Task BothAdminRoles_AreOfferedTheAlert(UserRole role)
     {
         await using var dbContext = CreateContext();
         var team = await SeedTeamAsync(dbContext);
@@ -166,5 +162,70 @@ public class SkippedSessionAlertTests
         var feed = await new AlertFeedService(dbContext).GetAsync(UserRole.SystemAdmin, [mine.Id], CancellationToken.None);
 
         Assert.Empty(feed.Items);
+    }
+    /// <summary>
+    /// The rule that lets both things be true at once: the alert goes to whoever needs to know, and
+    /// still never links anywhere the reader cannot open. A SystemAdmin gets the page that fixes it;
+    /// a TeamAdmin gets Job Run History, which is <c>RoleGroups.Admins</c> and is where the ingestion
+    /// runs that skipped their sessions are listed.
+    /// </summary>
+    [Theory]
+    [InlineData(UserRole.SystemAdmin, SkippedSessionReason.NoMatchingVec, "/Admin/Vecs")]
+    [InlineData(UserRole.SystemAdmin, SkippedSessionReason.NoFeeConfiguration, "/Admin/FeeConfigurations")]
+    [InlineData(UserRole.TeamAdmin, SkippedSessionReason.NoMatchingVec, "/Admin/JobRunHistory")]
+    [InlineData(UserRole.TeamAdmin, SkippedSessionReason.NoFeeConfiguration, "/Admin/JobRunHistory")]
+    public async Task TheDestination_IsAPageThatRoleCanActuallyOpen(UserRole role, SkippedSessionReason reason, string expectedPage)
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        await SeedSkipAsync(dbContext, team, reason: reason);
+
+        var feed = await new AlertFeedService(dbContext).GetAsync(role, null, CancellationToken.None);
+
+        Assert.Equal(expectedPage, Assert.Single(feed.Items).PageName);
+    }
+
+    /// <summary>
+    /// A TeamAdmin cannot perform either fix, so the alert has to say who can — otherwise it reports a
+    /// problem and leaves the reader with no next step, which is how an alert becomes noise.
+    /// </summary>
+    [Fact]
+    public async Task ATeamAdmin_IsToldItNeedsASystemAdministrator()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        await SeedSkipAsync(dbContext, team);
+
+        var feed = await new AlertFeedService(dbContext).GetAsync(UserRole.TeamAdmin, null, CancellationToken.None);
+
+        Assert.Contains("system administrator", Assert.Single(feed.Items).Detail, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>And a SystemAdmin is not told to go and find one — they are the one who fixes it.</summary>
+    [Fact]
+    public async Task ASystemAdmin_IsNotToldToAskSomebodyElse()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        await SeedSkipAsync(dbContext, team);
+
+        var feed = await new AlertFeedService(dbContext).GetAsync(UserRole.SystemAdmin, null, CancellationToken.None);
+
+        Assert.DoesNotContain("system administrator", Assert.Single(feed.Items).Detail, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>Whoever is reading, the VEC code the feed sent is the actionable fact and stays in the text.</summary>
+    [Theory]
+    [InlineData(UserRole.SystemAdmin)]
+    [InlineData(UserRole.TeamAdmin)]
+    public async Task TheVecCode_IsQuotedForEitherAdmin(UserRole role)
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        await SeedSkipAsync(dbContext, team, vecCode: "lagroup");
+
+        var feed = await new AlertFeedService(dbContext).GetAsync(role, null, CancellationToken.None);
+
+        Assert.Contains("lagroup", Assert.Single(feed.Items).Detail);
     }
 }

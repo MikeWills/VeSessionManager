@@ -44,18 +44,14 @@ public class AlertFeedService(AppDbContext dbContext)
             ? await GetReconciliationAlertsAsync(teamIds, cancellationToken)
             : ([], 0);
 
-        // SystemAdmin only — a narrower gate than reconciliation's, and not a guess: both of this
-        // source's destinations (Admin → VECs, Admin → Fee Configurations) carry
-        // RoleGroups.SystemAdminOnly, so a TeamAdmin offered this alert would be handed a 403.
-        // AlertPageRoleGateTests caught exactly that when this shipped as admin-wide.
+        // Both admin roles, per Mike's ruling (2026-08-20): if it is team-related, a TeamAdmin sees
+        // it — their team's sessions are the ones going missing.
         //
-        // ⚠️ The cost is real and deliberate: a TeamAdmin whose team's sessions are silently
-        // vanishing does NOT see this. Both fixes — adding a VEC, adding a fee configuration —
-        // genuinely belong to a SystemAdmin, and an alert linking somewhere the reader cannot open
-        // would be worse than none. If TeamAdmins should be told, the answer is a page they can open,
-        // not a wider gate here.
-        var (skippedItems, skippedTotal) = role is UserRole.SystemAdmin
-            ? await GetSkippedSessionAlertsAsync(teamIds, cancellationToken)
+        // That does not weaken the no-403 rule, it routes around it. Neither fix page admits a
+        // TeamAdmin, so the DESTINATION varies by role rather than the gate excluding them: the first
+        // cut protected the rule by withholding the information, which was the wrong half to give up.
+        var (skippedItems, skippedTotal) = isAdmin
+            ? await GetSkippedSessionAlertsAsync(role, teamIds, cancellationToken)
             : ([], 0);
 
         var (submissionItems, submissionTotal) = await GetUnconfirmedSubmissionAlertsAsync(teamIds, cancellationToken);
@@ -135,7 +131,7 @@ public class AlertFeedService(AppDbContext dbContext)
     /// misconfiguration.</para>
     /// </summary>
     private async Task<(List<AlertItem> Items, int Total)> GetSkippedSessionAlertsAsync(
-        IReadOnlyList<int>? teamIds, CancellationToken cancellationToken)
+        UserRole role, IReadOnlyList<int>? teamIds, CancellationToken cancellationToken)
     {
         var skipped = dbContext.SkippedSessions
             .Where(s => teamIds == null || teamIds.Contains(s.TeamId));
@@ -156,23 +152,39 @@ public class AlertFeedService(AppDbContext dbContext)
             .Take(MaxItems)
             .ToListAsync(cancellationToken);
 
+        // Neither fix page admits a TeamAdmin, so they are sent to Job Run History — RoleGroups.Admins,
+        // and where the ingestion runs that skipped their sessions are listed. The alert still reaches
+        // the person whose sessions are missing, and still links somewhere they can open.
+        var canFix = role is UserRole.SystemAdmin;
+
         var items = rows
             .Select(s => new AlertItem(
                 Category: "Ingestion",
                 Title: "Session not ingested — nothing to configure it with",
+                // The VEC code is quoted for both readers: it is the actionable fact either way, the
+                // string a SystemAdmin types in and the one a TeamAdmin passes on. What differs is the
+                // instruction, because telling somebody to perform a fix they cannot perform is how an
+                // alert becomes noise.
                 Detail: s.Reason == SkippedSessionReason.NoMatchingVec
-                    // The code is quoted because it is the string somebody types into the fix page.
-                    ? $"{Describe(s)} was skipped: no VEC is configured with the ExamTools code '{s.VecCode}'. Add it and the session ingests on the next poll."
-                    : $"{Describe(s)} was skipped: the VEC matched but has no fee configuration in effect. Add one and the session ingests on the next poll.",
+                    ? $"{Describe(s)} was skipped: no VEC is configured with the ExamTools code '{s.VecCode}'. " +
+                      (canFix
+                          ? "Add it and the session ingests on the next poll."
+                          : "Ask a system administrator to add it — the session ingests on the next poll once they have.")
+                    : $"{Describe(s)} was skipped: the VEC matched but has no fee configuration in effect. " +
+                      (canFix
+                          ? "Add one and the session ingests on the next poll."
+                          : "Ask a system administrator to add one — the session ingests on the next poll once they have."),
                 TeamName: s.Team.Name,
                 // First-seen, not last-seen: "how long has this been broken" is the question, and
                 // last-seen would reset every poll and make a five-day-old fault look brand new.
                 OccurredUtc: s.FirstSeenUtc,
-                PageName: s.Reason == SkippedSessionReason.NoMatchingVec
-                    ? "/Admin/Vecs"
-                    : "/Admin/FeeConfigurations",
-                // Nothing on either page corresponds to this row — the missing configuration is the
-                // problem. Harmless by design: the highlight marks, it never filters, so an id that
+                PageName: canFix
+                    ? s.Reason == SkippedSessionReason.NoMatchingVec
+                        ? "/Admin/Vecs"
+                        : "/Admin/FeeConfigurations"
+                    : "/Admin/JobRunHistory",
+                // Nothing on any of those pages corresponds to this row — the missing configuration is
+                // the problem. Harmless by design: the highlight marks, it never filters, so an id that
                 // matches nothing simply highlights nothing (see docs/alerts.md).
                 HighlightId: 0))
             .ToList();
