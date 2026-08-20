@@ -215,6 +215,7 @@ public class CandidateDetailModel(
             .Include(c => c.Payments).ThenInclude(p => p.Refunds)
             // The hand-composed sends behind this candidate's Email history (#144).
             .Include(c => c.EmailSends)
+            .Include(c => c.UlsHistory)
             .FirstOrDefaultAsync(c => c.Id == Id);
 
         if (candidate is null || !accessScope.CanView(user, candidate.Session))
@@ -284,6 +285,11 @@ public class CandidateDetailModel(
                 ? $"Already licensed before this session (held since {candidate.LicenseGrantDateUtc:M/d/yyyy}) — likely a repeat test or class upgrade, not a new grant."
                 : null,
             LicenseClassLine: LicenseClassFormatter.FormatTransition(candidate.InitialLicenseClass, candidate.NewLicenseClass),
+            // Hidden for a withdrawn candidate, like CallSign and the license link above: their FCC
+            // application is not this session's story any more.
+            ApplicationTimeline: isWithdrawn
+                ? []
+                : CandidatePresentation.ApplicationTimeline(candidate.UlsHistory.OrderBy(e => e.LogDateUtc ?? DateTime.MinValue)),
             ResultMarkedLine: FormatUtcOrNull(candidate.ResultMarkedUtc),
             ResultMarkedByName: candidate.ResultMarkedByUser?.Name,
             Tested: candidate.Tested,
@@ -406,6 +412,7 @@ public class CandidateDetailModel(
         string? LicenseGrantDateLine,
         string? LicenseNote,
         string? LicenseClassLine,
+        IReadOnlyList<CandidatePresentation.TimelineLine> ApplicationTimeline,
         string? ResultMarkedLine,
         string? ResultMarkedByName,
         bool Tested,

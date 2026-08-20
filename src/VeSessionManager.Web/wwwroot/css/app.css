@@ -824,3 +824,9 @@ footer.roster { margin-top: 28px; background: var(--surface); border: 1px solid 
   display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
 }
 .vesm .twofactor-nudge .spacer { flex: 1; }
+
+/* FCC application timeline on candidate detail (#195). Scoped as `.vesm .uls-timeline` rather than
+   `.uls-timeline` — a single-class selector loses to any `.vesm ul`/`.vesm li` base rule, which is
+   (0,1,1), and that specificity trap has already cost this file two live bugs. */
+.vesm .uls-timeline { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.vesm .uls-timeline li { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
