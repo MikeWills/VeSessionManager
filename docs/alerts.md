@@ -103,3 +103,42 @@ close should re-test the condition rather than assume the repair worked.
 
 The cap (`AlertFeedService.MaxItems`, 8) bounds the menu, never the count — a bell reading "5" over a
 page listing forty is worse than no bell.
+
+## Third source: sessions skipped for missing configuration (#440, 2026-08-20)
+
+Split out of [#402](https://github.com/MikeWills/VeSessionManager/issues/402), where it was diagnosed
+and then buried in a comment for three days.
+
+`SessionIngestionService` refuses to create a session it cannot configure — no `Vec` matches the
+ExamTools code, or the VEC matched but has no `FeeConfiguration` in effect. Both sites logged a
+`[WRN]` and bumped a counter that lands inside a run summary whose status is **`Success`**. On beta
+that ran for **five days**, and surfaced only because a Session Manager noticed a colleague's session
+had never appeared.
+
+**It is hard to notice by construction.** The config check runs only on create, so every session
+already in the table keeps updating normally. The app looks healthy; only *new* sessions vanish.
+
+Four things worth carrying forward:
+
+- **A counter cannot become an alert.** It has nowhere to point and nothing to name. `SkippedSession`
+  is the durable row that lets the bell say *"W9NB Tacos and Testing Tuesday (8/19/2026) was skipped:
+  no VEC is configured with the ExamTools code 'arrl'"* — which states the fix, not the symptom. The
+  quoted code is the exact string somebody types into the fix page.
+- **Nobody dismisses these.** The row clears when the session ingests and is swept when the feed stops
+  reporting it. There is deliberately no dismiss, because it describes the *current* configuration —
+  a dismiss button would let somebody silence a live misconfiguration.
+- **Oldest first, unlike the other two sources.** A skip refused for five days is more urgent than one
+  first seen an hour ago, not less: it is a standing fault, and every poll since has dropped another
+  session. `OccurredUtc` is first-seen for the same reason — last-seen resets every poll and would
+  make a week-old fault look like it started this morning.
+- ⚠️ **SystemAdmin only, and that includes not TeamAdmin.** Both destinations
+  (`/Admin/Vecs`, `/Admin/FeeConfigurations`) carry `RoleGroups.SystemAdminOnly`.
+  `AlertPageRoleGateTests` caught this when the source first shipped gated admin-wide — the guard
+  working exactly as designed. **The cost is real:** a TeamAdmin whose team's sessions are silently
+  vanishing does not see this alert. Both fixes genuinely belong to a SystemAdmin, and an alert
+  linking somewhere the reader cannot open is worse than none — but if TeamAdmins should be told, the
+  answer is a page they can open, not a wider gate.
+
+The `HighlightId` is `0`: nothing on either page corresponds to the row, because the *missing*
+configuration is the problem. Harmless by design — the highlight marks, it never filters.
+

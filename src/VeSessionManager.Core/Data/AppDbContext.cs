@@ -38,6 +38,9 @@ public class AppDbContext(DbContextOptions<AppDbContext> options, IDataProtectio
     public DbSet<Candidate> Candidates => Set<Candidate>();
     public DbSet<Payment> Payments => Set<Payment>();
 
+    /// <summary>Sessions ingestion is currently refusing for want of configuration (#440) — a statement about the present, swept each run.</summary>
+    public DbSet<SkippedSession> SkippedSessions => Set<SkippedSession>();
+
     /// <summary>Stored FCC application timelines (#195) — written only when the ULS lookup reports something different.</summary>
     public DbSet<CandidateUlsHistoryEntry> CandidateUlsHistoryEntries => Set<CandidateUlsHistoryEntry>();
     public DbSet<CandidateEmailSend> CandidateEmailSends => Set<CandidateEmailSend>();

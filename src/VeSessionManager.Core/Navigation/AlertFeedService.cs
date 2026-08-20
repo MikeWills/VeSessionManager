@@ -38,19 +38,36 @@ public class AlertFeedService(AppDbContext dbContext)
         // admin-only; an unconfirmed ARRL submission points at session detail, which every role can
         // open. A single gate at the top would have silently hidden the second source from the
         // Session Managers who actually press the button.
-        var (reconciliationItems, reconciliationTotal) = role is UserRole.SystemAdmin or UserRole.TeamAdmin
+        var isAdmin = role is UserRole.SystemAdmin or UserRole.TeamAdmin;
+
+        var (reconciliationItems, reconciliationTotal) = isAdmin
             ? await GetReconciliationAlertsAsync(teamIds, cancellationToken)
+            : ([], 0);
+
+        // SystemAdmin only — a narrower gate than reconciliation's, and not a guess: both of this
+        // source's destinations (Admin → VECs, Admin → Fee Configurations) carry
+        // RoleGroups.SystemAdminOnly, so a TeamAdmin offered this alert would be handed a 403.
+        // AlertPageRoleGateTests caught exactly that when this shipped as admin-wide.
+        //
+        // ⚠️ The cost is real and deliberate: a TeamAdmin whose team's sessions are silently
+        // vanishing does NOT see this. Both fixes — adding a VEC, adding a fee configuration —
+        // genuinely belong to a SystemAdmin, and an alert linking somewhere the reader cannot open
+        // would be worse than none. If TeamAdmins should be told, the answer is a page they can open,
+        // not a wider gate here.
+        var (skippedItems, skippedTotal) = role is UserRole.SystemAdmin
+            ? await GetSkippedSessionAlertsAsync(teamIds, cancellationToken)
             : ([], 0);
 
         var (submissionItems, submissionTotal) = await GetUnconfirmedSubmissionAlertsAsync(teamIds, cancellationToken);
 
         var items = submissionItems
             .Concat(reconciliationItems)
+            .Concat(skippedItems)
             .OrderByDescending(i => i.OccurredUtc)
             .Take(MaxItems)
             .ToList();
 
-        return items.Count == 0 ? AlertFeed.Empty : new AlertFeed(items, reconciliationTotal + submissionTotal);
+        return items.Count == 0 ? AlertFeed.Empty : new AlertFeed(items, reconciliationTotal + submissionTotal + skippedTotal);
     }
 
     /// <summary>
@@ -101,6 +118,75 @@ public class AlertFeedService(AppDbContext dbContext)
             .ToList();
 
         return (items, total);
+    }
+
+    /// <summary>
+    /// Sessions ExamTools is reporting that this app refuses to create for want of configuration
+    /// (#440, split out of #402).
+    ///
+    /// <para><b>The silent one.</b> Both skip sites already logged a warning and bumped a counter that
+    /// lands inside a run summary marked <c>Success</c>. On beta that ran for five days and was found
+    /// only because a Session Manager noticed a colleague's session had never appeared — and it is
+    /// hard to notice by design, since the config check runs only on create, so every session already
+    /// in the table keeps updating normally while new ones vanish.</para>
+    ///
+    /// <para>No resolved flag and no dismiss: the row clears when the session ingests, and is swept
+    /// when the feed stops reporting it. A dismiss button here would let somebody silence a live
+    /// misconfiguration.</para>
+    /// </summary>
+    private async Task<(List<AlertItem> Items, int Total)> GetSkippedSessionAlertsAsync(
+        IReadOnlyList<int>? teamIds, CancellationToken cancellationToken)
+    {
+        var skipped = dbContext.SkippedSessions
+            .Where(s => teamIds == null || teamIds.Contains(s.TeamId));
+
+        var total = await skipped.CountAsync(cancellationToken);
+        if (total == 0)
+        {
+            return ([], 0);
+        }
+
+        // Oldest first, unlike the other two sources. A skip that has been refused for five days is
+        // more urgent than one first seen an hour ago, not less — it is a standing misconfiguration
+        // rather than an event, and every poll since has dropped another session on the floor.
+        var rows = await skipped
+            .Include(s => s.Team)
+            .OrderBy(s => s.FirstSeenUtc)
+            .ThenBy(s => s.Id)
+            .Take(MaxItems)
+            .ToListAsync(cancellationToken);
+
+        var items = rows
+            .Select(s => new AlertItem(
+                Category: "Ingestion",
+                Title: "Session not ingested — nothing to configure it with",
+                Detail: s.Reason == SkippedSessionReason.NoMatchingVec
+                    // The code is quoted because it is the string somebody types into the fix page.
+                    ? $"{Describe(s)} was skipped: no VEC is configured with the ExamTools code '{s.VecCode}'. Add it and the session ingests on the next poll."
+                    : $"{Describe(s)} was skipped: the VEC matched but has no fee configuration in effect. Add one and the session ingests on the next poll.",
+                TeamName: s.Team.Name,
+                // First-seen, not last-seen: "how long has this been broken" is the question, and
+                // last-seen would reset every poll and make a five-day-old fault look brand new.
+                OccurredUtc: s.FirstSeenUtc,
+                PageName: s.Reason == SkippedSessionReason.NoMatchingVec
+                    ? "/Admin/Vecs"
+                    : "/Admin/FeeConfigurations",
+                // Nothing on either page corresponds to this row — the missing configuration is the
+                // problem. Harmless by design: the highlight marks, it never filters, so an id that
+                // matches nothing simply highlights nothing (see docs/alerts.md).
+                HighlightId: 0))
+            .ToList();
+
+        return (items, total);
+    }
+
+    /// <summary>Names the session the way a human would recognize it, falling back through what the feed actually gave us.</summary>
+    private static string Describe(SkippedSession skip)
+    {
+        var title = string.IsNullOrWhiteSpace(skip.Title) ? $"Session {skip.ExamToolsSessionId}" : skip.Title.Trim();
+        return skip.ScheduledStartUtc is { } start
+            ? $"{title} ({start:M/d/yyyy})"
+            : title;
     }
 
     private async Task<(List<AlertItem> Items, int Total)> GetReconciliationAlertsAsync(

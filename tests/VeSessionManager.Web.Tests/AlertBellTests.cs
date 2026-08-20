@@ -163,6 +163,27 @@ public class AlertPageRoleGateTests
             FirstSeenUtc = new DateTime(2026, 8, 15, 6, 0, 0, DateTimeKind.Utc),
             LastSeenUtc = new DateTime(2026, 8, 16, 6, 0, 0, DateTimeKind.Utc)
         });
+        // Both alert sources with an admin-only destination are seeded, so this guard covers the
+        // skipped-session source's two pages (#440) as well as reconciliation's — otherwise a new
+        // source could point at a page its role cannot open and nothing here would notice.
+        db.SkippedSessions.Add(new SkippedSession
+        {
+            TeamId = factory.Seeded.TeamId,
+            ExamToolsSessionId = "et-role-gate-skip",
+            VecCode = "arrl",
+            Reason = SkippedSessionReason.NoMatchingVec,
+            FirstSeenUtc = new DateTime(2026, 8, 15, 6, 0, 0, DateTimeKind.Utc),
+            LastSeenUtc = new DateTime(2026, 8, 16, 6, 0, 0, DateTimeKind.Utc)
+        });
+        db.SkippedSessions.Add(new SkippedSession
+        {
+            TeamId = factory.Seeded.TeamId,
+            ExamToolsSessionId = "et-role-gate-skip-fee",
+            VecCode = "arrl",
+            Reason = SkippedSessionReason.NoFeeConfiguration,
+            FirstSeenUtc = new DateTime(2026, 8, 15, 6, 0, 0, DateTimeKind.Utc),
+            LastSeenUtc = new DateTime(2026, 8, 16, 6, 0, 0, DateTimeKind.Utc)
+        });
         await db.SaveChangesAsync();
 
         var feed = await scope.ServiceProvider.GetRequiredService<AlertFeedService>()

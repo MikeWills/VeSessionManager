@@ -387,6 +387,11 @@ public class SessionIngestionService(
 
         LogUnknownSessionStates(team, remoteSessions);
 
+        // Drop skips this run did not re-stamp (#440): the feed has stopped reporting those sessions,
+        // so they are no longer a configuration fault and an alert about one could never be resolved.
+        // Per team, because this run only speaks for this team's feed.
+        await SkippedSessionTracker.SweepAsync(dbContext, team.Id, now, cancellationToken);
+
         // Cancellation: ExamTools has no cancelled flag; a known, still-open session vanishing
         // from the feed by id *is* the cancellation signal (confirmed against real API responses).
         // Two guards, both added for issue #68, and deliberately not one:
@@ -604,6 +609,12 @@ public class SessionIngestionService(
             logger.LogWarning("Skipping new session {ExamToolsSessionId}: no Vec matches ExamTools code '{VecCode}' — add a VEC with that ExamTools code (Admin → VECs) and the session will ingest on the next poll",
                 remote.Id, remote.Vec);
             result.SessionsSkippedNoConfig++;
+
+            // #440: the warning and the counter are not enough. The counter lands inside a run summary
+            // marked Success and nothing in the app surfaces it, which is how five days of skipped
+            // sessions went unnoticed on beta. The row is what the alert bell can point at.
+            await SkippedSessionTracker.RecordAsync(dbContext, team.Id, remote.Id, remote.Vec,
+                remote.SessionDef?.Summary, remote.Date, SkippedSessionReason.NoMatchingVec, now, cancellationToken);
             return null;
         }
 
@@ -617,8 +628,18 @@ public class SessionIngestionService(
             logger.LogWarning("Skipping new session {ExamToolsSessionId}: Vec '{VecName}' has no FeeConfiguration in effect — add one and the session will ingest on the next poll",
                 remote.Id, vec.Name);
             result.SessionsSkippedNoConfig++;
+
+            // Same treatment as the site above (#440). This one has never been seen live, and would be
+            // identically silent if it were.
+            await SkippedSessionTracker.RecordAsync(dbContext, team.Id, remote.Id, remote.Vec,
+                remote.SessionDef?.Summary, remote.Date, SkippedSessionReason.NoFeeConfiguration, now, cancellationToken);
             return null;
         }
+
+        // The configuration was fixed and this session is being created — the skip, if there was one,
+        // is resolved (#440). Clearing here rather than at the two call sites keeps "refused" and
+        // "no longer refused" in the one method that decides.
+        await SkippedSessionTracker.ClearAsync(dbContext, team.Id, remote.Id, cancellationToken);
 
         var session = new Session
         {
