@@ -181,3 +181,25 @@ open session is re-read every tick, that counter reported a backfill every tick 
 candidate. It now counts only when something was actually written. An existing test caught this
 before it shipped.
 
+### The closed-session bound shut the repair route (same day, follow-up)
+
+Mike asked the obvious next question — *would a manual refresh fix Chang Sun?* — and the answer as
+first shipped was **no**, which made the fix unable to repair the case that prompted it.
+
+`SyncSessionAsync` (the "Refresh now" path) removes the 14-day `ResultSyncWindow`, but it calls the
+same `SyncSessionCandidatesAsync` and so inherited the same per-candidate gate. Chang Sun is Tested,
+has a class, and their session is finalized in ExamTools — so all three clauses were false and they
+were skipped on both paths.
+
+**A class frozen too low is almost always noticed after the session is finalized**, by somebody
+comparing the app against ExamTools. That is how this one was found. So the bound was exactly wrong
+for the population that needs repairing, and `SyncSessionAsync`'s doc comment promising an "escape
+hatch" was false for the second time in its life.
+
+`includeSettled` now lifts the settled gate on the human-triggered path only. The scheduled scan is
+unchanged, so a finished session still costs nothing; a person pressing Refresh pays one
+applicant-detail call per candidate, once, which is what they asked for. What it deliberately does
+**not** lift: `NotTested`, and a human `Failed` verdict. "Re-read everyone" means everyone the feed is
+allowed to speak for — overruling a Session Manager's verdict by pressing a button would be a much
+easier accident than the scheduled job doing it.
+

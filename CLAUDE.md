@@ -563,6 +563,21 @@ To pick up updates: `/plugin marketplace update claude-tools`
 - **GitHub only honours the first issue in a comma-separated `Closes` list.** `Closes #1, #2, #3`
   closes #1 and silently leaves the rest open (confirmed 2026-08-10 across two PRs). Repeat the
   keyword per issue.
+- **A "manual/on-demand" variant that shares its filter with the scheduled scan inherits every
+  bound you add to that scan, and the doc comment promising otherwise will not fail.**
+  `ExamResultSyncService.SyncSessionAsync` is documented as the unbounded escape hatch for a session
+  graded later than the routine sweep reaches. Its promise has been **false twice**: once because the
+  manual refresh actually called `RunAsync` and inherited `ResultSyncWindow` (fixed 2026-08-03), and
+  again because the settled gate added with #437 was inherited too, so a license class frozen too low
+  could not be repaired by pressing Refresh — the bound excluded exactly the candidates needing
+  repair, since a frozen class is normally noticed *after* the session is finalized (fixed
+  2026-08-20). Both times prose and code disagreed and nothing failed. Which candidates get read now
+  lives in **`ExamResultCandidateFilter`**, split into two named buckets — `CanBeReadFromTheFeed`
+  (what the feed is *allowed* to speak for; binds both paths) and `IsSettledForNow` (cost only;
+  scheduled scan only) — so a new rule has to be put on one side or the other, and
+  `ExamResultEscapeHatchTests` fails if it lands on the wrong one. **Do not add a clause to the
+  `Where` in `SyncSessionCandidatesAsync`.** The same shape is worth watching anywhere else a
+  scheduled job and a user-triggered button share one query.
 - (Environment-specific quirks and gotchas go here as they're discovered — e.g. API quirks, IIS behavior, network/DMZ restrictions, auth issues)
 
 ## Definition of Done

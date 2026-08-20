@@ -726,4 +726,93 @@ public class ExamResultSyncServiceTests
 
         Assert.Equal(0, second.CandidatesLicenseClassRaised);
     }
+    // ---- #437 follow-up: the manual refresh must be able to repair a settled candidate ---------
+    // The closed-session bound added with #437 kept the scheduled scan cheap, and closed the repair
+    // path for exactly the population that needs it: a class frozen too low is almost always noticed
+    // AFTER the session is finalized, which is how Chang Sun was found. A human pressing "Refresh"
+    // is an explicit request to re-read, so it ignores the settled gate.
+
+    /// <summary>The repair route. Session closed, candidate Tested with a class already — the state
+    /// the scheduled scan deliberately skips — and the manual refresh still raises it.</summary>
+    [Fact]
+    public async Task ManualRefresh_RepairsAFrozenClass_OnAClosedSession()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        var session = await SeedSessionAsync(dbContext, team);
+        session.ExamToolsClosedUtc = Now;
+        var candidate = await SeedCandidateAsync(dbContext, session, tested: true, newLicenseClass: LicenseClass.General);
+        await dbContext.SaveChangesAsync();
+        var client = new FakeExamToolsClient();
+        client.SetDetail("applicant-1", PassedElement(2), PassedElement(3), PassedElement(4));
+
+        var result = await CreateService(dbContext, client).SyncSessionAsync(team, session.Id, CancellationToken.None);
+
+        Assert.Equal(LicenseClass.Extra, candidate.NewLicenseClass);
+        Assert.Equal(1, result.CandidatesLicenseClassRaised);
+    }
+
+    /// <summary>
+    /// The scheduled scan is unchanged — that is the whole point of putting the bypass only on the
+    /// manual path. If this ever passes by fetching, the settled-session-costs-nothing property that
+    /// ResultSyncWindow's remarks rely on has been given away.
+    /// </summary>
+    [Fact]
+    public async Task TheScheduledScan_StillSkipsASettledCandidateOnAClosedSession()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        var session = await SeedSessionAsync(dbContext, team);
+        session.ExamToolsClosedUtc = Now;
+        await SeedCandidateAsync(dbContext, session, tested: true, newLicenseClass: LicenseClass.General);
+        await dbContext.SaveChangesAsync();
+        var client = new FakeExamToolsClient();
+        client.SetDetail("applicant-1", PassedElement(2), PassedElement(3), PassedElement(4));
+
+        await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+
+        Assert.Empty(client.DetailFetches);
+    }
+
+    /// <summary>
+    /// A human Failed verdict stays final even here. "Re-read everyone" means everyone the feed is
+    /// allowed to speak for — a Session Manager who marked somebody failed must not be overruled by
+    /// pressing Refresh, which would be a far easier accident than the scheduled job doing it.
+    /// </summary>
+    [Fact]
+    public async Task ManualRefresh_StillDoesNotOverruleAHumanFailedVerdict()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        var session = await SeedSessionAsync(dbContext, team);
+        var user = await dbContext.Users.FirstAsync();
+        session.ExamToolsClosedUtc = Now;
+        await SeedCandidateAsync(dbContext, session, status: CandidateApplicationStatus.Failed,
+            tested: true, resultMarkedByUserId: user.Id);
+        await dbContext.SaveChangesAsync();
+        var client = new FakeExamToolsClient();
+
+        await CreateService(dbContext, client).SyncSessionAsync(team, session.Id, CancellationToken.None);
+
+        Assert.Empty(client.DetailFetches);
+    }
+
+    /// <summary>An unchanged re-read still writes nothing — pressing Refresh twice is not two corrections.</summary>
+    [Fact]
+    public async Task ManualRefresh_OnAnAlreadyCorrectCandidate_ChangesNothing()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        var session = await SeedSessionAsync(dbContext, team);
+        session.ExamToolsClosedUtc = Now;
+        await SeedCandidateAsync(dbContext, session, tested: true, newLicenseClass: LicenseClass.Extra);
+        await dbContext.SaveChangesAsync();
+        var client = new FakeExamToolsClient();
+        client.SetDetail("applicant-1", PassedElement(2), PassedElement(3), PassedElement(4));
+
+        var result = await CreateService(dbContext, client).SyncSessionAsync(team, session.Id, CancellationToken.None);
+
+        Assert.Equal(0, result.CandidatesLicenseClassRaised);
+        Assert.Equal(0, result.CandidatesBackfilledLicenseClass);
+    }
 }
