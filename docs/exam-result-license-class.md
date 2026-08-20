@@ -142,3 +142,42 @@ Two sections on one page, both team-scoped the same way `VeRoster.cshtml.cs` is
 
 No new backing fields — both sections are plain filters over `Candidate`/`InitialLicenseClass`/
 `NewLicenseClass`, all of which already existed for the candidate detail page above.
+
+## A partially-graded sitting froze the class too low (corrected 2026-08-20, #437)
+
+**Reported live on Chang Sun at HRCC.** ExamTools showed Elements 2, 3 and 4 all passed — Extra —
+while the app recorded `Unlicensed → General` and would never revise it.
+
+The class used to be written under `if (NewLicenseClass is null)`: once, from whatever elements were
+graded at the moment of the first poll that saw any graded element, and never again. **ExamTools
+grades element by element as VEs enter results**, so a poll landing after E2 and E3 were entered but
+before E4 recorded General permanently. `ResolveLicenseClasses` was correct throughout — `{2,3,4}`
+→ Extra. The bug was entirely in *when* it was allowed to run.
+
+Two guards had to change, and the second is why nobody noticed sooner:
+
+- The write guard, now `LicenseClassRevision.ShouldReplace` — **revise upward, never downward.**
+- The scan filter, which stopped fetching a Tested candidate who already had a class **at all**, so
+  the later element could not be observed even in principle. It now keeps re-reading until
+  `ExamToolsClosedUtc` is set.
+
+**Why upward-only is safe rather than merely convenient:** within one sitting the class can only go
+up, because a VE team never re-administers an element a candidate already holds credit for — the same
+premise this whole page rests on for deriving class from elements at all. So the protection the
+original guard was written for (a feed must not overwrite a recorded result) is kept intact in the
+direction that matters, and a partial re-read, an amended paper or a re-examination can never demote
+anybody.
+
+⚠️ **The worse half was never the display.** `UlsWatcherService` confirms an upgrade only when
+`lookup.OperatorClass == candidate.NewLicenseClass`. A class frozen too low never matches what FCC
+reports, so an **upgrading** candidate would never reach `Granted` and would sit pending
+indefinitely — the same failure that file documents for 20 real candidates, reached through a
+different door. A first-time licensee like Chang Sun is spared it, because `isNewLicense` matches on
+grant date regardless of class.
+
+⚠️ **Counting had to move with it.** `CandidatesBackfilledLicenseClass` used to key off "is this
+candidate already Tested", which was safe only because such a candidate was never re-read. Once an
+open session is re-read every tick, that counter reported a backfill every tick for every settled
+candidate. It now counts only when something was actually written. An existing test caught this
+before it shipped.
+
