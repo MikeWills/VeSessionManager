@@ -68,6 +68,13 @@ public class CandidatePiiFieldsTests
         nameof(Candidate.ResultMarkedUtc),
         nameof(Candidate.DateRegisteredUtc),
 
+        // Public FCC records about the application, same class as Frn/FccUlsLicenseKey/FccHoldReason
+        // and retained for the same 2026-08-03 reason: they are what lets a question about the
+        // application still be answered once the name and email are gone. Note FccHoldReason already
+        // records the same Red Light / Basic Qualification facts these entries describe, so clearing
+        // the timeline while keeping the flag would protect nothing and lose the explanation.
+        nameof(Candidate.UlsHistory),
+
         // ...Utc tracking/idempotency stamps. Clearing these would make a scan-based job re-fire
         // (e.g. re-send a registration confirmation) against a purged row.
         nameof(Candidate.PiiPurgedUtc),

@@ -126,6 +126,20 @@ would be pure duplication — and goes straight to `CHANGELOG.md` instead. Non-p
 redesigns, hardening passes) start here and move to `CHANGELOG.md` once the section is at/over the
 cap and a newer entry needs to be added; oldest goes first.
 
+- **The FCC application timeline is on screen now (2026-08-20).** Issue #195, opened as an idea
+  recorded in a doc and never filed. See `docs/uls-watcher.md`. ExamTools' ULS mirror has always
+  returned human-readable application history (`code_text: "Redlight Review Completed"`) with dates,
+  on the same lookup the watcher already makes, and everything but the hold flag was discarded at
+  parse time. It renders on candidate detail as **FCC application history**. Two things worth
+  carrying forward. **Stored rather than fetched at render time**, because the issue's "costs no
+  additional polling" only holds if the page reads what the poll already had — and this endpoint is
+  undocumented enough that the app polls it on a schedule rather than in a request. And
+  **reconciled rather than rewritten**: the obvious clear-and-re-add would rewrite an unchanged
+  timeline for every open candidate every run, which is pure write churn on a single-writer file,
+  on exactly the contended path #434 exists to measure. ⚠️ The `code` is still upper-cased on the
+  way in — `ResolveHoldReason` matches exact values, so that normalisation is now load-bearing for
+  two features rather than one.
+
 - **Sessions are filed with ARRL-VEC from the app now (2026-08-19).** Issue #197, five stacked PRs.
   See `docs/arrl-vec-submission.md`. **ARRL only, and that is the design rather than a first step** —
   every VEC has its own process, so a session under any other finds no submitter and is told so.
@@ -242,20 +256,6 @@ cap and a newer entry needs to be added; oldest goes first.
   never collide with a key the code looks up, including one added years from now; and **a rename must
   not move the key**, since history rows and any open compose screen refer to it, which is also why
   `CandidateEmailSend` stores a label string rather than a foreign key.
-
-- **Alerts have a bell now, and it links at the row rather than the list (2026-08-16).** Issue #339.
-  See `docs/alerts.md`. The reconciliation badge was a number on an item **inside a closed dropdown** —
-  invisible until you opened a menu you had no reason to open, to check a page you had no reason to
-  suspect, counting exactly the class of problem nobody thinks to go looking for. The bell sits beside
-  the account menu, and each alert carries its own destination: `?highlight=<id>`, which the target
-  page marks and scrolls to. Reconciliation is the first source; `AlertFeedService` is built to take
-  more. Three things worth carrying forward: **the role gate belongs in the feed, not the partial** —
-  an alert *is* a link to an authorized page, so a feed offering one a role cannot open has built a
-  403, and since `RoleGroups` is a Web type the Core mirror is guarded by a test that reads each
-  target page's real `[Authorize]` metadata; **the highlight marks, it never filters**, because
-  hiding the other findings answers a narrower question than the one asked and a stale id then
-  costs nothing (nothing is looked up by it); and **the bell renders for every role, empty state and
-  all** — a control that appears and disappears by role is one nobody learns to look at.
 
 Everything through Phase 0-10's initial build (ExamTools ingestion, Zoom/Discord, Square, email
 notifications, FCC ULS watcher, payment reminders, VE tracking, VEC submission tracker, admin

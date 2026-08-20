@@ -69,7 +69,9 @@ public class ExamToolsUlsLookupClient(
         }
     }
 
-    private static class UlsLookupMapper
+    /// <summary>Internal rather than private so the mapping itself is testable — a stubbed
+    /// <c>IUlsLookupClient</c> skips exactly the layer where a discarded field hides (#195).</summary>
+    internal static class UlsLookupMapper
     {
         public static UlsLookupResult Map(UlsLookupResponse r)
         {
@@ -99,7 +101,7 @@ public class ExamToolsUlsLookupClient(
                         ReceiptDateUtc = AsUtcDate(p.ReceiptDate),
                         History = (p.History ?? [])
                             .Where(h => !string.IsNullOrWhiteSpace(h.Code))
-                            .Select(h => new UlsHistoryEntry(AsUtcDate(h.LogDate), h.Code!.Trim().ToUpperInvariant()))
+                            .Select(h => new UlsHistoryEntry(AsUtcDate(h.LogDate), h.Code!.Trim().ToUpperInvariant(), h.CodeText))
                             .ToList()
                     })
                     .ToList()
