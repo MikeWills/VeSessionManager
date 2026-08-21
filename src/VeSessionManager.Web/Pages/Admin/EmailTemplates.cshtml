@@ -122,50 +122,57 @@ else
                                    is a trap) and from a VE one (a rule cannot send it at all — see
                                    MessageRuleAdminService.ValidateAsync). An affordance that leads
                                    straight to a refusal is worse than no affordance. *@
-                                @if (!VeSessionManager.Web.Pages.Admin.EmailTemplatesModel.IsRetired(template.Key)
-                                     && template.Audience == VeSessionManager.Core.Entities.EmailTemplateAudience.Candidates)
-                                {
-                                    <div class="session-sub">
-                                        @* Two literal branches rather than a ternary: Razor HTML-encodes
-                                           the result of a C# expression, so an ellipsis returned from
-                                           one renders as &#x2026; — fine in a browser, invisible to any
-                                           test asserting on the text, and the same would go for a
-                                           non-ASCII character anywhere else in this file's expressions. *@
-                                        <a asp-page="/Admin/MessageRuleNew" asp-route-teamId="@Model.TeamId"
-                                           asp-route-templateId="@template.Id">
-                                            @if (Model.RulesFor(template.Key).Count == 0)
-                                            {
-                                                <text>Add a rule…</text>
-                                            }
-                                            else
-                                            {
-                                                <text>Add another rule…</text>
-                                            }
-                                        </a>
-                                    </div>
-                                }
+                                @* The "Add a rule…" link that used to sit here moved into the row menu
+                                   (2026-08-21). It was the third destination for a row, living apart
+                                   from the other two and labelled differently depending on whether any
+                                   rule existed — so finding it meant knowing to look in a column about
+                                   scheduling. One menu, one entry, whichever state the template is in. *@
                             </td>
                             <td data-sort-value="@(template.UpdatedUtc?.ToString("o") ?? "")">
                                 @(template.UpdatedUtc is { } updated
                                     ? EasternTimeFormatter.Format(updated, "MMM d, yyyy")
                                     : "Not edited yet")
                             </td>
-                            @* Icons, with the word still on the element as a title and an aria-label —
-                               an icon-only control is only as good as what a screen reader and a hover
-                               make of it. Bootstrap Icons, never a bare Unicode glyph: a symbol
-                               renders only if the device happens to have a font carrying it, which is
-                               how the withdrawn-roster marker became a tofu box on an iPhone. *@
+                            @* One kebab menu, matching Teams.cshtml and Vecs.cshtml — the row-action
+                               pattern used across the admin tables. It was two bare icons (an eye and
+                               a pencil) with the third action, Rules, living somewhere else entirely:
+                               a link buried in the Sent column. Three destinations for one row, in two
+                               different places, none of them labelled. A labelled menu says what each
+                               one is, which is what an icon can only approximate.
+
+                               Ordered look -> change -> schedule: View is the safest, Edit changes the
+                               words, Rules changes when anybody gets them. *@
                             <td class="row-actions">
-                                <span class="row-actions-inline">
-                                    <a class="icon-action" asp-page="/Admin/EmailTemplatePreview" asp-route-id="@template.Id"
-                                       title="View @template.Label" aria-label="View @template.Label">
-                                        <i class="bi bi-eye" aria-hidden="true"></i>
-                                    </a>
-                                    <a class="icon-action" asp-page="/Admin/EmailTemplateEdit" asp-route-id="@template.Id"
-                                       title="Edit @template.Label" aria-label="Edit @template.Label">
-                                        <i class="bi bi-pencil" aria-hidden="true"></i>
-                                    </a>
-                                </span>
+                                <button type="button" class="kebab" aria-label="Actions for @template.Label"><i class="bi bi-three-dots-vertical" aria-hidden="true"></i></button>
+                                <div class="menu">
+                                    <a class="item" asp-page="/Admin/EmailTemplatePreview" asp-route-id="@template.Id">View</a>
+                                    <a class="item" asp-page="/Admin/EmailTemplateEdit" asp-route-id="@template.Id">Edit</a>
+                                    @* Rules goes where the answer is: to this template's rules when it
+                                       has some, marked on arrival so the page opens on them rather than
+                                       on a list to scan; to the add form, prefilled, when it has none.
+                                       One entry either way — asking somebody to know which of two links
+                                       applies is the confusion this replaces.
+
+                                       Withheld for a retired or VE template for the same reason the old
+                                       "Add a rule" link was: nothing sends a retired one, and a rule
+                                       cannot send a VE one at all (MessageRuleAdminService.ValidateAsync
+                                       refuses it). An affordance that leads straight to a refusal is
+                                       worse than no affordance. *@
+                                    @if (!VeSessionManager.Web.Pages.Admin.EmailTemplatesModel.IsRetired(template.Key)
+                                         && template.Audience == VeSessionManager.Core.Entities.EmailTemplateAudience.Candidates)
+                                    {
+                                        @if (Model.RulesFor(template.Key).Count == 0)
+                                        {
+                                            <a class="item" asp-page="/Admin/MessageRuleNew" asp-route-teamId="@Model.TeamId"
+                                               asp-route-templateId="@template.Id">Add a rule</a>
+                                        }
+                                        else
+                                        {
+                                            <a class="item" asp-page="/Admin/MessageRules" asp-route-teamId="@Model.TeamId"
+                                               asp-route-highlightTemplate="@template.Key">Rules</a>
+                                        }
+                                    }
+                                </div>
                             </td>
                         </tr>
                     }

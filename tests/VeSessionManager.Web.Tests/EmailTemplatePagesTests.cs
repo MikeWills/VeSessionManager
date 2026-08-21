@@ -73,13 +73,19 @@ public class EmailTemplatePagesTests
     }
 
     /// <summary>
-    /// Row actions are icons, and an icon-only control is only as good as what a hover and a screen
-    /// reader make of it — so the label travels with it. Bootstrap Icons rather than a bare glyph: a
-    /// Unicode symbol renders only if the device has a font carrying it, which is how a marker that
-    /// looked right on the dev machine became a tofu box on an iPhone.
+    /// Row actions are one labelled menu, matching every other admin table.
+    ///
+    /// <para>⚠️ <b>This used to assert two bare icons</b> — an eye and a pencil — with the third
+    /// action, Rules, living somewhere else entirely as a link inside the Sent column. Three
+    /// destinations for one row, in two places, none of them labelled. Mike asked for the menu
+    /// (2026-08-21): <i>"So the dropdown will have edit, view, and rules."</i> A word says what an icon
+    /// can only approximate, and putting all three in one place is the point of the change.</para>
+    ///
+    /// <para>The kebab button keeps an aria-label, for the same reason the icons carried one: an
+    /// icon-only control is only as good as what a screen reader makes of it.</para>
     /// </summary>
     [Fact]
-    public async Task RowActionsAreLabelledIcons()
+    public async Task RowActionsAreOneLabelledMenu()
     {
         using var factory = new WebAppFactory();
         var id = await SeedTemplateAsync(factory);
@@ -87,11 +93,33 @@ public class EmailTemplatePagesTests
 
         var html = await client.GetStringAsync($"/Admin/EmailTemplates?teamId={factory.Seeded.TeamId}");
 
-        Assert.Contains("bi bi-pencil", html);
-        Assert.Contains("bi bi-eye", html);
-        Assert.Contains("aria-label=\"Edit", html);
-        // The links themselves are unchanged — the icon is presentation, not a different action.
+        Assert.Contains("class=\"kebab\"", html);
+        Assert.Contains("aria-label=\"Actions for", html);
+        Assert.Contains(">View</a>", html);
+        Assert.Contains(">Edit</a>", html);
+
+        // The destinations are unchanged — the menu is presentation, not different actions.
         Assert.Contains($"/Admin/EmailTemplateEdit/{id}", html);
+        Assert.Contains($"/Admin/EmailTemplatePreview/{id}", html);
+    }
+
+    /// <summary>
+    /// The third entry, and the one that was hardest to find before, is <b>in the menu</b> rather than
+    /// in a column about scheduling — and it is one entry whichever state the template is in.
+    /// </summary>
+    [Fact]
+    public async Task TheRulesEntry_LivesInTheMenu_NotBesideTheSchedule()
+    {
+        using var factory = new WebAppFactory();
+        await SeedTemplateAsync(factory, key: "SomethingNothingSends");
+        var client = factory.CreateClientAs(UserRole.SystemAdmin);
+
+        var html = await client.GetStringAsync($"/Admin/EmailTemplates?teamId={factory.Seeded.TeamId}");
+
+        Assert.Matches("MessageRuleNew[^\"]*templateId=", html);
+
+        // The old inline affordance is gone — two ways in was the confusion this replaced.
+        Assert.DoesNotContain("Add another rule", html);
     }
 
     /// <summary>
@@ -110,7 +138,7 @@ public class EmailTemplatePagesTests
 
         // #409: it carries the template now, rather than dropping you on Message Rules to find it
         // again among thirty others.
-        Assert.Contains("Add a rule…", html);
+        Assert.Contains(">Add a rule</a>", html);   // moved into the row menu 2026-08-21 — same destination, one place
         Assert.Matches("MessageRuleNew[^\"]*templateId=", html);
     }
 

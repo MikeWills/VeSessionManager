@@ -68,7 +68,11 @@ else
                         <tbody>
                             @foreach (var rule in point.Rules)
                             {
-                                <tr>
+                                @* row-highlight is the shared convention app.js scrolls to — see the
+                                   alert bell. The id is on every row, not only a marked one, so the
+                                   anchor works either way. *@
+                                <tr id="rule-@rule.Id"
+                                    class="@(string.Equals(Model.HighlightTemplate, rule.TemplateKey, StringComparison.Ordinal) ? "row-highlight" : "")">
                                     <td>
                                         <span class="session-title">@rule.Name</span>
                                         @if (!rule.IsEnabled)

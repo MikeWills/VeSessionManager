@@ -33,6 +33,19 @@ public class MessageRulesModel(
     [BindProperty(SupportsGet = true)]
     public int? TeamId { get; set; }
 
+    /// <summary>
+    /// A template key to mark on arrival, so "Rules" on a template row lands on <i>that</i> template's
+    /// rules rather than on a list to scan (asked for 2026-08-21).
+    ///
+    /// <para>Keyed by template rather than by rule id because a template can have several rules and all
+    /// of them are the answer to "show me the rules for this". Same convention as the alert bell's
+    /// <c>?highlight=</c>: it <b>marks, it never filters</b> — hiding the other rules would answer a
+    /// narrower question than the one asked, and a stale key then costs nothing because nothing is
+    /// looked up by it.</para>
+    /// </summary>
+    [BindProperty(SupportsGet = true)]
+    public string? HighlightTemplate { get; set; }
+
     public bool IsSystemAdmin { get; private set; }
 
     /// <summary>"Select a team…" rather than "All teams" — see the class note.</summary>

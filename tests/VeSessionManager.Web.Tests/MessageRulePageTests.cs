@@ -94,12 +94,21 @@ public class MessageRulePageTests
     }
 
     /// <summary>
-    /// The link has to be there when the template <i>already</i> has a rule — that is the "and again a
-    /// week earlier" case, and before #409 the offer appeared only at zero rules, so a second one
-    /// meant going back to Message Rules and hunting.
+    /// A template that <i>already</i> has a rule still has a way to reach it and to add another — the
+    /// "and again a week earlier" case. Before #409 the offer appeared only at zero rules, so a second
+    /// one meant going back to Message Rules and hunting.
+    ///
+    /// <para>⚠️ <b>The route changed on 2026-08-21</b>, when the row actions became one labelled menu
+    /// (Mike: <i>"the dropdown will have edit, view, and rules"</i>). With rules present the menu entry
+    /// is <b>Rules</b>, landing on the rules page marked on that template; adding another is the
+    /// "+ Add rule" button already there. So the offer survives one click further away.</para>
+    ///
+    /// <para><b>Known cost:</b> that button carries the <i>trigger</i>, not the template, so a second
+    /// rule is no longer prefilled with the template the way #409 arranged. Recorded here rather than
+    /// quietly dropped — the fix, if wanted, is carrying the template through the highlight.</para>
     /// </summary>
     [Fact]
-    public async Task TheTemplatesList_OffersToAddARule_CarryingTheTemplate_EvenWhenOneExists()
+    public async Task ATemplateWithARule_LeadsToItsRules_MarkedOnArrival()
     {
         using var factory = new WebAppFactory();
         await SeedRuleAsync(factory, templateKey: "DayBeforeReminder");
@@ -107,8 +116,8 @@ public class MessageRulePageTests
 
         var html = await client.GetStringAsync($"/Admin/EmailTemplates?teamId={factory.Seeded.TeamId}");
 
-        Assert.Matches("MessageRuleNew[^\"]*templateId=", html);
-        Assert.Contains("Add another rule", html);
+        Assert.Matches("MessageRules[^\"]*highlightTemplate=DayBeforeReminder", html);
+        Assert.Contains(">Rules</a>", html);
     }
 
     /// <summary>A template nothing sends is where somebody most needs the offer, so the zero case links in-place too rather than out to the list.</summary>
