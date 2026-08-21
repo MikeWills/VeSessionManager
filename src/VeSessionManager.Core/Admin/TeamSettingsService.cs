@@ -1,3 +1,4 @@
+using VeSessionManager.Core.Discord;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using VeSessionManager.Core.Data;
@@ -173,7 +174,7 @@ public class TeamSettingsService(AppDbContext dbContext, TimeProvider timeProvid
         return await SaveTeamUpdateAsync(team, "TeamZoomCredentialsUpdated", userId, cancellationToken);
     }
 
-    public async Task<TeamActionResult> UpdateDiscordAsync(int teamId, ulong? guildId, int userId, CancellationToken cancellationToken)
+    public async Task<TeamActionResult> UpdateDiscordAsync(int teamId, ulong? guildId, string? mentionableRoleIds, int userId, CancellationToken cancellationToken)
     {
         var team = await dbContext.Teams.FirstOrDefaultAsync(t => t.Id == teamId, cancellationToken);
         if (team is null)
@@ -182,6 +183,11 @@ public class TeamSettingsService(AppDbContext dbContext, TimeProvider timeProvid
         }
 
         team.DiscordGuildId = guildId;
+
+        // Normalised to the ids that actually parsed, so what is stored is what will be honoured —
+        // a team that typed "@everyone" sees it disappear rather than believing it took (#116).
+        var roleIds = DiscordMentionPolicy.ParseRoleIds(mentionableRoleIds);
+        team.DiscordMentionableRoleIds = roleIds.Count == 0 ? null : string.Join(",", roleIds);
 
         return await SaveTeamUpdateAsync(team, "TeamDiscordSettingsUpdated", userId, cancellationToken);
     }

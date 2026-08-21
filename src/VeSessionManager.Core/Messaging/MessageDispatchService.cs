@@ -191,7 +191,8 @@ public class MessageDispatchService(
                     continue;
                 }
 
-                await discordClient.PostMessageAsync(guildId, channelId, DiscordMessageText.FromHtml(rendered.Body), cancellationToken);
+                await discordClient.PostMessageAsync(guildId, channelId, DiscordMessageText.FromHtml(rendered.Body),
+                    DiscordMentionPolicy.ParseRoleIds(team.DiscordMentionableRoleIds), cancellationToken);
 
                 // No legacy ...SentUtc stamp: those columns mean "this candidate was emailed", and a
                 // channel post is not an email to them.
@@ -244,7 +245,8 @@ public class MessageDispatchService(
                 return await RecordAllAsync(team, rule, subjects, MessageRuleOutcome.Failed, $"Template \"{rule.TemplateKey}\" is missing", result, cancellationToken);
             }
 
-            await discordClient.PostMessageAsync(guildId, channelId, DiscordMessageText.FromHtml(rendered.Body), cancellationToken);
+            await discordClient.PostMessageAsync(guildId, channelId, DiscordMessageText.FromHtml(rendered.Body),
+                    DiscordMentionPolicy.ParseRoleIds(team.DiscordMentionableRoleIds), cancellationToken);
 
             foreach (var subject in subjects)
             {

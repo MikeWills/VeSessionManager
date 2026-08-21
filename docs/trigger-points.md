@@ -601,3 +601,35 @@ model as action-based sends. They carry access tokens, and
 [#207](https://github.com/MikeWills/VeSessionManager/issues/207)'s "no monitoring Bcc" guarantee is
 structural today precisely because those call sites never populate the field. Bringing any of them in
 would turn that into a runtime guarantee.
+
+## Mentionable roles, per team (2026-08-20)
+
+`Team.DiscordMentionableRoleIds` names the roles a team's channel posts may ping. Blank — the default,
+and what every existing team has — means **nothing resolves**, exactly as before.
+
+⚠️ **An allow-list, deliberately, and not a switch.** Every post has always gone out with
+`AllowedMentions.None`, and that is what makes `DiscordMessageText`'s decision *not* to escape markdown
+safe: a candidate whose name is `@everyone` cannot ping the server because no mention resolves at all.
+A boolean "allow mentions for this team" hands that guarantee back wholesale — and **candidate names
+reach a channel post through `{{Subjects}}`**, so the hostile string is the ordinary path, not a
+hypothetical.
+
+Naming the roles grants the ask while keeping the property:
+
+- only ids the team listed resolve;
+- `@everyone` and `@here` are a separate `AllowedMentionTypes` flag that is **never set**, whatever the
+  message says;
+- user mentions never resolve either.
+
+`ACandidateNamedEveryone_StillCannotPingTheServer` pins it end to end: the text is not mangled, and it
+resolves to nothing.
+
+**Verified against the installed package rather than assumed** — `AllowedMentions`'s own documentation
+states that when `AllowedTypes` is null, "only the ids specified in `UserIds` and `RoleIds` will be
+mentioned". Leaving it null is the mechanism, not an oversight; setting any flag would widen it.
+
+Input accepts a bare snowflake (Discord's own *Copy ID*) or the `<@&id>` mention form, comma-, space-
+or newline-separated. **Anything unparseable is dropped rather than guessed at** — a malformed entry
+that silently became some other id would ping the wrong room of people — and one bad entry does not
+discard the good ones beside it. What is stored is normalised to the ids that parsed, so a team that
+typed `@everyone` sees it disappear rather than believing it took.

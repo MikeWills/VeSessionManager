@@ -158,6 +158,14 @@ else
         <form method="post" asp-page-handler="UpdateDiscord">
             <input type="hidden" name="TeamId" value="@Model.TeamId" />
             <div class="field" style="max-width:280px;"><label for="discordGuildId">Guild ID</label><input id="discordGuildId" name="guildId" value="@Model.Team.DiscordGuildId" /></div>
+            <div class="field" style="max-width:420px;">
+                <label for="discordMentionableRoleIds">Roles this team may mention</label>
+                <input id="discordMentionableRoleIds" name="mentionableRoleIds" value="@Model.Team.DiscordMentionableRoleIds" placeholder="e.g. 1042938475610293847" />
+                @* An allow-list, not a switch. Channel posts resolve no mentions at all by default,
+                   which is what stops a candidate named "@@everyone" pinging the server — naming the
+                   roles grants the ask without giving that back (#116). *@
+                <span class="session-sub">Role IDs, comma-separated. Leave blank and posts ping nobody, which is the default. <strong>@@everyone and @@here can never be pinged</strong>, however a message is written.</span>
+            </div>
             <p class="session-sub">The shared bot's token is a deployment-wide setting (Discord:BotToken), not editable per-team here.</p>
             <button type="submit" class="btn-primary btn-sm" style="margin-top:8px;">Save Discord</button>
         </form>

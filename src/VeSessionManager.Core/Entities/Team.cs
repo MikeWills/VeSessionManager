@@ -47,6 +47,20 @@ public class Team
     /// <summary>Which Discord server this team's events post to — the bot itself is shared globally (Discord:BotToken, confirmed with the user), only the Guild varies per team. Null means this team hasn't picked one yet.</summary>
     public ulong? DiscordGuildId { get; set; }
 
+    /// <summary>
+    /// Role ids this team's channel posts are allowed to ping, as the team typed them (#116). Null or
+    /// blank — the default, and what every existing team has — means <b>nothing resolves</b>, which is
+    /// the behaviour every post has always had.
+    /// </summary>
+    /// <remarks>
+    /// ⚠️ An allow-list rather than a switch, deliberately. <c>AllowedMentions.None</c> is what makes
+    /// not escaping markdown safe: a candidate named <c>@everyone</c> cannot ping the server because
+    /// no mention resolves. Candidate names reach a channel post through <c>{{Subjects}}</c>, so that
+    /// is the ordinary path rather than a hypothetical. Naming the roles grants the ask without
+    /// handing the guarantee back — see <c>DiscordMentionPolicy</c>.
+    /// </remarks>
+    public string? DiscordMentionableRoleIds { get; set; }
+
     // Square credentials — nullable. This team's own separate Square merchant account (confirmed
     // with the user — not shared across teams), including which API environment those credentials are
     // for: a token authenticates against one host only, so it travels with them (2026-08-06).

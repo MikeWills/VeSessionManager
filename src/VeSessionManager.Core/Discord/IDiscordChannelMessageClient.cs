@@ -17,5 +17,9 @@ public interface IDiscordChannelMessageClient
     /// <param name="guildId">The team's guild. Taken rather than inferred: the bot may be in several.</param>
     /// <param name="channelId">The channel the rule names. A rule-level setting, so one team can post different rules to different rooms.</param>
     /// <param name="message">Ready to post — plain text with Discord markdown, never HTML. See <c>DiscordMessageText</c>.</param>
-    Task PostMessageAsync(ulong guildId, ulong channelId, string message, CancellationToken cancellationToken);
+    /// <param name="mentionableRoleIds">
+    /// Role ids this post may ping. Empty — the default for every team — means nothing in the message
+    /// resolves, which is what keeps an unescaped candidate name from pinging a server (#116).
+    /// </param>
+    Task PostMessageAsync(ulong guildId, ulong channelId, string message, IReadOnlyList<ulong> mentionableRoleIds, CancellationToken cancellationToken);
 }
