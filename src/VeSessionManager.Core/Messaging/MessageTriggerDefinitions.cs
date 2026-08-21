@@ -60,7 +60,7 @@ public static class MessageTriggerDefinitions
             MessageTriggerMechanism.State,
             MessageSubjectType.Candidate,
             DefaultParameterHours: null,
-            LegalRecipients: [MessageRecipient.Candidate],
+            LegalRecipients: [MessageRecipient.Candidate, MessageRecipient.TeamAdminAddress, MessageRecipient.SessionLead, MessageRecipient.TeamAdmins, MessageRecipient.SystemAdmins, MessageRecipient.SessionManagers],
             // Byte-identical to EmailTemplatePlaceholders.ByKey["RegistrationConfirmation"], and it
             // must stay that way for as long as both exist — PR1 froze behaviour, so a token that
             // appears here and not there would be a token the drift test no longer covers.
@@ -70,14 +70,14 @@ public static class MessageTriggerDefinitions
             MessageTriggerMechanism.TimeRelative,
             MessageSubjectType.Candidate,
             DefaultParameterHours: 24,
-            LegalRecipients: [MessageRecipient.Candidate],
+            LegalRecipients: [MessageRecipient.Candidate, MessageRecipient.TeamAdminAddress, MessageRecipient.SessionLead, MessageRecipient.TeamAdmins, MessageRecipient.SystemAdmins, MessageRecipient.SessionManagers, MessageRecipient.DiscordChannel],
             Placeholders: ["CandidateName", "CandidateFirstName", "SessionDate", "ZoomJoinUrl", "OutstandingPaymentLinkUrl"]),
 
         new(MessageTrigger.FccFeeOutstanding,
             MessageTriggerMechanism.TimeRelative,
             MessageSubjectType.Candidate,
             DefaultParameterHours: 120,
-            LegalRecipients: [MessageRecipient.Candidate],
+            LegalRecipients: [MessageRecipient.Candidate, MessageRecipient.TeamAdminAddress, MessageRecipient.SessionLead, MessageRecipient.TeamAdmins, MessageRecipient.SystemAdmins, MessageRecipient.SessionManagers],
             Placeholders: ["CandidateName", "SessionDate", "Frn", "FccApplicationFileNumber"]),
 
         new(MessageTrigger.PaymentUnpaid,
@@ -87,7 +87,7 @@ public static class MessageTriggerDefinitions
             // The one trigger whose message was never candidate-facing: it tells the Session Manager
             // that a payment link has gone stale. Candidate is legal too — a team may reasonably want
             // to chase the candidate instead of, or as well as, telling itself.
-            LegalRecipients: [MessageRecipient.TeamAdminAddress, MessageRecipient.Candidate],
+            LegalRecipients: [MessageRecipient.Candidate, MessageRecipient.TeamAdminAddress, MessageRecipient.SessionLead, MessageRecipient.TeamAdmins, MessageRecipient.SystemAdmins, MessageRecipient.SessionManagers],
             Placeholders: ["CandidateName", "SessionDate", "PaymentAmount"]),
 
         // --- Added in PR3. None of these is seeded: they are things this app could not do before,
@@ -97,14 +97,14 @@ public static class MessageTriggerDefinitions
             MessageTriggerMechanism.State,
             MessageSubjectType.Candidate,
             DefaultParameterHours: null,
-            LegalRecipients: [MessageRecipient.Candidate, MessageRecipient.TeamAdminAddress],
+            LegalRecipients: [MessageRecipient.Candidate, MessageRecipient.TeamAdminAddress, MessageRecipient.SessionLead, MessageRecipient.TeamAdmins, MessageRecipient.SystemAdmins, MessageRecipient.SessionManagers],
             Placeholders: ["CandidateName", "CandidateFirstName", "SessionDate", "CallSign"]),
 
         new(MessageTrigger.LicenseGranted,
             MessageTriggerMechanism.State,
             MessageSubjectType.Candidate,
             DefaultParameterHours: null,
-            LegalRecipients: [MessageRecipient.Candidate, MessageRecipient.TeamAdminAddress],
+            LegalRecipients: [MessageRecipient.Candidate, MessageRecipient.TeamAdminAddress, MessageRecipient.SessionLead, MessageRecipient.TeamAdmins, MessageRecipient.SystemAdmins, MessageRecipient.SessionManagers],
             // The first trigger where CallSign resolves to anything — the FCC has issued it by
             // definition. Everywhere earlier it renders blank, which is what the compose screen warns
             // about (#144).
@@ -116,7 +116,7 @@ public static class MessageTriggerDefinitions
             DefaultParameterHours: null,
             // Candidate only. This one says "the FCC requires extra steps of you", which is not news
             // to send anywhere but the person it is about.
-            LegalRecipients: [MessageRecipient.Candidate],
+            LegalRecipients: [MessageRecipient.Candidate, MessageRecipient.TeamAdminAddress, MessageRecipient.SessionLead, MessageRecipient.TeamAdmins, MessageRecipient.SystemAdmins, MessageRecipient.SessionManagers],
             Placeholders: ["CandidateName", "CandidateFirstName", "SessionDate"])
     ];
 

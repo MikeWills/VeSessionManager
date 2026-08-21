@@ -303,8 +303,31 @@ public enum MessageRecipient
 {
     Candidate = 0,
     TeamAdminAddress = 1,
+
+    /// <summary>
+    /// The VE running the session, from ExamTools' Team Lead field via <c>Session.TeamLeadCallSign</c>.
+    /// Dispatchable since the trigger × recipient work — see <c>MessageRecipientResolver</c>.
+    ///
+    /// <para>⚠️ Not the same population as <see cref="SessionManagers"/>, despite "Team Lead = SM":
+    /// this resolves through a <b>VE record</b> and the person may have no app account at all. That
+    /// equivalence is true of the people and false of the plumbing.</para>
+    /// </summary>
     SessionLead = 2,
-    DiscordChannel = 3
+
+    DiscordChannel = 3,
+
+    /// <summary>Every app user with <c>TeamAdmin</c> on the rule's team.</summary>
+    TeamAdmins = 4,
+
+    /// <summary>
+    /// Every app user with <c>SystemAdmin</c>. <b>Not team-scoped</b> — a SystemAdmin spans every team
+    /// by definition, and requiring a <c>UserTeam</c> row would resolve to nobody for the one role
+    /// always entitled to know.
+    /// </summary>
+    SystemAdmins = 5,
+
+    /// <summary>Every app user with <c>SessionManager</c> on the rule's team. Mike, 2026-08-20: "All SMs is a third role option."</summary>
+    SessionManagers = 6
 }
 
 /// <summary>

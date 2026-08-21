@@ -165,13 +165,32 @@ public class EmailTemplateTriggersTests
     }
 
     /// <summary>
-    /// And the inverse, which is the one worth refusing: a registration confirmation is written to a
-    /// candidate, so offering to send it to the team's admin inbox would be offering a mistake.
+    /// ⚠️ <b>This used to assert the opposite</b>, on the reasoning that a registration confirmation
+    /// is written to a candidate so offering it to the team inbox offers a mistake. The decided
+    /// trigger × recipient matrix overturns that (Mike, 2026-08-20): staff recipients are legal on
+    /// <i>every</i> trigger, because "somebody might be crazy and want an email at every single point
+    /// along the way to go to themselves". Sending a candidate-worded message to staff is a wording
+    /// problem the team owns, not a data-protection one — the message is about their own candidate.
+    ///
+    /// <para>See <c>docs/trigger-recipient-matrix.md</c>. What is <i>not</i> overturned is below.</para>
     /// </summary>
     [Fact]
-    public void CandidateFacingTriggers_CannotBeAddressedToTheTeam()
+    public void CandidateFacingTriggers_MayNowBeAddressedToStaff()
     {
-        Assert.DoesNotContain(MessageRecipient.TeamAdminAddress,
+        Assert.Contains(MessageRecipient.TeamAdminAddress,
+            MessageTriggerDefinitions.For(MessageTrigger.CandidateRegistered).LegalRecipients);
+    }
+
+    /// <summary>
+    /// The restriction that survived, and the one that was actually load-bearing: a candidate-facing
+    /// trigger still cannot be posted into a Discord channel. Staff receiving a message about their
+    /// own candidate is internal; a channel is a room, and the matrix marks the Discord column N for
+    /// every trigger except the session reminder.
+    /// </summary>
+    [Fact]
+    public void CandidateFacingTriggers_StillCannotBePostedToAChannel()
+    {
+        Assert.DoesNotContain(MessageRecipient.DiscordChannel,
             MessageTriggerDefinitions.For(MessageTrigger.CandidateRegistered).LegalRecipients);
     }
 }

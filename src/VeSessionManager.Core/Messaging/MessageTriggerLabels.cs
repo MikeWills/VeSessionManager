@@ -84,8 +84,11 @@ public static class MessageTriggerLabels
     {
         MessageRecipient.Candidate => "The candidate",
         MessageRecipient.TeamAdminAddress => "Your team's admin address",
-        MessageRecipient.SessionLead => "The session lead",
+        MessageRecipient.SessionLead => "The session lead (from ExamTools)",
         MessageRecipient.DiscordChannel => "A Discord channel",
+        MessageRecipient.TeamAdmins => "Every team admin",
+        MessageRecipient.SystemAdmins => "Every system admin",
+        MessageRecipient.SessionManagers => "Every session manager",
         _ => recipient.ToString()
     };
 
