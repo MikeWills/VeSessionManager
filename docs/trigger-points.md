@@ -602,6 +602,73 @@ model as action-based sends. They carry access tokens, and
 structural today precisely because those call sites never populate the field. Bringing any of them in
 would turn that into a runtime guarantee.
 
+## Per-session fan-out (2026-08-20)
+
+`MessageFanOut` has a third value, `PerSession`: **one message per session**, covering that session's
+subjects.
+
+`SingleDigest` batches everything one scan returned across **all** of a team's sessions into a single
+message. That is fine for "3 new registrations" and useless for anything that names a session — which
+is why [#116](https://github.com/MikeWills/VeSessionManager/issues/116) could not ask for *"x
+candidates registered to test at xx:xx"*: there was no single session for the sentence to be about.
+
+Grouping brings the session's own tokens with it, available **only** on `PerSession` because a batch
+spanning several sessions cannot answer them:
+
+| Token | Renders |
+|---|---|
+| `{{SessionTitle}}` | The session's name |
+| `{{SessionDate}}` | Start time via `SessionTimeFormatter.ForCandidate` — Eastern, like every screen |
+| `{{RegisteredCount}}` | **Candidates registered on the session** |
+| `{{Count}}` | How many subjects this rule is firing for — *not* the same number |
+| `{{Subjects}}` | That session's people only |
+
+⚠️ **`{{Count}}` and `{{RegisteredCount}}` differ constantly and the difference matters.** Subjects
+are filtered by having an email, not being purged, and not already having a terminal run for this
+rule. "x candidates registered to test" is `{{RegisteredCount}}`; "x people this rule is about right
+now" is `{{Count}}`. Reaching for the wrong one produces a number that is quietly wrong rather than
+obviously broken.
+
+Two smaller decisions:
+
+- **`SessionDate` uses `ForCandidate` even though a channel post is not a candidate.** It is the one
+  formatter that renders Eastern, which is what was asked for. Never `EasternTimeFormatter` — that
+  lives in the Web project and is unreachable from Core, which is how candidate email spent months
+  rendering UTC (#205).
+- **Subjects with no session are grouped together and rendered without the session tokens**, rather
+  than dropped. A payment-subject rule set to `PerSession` should still say something.
+
+Markers stay per subject, exactly as for a digest: one post covering twelve candidates writes twelve
+rows, or the next tick would re-announce eleven of them.
+
+## Sub-day delays: the unit moved, not the precision (2026-08-20)
+
+A delay is now a number **and a unit** — days or hours.
+
+The field was days with a half-day step, which put a **12-hour floor** under everything a team could
+set. That was deliberate, and `MessageDelay`'s own remarks say why: an odd number of hours "cannot be
+written in this unit without lying about it, and a form that silently turns 0.3 into 7 hours is worse
+than one that says no". Both still hold — so **hours became sayable rather than days becoming**
+**vaguer**. A fractional hour is still refused rather than rounded, for the same reason.
+
+`MessageDelay.ForDisplay` reopens a stored value in the unit that reads naturally: whole or half days
+as days, anything else as hours. ⚠️ **The edit screen must use it** — otherwise a rule saved as 1 hour
+reopens as the nearest half-day and saving the form silently moves it.
+
+### The scan had to keep up
+
+The message-rule job ran **once a day**, so a 1-hour rule could only fire by luck. It is hourly now
+(`Jobs:DayBeforeReminderIntervalHours`, default `1`).
+
+Every time-relative trigger gets more precise with it — a fee chaser set to five days could previously
+go out most of a day late. Affordable because a scan is **database-only**: it touches no external API,
+and finds nothing to do on almost every tick. The trigger machinery is scan-based precisely so an
+extra tick is a no-op and a missed one catches up.
+
+⚠️ **Hourly is the floor of what a rule can mean.** A rule set to 1 hour fires at the first scan where
+the session is inside the window, so somewhere between 0 and 60 minutes before. Finer would need the
+job timer to move off hours, which nothing has asked for.
+
 ## Mentionable roles, per team (2026-08-20)
 
 `Team.DiscordMentionableRoleIds` names the roles a team's channel posts may ping. Blank — the default,

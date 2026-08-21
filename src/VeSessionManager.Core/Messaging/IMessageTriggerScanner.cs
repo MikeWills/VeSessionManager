@@ -48,11 +48,39 @@ public sealed record MessageSubject(
     /// </summary>
     public string? SessionLeadCallSign { get; init; }
 
+    /// <summary>
+    /// The session this subject belongs to, for <see cref="MessageFanOut.PerSession"/> grouping and
+    /// the session tokens that come with it. Null when the scanner loaded no session — a
+    /// payment-subject rule, say.
+    ///
+    /// <para>Carried by the scanner rather than looked up per subject by the dispatcher, for the same
+    /// reason as <see cref="SessionLeadCallSign"/>: the scanner already has the session in hand.</para>
+    /// </summary>
+    public MessageSessionContext? Session { get; init; }
+
     public string DigestLabel =>
         Placeholders.TryGetValue("CandidateName", out var name) && !string.IsNullOrWhiteSpace(name)
             ? name
             : $"#{SubjectId}";
 }
+
+/// <summary>
+/// What a <see cref="MessageFanOut.PerSession"/> message needs to know about the session it is about.
+/// </summary>
+/// <param name="SessionId">Groups the subjects. Also the only field required — the rest are for rendering.</param>
+/// <param name="Title">The session's own name, as the app shows it.</param>
+/// <param name="ScheduledStartUtc">Rendered through <c>SessionTimeFormatter</c>, so a channel post says Eastern like every screen does.</param>
+/// <param name="RegisteredCandidateCount">
+/// Candidates registered on the session — <b>not</b> the number of subjects this rule is firing for.
+/// The two differ constantly: subjects are filtered by having an email, not being purged, and not
+/// already having a terminal run for this rule. #116 asks for "x candidates registered to test", which
+/// is this number and not that one.
+/// </param>
+public sealed record MessageSessionContext(
+    int SessionId,
+    string Title,
+    DateTime ScheduledStartUtc,
+    int RegisteredCandidateCount);
 
 /// <summary>
 /// Answers "which subjects is this rule due to fire for, right now" for one trigger point (#401).

@@ -133,7 +133,7 @@ public class EmailTemplatesModel(AppDbContext dbContext, UserManager<User> userM
 
         /// <summary>The stored hours in the unit the form takes — see <see cref="MessageDelay"/>.</summary>
         public string ParameterDaysText =>
-            MessageDelay.ToDays(ParameterHours) is { } days ? MessageDelay.Format(days) : "";
+            MessageDelay.ForDisplay(ParameterHours) is { } d ? $"{MessageDelay.Format(d.Value)} {(d.Unit == MessageDelayUnit.Hours ? "hours" : "days")}" : "";
 
         public IReadOnlyList<MessageRecipient> LegalRecipients => MessageTriggerDefinitions.For(Trigger).LegalRecipients;
     }

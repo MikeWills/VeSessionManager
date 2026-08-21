@@ -139,9 +139,14 @@ public class MessageRuleAdminServiceTests
     }
 
     /// <summary>
-    /// A registration confirmation is written to a candidate, so addressing it to the team's own inbox
-    /// is a mistake rather than a configuration. Refused in the service, not just left off the form —
-    /// the form is a default, and the value arrives in a POST.
+    /// The service refuses a recipient the trigger cannot address — not just left off the form, since
+    /// the form is a default and the value arrives in a POST.
+    ///
+    /// <para>⚠️ <b>Repointed</b> when the trigger × recipient matrix landed: this used to use
+    /// <c>CandidateRegistered</c> + <c>TeamAdminAddress</c>, which is now legal by decision. The
+    /// mechanism being tested is unchanged; the example had to move to a pair that is still illegal.
+    /// A registration confirmation posted into a Discord channel is that pair — the matrix marks the
+    /// channel column N for every trigger but the session reminder.</para>
     /// </summary>
     [Fact]
     public async Task Create_WithARecipientTheTriggerCannotAddress_IsRefused()
@@ -151,7 +156,7 @@ public class MessageRuleAdminServiceTests
 
         var result = await CreateService(dbContext).CreateAsync(
             team.Id, MessageTrigger.CandidateRegistered, "Confirmation", "DayBeforeReminder", null,
-            MessageRecipient.TeamAdminAddress, userId, CancellationToken.None);
+            MessageRecipient.DiscordChannel, userId, CancellationToken.None);
 
         Assert.Equal(MessageRuleActionResult.RecipientNotLegal, result);
     }

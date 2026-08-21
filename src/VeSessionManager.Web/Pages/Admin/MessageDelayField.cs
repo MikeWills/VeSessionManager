@@ -16,14 +16,17 @@ internal static class MessageDelayField
 {
     /// <summary>Phrased in days because that is the box being complained about; the column's own ceiling is a year either way.</summary>
     internal const string RangeMessage =
-        "The delay must be between half a day and 365 days, in steps of half a day.";
+        "The delay must be whole hours from 1 to 8760, or whole or half days from half a day to 365.";
 
-    internal const string RequiredMessage = "This trigger needs a number of days.";
+    internal const string RequiredMessage = "This trigger needs a number.";
 
-    /// <summary>False when days were typed but cannot be honoured; <paramref name="hours"/> is then meaningless.</summary>
-    internal static bool TryToHours(decimal? days, out int? hours)
+    /// <summary>
+    /// False when a value was typed but the chosen unit cannot honour it; <paramref name="hours"/> is
+    /// then meaningless.
+    /// </summary>
+    internal static bool TryToHours(decimal? value, MessageDelayUnit unit, out int? hours)
     {
-        hours = MessageDelay.ToHours(days);
-        return days is null || hours is not null;
+        hours = MessageDelay.ToHours(value, unit);
+        return value is null || hours is not null;
     }
 }

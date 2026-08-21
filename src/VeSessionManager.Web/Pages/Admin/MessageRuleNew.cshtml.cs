@@ -63,6 +63,14 @@ public class MessageRuleNewModel(
     [BindProperty]
     public decimal? ParameterDays { get; set; }
 
+    /// <summary>
+    /// Days or hours. Hours exist for #116 — an hour before a session, which a day-denominated
+    /// field could not express without a 12-hour floor. Defaults to days, which is how a team
+    /// usually thinks about a reminder.
+    /// </summary>
+    [BindProperty]
+    public MessageDelayUnit ParameterUnit { get; set; } = MessageDelayUnit.Days;
+
     [BindProperty]
     public MessageRecipient Recipient { get; set; } = MessageRecipient.Candidate;
 
@@ -128,7 +136,7 @@ public class MessageRuleNewModel(
             return Forbid();
         }
 
-        if (!MessageDelayField.TryToHours(ParameterDays, out var parameterHours))
+        if (!MessageDelayField.TryToHours(ParameterDays, ParameterUnit, out var parameterHours))
         {
             TempData["ErrorMessage"] = MessageDelayField.RangeMessage;
             return RedirectToPage(new { teamId = TeamId, trigger = Trigger });

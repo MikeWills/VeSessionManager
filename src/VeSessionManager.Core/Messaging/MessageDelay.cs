@@ -23,6 +23,21 @@ namespace VeSessionManager.Core.Messaging;
 /// than that is refused rather than rounded: an odd number of hours cannot be written in this unit
 /// without lying about it, and a form that silently turns 0.3 into 7 hours is worse than one that says no.</para>
 /// </summary>
+/// <summary>
+/// The unit a delay is typed in. Added for #116, which needs a reminder an hour before a session —
+/// something a day-denominated field put a <b>12-hour floor</b> under.
+///
+/// <para>The unit moved rather than the precision. <see cref="MessageDelay"/> refused finer than half
+/// a day on the grounds that an odd number of hours cannot be written in days without lying about it,
+/// and that a form silently turning 0.3 into 7 hours is worse than one that says no. Both still hold —
+/// so hours became sayable instead of days becoming vaguer.</para>
+/// </summary>
+public enum MessageDelayUnit
+{
+    Days = 0,
+    Hours = 1
+}
+
 public static class MessageDelay
 {
     public const int HoursPerDay = 24;
@@ -49,6 +64,45 @@ public static class MessageDelay
         return hours == decimal.Truncate(hours) && hours % (HoursPerDay * Step) == 0
             ? (int)hours
             : null;
+    }
+
+    /// <summary>The smallest delay in hours. One hour — what #116 asks for, and the finest the stored column can hold.</summary>
+    public const decimal MinimumHours = 1m;
+
+    /// <summary>A year in hours, the same ceiling <c>MessageRuleAdminService.MaxParameterHours</c> enforces.</summary>
+    public const decimal MaximumHours = 365m * HoursPerDay;
+
+    /// <summary>A typed value in its unit, as whole hours — or null when the unit cannot express it honestly.</summary>
+    /// <remarks>
+    /// A fractional hour is refused for exactly the reason a third of a day always was: the stored
+    /// column is whole hours, and quietly turning 1.5 into 1 is a rule that fires at a time nobody chose.
+    /// </remarks>
+    public static int? ToHours(decimal? value, MessageDelayUnit unit)
+    {
+        if (unit == MessageDelayUnit.Days)
+        {
+            return ToHours(value);
+        }
+
+        if (value is not { } hours) return null;
+        if (hours < MinimumHours || hours > MaximumHours) return null;
+        return hours == decimal.Truncate(hours) ? (int)hours : null;
+    }
+
+    /// <summary>
+    /// A stored value in the unit that reads naturally: whole (or half) days as days, anything else as
+    /// hours. 36 hours is a day and a half; 1 hour has no honest day form, which is the whole point.
+    /// </summary>
+    public static (decimal Value, MessageDelayUnit Unit)? ForDisplay(int? hours)
+    {
+        if (hours is not { } h) return null;
+
+        // Expressible in days only when it is a whole number of half-days — the same rule the days
+        // field enforces, so what comes back is always something that field would accept.
+        var halfDay = (int)(HoursPerDay * Step);
+        return h % halfDay == 0 && h >= HoursPerDay * Minimum
+            ? (h / (decimal)HoursPerDay, MessageDelayUnit.Days)
+            : (h, MessageDelayUnit.Hours);
     }
 
     /// <summary>

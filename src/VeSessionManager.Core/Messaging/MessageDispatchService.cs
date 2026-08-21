@@ -1,3 +1,4 @@
+using VeSessionManager.Core.Notifications;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using VeSessionManager.Core.Data;
@@ -77,10 +78,17 @@ public class MessageDispatchService(
             var now = timeProvider.GetUtcNow().UtcDateTime;
             try
             {
-                var toAddress = ResolveAddress(rule, subject, emailSettings);
-                if (string.IsNullOrWhiteSpace(toAddress))
+                // A list rather than one address: a role recipient is inherently several people, and
+                // that is the whole point of the trigger x recipient work. Candidate and
+                // TeamAdminAddress still resolve to exactly one, so their behaviour is unchanged.
+                var toAddresses = await MessageRecipientResolver.ResolveAsync(
+                    dbContext, team, rule.Recipient, subject.SessionLeadCallSign, subject.CandidateEmail,
+                    emailSettings.AdminNotificationEmail, cancellationToken);
+
+                if (toAddresses.Count == 0)
                 {
-                    // Not terminal: an address filled in later should still get the message.
+                    // Not terminal: an address filled in later should still get the message. That is
+                    // truer than ever now — a role with no users today may have one next week.
                     await RecordAsync(team, rule, subject, MessageRuleOutcome.NoRecipient, $"No address for recipient {rule.Recipient}", now, cancellationToken);
                     result.NoRecipient++;
                     continue;
@@ -109,15 +117,23 @@ public class MessageDispatchService(
                     monitoringCopyRemaining--;
                 }
 
-                await emailSender.SendAsync(
-                    credentials,
-                    new EmailMessage(toAddress, emailSettings.FromAddress, emailSettings.FromDisplayName,
-                        await ResolveReplyToAsync(rule, subject, emailSettings, replyToCache, cancellationToken),
-                        rendered.Subject, rendered.Body, rendered.InlineLogo,
-                        // Two Bccs can be in play; the rule's own is folded in beside the team's.
-                        BccAddress: teamMonitoringBcc ?? ruleBcc,
-                        CcAddress: ruleCc),
-                    cancellationToken);
+                var replyTo = await ResolveReplyToAsync(rule, subject, emailSettings, replyToCache, cancellationToken);
+
+                // One message each rather than one message with several To addresses: staff should not
+                // see each other's addresses on a header, and a per-address send means one bad address
+                // cannot take the rest down with it.
+                foreach (var toAddress in toAddresses)
+                {
+                    await emailSender.SendAsync(
+                        credentials,
+                        new EmailMessage(toAddress, emailSettings.FromAddress, emailSettings.FromDisplayName,
+                            replyTo,
+                            rendered.Subject, rendered.Body, rendered.InlineLogo,
+                            // Two Bccs can be in play; the rule's own is folded in beside the team's.
+                            BccAddress: teamMonitoringBcc ?? ruleBcc,
+                            CcAddress: ruleCc),
+                        cancellationToken);
+                }
 
                 // Only on a real send. These columns are no longer authoritative, but they are what
                 // the candidate Email history screen renders, and stamping one for a message that was
@@ -178,6 +194,20 @@ public class MessageDispatchService(
             return await PostDigestAsync(team, rule, guildId, channelId, subjects, result, cancellationToken);
         }
 
+        if (rule.FanOut == MessageFanOut.PerSession)
+        {
+            // Grouped rather than batched. Subjects with no session share the null group and render
+            // without the session tokens, instead of being dropped — a payment-subject rule set to
+            // PerSession should still say something.
+            foreach (var group in subjects.GroupBy(s => s.Session?.SessionId))
+            {
+                result = await PostDigestAsync(team, rule, guildId, channelId, [.. group],
+                    result, cancellationToken, group.First().Session);
+            }
+
+            return result;
+        }
+
         foreach (var subject in subjects)
         {
             var now = timeProvider.GetUtcNow().UtcDateTime;
@@ -226,7 +256,7 @@ public class MessageDispatchService(
     /// </summary>
     private async Task<MessageRuleResult> PostDigestAsync(
         Team team, MessageRule rule, ulong guildId, ulong channelId, IReadOnlyList<MessageSubject> subjects,
-        MessageRuleResult result, CancellationToken cancellationToken)
+        MessageRuleResult result, CancellationToken cancellationToken, MessageSessionContext? session = null)
     {
         var now = timeProvider.GetUtcNow().UtcDateTime;
         var placeholders = new Dictionary<string, string>
@@ -234,6 +264,25 @@ public class MessageDispatchService(
             ["Count"] = subjects.Count.ToString(),
             ["Subjects"] = string.Join("\n", subjects.Select(s => "• " + s.DigestLabel))
         };
+
+        // Only PerSession has one session to speak about, so only PerSession gets these. A batch
+        // spanning several sessions cannot answer them and therefore does not offer them.
+        if (session is not null)
+        {
+            placeholders["SessionTitle"] = session.Title;
+
+            // ForCandidate despite this not going to a candidate: it is the formatter that renders
+            // Eastern, and #116 asks for "xx:xx eastern time". Never EasternTimeFormatter — that
+            // lives in the Web project and is unreachable from Core, which is how candidate email
+            // spent months rendering UTC (#205).
+            placeholders["SessionDate"] = SessionTimeFormatter.ForCandidate(session.ScheduledStartUtc);
+
+            // Candidates registered on the session, deliberately distinct from {{Count}} above, which
+            // is how many this rule is firing for. Subjects are filtered by having an email, not
+            // being purged, and not already having a terminal run, so the two differ constantly —
+            // and "x candidates registered to test" means this one.
+            placeholders["RegisteredCount"] = session.RegisteredCandidateCount.ToString();
+        }
 
         try
         {
@@ -314,16 +363,6 @@ public class MessageDispatchService(
     }
 
     private static string? NullIfBlank(string? value) => string.IsNullOrWhiteSpace(value) ? null : value;
-
-    private static string? ResolveAddress(MessageRule rule, MessageSubject subject, EmailSettings emailSettings) => rule.Recipient switch
-    {
-        MessageRecipient.Candidate => subject.CandidateEmail,
-        MessageRecipient.TeamAdminAddress => emailSettings.AdminNotificationEmail,
-        // SessionLead and DiscordChannel are declared in the model and not resolvable yet. Returning
-        // null lands them on NoRecipient with the reason attached, which is retried rather than
-        // settled — correct, because what is missing is code, not an address.
-        _ => null
-    };
 
     private async Task<MessageRuleResult> RecordAllAsync(
         Team team, MessageRule rule, IReadOnlyList<MessageSubject> subjects, MessageRuleOutcome outcome, string? detail,
