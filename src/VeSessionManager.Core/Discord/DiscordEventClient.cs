@@ -92,7 +92,7 @@ public sealed class DiscordEventClient : IDiscordEventClient, IDiscordChannelMes
     /// post</b>. That is the same rule the rest of this app follows for a non-idempotent external
     /// call; it is worth stating here because the methods above it all query first.
     /// </summary>
-    public async Task PostMessageAsync(ulong guildId, ulong channelId, string message, CancellationToken cancellationToken)
+    public async Task PostMessageAsync(ulong guildId, ulong channelId, string message, IReadOnlyList<ulong> mentionableRoleIds, CancellationToken cancellationToken)
     {
         var guild = await GetGuildAsync(guildId, cancellationToken);
         var channel = await guild.GetTextChannelAsync(channelId)
@@ -100,11 +100,16 @@ public sealed class DiscordEventClient : IDiscordEventClient, IDiscordChannelMes
                 $"Discord channel {channelId} was not found in guild {guildId}, or the bot cannot see it. " +
                 "Check the channel id on the message rule, and that the bot has View Channel + Send Messages there.");
 
-        // AllowedMentions.None is the control that makes DiscordMessageText's decision not to escape
-        // markdown safe: a candidate whose name is "@everyone" cannot ping the server, whatever the
-        // text says, because no mention in this message resolves. Enforced at the API rather than by
-        // string-mangling that would have to anticipate every syntax Discord adds.
-        await channel.SendMessageAsync(message, allowedMentions: AllowedMentions.None);
+        // The control that makes DiscordMessageText's decision not to escape markdown safe: a
+        // candidate whose name is "@everyone" cannot ping the server, whatever the text says, because
+        // no mention in this message resolves. Enforced at the API rather than by string-mangling that
+        // would have to anticipate every syntax Discord adds.
+        //
+        // A team may now name roles it wants pingable (#116). That stays an allow-list rather than a
+        // switch — @everyone/@here are a separate AllowedMentionTypes flag that is never set, and user
+        // mentions never resolve — so the guarantee above survives being granted. Empty, the default
+        // for every team, is exactly the old AllowedMentions.None.
+        await channel.SendMessageAsync(message, allowedMentions: DiscordMentionPolicy.For(mentionableRoleIds));
         _logger.LogInformation("Posted a message to Discord channel {ChannelId} in guild {GuildId}", channelId, guildId);
     }
 

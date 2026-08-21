@@ -33,7 +33,10 @@ public static class MessageRuleTestHarness
         public Exception? ThrowOnNextPost { get; set; }
         public bool IsConfigured { get; set; } = true;
 
-        public Task PostMessageAsync(ulong guildId, ulong channelId, string message, CancellationToken cancellationToken)
+        /// <summary>What each post was allowed to ping (#116) — empty on every existing test, which is the point.</summary>
+        public List<IReadOnlyList<ulong>> AllowedRoleIds { get; } = [];
+
+        public Task PostMessageAsync(ulong guildId, ulong channelId, string message, IReadOnlyList<ulong> mentionableRoleIds, CancellationToken cancellationToken)
         {
             if (ThrowOnNextPost is not null)
             {
@@ -43,6 +46,7 @@ public static class MessageRuleTestHarness
             }
 
             Posts.Add((guildId, channelId, message));
+            AllowedRoleIds.Add(mentionableRoleIds);
             return Task.CompletedTask;
         }
     }

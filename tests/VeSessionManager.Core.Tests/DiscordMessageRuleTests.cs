@@ -418,4 +418,65 @@ public class DiscordMessageRuleTests
         Assert.DoesNotContain("Sam Vale", roana.Message);
     }
 
+
+    // ---- Mentionable roles, per team (#116) ---------------------------------------------------
+
+    /// <summary>The default every existing team has: a post resolves no mentions at all.</summary>
+    [Fact]
+    public async Task ByDefault_APostMayPingNobody()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        await SeedTemplateAsync(dbContext, team, "Post", "hello");
+        await SeedDiscordRuleAsync(dbContext, team, MessageFanOut.SingleDigest);
+        await SeedCandidatesAsync(dbContext, await SeedSessionAsync(dbContext, team), "Roana Glory");
+
+        var discord = new MessageRuleTestHarness.FakeDiscordChannelClient();
+        await RunAsync(dbContext, team, discord);
+
+        Assert.Empty(Assert.Single(discord.AllowedRoleIds));
+    }
+
+    /// <summary>A team that named a role gets that role, and only that role, offered to Discord.</summary>
+    [Fact]
+    public async Task AConfiguredRole_ReachesTheClient()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        team.DiscordMentionableRoleIds = "555, 666";
+        await dbContext.SaveChangesAsync();
+        await SeedTemplateAsync(dbContext, team, "Post", "<@&555> heads up");
+        await SeedDiscordRuleAsync(dbContext, team, MessageFanOut.SingleDigest);
+        await SeedCandidatesAsync(dbContext, await SeedSessionAsync(dbContext, team), "Roana Glory");
+
+        var discord = new MessageRuleTestHarness.FakeDiscordChannelClient();
+        await RunAsync(dbContext, team, discord);
+
+        Assert.Equal([555UL, 666UL], Assert.Single(discord.AllowedRoleIds));
+    }
+
+    /// <summary>
+    /// ⚠️ The property the allow-list exists to preserve. A candidate named <c>@everyone</c> reaches a
+    /// channel post through <c>{{Subjects}}</c> unescaped — and still cannot ping the server, because
+    /// the ids offered to Discord are the team's roles and <c>@everyone</c> is not among them.
+    /// </summary>
+    [Fact]
+    public async Task ACandidateNamedEveryone_StillCannotPingTheServer()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        team.DiscordMentionableRoleIds = "555";
+        await dbContext.SaveChangesAsync();
+        await SeedTemplateAsync(dbContext, team, "Post", "{{Subjects}}");
+        await SeedDiscordRuleAsync(dbContext, team, MessageFanOut.SingleDigest);
+        await SeedCandidatesAsync(dbContext, await SeedSessionAsync(dbContext, team), "@everyone");
+
+        var discord = new MessageRuleTestHarness.FakeDiscordChannelClient();
+        await RunAsync(dbContext, team, discord);
+
+        var post = Assert.Single(discord.Posts);
+        Assert.Contains("@everyone", post.Message);                       // the text is not mangled...
+        Assert.Equal([555UL], Assert.Single(discord.AllowedRoleIds));     // ...and it resolves to nothing
+    }
+
 }
