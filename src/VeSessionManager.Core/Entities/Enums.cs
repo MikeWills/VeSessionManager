@@ -350,7 +350,20 @@ public enum MessageFanOut
     /// "one per candidate", which is the opposite of what it selects and is exactly the forty-posts
     /// mistake the <see cref="MessageFanOut"/> field exists to prevent.</para>
     /// </summary>
-    SingleDigest = 1
+    SingleDigest = 1,
+
+    /// <summary>
+    /// One message per <b>session</b>, covering that session's subjects.
+    ///
+    /// <para>The middle ground <see cref="SingleDigest"/> could not express. A digest batches
+    /// everything one scan returned across <i>all</i> of a team's sessions, which is why a post could
+    /// never say "x candidates registered to test at xx:xx" — there was no single session for the
+    /// sentence to be about. Grouping restores that, and with it the session's own tokens.</para>
+    ///
+    /// <para>Subjects with no session are grouped together and rendered without the session tokens,
+    /// rather than dropped: a payment-subject rule set to PerSession should still send something.</para>
+    /// </summary>
+    PerSession = 2
 }
 
 /// <summary>

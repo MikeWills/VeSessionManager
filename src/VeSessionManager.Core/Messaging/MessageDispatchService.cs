@@ -1,3 +1,4 @@
+using VeSessionManager.Core.Notifications;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using VeSessionManager.Core.Data;
@@ -193,6 +194,20 @@ public class MessageDispatchService(
             return await PostDigestAsync(team, rule, guildId, channelId, subjects, result, cancellationToken);
         }
 
+        if (rule.FanOut == MessageFanOut.PerSession)
+        {
+            // Grouped rather than batched. Subjects with no session share the null group and render
+            // without the session tokens, instead of being dropped — a payment-subject rule set to
+            // PerSession should still say something.
+            foreach (var group in subjects.GroupBy(s => s.Session?.SessionId))
+            {
+                result = await PostDigestAsync(team, rule, guildId, channelId, [.. group],
+                    result, cancellationToken, group.First().Session);
+            }
+
+            return result;
+        }
+
         foreach (var subject in subjects)
         {
             var now = timeProvider.GetUtcNow().UtcDateTime;
@@ -240,7 +255,7 @@ public class MessageDispatchService(
     /// </summary>
     private async Task<MessageRuleResult> PostDigestAsync(
         Team team, MessageRule rule, ulong guildId, ulong channelId, IReadOnlyList<MessageSubject> subjects,
-        MessageRuleResult result, CancellationToken cancellationToken)
+        MessageRuleResult result, CancellationToken cancellationToken, MessageSessionContext? session = null)
     {
         var now = timeProvider.GetUtcNow().UtcDateTime;
         var placeholders = new Dictionary<string, string>
@@ -248,6 +263,25 @@ public class MessageDispatchService(
             ["Count"] = subjects.Count.ToString(),
             ["Subjects"] = string.Join("\n", subjects.Select(s => "• " + s.DigestLabel))
         };
+
+        // Only PerSession has one session to speak about, so only PerSession gets these. A batch
+        // spanning several sessions cannot answer them and therefore does not offer them.
+        if (session is not null)
+        {
+            placeholders["SessionTitle"] = session.Title;
+
+            // ForCandidate despite this not going to a candidate: it is the formatter that renders
+            // Eastern, and #116 asks for "xx:xx eastern time". Never EasternTimeFormatter — that
+            // lives in the Web project and is unreachable from Core, which is how candidate email
+            // spent months rendering UTC (#205).
+            placeholders["SessionDate"] = SessionTimeFormatter.ForCandidate(session.ScheduledStartUtc);
+
+            // Candidates registered on the session, deliberately distinct from {{Count}} above, which
+            // is how many this rule is firing for. Subjects are filtered by having an email, not
+            // being purged, and not already having a terminal run, so the two differ constantly —
+            // and "x candidates registered to test" means this one.
+            placeholders["RegisteredCount"] = session.RegisteredCandidateCount.ToString();
+        }
 
         try
         {
