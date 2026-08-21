@@ -153,8 +153,15 @@ public static class JobSchedules
             "Fires each team's trigger-point rules — pre-session reminders, fee chasers, and anything else a team has configured.",
             JobCadenceKind.IntervalFromWorkerStart,
             "Jobs:DayBeforeReminderIntervalHours",
-            DefaultIntervalHours: 24,
-            TickIntervalSeconds: 86400),
+            // Hourly since #116, which needs a reminder an hour before a session — a daily scan can
+            // only fire a 1-hour rule by luck. Every time-relative trigger gets more precise with it:
+            // a fee chaser set to five days used to be able to go out most of a day late.
+            //
+            // Affordable because a scan is database-only. It touches no external API, and finds
+            // nothing to do on almost every tick — the trigger machinery is scan-based precisely so an
+            // extra tick is a no-op.
+            DefaultIntervalHours: 1,
+            TickIntervalSeconds: 3600),
 
         new(PaymentReminder,
             "Payment reminder",

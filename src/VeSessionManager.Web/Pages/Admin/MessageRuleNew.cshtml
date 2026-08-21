@@ -62,12 +62,18 @@
                 @VeSessionManager.Web.Pages.Admin.MessageRuleNewModel.ParameterPrompt(Model.Trigger)
             </label>
             <input asp-for="ParameterDays" type="number"
-                   min="@MessageDelay.Format(MessageDelay.Minimum)"
+                   min="0.5"
                    max="@MessageDelay.Format(MessageDelay.Maximum)"
-                   step="@MessageDelay.Format(MessageDelay.Step)" />
+                   step="0.5" />
+            @* Days or hours (#116). The number field cannot express "1 hour" in days without
+               lying about it, so the unit moved rather than the precision. *@
+            <select asp-for="ParameterUnit" class="filter-select">
+                <option value="@((int)MessageDelayUnit.Days)">days</option>
+                <option value="@((int)MessageDelayUnit.Hours)">hours</option>
+            </select>
             @* A duration, not a date — 1 is twenty-four hours ahead of the moment, wherever the person
                is. Halves are allowed so "12 hours before" is still reachable. *@
-            <span class="session-sub">Whole or half days — 0.5 is twelve hours, 5 is five days.</span>
+            <span class="session-sub">Whole or half days, or whole hours — 1 hour, 0.5 days is twelve hours, 5 days is five days.</span>
             <span class="session-sub" id="delayCeiling"></span>
         </div>
 

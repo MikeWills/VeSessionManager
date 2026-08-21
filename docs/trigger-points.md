@@ -641,3 +641,30 @@ Two smaller decisions:
 Markers stay per subject, exactly as for a digest: one post covering twelve candidates writes twelve
 rows, or the next tick would re-announce eleven of them.
 
+## Sub-day delays: the unit moved, not the precision (2026-08-20)
+
+A delay is now a number **and a unit** — days or hours.
+
+The field was days with a half-day step, which put a **12-hour floor** under everything a team could
+set. That was deliberate, and `MessageDelay`'s own remarks say why: an odd number of hours "cannot be
+written in this unit without lying about it, and a form that silently turns 0.3 into 7 hours is worse
+than one that says no". Both still hold — so **hours became sayable rather than days becoming**
+**vaguer**. A fractional hour is still refused rather than rounded, for the same reason.
+
+`MessageDelay.ForDisplay` reopens a stored value in the unit that reads naturally: whole or half days
+as days, anything else as hours. ⚠️ **The edit screen must use it** — otherwise a rule saved as 1 hour
+reopens as the nearest half-day and saving the form silently moves it.
+
+### The scan had to keep up
+
+The message-rule job ran **once a day**, so a 1-hour rule could only fire by luck. It is hourly now
+(`Jobs:DayBeforeReminderIntervalHours`, default `1`).
+
+Every time-relative trigger gets more precise with it — a fee chaser set to five days could previously
+go out most of a day late. Affordable because a scan is **database-only**: it touches no external API,
+and finds nothing to do on almost every tick. The trigger machinery is scan-based precisely so an
+extra tick is a no-op and a missed one catches up.
+
+⚠️ **Hourly is the floor of what a rule can mean.** A rule set to 1 hour fires at the first scan where
+the session is inside the window, so somewhere between 0 and 60 minutes before. Finer would need the
+job timer to move off hours, which nothing has asked for.
