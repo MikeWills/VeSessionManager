@@ -92,8 +92,21 @@ So this is a **role-based recipient resolved over app users**, not a literal add
 Better in every way: emails already live in Identity, team scoping already exists, and they are staff
 so there is no unsubscribe surface and no PII leaving the team.
 
-Open sub-question: whether "all SMs" is a third option beside TeamAdmin and SystemAdmin, or whether
-the SM is always reached via the session-lead column above.
+**Three role options, decided 2026-08-20** — *"All SMs is a third role option."*
+
+| Option | Resolves to |
+|---|---|
+| Team admins | app users with `TeamAdmin` on the team |
+| System admins | app users with `SystemAdmin` |
+| **All session managers** | app users with `SessionManager` on the team |
+
+⚠️ **"All SMs" and "session lead" are different populations, from different systems — do not merge
+them.** The session lead comes from **ExamTools** (`Session.TeamLeadCallSign` → VE record → that VE's
+email) and **may not have an app account at all**; a VE leading a session is not required to be a
+user here. "All SMs" comes from **Identity**, and those users may not be VEs. So *"Team Lead = SM"* is
+true of the people and false of the plumbing: the two columns reach different sets by different
+lookups, and a rule wanting "whoever is running this session" wants the session-lead column, not this
+one.
 
 ## Constraints that are not up for a vote
 
