@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Email;
@@ -66,13 +66,6 @@ public class NewTriggerScannerTests
             PrivacyPolicyUrl = "https://example.org/privacy",
             AdminNotificationEmail = "admin@example.org"
         });
-        dbContext.EmailTemplates.Add(new EmailTemplate
-        {
-            TeamId = team.Id,
-            Key = "Anything",
-            Subject = "For {{CandidateName}}",
-            Body = "Hi {{CandidateFirstName}}, call sign {{CallSign}}, session {{SessionDate}}."
-        });
         await dbContext.SaveChangesAsync();
         return team;
     }
@@ -81,7 +74,7 @@ public class NewTriggerScannerTests
     private static async Task<MessageRule> SeedRuleAsync(
         AppDbContext dbContext, Team team, MessageTrigger trigger, DateTime? createdUtc = null)
     {
-        var rule = MessageRuleTestHarness.NewRule(team, trigger, "Anything", null, createdUtc ?? Now.AddYears(-1));
+        var rule = MessageRuleTestHarness.NewRule(team, trigger, "Congratulations on call sign {{CallSign}}", null, createdUtc ?? Now.AddYears(-1));
         dbContext.MessageRules.Add(rule);
         await dbContext.SaveChangesAsync();
         return rule;

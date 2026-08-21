@@ -652,4 +652,45 @@
     });
   });
 
+  // ---- Insert a tag into a message ---------------------------------------------------------
+  //
+  // The tags a message can use depend on its trigger, and retyping {{CandidateFirstName}} by hand is
+  // how you get a token that renders blank with nothing to show it went wrong. Clicking inserts it.
+  //
+  // A listener here rather than onclick= in the markup: the CSP is script-src 'self', so an inline
+  // handler is silently dropped by the browser — the control renders, nothing happens, and only the
+  // console says so. Two shipped that way before anyone noticed.
+
+  var lastMessageField = null;
+  document.querySelectorAll("[data-token-target]").forEach(function (field) {
+    field.addEventListener("focus", function () { lastMessageField = field; });
+  });
+
+  document.querySelectorAll("[data-insert-token]").forEach(function (chip) {
+    chip.addEventListener("click", function () {
+      // Left to message-editor.js where Quill is running: it owns the body in visual mode, and both
+      // handlers firing on one click inserts the tag twice. Read at click time, not bind time, so
+      // script load order does not matter.
+      if (chip.getAttribute("data-token-handled") === "true") { return; }
+
+      // Whichever box they were last in, so a tag can go in the subject as easily as the body.
+      // Falls back to the message, which is where all but a couple of tags belong.
+      var field = lastMessageField || document.querySelector("[data-token-target='body']");
+      if (!field) { return; }
+
+      var token = chip.getAttribute("data-insert-token");
+      var start = typeof field.selectionStart === "number" ? field.selectionStart : field.value.length;
+      var end = typeof field.selectionEnd === "number" ? field.selectionEnd : field.value.length;
+
+      field.value = field.value.slice(0, start) + token + field.value.slice(end);
+
+      // Caret after what was inserted, so several tags in a row land where you expect rather than
+      // stacking at the start.
+      var caret = start + token.length;
+      field.focus();
+      if (typeof field.setSelectionRange === "function") { field.setSelectionRange(caret, caret); }
+      lastMessageField = field;
+    });
+  });
+
 })();

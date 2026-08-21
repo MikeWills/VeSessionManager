@@ -266,6 +266,32 @@ public enum MessageTrigger
     FelonyDisclosureDeclared = 6,
 
     /// <summary>
+    /// A person composing an email to candidates on Session Detail (#144).
+    ///
+    /// <para><b>Manual sends are trigger points too</b> (Mike, 2026-08-21). Before this they were
+    /// "templates", authored with no trigger — which is exactly why the editor could not say which
+    /// tags were available: the answer depends on what sends it, and nothing knew yet. Once a manual
+    /// send is a trigger like any other, the tag list is answerable everywhere.</para>
+    /// </summary>
+    ManualToCandidate = 7,
+
+    /// <summary>A person composing an email to VEs from the VE Directory (#191). See <see cref="ManualToCandidate"/>.</summary>
+    ManualToVe = 8,
+
+    /// <summary>
+    /// The "send felony disclosure instructions" button on a candidate (#221).
+    ///
+    /// <para>Its own trigger point rather than a shared manual one, because a button that sends one
+    /// particular message <i>is</i> a moment — and giving it its own trigger is what lets the editor
+    /// show the tags that apply to it. Repeatable by design: the timestamp on the candidate is
+    /// display-only, not a guard.</para>
+    /// </summary>
+    ManualFelonyDisclosureInstructions = 9,
+
+    /// <summary>The "send youth program instructions" button on a candidate. Same shape as <see cref="ManualFelonyDisclosureInstructions"/>, and repeatable for the same reason.</summary>
+    ManualYouthProgramInstructions = 10,
+
+    /// <summary>
     /// Not a trigger point — a note on a run saying a person pressed a button (#417).
     ///
     /// <para>A hand-send has no moment to scan for, but <c>MessageRuleRun.Trigger</c> is not nullable

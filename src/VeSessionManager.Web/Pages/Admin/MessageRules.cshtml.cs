@@ -13,15 +13,16 @@ using VeSessionManager.Core.Messaging;
 namespace VeSessionManager.Web.Pages.Admin;
 
 /// <summary>
-/// Message Rules (#401, PR2) — what this team sends automatically, and when.
+/// Messages (#401 PR2; renamed from "Message Rules" 2026-08-21 when a message started owning its
+/// words and the separate Email Templates screen went away) — everything this team can send.
 ///
-/// <para>Every trigger point renders, including the ones with no rules on them. A section that
+/// <para>Every trigger point renders, including the ones with no messages on them. A section that
 /// appears only once something is configured is one nobody discovers, and "we could email people at
 /// this moment and currently do not" is the most useful thing this page has to say. Same reason the
 /// alerts bell renders empty rather than disappearing (#339).</para>
 ///
-/// <para>Same team-picker/lock pattern as TeamSettings and Email Templates: this edits one team's
-/// configuration, so there is deliberately no "All teams" option to fall back to.</para>
+/// <para>Same team-picker/lock pattern as TeamSettings: this edits one team's configuration, so there
+/// is deliberately no "All teams" option to fall back to.</para>
 /// </summary>
 [Authorize(Roles = RoleGroups.Admins)]
 public class MessageRulesModel(
@@ -40,9 +41,6 @@ public class MessageRulesModel(
 
     public IReadOnlyList<(int Id, string Name)> AvailableTeams { get; private set; } = [];
     public IReadOnlyList<TriggerSection> Sections { get; private set; } = [];
-
-    /// <summary>This team's templates, for the create form's picker. A rule can only point at one of these — see MessageRuleAdminService.</summary>
-    public IReadOnlyList<TemplateOption> Templates { get; private set; } = [];
 
     public async Task<IActionResult> OnGetAsync()
     {
@@ -149,40 +147,27 @@ public class MessageRulesModel(
         }
 
         var result = await messageRuleAdminService.DeleteAsync(ruleId, user.Id, HttpContext.RequestAborted);
-        SetStatus(result, "Rule deleted.");
+        SetStatus(result, "Message deleted.");
         return RedirectToPage(new { teamId = rule.TeamId });
     }
 
     private async Task LoadTeamAsync(int teamId)
     {
-        Templates = await dbContext.EmailTemplates
-            .AsNoTracking()
-            .Where(t => t.TeamId == teamId)
-            .OrderBy(t => t.Key)
-            .Select(t => new TemplateOption(t.Key, t.DisplayName))
-            .ToListAsync(HttpContext.RequestAborted);
-
         var rules = await dbContext.MessageRules
             .AsNoTracking()
             .Where(r => r.TeamId == teamId)
             .OrderBy(r => r.Id)
             .ToListAsync(HttpContext.RequestAborted);
 
-        // The template key each rule points at may not exist — a template can be deleted out from
-        // under a rule (#144 allows deleting team-defined ones). Surfaced on the row rather than left
-        // to fail silently every night with one log line.
-        var templateKeys = Templates.Select(t => t.Key).ToHashSet();
-
         Sections = [.. MessageTriggerDefinitions.All.Select(definition => new TriggerSection(
             definition.Trigger,
             MessageTriggerLabels.Label(definition.Trigger),
             MessageTriggerLabels.Blurb(definition.Trigger),
+            definition.Mechanism == MessageTriggerMechanism.Manual,
             [.. rules.Where(r => r.Trigger == definition.Trigger).Select(r => new RuleRow(
                 r.Id,
                 r.Name,
-                r.TemplateKey,
-                LabelFor(r.TemplateKey),
-                templateKeys.Contains(r.TemplateKey),
+                r.Subject,
                 MessageTriggerLabels.DescribeHours(r.ParameterHours),
                 DestinationLabel(r),
                 r.IsEnabled))]))];
@@ -193,24 +178,19 @@ public class MessageRulesModel(
         ? $"Discord{(rule.FanOut == MessageFanOut.SingleDigest ? " (one digest)" : "")}"
         : MessageTriggerLabels.Label(rule.Recipient);
 
-    private string LabelFor(string key) =>
-        Templates.FirstOrDefault(t => t.Key == key) is { } template ? template.Label : key;
-
     private void SetStatus(MessageRuleActionResult result, string success) =>
         TempData[result == MessageRuleActionResult.Success ? "StatusMessage" : "ErrorMessage"] = result switch
         {
             MessageRuleActionResult.Success => success,
-            MessageRuleActionResult.NameRequired => "A rule needs a name — it is what the run log records.",
+            MessageRuleActionResult.NameRequired => "A message needs a name — it is what the send log records.",
             MessageRuleActionResult.ParameterRequired => MessageDelayField.RequiredMessage,
             MessageRuleActionResult.ParameterOutOfRange => MessageDelayField.RangeMessage,
-            MessageRuleActionResult.RecipientNotLegal => "That trigger cannot send to that recipient.",
-            MessageRuleActionResult.TemplateNotFound => "Pick a template that exists on this team.",
-            MessageRuleActionResult.TemplateAudienceMismatch =>
-                "That template is written for VEs. A rule can only send one written for candidates.",
-            MessageRuleActionResult.DiscordChannelRequired => "A Discord rule needs a channel id — without one it would post nowhere.",
+            MessageRuleActionResult.RecipientNotLegal => "This message cannot be sent to those people.",
+            MessageRuleActionResult.MessageRequired => "Give the message a subject and something to say.",
+            MessageRuleActionResult.DiscordChannelRequired => "A Discord message needs a channel id — without one it would post nowhere.",
             MessageRuleActionResult.DigestNeedsAChannel =>
                 "A single digest only makes sense on a channel. On email it would mean one message to one address listing everybody else.",
-            _ => "Rule not found."
+            _ => "Message not found."
         };
 
     /// <summary>
@@ -218,26 +198,26 @@ public class MessageRulesModel(
     /// to need — the prompt, the ceiling note, the default delay, the legal recipients — moved to
     /// <c>MessageRuleNew</c> with the form itself; this list only reads.
     /// </summary>
+    /// <param name="IsSentByHand">
+    /// Renders under its own heading, away from the scheduled ones. "When" and "to" are both empty for
+    /// a manual trigger — somebody chose the moment and picks the people at send time — and a blank
+    /// delay sitting in a column of real ones reads as a bug rather than as "not applicable".
+    /// </param>
     public record TriggerSection(
         MessageTrigger Trigger,
         string Label,
         string Blurb,
+        bool IsSentByHand,
         IReadOnlyList<RuleRow> Rules);
 
-    /// <param name="TemplateExists">False when the rule points at a template that is no longer there — the row says so, because otherwise this fails nightly in silence.</param>
+    /// <param name="Subject">The message's own subject line. Was a template name until 2026-08-21, when a message started owning its words — there is no separate template to be missing any more, which is why the "template no longer exists" column went with it.</param>
     /// <param name="ParameterLabel">"1 day", "half a day" — the same words the form takes, so a rule reads back the way it was written.</param>
     public record RuleRow(
         int Id,
         string Name,
-        string TemplateKey,
-        string TemplateLabel,
-        bool TemplateExists,
+        string Subject,
         string ParameterLabel,
         string RecipientLabel,
         bool IsEnabled);
 
-    public record TemplateOption(string Key, string? DisplayName)
-    {
-        public string Label => DisplayName ?? EmailTemplateLabels.For(Key);
-    }
 }

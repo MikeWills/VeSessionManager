@@ -700,3 +700,142 @@ or newline-separated. **Anything unparseable is dropped rather than guessed at**
 that silently became some other id would ping the wrong room of people — and one bad entry does not
 discard the good ones beside it. What is stored is normalised to the ids that parsed, so a team that
 typed `@everyone` sees it disappear rather than believing it took.
+
+## A message owns its own words (2026-08-21)
+
+`MessageRule` carries `Subject` and `Body`. `TemplateKey` is gone, and so is the idea that a rule
+points at a template authored somewhere else.
+
+### Why
+
+**The available tags depend on the trigger, and a template had none.** So the template editor could
+not say which placeholders were available — not a missing affordance, an unanswerable question. Mike,
+who built the app, could not tell from the screen which tags a template could use:
+
+> *"How do I know what tags are available to me if I'm sending an email based on FCC side? I have
+> different tags available than if I am sending it prior to the test session ... there's no way
+> currently that you can link up a template to the correct rule so that a person can have the right
+> tags available to them."*
+
+The reuse the split bought — one body, several schedules — is better served by **copying a message**
+and changing its timing, which `DuplicateAsync` already did. Reuse across *triggers* was the part that
+could never work, because the tags differ.
+
+### Manual sends are trigger points too
+
+The insight that made it collapse cleanly. A hand-composed email is a message whose mechanism is
+"somebody pressed a button" rather than a scan or a clock, so `MessageTriggerMechanism.Manual` joins
+`State` and `TimeRelative`, and four triggers come with it:
+
+| Trigger | Offered on |
+|---|---|
+| `ManualToCandidate` | Session Detail → Email candidates |
+| `ManualToVe` | VE Directory → message |
+| `ManualFelonyDisclosureInstructions` | the per-candidate button |
+| `ManualYouthProgramInstructions` | the per-candidate button |
+
+Once every message has a trigger, **the tag list is answerable everywhere**. Their placeholders are
+taken from the same `Names` lists the send paths already supply — `CandidatePlaceholderValues` and
+`VolunteerExaminerPlaceholderValues` — rather than a second list written out beside them, because two
+lists of the same thing is how a tag comes to be offered that renders blank.
+
+A manual trigger has **no delay and no recipient**: a person chose the moment and picks the people at
+send time. `LegalRecipients` is empty for them, and that means "addressed at send time", not "nobody
+may receive this".
+
+### Tags are clickable
+
+The editor lists the trigger's tags as chips that insert at the cursor. A hand-typed
+`{{CandidateFirstName}}` that is a letter out renders blank and **nothing anywhere says so** — the
+send succeeds with a hole in it.
+
+⚠️ The handler lives in `app.js`, never `onclick=`. The CSP is `script-src 'self'`, so an inline
+handler is silently dropped: the control renders, nothing happens, and only the console says so.
+
+### What went away, and why nothing replaced it
+
+Two refusals were deleted rather than reworded, because they described consequences of the split:
+
+- **`TemplateNotFound`** — a rule pointing at a key that did not exist, recording Failed on every tick
+  forever with only a log line.
+- **`TemplateAudienceMismatch`** — a VE-worded template rendered through a candidate-subject scanner,
+  every token blank, and the send *succeeding*.
+
+Neither is expressible now. `MessageRequired` replaces both: a message must have words, because an
+empty one sends a blank email. Five tests covering the old failures were removed with notes saying
+why no replacement stands in their place.
+
+### The migration deletes rather than converts
+
+⚠️ Existing rules are **dropped**. Their `TemplateKey` named a template whose words live in another
+table, so renaming the column would leave every rule with a key like `DayBeforeReminder` as its
+subject and an empty body — nonsense that looks like data. Mike, who owns the only live deployment:
+*"I have no emails that are important and I have no problems losing [them] ... delete it all and
+re-create it all."*
+
+History survives: `MessageRuleRun.MessageRuleId` is `SetNull` and the row snapshots the rule name and
+trigger, so what was already sent outlives the rules that sent it.
+
+Seeded examples arrive **switched off** — examples of what a team can set up, not mail a new team
+starts sending to real people before anybody has read it. (Amended in the same change: the
+*hand-sent* ones arrive **on**. See below.)
+
+## The compose screens pick a message (2026-08-21)
+
+Second half of the same change. The two hand-compose screens — Session Detail's *Email candidates*
+and the VE Directory's *message* — used to offer a list of **template keys**. They offer this team's
+messages on the matching manual trigger now, and post an `int` id rather than a string key.
+
+`ComposableMessages` is the one place that list is built, because two screens ask the same question:
+the compose screen itself, and the session menu that offers shortcuts straight into it. Two copies
+would drift the moment a message was added to one.
+
+⚠️ **The automatic messages are deliberately no longer offered as starting text.** The old list
+included the registration confirmation and the day-before reminder, which reads as a convenience —
+but their bodies are written around tags the manual path does not supply (`{{ZoomJoinUrl}}`,
+`{{PaymentLinkUrl}}`). Starting from one produced a draft whose tags render blank and whose send
+*succeeds*, which is precisely the class of failure this whole change exists to remove. A manual
+message is written against a manual trigger, and the tags shown while writing it are the ones that
+will resolve.
+
+For a manual message, **off means "not offered"** rather than "not scanned" — there is no scan to
+stop. That is the whole difference in what the flag means on those four triggers.
+
+## `EmailTemplate` is gone (2026-08-21)
+
+Third and last part. The entity, its table, its four admin pages, `EmailTemplateAdminService` and
+the `EmailTemplates` DbSet are all deleted, and `Admin → Email Templates` no longer exists. What was
+two screens describing two halves of one thing is one screen: **Messages**.
+
+### The seeder seeds messages
+
+`EmailDefaultsSeeder` used to seed seven templates and then four rules pointing at four of them by
+key — the copy step existed only so both models could hold the same words while both existed. It
+seeds the same seven pieces of text once now, each on the trigger that sends it, from one `Seeds`
+list.
+
+⚠️ **Automatic messages arrive off; hand-sent ones arrive on.** The risk being avoided is unread mail
+going out by itself, and a message nothing sends until somebody presses a button is not that. Seeding
+the hand-sent ones off would leave the felony-disclosure and youth-program buttons silently doing
+nothing, which reads as broken rather than as safe.
+
+The `Team.MessageRulesSeededUtc` tombstone is unchanged and still load-bearing: a per-message
+"does this team have one for this trigger?" check re-adds a message somebody deleted on the next
+Worker start, quietly resuming a send they had stopped.
+
+### The page is called Messages
+
+Grouped by trigger, as it was. Manual triggers sit under their own **Sent by hand** heading, because
+"when" and "to" are empty for them and mixing them in among the scheduled ones invites reading a
+blank delay as a bug. Row actions are unchanged: edit, copy, switch on/off, delete.
+
+Plain words throughout, at Mike's instruction — he could not read his own form:
+
+> *"Do not over complicate the user interface ... just call it carbon copy and blind carbon copy, or
+> C.C. or BCC. You had a big long explanation about what it was and even I was confused, and I built
+> it ... there's also something about a per cycle or tick or something and I found that confusing
+> myself."*
+
+So: **Cc** and **Bcc** with one short line each, and *"Only send one copy, even when the message goes
+to many people"* where the fan-out control used to explain itself in a paragraph. The reasoning moved
+into code comments, which is where it was useful anyway.

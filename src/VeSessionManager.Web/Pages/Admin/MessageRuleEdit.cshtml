@@ -95,15 +95,41 @@
             </span>
         </div>
 
-        <div class="field" style="max-width:420px;">
-            <label asp-for="TemplateKey">Template</label>
-            <select asp-for="TemplateKey" class="filter-select" required>
-                @foreach (var template in Model.Templates)
+        @* The message itself, authored here against its own trigger — which is what lets the tag
+           list beside it be correct. A template authored somewhere else could not say which tags
+           applied, because it had no trigger. *@
+        <div class="field" style="max-width:640px;">
+            <label asp-for="Subject">Subject</label>
+            <input asp-for="Subject" data-token-target="subject" required />
+        </div>
+
+        <div class="field" style="max-width:640px;">
+            <label for="body">Message</label>
+            @* The textarea remains the field that posts, in both tabs — Quill is a second view onto
+               it, never a replacement. Without JS the page degrades to a plain textarea, which is
+               exactly what this was before the editor moved here from the Email Templates page. *@
+            <div class="message-editor">
+                <div class="editor-tabs" role="tablist">
+                    <button type="button" class="editor-tab" role="tab" data-mode="visual" aria-selected="true">Visual</button>
+                    <button type="button" class="editor-tab" role="tab" data-mode="html" aria-selected="false">HTML</button>
+                </div>
+                <div class="editor-visual" data-editor-for="body">
+                    <div class="editor-surface"></div>
+                </div>
+                <textarea id="body" asp-for="Body" data-token-target="body" rows="12" required></textarea>
+            </div>
+
+            @* Click to insert, rather than a list to retype. A hand-typed {{CandidateFirstName}} that
+               is a letter out renders blank, and nothing anywhere says it went wrong — the send just
+               succeeds with a hole in it. The tags shown are this trigger's own, which is the whole
+               reason the message is authored here. *@
+            <div class="token-chips">
+                <span class="session-sub">Click to add:</span>
+                @foreach (var token in MessageTriggerDefinitions.For(Model.Rule.Trigger).Placeholders)
                 {
-                    <option value="@template.Key">@template.Label</option>
+                    <button type="button" class="token-chip" data-insert-token="@("{{" + token + "}}")">@("{{" + token + "}}")</button>
                 }
-            </select>
-            <span class="session-sub">Edit the wording on the Email Templates page.</span>
+            </div>
         </div>
 
         @* Email only, and hidden with the rest of the email fields when the rule posts to Discord:
@@ -136,30 +162,33 @@
             @* From is deliberately absent. Changing it means SPF/DKIM/DMARC on a domain this app does
                not control, and getting it wrong sends the mail to spam silently — Reply-To is the
                field that actually answers "can it come from the session lead". *@
+            @* Plain words, one short hint each. These read "Blind copy each message to" / "Visible
+               copy to" / "Send those copies once per run, not once per recipient", each under a
+               paragraph of reasoning — and Mike, who built the app, could not read his own form
+               (2026-08-21). Cc and Bcc are what everyone already knows; "run" is a word from inside
+               the code. The reasoning stays here in the comments, where it belongs. *@
             <div class="field" style="max-width:420px;">
-                <label asp-for="BccAddress">Blind copy each message to</label>
+                <label asp-for="BccAddress">Bcc</label>
                 <input asp-for="BccAddress" type="email" />
-                <span class="session-sub">Invisible to the recipient. On top of any team-wide monitoring copy.</span>
+                <span class="session-sub">A hidden copy. The recipient does not see this address.</span>
             </div>
 
+            @* Refused for candidate-facing rules in MessageRuleAdminService, not just discouraged
+               here: everyone on a Cc sees the address, and the person at it cannot unsubscribe. *@
             <div class="field" style="max-width:420px;">
-                <label asp-for="CcAddress">Visible copy to</label>
+                <label asp-for="CcAddress">Cc</label>
                 <input asp-for="CcAddress" type="email" />
-                <span class="session-sub">
-                    Not allowed on a rule that writes to candidates: everyone sees the address, and the
-                    person at it cannot unsubscribe. Use the blind copy above instead.
-                </span>
+                <span class="session-sub">A visible copy. Cannot be used on messages to candidates.</span>
             </div>
 
+            @* Without this, a forty-candidate session puts forty identical copies in one inbox, which
+               is the point somebody filters the folder and stops looking. *@
             <div class="field">
                 <label style="font-weight:400;">
                     <input asp-for="MonitoringCopyOncePerRun" type="checkbox" />
-                    Send those copies once per run, not once per recipient
+                    Only send one copy, even when the message goes to many people
                 </label>
-                <span class="session-sub">
-                    On by default. A forty-candidate session otherwise puts forty identical copies in the
-                    same inbox, which is the point at which somebody filters the folder and stops looking.
-                </span>
+                <span class="session-sub">Recommended.</span>
             </div>
         </div>
 
@@ -174,3 +203,11 @@
     reaches people not yet reminded, never people who already were. And this rule still never fires for
     anyone whose moment passed before it was created.
 </p>
+
+@section Scripts {
+    <script src="~/lib/quill/quill.js"></script>
+    <script src="~/js/message-editor.js" asp-append-version="true"></script>
+}
+@section Head {
+    <link rel="stylesheet" href="~/lib/quill/quill.snow.css" />
+}

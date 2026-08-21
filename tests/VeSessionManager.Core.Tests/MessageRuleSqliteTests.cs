@@ -57,8 +57,22 @@ public class MessageRuleSqliteTests
         return new Seed(teamId, sessionId, candidateId, paymentId);
     }
 
+    /// <summary>
+    /// ⚠️ <b>This asserted the opposite until 2026-08-21.</b> An earlier migration backfilled four
+    /// rules onto every existing team so the trigger engine reproduced the hardcoded sends it
+    /// replaced; this test pinned those four and their thresholds.
+    ///
+    /// <para>The content refactor <b>deletes them</b>. Their <c>TemplateKey</c> named a template whose
+    /// words live in another table, so carrying them forward would leave every rule with a key as its
+    /// subject line and an empty body — nonsense that looks like data. Mike, who owns the only live
+    /// deployment: <i>"I have no emails that are important ... delete it all and re-create it all."</i></para>
+    ///
+    /// <para>So the guarantee is now the opposite one, and it is worth pinning just as hard: after
+    /// migrating, an existing team has <b>no</b> messages, and re-creating them is a deliberate act.
+    /// Nothing sends until somebody writes it and switches it on.</para>
+    /// </summary>
     [Fact]
-    public async Task Migration_GivesEveryExistingTeamTheFourRulesThatReproduceTodaysBehaviour()
+    public async Task Migration_LeavesExistingTeamsWithNoMessages()
     {
         await using var connection = new SqliteConnection("DataSource=:memory:");
         await using var dbContext = await OpenAsync(connection);
@@ -68,20 +82,7 @@ public class MessageRuleSqliteTests
 
         await dbContext.Database.MigrateAsync();
 
-        var rules = await dbContext.MessageRules.AsNoTracking().Where(r => r.TeamId == seed.TeamId).ToListAsync();
-        Assert.Equal(4, rules.Count);
-
-        // The parameters are asserted because they are the behaviour: 24 hours, 5 days and 10 days,
-        // in hours, matching the constants they replaced.
-        Assert.Equal(24, rules.Single(r => r.Trigger == MessageTrigger.BeforeSessionStart).ParameterHours);
-        Assert.Equal(120, rules.Single(r => r.Trigger == MessageTrigger.FccFeeOutstanding).ParameterHours);
-        Assert.Equal(240, rules.Single(r => r.Trigger == MessageTrigger.PaymentUnpaid).ParameterHours);
-        Assert.Null(rules.Single(r => r.Trigger == MessageTrigger.CandidateRegistered).ParameterHours);
-
-        // The one message that was never candidate-facing.
-        Assert.Equal(MessageRecipient.TeamAdminAddress, rules.Single(r => r.Trigger == MessageTrigger.PaymentUnpaid).Recipient);
-        Assert.All(rules, r => Assert.True(r.IsEnabled));
-        Assert.All(rules, r => Assert.Equal(MessageChannel.Email, r.Channel));
+        Assert.Empty(await dbContext.MessageRules.AsNoTracking().Where(r => r.TeamId == seed.TeamId).ToListAsync());
     }
 
     /// <summary>
@@ -158,7 +159,8 @@ public class MessageRuleSqliteTests
         var rule = new MessageRule
         {
             TeamId = seed.TeamId, Name = "Registration confirmation", Trigger = MessageTrigger.CandidateRegistered,
-            TemplateKey = "RegistrationConfirmation", CreatedUtc = Now
+            Subject = "Subject",
+            Body = "RegistrationConfirmation", CreatedUtc = Now
         };
         dbContext.MessageRules.Add(rule);
         await dbContext.SaveChangesAsync();
@@ -190,7 +192,8 @@ public class MessageRuleSqliteTests
         var rule = new MessageRule
         {
             TeamId = seed.TeamId, Name = "Reminder we stopped sending", Trigger = MessageTrigger.BeforeSessionStart,
-            ParameterHours = 24, TemplateKey = "DayBeforeReminder", CreatedUtc = Now
+            ParameterHours = 24, Subject = "Subject",
+            Body = "DayBeforeReminder", CreatedUtc = Now
         };
         dbContext.MessageRules.Add(rule);
         await dbContext.SaveChangesAsync();
@@ -228,7 +231,8 @@ public class MessageRuleSqliteTests
             var rule = new MessageRule
             {
                 TeamId = seed.TeamId, Name = name, Trigger = MessageTrigger.BeforeSessionStart,
-                ParameterHours = 24, TemplateKey = "DayBeforeReminder", CreatedUtc = Now
+                ParameterHours = 24, Subject = "Subject",
+            Body = "DayBeforeReminder", CreatedUtc = Now
             };
             dbContext.MessageRules.Add(rule);
             await dbContext.SaveChangesAsync();

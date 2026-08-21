@@ -94,13 +94,7 @@ public class MessageDispatchService(
                     continue;
                 }
 
-                var rendered = await templateRenderer.RenderAsync(team.Id, rule.TemplateKey, subject.Placeholders, cancellationToken);
-                if (rendered is null)
-                {
-                    await RecordAsync(team, rule, subject, MessageRuleOutcome.Failed, $"Template \"{rule.TemplateKey}\" is missing", now, cancellationToken);
-                    result.Failed++;
-                    continue;
-                }
+                var rendered = await templateRenderer.RenderTextAsync(team.Id, rule.Subject, rule.Body, subject.Placeholders, rule.Name, cancellationToken);
 
                 // The team-wide monitoring copy exists to watch what *candidates* receive (#207).
                 // Copying a team's own internal notice back to the same team's monitoring inbox is
@@ -213,13 +207,7 @@ public class MessageDispatchService(
             var now = timeProvider.GetUtcNow().UtcDateTime;
             try
             {
-                var rendered = await templateRenderer.RenderAsync(team.Id, rule.TemplateKey, subject.Placeholders, cancellationToken);
-                if (rendered is null)
-                {
-                    await RecordAsync(team, rule, subject, MessageRuleOutcome.Failed, $"Template \"{rule.TemplateKey}\" is missing", now, cancellationToken);
-                    result.Failed++;
-                    continue;
-                }
+                var rendered = await templateRenderer.RenderTextAsync(team.Id, rule.Subject, rule.Body, subject.Placeholders, rule.Name, cancellationToken);
 
                 await discordClient.PostMessageAsync(guildId, channelId, DiscordMessageText.FromHtml(rendered.Body),
                     DiscordMentionPolicy.ParseRoleIds(team.DiscordMentionableRoleIds), cancellationToken);
@@ -286,13 +274,7 @@ public class MessageDispatchService(
 
         try
         {
-            var rendered = await templateRenderer.RenderAsync(team.Id, rule.TemplateKey, placeholders, cancellationToken);
-            if (rendered is null)
-            {
-                logger.LogError("Rule \"{RuleName}\" ({RuleId}) points at template \"{TemplateKey}\", which does not exist on team {TeamId}",
-                    rule.Name, rule.Id, rule.TemplateKey, team.Id);
-                return await RecordAllAsync(team, rule, subjects, MessageRuleOutcome.Failed, $"Template \"{rule.TemplateKey}\" is missing", result, cancellationToken);
-            }
+            var rendered = await templateRenderer.RenderTextAsync(team.Id, rule.Subject, rule.Body, placeholders, rule.Name, cancellationToken);
 
             await discordClient.PostMessageAsync(guildId, channelId, DiscordMessageText.FromHtml(rendered.Body),
                     DiscordMentionPolicy.ParseRoleIds(team.DiscordMentionableRoleIds), cancellationToken);

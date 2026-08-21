@@ -27,7 +27,6 @@ public class AppDbContext(DbContextOptions<AppDbContext> options, IDataProtectio
 
     public DbSet<Team> Teams => Set<Team>();
     public DbSet<Vec> Vecs => Set<Vec>();
-    public DbSet<EmailTemplate> EmailTemplates => Set<EmailTemplate>();
     public DbSet<EmailSettings> EmailSettings => Set<EmailSettings>();
     public DbSet<FeeConfiguration> FeeConfigurations => Set<FeeConfiguration>();
     /// <summary>What was filed with ARRL-VEC and what came back (#197). A row exists even for an

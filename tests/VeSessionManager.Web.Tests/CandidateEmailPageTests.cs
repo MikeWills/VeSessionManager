@@ -20,21 +20,26 @@ namespace VeSessionManager.Web.Tests;
 /// </summary>
 public class CandidateEmailPageTests
 {
-    private const string TemplateKey = "GettingStartedLocally";
+    // The message's NAME is what a person sees and what history records — there is no key any more,
+    // and no label lookup translating one into the other. Typed like a human would type it.
+    private const string TemplateKey = "Getting started locally";
 
     private static async Task<int> SeedTemplateAsync(WebAppFactory factory, string subject, string body)
     {
         using var scope = factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
-        var template = new EmailTemplate
+        // A message on the manual trigger, not a template — the compose screen starts from those now.
+        var template = new MessageRule
         {
             TeamId = factory.Seeded.TeamId,
-            Key = TemplateKey,
+            Name = TemplateKey,
+            Trigger = MessageTrigger.ManualToCandidate,
             Subject = subject,
-            Body = body
+            Body = body,
+            CreatedUtc = DateTime.UtcNow.AddYears(-1)
         };
-        db.EmailTemplates.Add(template);
+        db.MessageRules.Add(template);
         await db.SaveChangesAsync();
         return template.Id;
     }
@@ -129,7 +134,7 @@ public class CandidateEmailPageTests
     /// </summary>
     private static async Task<HttpResponseMessage> PostWithTokenAsync(
         HttpClient client, WebAppFactory factory, string url, IEnumerable<int> candidateIds,
-        string subject = "Hi", string body = "<p>Hi</p>")
+        string subject = "Hi", string body = "<p>Hi</p>", int messageId = 0)
     {
         var page = await client.GetStringAsync($"/SessionManager/CandidateEmail/{factory.Seeded.SessionId}");
         var token = System.Text.RegularExpressions.Regex
@@ -141,9 +146,9 @@ public class CandidateEmailPageTests
         {
             new("Subject", subject),
             new("Body", body),
-            // "template", not "SelectedTemplateKey": the page binds it under the query-string name it
+            // "message", not "SelectedMessageId": the page binds it under the query-string name it
             // uses on GET, and posting the property's own name binds nothing.
-            new("template", TemplateKey),
+            new("message", messageId.ToString()),
             new("__RequestVerificationToken", token)
         };
         fields.AddRange(candidateIds.Select(id => new KeyValuePair<string, string>("SelectedCandidateIds", id.ToString())));
@@ -154,10 +159,10 @@ public class CandidateEmailPageTests
     public async Task ChoosingATemplate_FillsTheDraftFromThatTeamsCurrentText()
     {
         using var factory = new WebAppFactory();
-        await SeedTemplateAsync(factory, "Welcome, {{CandidateFirstName}}", "<p>Our club meets Tuesdays.</p>");
+        var templateId = await SeedTemplateAsync(factory, "Welcome, {{CandidateFirstName}}", "<p>Our club meets Tuesdays.</p>");
         var client = factory.CreateClientAs(UserRole.SystemAdmin);
 
-        var html = await client.GetStringAsync($"/SessionManager/CandidateEmail/{factory.Seeded.SessionId}?template={TemplateKey}");
+        var html = await client.GetStringAsync($"/SessionManager/CandidateEmail/{factory.Seeded.SessionId}?message={templateId}");
 
         Assert.Contains("Welcome, {{CandidateFirstName}}", html);
         Assert.Contains("Our club meets Tuesdays.", html);
@@ -277,12 +282,13 @@ public class CandidateEmailPageTests
     public async Task TheSendIsRecordedUnderTheTemplateItStartedFrom()
     {
         using var factory = new WebAppFactory();
-        await SeedTemplateAsync(factory, "Subject", "<p>Body</p>");
+        var messageId = await SeedTemplateAsync(factory, "Subject", "<p>Body</p>");
         await ConfigureTeamEmailAsync(factory);
         var client = factory.CreateClientAs(UserRole.SystemAdmin);
 
         await PostWithTokenAsync(
-            client, factory, $"/SessionManager/CandidateEmail/{factory.Seeded.SessionId}", [factory.Seeded.CandidateId]);
+            client, factory, $"/SessionManager/CandidateEmail/{factory.Seeded.SessionId}", [factory.Seeded.CandidateId],
+            messageId: messageId);
 
         var sent = Assert.Single(factory.SentEmails);
         Assert.Equal("candidate@localhost", sent.ToAddress);
@@ -333,7 +339,7 @@ public class CandidateEmailPageTests
         // "Keep the existing place as well" (Mike, 2026-08-16): the menu is a shortcut into the same
         // screen, not a replacement for opening it.
         using var factory = new WebAppFactory();
-        await SeedTemplateAsync(factory, "Welcome", "<p>Body</p>");
+        var templateId = await SeedTemplateAsync(factory, "Welcome", "<p>Body</p>");
         var client = factory.CreateClientAs(UserRole.SystemAdmin);
 
         var html = await client.GetStringAsync($"/SessionManager/Detail/{factory.Seeded.SessionId}");
@@ -341,7 +347,7 @@ public class CandidateEmailPageTests
         // The plain button, unchanged.
         Assert.Contains($"/SessionManager/CandidateEmail/{factory.Seeded.SessionId}\"", html);
         // And the same destination with a template already chosen.
-        Assert.Contains($"/SessionManager/CandidateEmail/{factory.Seeded.SessionId}?template={TemplateKey}", html);
+        Assert.Contains($"/SessionManager/CandidateEmail/{factory.Seeded.SessionId}?message={templateId}", html);
         Assert.Contains("Getting started locally", html);
         Assert.Contains("Write your own", html);
     }

@@ -64,9 +64,9 @@ public class AtomicCreateSqliteTests
     }
 
     /// <summary>
-    /// The one where a lost audit row is the lesser problem: the team's EmailSettings and default
-    /// templates are seeded <i>between</i> the two saves, so a partial commit leaves a team that is
-    /// silently non-functional for email — the exact state that seeding was moved into
+    /// The one where a lost audit row is the lesser problem: the team's EmailSettings and example
+    /// message rules are seeded <i>between</i> the two saves, so a partial commit leaves a team that
+    /// is silently non-functional for email — the exact state that seeding was moved into
     /// <c>CreateAsync</c> to prevent, and one the Web process does not self-heal from.
     /// </summary>
     [Fact]
@@ -85,7 +85,7 @@ public class AtomicCreateSqliteTests
         dbContext.ChangeTracker.Clear();
         Assert.Empty(await dbContext.Teams.AsNoTracking().ToListAsync());
         Assert.Empty(await dbContext.EmailSettings.AsNoTracking().ToListAsync());
-        Assert.Empty(await dbContext.EmailTemplates.AsNoTracking().ToListAsync());
+        Assert.Empty(await dbContext.MessageRules.AsNoTracking().ToListAsync());
     }
 
     /// <summary>
@@ -113,7 +113,7 @@ public class AtomicCreateSqliteTests
 
         dbContext.ChangeTracker.Clear();
         Assert.Single(await dbContext.Teams.AsNoTracking().ToListAsync());
-        Assert.NotEmpty(await dbContext.EmailTemplates.AsNoTracking().ToListAsync());
+        Assert.NotEmpty(await dbContext.MessageRules.AsNoTracking().ToListAsync());
         Assert.Contains(await dbContext.AuditLogs.AsNoTracking().ToListAsync(), a => a.Action == "TeamCreated");
     }
 }

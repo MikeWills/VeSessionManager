@@ -9,7 +9,7 @@ Every page follows the exact Phase 9b pattern: `[Authorize(Roles=...)]` + an ind
 `AuthorizeAsync()`-style re-check per POST handler (defense in depth against a tampered `?teamId=`,
 same reasoning as Phase 9b's session-id re-check), business logic in a Core service under
 `VeSessionManager.Core/Admin/` (`TeamSettingsService`/`VecManagementService`/
-`FeeConfigurationService`/`EmailTemplateAdminService`/`UserManagementService`/`SystemSettingsService`,
+`FeeConfigurationService`/`UserManagementService`/`SystemSettingsService`,
 each with its own result enum + `AddAudit` helper + test file), pages as thin wiring.
 
 ## New authorization class
@@ -60,15 +60,19 @@ password and external-login paths via its own `PreSignInCheck`. `DeactivateAsync
 acting on your own account (`CannotDeactivateSelf`) since there's no invite/reset-email flow to
 recover a self-lockout.
 
-## Email template editing
+## Email template editing — removed 2026-08-21
 
-Edit-only (no create/delete — the set of `Key`s is fixed by what `CandidateNotificationService`/
-`PaymentReminderService` actually look up) with the `EmailTemplatePlaceholders` registry
-(`VeSessionManager.Core/Email/`) hand-collected from those services' real send-time
-`Dictionary<string,string>` literals (not the seeded template body text) — surfaced as chips on the
-edit page; a dedicated test (`EmailTemplateAdminServiceTests`) edits a template then calls
-`EmailTemplateRenderer.RenderAsync` directly in the same test to prove the "next send, no deploy
-needed" guarantee end-to-end.
+⚠️ **This screen no longer exists.** It was edit-only (no create/delete — "the set of `Key`s is fixed
+by what the sending code looks up"), with the `EmailTemplatePlaceholders` registry surfaced as chips
+beside the editor.
+
+Templates are gone entirely: a message owns its own subject and body, and is edited at
+`Admin → Messages → Edit`. The reason is that the tags a body may use depend on the trigger that
+sends it, and a template had no trigger — so the editor could never answer "what is available to
+me here?". See `docs/trigger-points.md`.
+
+The placeholder registry survives and still feeds the chips; the message editor shows the chosen
+*trigger's* tags rather than all of them.
 
 Also added `IX_Teams_Name`/`IX_Vecs_Name` uniqueness constraints since real "Create Team"/"Create
 VEC" screens exist for the first time.

@@ -64,19 +64,20 @@ public class DiscordMessageRuleTests
         return team;
     }
 
-    private static async Task SeedTemplateAsync(AppDbContext dbContext, Team team, string key, string body) =>
-        await AddAsync(dbContext, new EmailTemplate { TeamId = team.Id, Key = key, Subject = "Ignored on Discord", Body = body });
-
     private static async Task AddAsync<T>(AppDbContext dbContext, T entity) where T : class
     {
         dbContext.Add(entity);
         await dbContext.SaveChangesAsync();
     }
 
+    /// <param name="body">
+    /// The post's words, which the message carries itself since 2026-08-21. Each test passes the
+    /// content it asserts on; this used to be a key pointing at a template the test seeded first.
+    /// </param>
     private static async Task<MessageRule> SeedDiscordRuleAsync(
-        AppDbContext dbContext, Team team, MessageFanOut fanOut, string templateKey = "Post", ulong? channelId = ChannelId)
+        AppDbContext dbContext, Team team, MessageFanOut fanOut, string body, ulong? channelId = ChannelId)
     {
-        var rule = MessageRuleTestHarness.NewRule(team, MessageTrigger.CandidateRegistered, templateKey, null, Now.AddYears(-1));
+        var rule = MessageRuleTestHarness.NewRule(team, MessageTrigger.CandidateRegistered, body, null, Now.AddYears(-1));
         rule.Channel = MessageChannel.Discord;
         rule.DiscordChannelId = channelId;
         rule.FanOut = fanOut;
@@ -140,8 +141,7 @@ public class DiscordMessageRuleTests
     {
         await using var dbContext = CreateContext();
         var team = await SeedTeamAsync(dbContext);
-        await SeedTemplateAsync(dbContext, team, "Post", "<p><strong>{{Count}}</strong> new registrations:</p>{{Subjects}}");
-        await SeedDiscordRuleAsync(dbContext, team, MessageFanOut.SingleDigest);
+        await SeedDiscordRuleAsync(dbContext, team, MessageFanOut.SingleDigest, "<p><strong>{{Count}}</strong> new registrations:</p>{{Subjects}}");
         var session = await SeedSessionAsync(dbContext, team);
         await SeedCandidatesAsync(dbContext, session, "Roana Glory", "Sam Vale", "Tam Okonkwo");
 
@@ -166,8 +166,7 @@ public class DiscordMessageRuleTests
     {
         await using var dbContext = CreateContext();
         var team = await SeedTeamAsync(dbContext);
-        await SeedTemplateAsync(dbContext, team, "Post", "<p>{{Subjects}}</p>");
-        await SeedDiscordRuleAsync(dbContext, team, MessageFanOut.SingleDigest);
+        await SeedDiscordRuleAsync(dbContext, team, MessageFanOut.SingleDigest, "<p>{{Subjects}}</p>");
         var session = await SeedSessionAsync(dbContext, team);
         await SeedCandidatesAsync(dbContext, session, "Roana Glory");
 
@@ -186,8 +185,7 @@ public class DiscordMessageRuleTests
     {
         await using var dbContext = CreateContext();
         var team = await SeedTeamAsync(dbContext);
-        await SeedTemplateAsync(dbContext, team, "Post", "<p>Welcome {{CandidateFirstName}}!</p>");
-        await SeedDiscordRuleAsync(dbContext, team, MessageFanOut.PerRecipient);
+        await SeedDiscordRuleAsync(dbContext, team, MessageFanOut.PerRecipient, "<p>Welcome {{CandidateFirstName}}!</p>");
         var session = await SeedSessionAsync(dbContext, team);
         await SeedCandidatesAsync(dbContext, session, "Roana Glory", "Sam Vale");
 
@@ -208,8 +206,7 @@ public class DiscordMessageRuleTests
     {
         await using var dbContext = CreateContext();
         var team = await SeedTeamAsync(dbContext);
-        await SeedTemplateAsync(dbContext, team, "Post", "<p>{{Subjects}}</p>");
-        await SeedDiscordRuleAsync(dbContext, team, MessageFanOut.SingleDigest);
+        await SeedDiscordRuleAsync(dbContext, team, MessageFanOut.SingleDigest, "<p>{{Subjects}}</p>");
         var session = await SeedSessionAsync(dbContext, team);
         await SeedCandidatesAsync(dbContext, session, "Roana Glory", "Sam Vale");
 
@@ -236,8 +233,7 @@ public class DiscordMessageRuleTests
     {
         await using var dbContext = CreateContext();
         var team = await SeedTeamAsync(dbContext, discordConfigured: false);
-        await SeedTemplateAsync(dbContext, team, "Post", "<p>Hi</p>");
-        var rule = await SeedDiscordRuleAsync(dbContext, team, MessageFanOut.PerRecipient);
+        var rule = await SeedDiscordRuleAsync(dbContext, team, MessageFanOut.PerRecipient, "<p>Hi</p>");
         var session = await SeedSessionAsync(dbContext, team);
         await SeedCandidatesAsync(dbContext, session, "Roana Glory");
 
@@ -260,8 +256,7 @@ public class DiscordMessageRuleTests
         var team = await SeedTeamAsync(dbContext);
         team.IntegrationOverridesEnabled = true;
         team.DiscordEnabled = false;
-        await SeedTemplateAsync(dbContext, team, "Post", "<p>Hi</p>");
-        await SeedDiscordRuleAsync(dbContext, team, MessageFanOut.PerRecipient);
+        await SeedDiscordRuleAsync(dbContext, team, MessageFanOut.PerRecipient, "<p>Hi</p>");
         var session = await SeedSessionAsync(dbContext, team);
         await SeedCandidatesAsync(dbContext, session, "Roana Glory");
 
@@ -281,8 +276,7 @@ public class DiscordMessageRuleTests
     {
         await using var dbContext = CreateContext();
         var team = await SeedTeamAsync(dbContext);
-        await SeedTemplateAsync(dbContext, team, "Post", "<p>Hi</p>");
-        await SeedDiscordRuleAsync(dbContext, team, MessageFanOut.PerRecipient);
+        await SeedDiscordRuleAsync(dbContext, team, MessageFanOut.PerRecipient, "<p>Hi</p>");
         var session = await SeedSessionAsync(dbContext, team);
         await SeedCandidatesAsync(dbContext, session, "Roana Glory");
 
@@ -299,8 +293,7 @@ public class DiscordMessageRuleTests
     {
         await using var dbContext = CreateContext();
         var team = await SeedTeamAsync(dbContext);
-        await SeedTemplateAsync(dbContext, team, "Post", "<p>Hi</p>");
-        await SeedDiscordRuleAsync(dbContext, team, MessageFanOut.PerRecipient);
+        await SeedDiscordRuleAsync(dbContext, team, MessageFanOut.PerRecipient, "<p>Hi</p>");
         var session = await SeedSessionAsync(dbContext, team);
         await SeedCandidatesAsync(dbContext, session, "Roana Glory");
 
@@ -323,8 +316,7 @@ public class DiscordMessageRuleTests
     {
         await using var dbContext = CreateContext();
         var team = await SeedTeamAsync(dbContext);
-        await SeedTemplateAsync(dbContext, team, "Post", "{{Count}} registrations");
-        await SeedDiscordRuleAsync(dbContext, team, MessageFanOut.SingleDigest);
+        await SeedDiscordRuleAsync(dbContext, team, MessageFanOut.SingleDigest, "{{Count}} registrations");
         await SeedCandidatesAsync(dbContext, await SeedSessionAsync(dbContext, team), "Roana Glory");
         await SeedCandidatesAsync(dbContext, await SeedSessionAsync(dbContext, team), "Sam Vale");
 
@@ -341,8 +333,7 @@ public class DiscordMessageRuleTests
     {
         await using var dbContext = CreateContext();
         var team = await SeedTeamAsync(dbContext);
-        await SeedTemplateAsync(dbContext, team, "Post", "{{Count}} registered for {{SessionTitle}}");
-        await SeedDiscordRuleAsync(dbContext, team, MessageFanOut.PerSession);
+        await SeedDiscordRuleAsync(dbContext, team, MessageFanOut.PerSession, "{{Count}} registered for {{SessionTitle}}");
         await SeedCandidatesAsync(dbContext, await SeedSessionAsync(dbContext, team), "Roana Glory", "Sam Vale");
         await SeedCandidatesAsync(dbContext, await SeedSessionAsync(dbContext, team), "Tam Okonkwo");
 
@@ -363,8 +354,7 @@ public class DiscordMessageRuleTests
     {
         await using var dbContext = CreateContext();
         var team = await SeedTeamAsync(dbContext);
-        await SeedTemplateAsync(dbContext, team, "Post", "{{Count}}");
-        await SeedDiscordRuleAsync(dbContext, team, MessageFanOut.PerSession);
+        await SeedDiscordRuleAsync(dbContext, team, MessageFanOut.PerSession, "{{Count}}");
         await SeedCandidatesAsync(dbContext, await SeedSessionAsync(dbContext, team), "Roana Glory", "Sam Vale");
 
         var discord = new MessageRuleTestHarness.FakeDiscordChannelClient();
@@ -384,8 +374,7 @@ public class DiscordMessageRuleTests
     {
         await using var dbContext = CreateContext();
         var team = await SeedTeamAsync(dbContext);
-        await SeedTemplateAsync(dbContext, team, "Post", "{{SessionTitle}} at {{SessionDate}} — {{Count}} of {{RegisteredCount}}");
-        await SeedDiscordRuleAsync(dbContext, team, MessageFanOut.PerSession);
+        await SeedDiscordRuleAsync(dbContext, team, MessageFanOut.PerSession, "{{SessionTitle}} at {{SessionDate}} — {{Count}} of {{RegisteredCount}}");
         await SeedCandidatesAsync(dbContext, await SeedSessionAsync(dbContext, team), "Roana Glory");
 
         var discord = new MessageRuleTestHarness.FakeDiscordChannelClient();
@@ -406,8 +395,7 @@ public class DiscordMessageRuleTests
     {
         await using var dbContext = CreateContext();
         var team = await SeedTeamAsync(dbContext);
-        await SeedTemplateAsync(dbContext, team, "Post", "{{Subjects}}");
-        await SeedDiscordRuleAsync(dbContext, team, MessageFanOut.PerSession);
+        await SeedDiscordRuleAsync(dbContext, team, MessageFanOut.PerSession, "{{Subjects}}");
         await SeedCandidatesAsync(dbContext, await SeedSessionAsync(dbContext, team), "Roana Glory");
         await SeedCandidatesAsync(dbContext, await SeedSessionAsync(dbContext, team), "Sam Vale");
 
@@ -427,8 +415,7 @@ public class DiscordMessageRuleTests
     {
         await using var dbContext = CreateContext();
         var team = await SeedTeamAsync(dbContext);
-        await SeedTemplateAsync(dbContext, team, "Post", "hello");
-        await SeedDiscordRuleAsync(dbContext, team, MessageFanOut.SingleDigest);
+        await SeedDiscordRuleAsync(dbContext, team, MessageFanOut.SingleDigest, "hello");
         await SeedCandidatesAsync(dbContext, await SeedSessionAsync(dbContext, team), "Roana Glory");
 
         var discord = new MessageRuleTestHarness.FakeDiscordChannelClient();
@@ -445,8 +432,7 @@ public class DiscordMessageRuleTests
         var team = await SeedTeamAsync(dbContext);
         team.DiscordMentionableRoleIds = "555, 666";
         await dbContext.SaveChangesAsync();
-        await SeedTemplateAsync(dbContext, team, "Post", "<@&555> heads up");
-        await SeedDiscordRuleAsync(dbContext, team, MessageFanOut.SingleDigest);
+        await SeedDiscordRuleAsync(dbContext, team, MessageFanOut.SingleDigest, "<@&555> heads up");
         await SeedCandidatesAsync(dbContext, await SeedSessionAsync(dbContext, team), "Roana Glory");
 
         var discord = new MessageRuleTestHarness.FakeDiscordChannelClient();
@@ -467,8 +453,7 @@ public class DiscordMessageRuleTests
         var team = await SeedTeamAsync(dbContext);
         team.DiscordMentionableRoleIds = "555";
         await dbContext.SaveChangesAsync();
-        await SeedTemplateAsync(dbContext, team, "Post", "{{Subjects}}");
-        await SeedDiscordRuleAsync(dbContext, team, MessageFanOut.SingleDigest);
+        await SeedDiscordRuleAsync(dbContext, team, MessageFanOut.SingleDigest, "{{Subjects}}");
         await SeedCandidatesAsync(dbContext, await SeedSessionAsync(dbContext, team), "@everyone");
 
         var discord = new MessageRuleTestHarness.FakeDiscordChannelClient();

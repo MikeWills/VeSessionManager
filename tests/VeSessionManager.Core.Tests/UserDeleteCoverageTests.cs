@@ -38,7 +38,6 @@ public class UserDeleteCoverageTests
         "Payment.RefundRequestedByUserId",
         "Refund.RequestedByUserId",
         "HistoricalImportRequest.RequestedByUserId",
-        "EmailTemplate.UpdatedByUserId",
         "EmailSettings.UpdatedByUserId",
         "SystemSettings.UpdatedByUserId",
         "UnmatchedSquarePayment.ResolvedByUserId",

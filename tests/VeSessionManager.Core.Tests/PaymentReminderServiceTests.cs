@@ -128,29 +128,27 @@ public class PaymentReminderServiceTests
             PrivacyPolicyUrl = "https://example.org/privacy",
             AdminNotificationEmail = "admin@example.org"
         });
-        dbContext.EmailTemplates.Add(new EmailTemplate
-        {
-            TeamId = team.Id,
-            Key = "FccFeeReminder5Day",
-            Subject = "The FCC is waiting for its fee",
-            // No payment placeholder anywhere, matching the seeded default. A test template that
-            // offered one would let a link creep back into the send path unnoticed (#218/#219).
-            Body = "Hi {{CandidateName}}, session {{SessionDate}}, FRN {{Frn}}"
-        });
-        dbContext.EmailTemplates.Add(new EmailTemplate
-        {
-            TeamId = team.Id,
-            Key = "PaymentExpirationNotice",
-            Subject = "Expired",
-            Body = "{{CandidateName}} owes {{PaymentAmount}} from {{SessionDate}}"
-        });
+        // The two rules that replaced this service's own sends, carrying their own words since
+        // 2026-08-21 — they used to point at the two templates seeded just above this. CreatedUtc a
+        // year back so it bounds nothing: these tests are about the thresholds, and the bound has its
+        // own tests.
+        //
+        // ⚠️ No payment placeholder anywhere in the FCC-fee body, matching the seeded default. A test
+        // body that offered one would let a link creep back into that send path unnoticed
+        // (#218/#219) — FCC bills the applicant directly, and the team's Square link pays a different
+        // bill.
+        var fccFeeReminder = MessageRuleTestHarness.NewRule(
+            team, MessageTrigger.FccFeeOutstanding,
+            "Hi {{CandidateName}}, session {{SessionDate}}, FRN {{Frn}}", 120, Now.AddYears(-1));
+        fccFeeReminder.Subject = "The FCC is waiting for its fee";
+        dbContext.MessageRules.Add(fccFeeReminder);
 
-        // The two rules that replaced this service's own sends. CreatedUtc a year back so it bounds
-        // nothing — these tests are about the thresholds, and the bound has its own tests.
-        dbContext.MessageRules.Add(MessageRuleTestHarness.NewRule(
-            team, MessageTrigger.FccFeeOutstanding, "FccFeeReminder5Day", 120, Now.AddYears(-1)));
-        dbContext.MessageRules.Add(MessageRuleTestHarness.NewRule(
-            team, MessageTrigger.PaymentUnpaid, "PaymentExpirationNotice", 240, Now.AddYears(-1), MessageRecipient.TeamAdminAddress));
+        var expirationNotice = MessageRuleTestHarness.NewRule(
+            team, MessageTrigger.PaymentUnpaid,
+            "{{CandidateName}} owes {{PaymentAmount}} from {{SessionDate}}", 240, Now.AddYears(-1),
+            MessageRecipient.TeamAdminAddress);
+        expirationNotice.Subject = "Expired";
+        dbContext.MessageRules.Add(expirationNotice);
 
         await dbContext.SaveChangesAsync();
     }
@@ -534,30 +532,10 @@ public class PaymentReminderServiceTests
         Assert.Equal(0, result.RemindersSent);
     }
 
-    [Fact]
-    public async Task Reminder_MissingTemplate_CountsAsFailed_IsRetryable()
-    {
-        await using var dbContext = CreateContext();
-        var team = await SeedTeamAsync(dbContext);
-        dbContext.EmailSettings.Add(new EmailSettings
-        {
-            TeamId = team.Id,
-            FromAddress = "noreply@example.org", ReplyToAddress = "reply@example.org",
-            PrivacyPolicyUrl = "https://example.org/privacy", AdminNotificationEmail = "admin@example.org"
-        });
-        // The rule exists and points at a template that does not.
-        dbContext.MessageRules.Add(MessageRuleTestHarness.NewRule(
-            team, MessageTrigger.FccFeeOutstanding, "FccFeeReminder5Day", 120, Now.AddYears(-1)));
-        await dbContext.SaveChangesAsync();
-        await SeedCandidateWithPaymentAsync(dbContext, team, applicationDateEnteredUtc: Now.AddDays(-5));
-        var sender = new FakeEmailSender();
+    // ⚠️ Reminder_MissingTemplate_CountsAsFailed_IsRetryable was deleted here on 2026-08-21, for the
+    // same reason as its twin in MessageRuleEngineTests: a message owns its own words, so a rule
+    // cannot point at a template that is not there. The failure it covered is unreachable.
 
-        var result = await CreateService(dbContext, sender).RunAsync(team, CancellationToken.None);
-
-        Assert.Equal(0, result.RemindersSent);
-        Assert.Equal(1, result.Failed);
-        Assert.Null((await dbContext.Candidates.SingleAsync()).FccFeeReminderSentUtc);
-    }
 
     // ---- 10-day expiration ----
 

@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using VeSessionManager.Core.Admin;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Email;
@@ -61,10 +61,6 @@ public class MessageEnvelopeTests
             PrivacyPolicyUrl = "https://example.org/privacy",
             AdminNotificationEmail = "admin@example.org"
         });
-        dbContext.EmailTemplates.Add(new EmailTemplate
-        {
-            TeamId = team.Id, Key = "Confirm", Subject = "Hi {{CandidateName}}", Body = "<p>Hello</p>"
-        });
         await dbContext.SaveChangesAsync();
         return team;
     }
@@ -73,7 +69,8 @@ public class MessageEnvelopeTests
         AppDbContext dbContext, Team team, MessageReplyToSource replyToSource = MessageReplyToSource.EmailSettings,
         string? replyToOverride = null, string? bcc = null, bool oncePerRun = true)
     {
-        var rule = MessageRuleTestHarness.NewRule(team, MessageTrigger.CandidateRegistered, "Confirm", null, Now.AddYears(-1));
+        var rule = MessageRuleTestHarness.NewRule(team, MessageTrigger.CandidateRegistered, "<p>Hello</p>", null, Now.AddYears(-1));
+        rule.Subject = "Hi {{CandidateName}}";
         rule.ReplyToSource = replyToSource;
         rule.ReplyToOverride = replyToOverride;
         rule.BccAddress = bcc;
@@ -289,7 +286,7 @@ public class MessageEnvelopeTests
         AppDbContext dbContext, Team team, int userId, MessageEnvelope envelope,
         MessageRecipient recipient = MessageRecipient.Candidate, MessageChannel channel = MessageChannel.Email) =>
         CreateAdminService(dbContext).CreateAsync(
-            team.Id, MessageTrigger.CandidateRegistered, "A rule", "Confirm", null, recipient, userId, CancellationToken.None,
+            team.Id, MessageTrigger.CandidateRegistered, "A rule", "Subject", "Confirm", null, recipient, userId, CancellationToken.None,
             channel, channel == MessageChannel.Discord ? 42UL : null, MessageFanOut.PerRecipient, envelope);
 
     /// <summary>A Cc'd person cannot unsubscribe, and every candidate sees the address.</summary>
@@ -315,7 +312,7 @@ public class MessageEnvelopeTests
         var userId = await SeedUserAsync(dbContext);
 
         var result = await CreateAdminService(dbContext).CreateAsync(
-            team.Id, MessageTrigger.PaymentUnpaid, "Unpaid notice", "Confirm", 240, MessageRecipient.TeamAdminAddress,
+            team.Id, MessageTrigger.PaymentUnpaid, "Unpaid notice", "Subject", "Confirm", 240, MessageRecipient.TeamAdminAddress,
             userId, CancellationToken.None, envelope: MessageEnvelope.Default with { CcAddress = "treasurer@example.org" });
 
         Assert.Equal(MessageRuleActionResult.Success, result);

@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using VeSessionManager.Core.Data;
@@ -83,14 +84,16 @@ public static class MessageRuleTestHarness
     /// about a scanner's predicate wants. Tests about the bound itself pass their own.
     /// </summary>
     public static MessageRule NewRule(
-        Team team, MessageTrigger trigger, string templateKey, int? parameterHours, DateTime createdUtc,
+        Team team, MessageTrigger trigger, string body, int? parameterHours, DateTime createdUtc,
         MessageRecipient recipient = MessageRecipient.Candidate) => new()
         {
             TeamId = team.Id,
             Name = $"{trigger} rule",
             Trigger = trigger,
             ParameterHours = parameterHours,
-            TemplateKey = templateKey,
+            // The message owns its words since 2026-08-21 — this was a template key.
+            Subject = $"{trigger} subject",
+            Body = body,
             Recipient = recipient,
             CreatedUtc = createdUtc
         };

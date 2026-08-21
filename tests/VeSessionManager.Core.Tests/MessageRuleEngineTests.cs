@@ -72,9 +72,18 @@ public class MessageRuleEngineTests
     /// </summary>
     private static async Task<MessageRule> SeedRuleAsync(
         AppDbContext dbContext, Team team, MessageTrigger trigger, string templateKey, int? parameterHours,
-        MessageRecipient recipient = MessageRecipient.Candidate, DateTime? createdUtc = null)
+        MessageRecipient recipient = MessageRecipient.Candidate, DateTime? createdUtc = null,
+        string? subject = null, string? body = null)
     {
-        var rule = MessageRuleTestHarness.NewRule(team, trigger, templateKey, parameterHours, createdUtc ?? Now.AddYears(-1), recipient);
+        // A message owns its words, so the rule carries them. The key is now just a name for a
+        // standard pair of subject/body kept in this file — the tests that assert on rendered output
+        // still get the text they were written against, and the ones with their own wording pass it.
+        var (standardSubject, standardBody) = StandardText.TryGetValue(templateKey, out var text)
+            ? text
+            : (templateKey, templateKey);
+
+        var rule = MessageRuleTestHarness.NewRule(team, trigger, body ?? standardBody, parameterHours, createdUtc ?? Now.AddYears(-1), recipient);
+        rule.Subject = subject ?? standardSubject;
         dbContext.MessageRules.Add(rule);
         await dbContext.SaveChangesAsync();
         return rule;
@@ -118,6 +127,21 @@ public class MessageRuleEngineTests
         return team;
     }
 
+    /// <summary>
+    /// The wording the rendering assertions in this file were written against. It lived in seeded
+    /// EmailTemplate rows until 2026-08-21; a message owns its words now, and there is no table left
+    /// to seed it into, so it lives here — which is nearer the assertions that depend on it anyway.
+    /// </summary>
+    private static readonly Dictionary<string, (string Subject, string Body)> StandardText = new()
+    {
+        ["RegistrationConfirmation"] = (
+            "Registered for {{SessionDate}}",
+            "Hi {{CandidateFirstName}} ({{CandidateName}}), Zoom: {{ZoomJoinUrl}}, Pay: {{PaymentLinkUrl}}, Privacy: {{PrivacyPolicyUrl}}"),
+        ["DayBeforeReminder"] = (
+            "Reminder for {{SessionDate}}",
+            "Hi {{CandidateFirstName}}, Zoom: {{ZoomJoinUrl}}, Outstanding: {{OutstandingPaymentLinkUrl}}")
+    };
+
     private static async Task SeedEmailSettingsAndTemplatesAsync(AppDbContext dbContext, Team team)
     {
         dbContext.EmailSettings.Add(new EmailSettings
@@ -128,20 +152,6 @@ public class MessageRuleEngineTests
             ReplyToAddress = "reply@example.org",
             PrivacyPolicyUrl = "https://example.org/privacy",
             AdminNotificationEmail = "admin@example.org"
-        });
-        dbContext.EmailTemplates.Add(new EmailTemplate
-        {
-            TeamId = team.Id,
-            Key = "RegistrationConfirmation",
-            Subject = "Registered for {{SessionDate}}",
-            Body = "Hi {{CandidateFirstName}} ({{CandidateName}}), Zoom: {{ZoomJoinUrl}}, Pay: {{PaymentLinkUrl}}, Privacy: {{PrivacyPolicyUrl}}"
-        });
-        dbContext.EmailTemplates.Add(new EmailTemplate
-        {
-            TeamId = team.Id,
-            Key = "DayBeforeReminder",
-            Subject = "Reminder for {{SessionDate}}",
-            Body = "Hi {{CandidateFirstName}}, Zoom: {{ZoomJoinUrl}}, Outstanding: {{OutstandingPaymentLinkUrl}}"
         });
         await dbContext.SaveChangesAsync();
 
@@ -246,13 +256,9 @@ public class MessageRuleEngineTests
             TeamId = team.Id, FromAddress = "noreply@example.org", FromDisplayName = "VE Session Manager",
             ReplyToAddress = "reply@example.org", PrivacyPolicyUrl = "https://example.org/privacy", AdminNotificationEmail = "admin@example.org"
         });
-        dbContext.EmailTemplates.Add(new EmailTemplate
-        {
-            TeamId = team.Id, Key = "RegistrationConfirmation", Subject = "Registered for {{SessionDate}}",
-            Body = "Pay: {{PaymentLinkUrl}}, Youth: {{YouthPaymentLinkUrl}}"
-        });
         await dbContext.SaveChangesAsync();
-        await SeedRuleAsync(dbContext, team, MessageTrigger.CandidateRegistered, "RegistrationConfirmation", null);
+        await SeedRuleAsync(dbContext, team, MessageTrigger.CandidateRegistered, "RegistrationConfirmation", null,
+            body: "Pay: {{PaymentLinkUrl}}, Youth: {{YouthPaymentLinkUrl}}");
         var session = await SeedSessionAsync(dbContext, team, Now.AddDays(4), supportsYouthProgram: true);
         var candidate = NewCandidate(session);
         dbContext.Candidates.Add(candidate);
@@ -283,13 +289,9 @@ public class MessageRuleEngineTests
             TeamId = team.Id, FromAddress = "noreply@example.org", FromDisplayName = "VE Session Manager",
             ReplyToAddress = "reply@example.org", PrivacyPolicyUrl = "https://example.org/privacy", AdminNotificationEmail = "admin@example.org"
         });
-        dbContext.EmailTemplates.Add(new EmailTemplate
-        {
-            TeamId = team.Id, Key = "RegistrationConfirmation", Subject = "Registered for {{SessionDate}}",
-            Body = "Youth: {{YouthPaymentLinkUrl}}."
-        });
         await dbContext.SaveChangesAsync();
-        await SeedRuleAsync(dbContext, team, MessageTrigger.CandidateRegistered, "RegistrationConfirmation", null);
+        await SeedRuleAsync(dbContext, team, MessageTrigger.CandidateRegistered, "RegistrationConfirmation", null,
+            body: "Youth: {{YouthPaymentLinkUrl}}.");
         var session = await SeedSessionAsync(dbContext, team, Now.AddDays(4), supportsYouthProgram: false);
         dbContext.Candidates.Add(NewCandidate(session));
         await dbContext.SaveChangesAsync();
@@ -390,9 +392,12 @@ public class MessageRuleEngineTests
     {
         await using var dbContext = CreateContext();
         var team = await SeedTeamAsync(dbContext);
-        // Templates exist, but no EmailSettings row seeded.
-        dbContext.EmailTemplates.Add(new EmailTemplate { TeamId = team.Id, Key = "RegistrationConfirmation", Subject = "s", Body = "b" });
+        // A message exists and would send, but no EmailSettings row is seeded — which is the thing
+        // under test. Until 2026-08-21 this seeded a TEMPLATE and no rule, so the engine had nothing
+        // to send either way and the assertion held whether or not the settings row was there.
         await dbContext.SaveChangesAsync();
+        await SeedRuleAsync(dbContext, team, MessageTrigger.CandidateRegistered, "RegistrationConfirmation", null,
+            subject: "s", body: "b");
         var session = await SeedSessionAsync(dbContext, team, Now.AddDays(4));
         dbContext.Candidates.Add(NewCandidate(session));
         await dbContext.SaveChangesAsync();
@@ -653,31 +658,15 @@ public class MessageRuleEngineTests
         Assert.EndsWith("Outstanding: ", message.HtmlBody);
     }
 
-    [Fact]
-    public async Task MissingTemplate_CountsAsFailed_DoesNotMarkSent_IsRetryable()
-    {
-        await using var dbContext = CreateContext();
-        var team = await SeedTeamAsync(dbContext);
-        dbContext.EmailSettings.Add(new EmailSettings
-        {
-            TeamId = team.Id,
-            FromAddress = "noreply@example.org", ReplyToAddress = "reply@example.org", PrivacyPolicyUrl = "https://example.org/privacy", AdminNotificationEmail = "admin@example.org"
-        });
-        // No RegistrationConfirmation template seeded at all — only the rule that points at it.
-        await dbContext.SaveChangesAsync();
-        await SeedRuleAsync(dbContext, team, MessageTrigger.CandidateRegistered, "RegistrationConfirmation", null);
-        var session = await SeedSessionAsync(dbContext, team, Now.AddDays(4));
-        dbContext.Candidates.Add(NewCandidate(session));
-        await dbContext.SaveChangesAsync();
-
-        var sender = new FakeEmailSender();
-        var result = await RunRulesAsync(dbContext, sender, team, MessageTrigger.CandidateRegistered);
-
-        Assert.Equal(0, result.Sent);
-        Assert.Equal(1, result.Failed);
-        Assert.Null(dbContext.Candidates.Single().RegistrationConfirmationSentUtc);
-        Assert.Empty(sender.SentMessages);
-    }
+    // ⚠️ MissingTemplate_CountsAsFailed_DoesNotMarkSent_IsRetryable was deleted here on 2026-08-21.
+    //
+    // It seeded a rule pointing at a template that did not exist and asserted the send recorded
+    // Failed, left the candidate unmarked, and stayed retryable. A message carries its own words
+    // now, so a rule cannot point at anything and there is nothing to be missing — the failure is
+    // unreachable rather than handled, which is why no replacement stands here.
+    //
+    // What it was really protecting — that a failed send is not marked sent and comes back next
+    // tick — is still covered by the SMTP-not-configured and send-throws tests below.
 
     // ---- SMTP not configured (optional integration, same pattern as Square) ----
 
@@ -739,11 +728,11 @@ public class MessageRuleEngineTests
         var teamB = await SeedTeamAsync(dbContext);
         dbContext.EmailSettings.Add(new EmailSettings { TeamId = teamA.Id, FromAddress = "a@example.org", ReplyToAddress = "a@example.org", PrivacyPolicyUrl = "https://a.example.org/privacy", AdminNotificationEmail = "admin@a.example.org" });
         dbContext.EmailSettings.Add(new EmailSettings { TeamId = teamB.Id, FromAddress = "b@example.org", ReplyToAddress = "b@example.org", PrivacyPolicyUrl = "https://b.example.org/privacy", AdminNotificationEmail = "admin@b.example.org" });
-        dbContext.EmailTemplates.Add(new EmailTemplate { TeamId = teamA.Id, Key = "RegistrationConfirmation", Subject = "A subject", Body = "Team A body" });
-        dbContext.EmailTemplates.Add(new EmailTemplate { TeamId = teamB.Id, Key = "RegistrationConfirmation", Subject = "B subject", Body = "Team B body" });
         await dbContext.SaveChangesAsync();
-        await SeedRuleAsync(dbContext, teamA, MessageTrigger.CandidateRegistered, "RegistrationConfirmation", null);
-        await SeedRuleAsync(dbContext, teamB, MessageTrigger.CandidateRegistered, "RegistrationConfirmation", null);
+        await SeedRuleAsync(dbContext, teamA, MessageTrigger.CandidateRegistered, "RegistrationConfirmation", null,
+            subject: "A subject", body: "Team A body");
+        await SeedRuleAsync(dbContext, teamB, MessageTrigger.CandidateRegistered, "RegistrationConfirmation", null,
+            subject: "B subject", body: "Team B body");
         var sessionA = await SeedSessionAsync(dbContext, teamA, Now.AddDays(4));
         var sessionB = await SeedSessionAsync(dbContext, teamB, Now.AddDays(4));
         dbContext.Candidates.Add(NewCandidate(sessionA, "applicant-a"));

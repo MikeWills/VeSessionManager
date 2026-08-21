@@ -3,7 +3,7 @@
 @using VeSessionManager.Core.Messaging
 @model VeSessionManager.Web.Pages.Admin.MessageRulesModel
 @{
-    ViewData["Title"] = "Message Rules";
+    ViewData["Title"] = "Messages";
     ViewData["ActiveNav"] = "AdminMessageRules";
     Layout = "_AppLayout";
 }
@@ -11,18 +11,18 @@
 <div class="page-head">
     <div>
         <partial name="_ParentCrumb" model='new ParentCrumb("./Teams", "Teams", "Per team", RoleGroups.Admins)' />
-        <h1>Message Rules</h1>
+        <h1>Messages</h1>
         <p class="session-sub">
-            What this team sends automatically, and when. Each moment below can carry any number of
-            rules — or none, in which case nothing is sent at that moment.
+            Every email and Discord post this team can send. Each moment below can carry any number of
+            messages — or none, in which case nothing is sent at that moment.
         </p>
     </div>
 </div>
 
 @if (Model.IsSystemAdmin)
 {
-    @* Same picker as Email Templates, deliberately without an "All teams" option: this edits one
-       team's configuration, so a merged view has no meaning. *@
+    @* Deliberately without an "All teams" option: this edits one team's configuration, so a merged
+       view has no meaning. *@
     <form method="get" id="teamFilter" class="filters" style="margin-bottom:16px; align-items:flex-start;">
         <partial name="_TeamPicker" model="new VeSessionManager.Web.TeamPicker(Model.TeamId, Model.AvailableTeams, Model.TeamSummaryLabel, IncludeAllTeams: false)" />
     </form>
@@ -34,140 +34,32 @@
 }
 else
 {
-    @foreach (var point in Model.Sections)
+    @* Two groups, because the columns differ. A hand-sent message has no delay and no fixed
+       recipient — somebody chose the moment and picks the people at send time — and a blank "When"
+       sitting in a column of real ones reads as a bug rather than as "not applicable". *@
+    var sentAutomatically = Model.Sections.Where(s => !s.IsSentByHand).ToList();
+    var sentByHand = Model.Sections.Where(s => s.IsSentByHand).ToList();
+
+    <h2 class="section-title">Sent automatically</h2>
+    @foreach (var point in sentAutomatically)
     {
-        <div class="session-panel" style="display:block; margin-bottom:20px;">
-            <div class="section-head">
-                <div>
-                    <h2>@point.Label</h2>
-                    <p class="session-sub">@point.Blurb</p>
-                </div>
-                <a class="btn-secondary btn-sm" asp-page="/Admin/MessageRuleNew"
-                   asp-route-teamId="@Model.TeamId" asp-route-trigger="@((int)point.Trigger)">+ Add rule</a>
-            </div>
+        <partial name="_MessageTriggerSection" model="point" />
+    }
 
-            @if (point.Rules.Count == 0)
-            {
-                @* Said plainly rather than left blank. "Nothing happens here" is information — it is
-                   the whole reason every trigger renders whether or not it is configured. *@
-                <p class="session-sub">No rules — nothing is sent at this point.</p>
-            }
-            else
-            {
-                <div class="table-scroll">
-                    <table class="cards">
-                        <thead>
-                            <tr>
-                                <th>Rule</th>
-                                <th>When</th>
-                                <th>To</th>
-                                <th>Template</th>
-                                <th></th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach (var rule in point.Rules)
-                            {
-                                <tr>
-                                    <td>
-                                        <span class="session-title">@rule.Name</span>
-                                        @if (!rule.IsEnabled)
-                                        {
-                                            <span class="chip chip-neutral">Off</span>
-                                        }
-                                    </td>
-                                    <td>@rule.ParameterLabel</td>
-                                    <td>@rule.RecipientLabel</td>
-                                    <td>
-                                        @rule.TemplateLabel
-                                        @if (!rule.TemplateExists)
-                                        {
-                                            @* A rule pointing at a template that is gone records a
-                                               failure every night with nothing but a log line to show
-                                               for it. Said here instead. *@
-                                            <span class="chip chip-brick">Template missing</span>
-                                        }
-                                    </td>
-                                    @* Two different questions, so two actions: switching off is "not
-                                       right now" and keeps the rule on the screen; deleting is "we do
-                                       not do this". Delete is confirmed and does not come back — the
-                                       seeder sets a team up once and never re-adds. *@
-                                    @* One line, always — see .row-actions-inline. Four quiet icons
-                                       rather than four buttons: a glyph in a full button is four times
-                                       the width, which is what wrapped these onto a second line for
-                                       the rules with longer names. *@
-                                    <td class="row-actions">
-                                        <span class="row-actions-inline">
-                                            <a class="icon-action" asp-page="/Admin/MessageRuleEdit" asp-route-id="@rule.Id"
-                                               title="Edit @rule.Name" aria-label="Edit @rule.Name">
-                                                <i class="bi bi-pencil" aria-hidden="true"></i>
-                                            </a>
-                                            @* Copying is how you get "and again a week earlier" without
-                                               retyping the template, recipient and channel. The copy
-                                               arrives switched off — see MessageRuleAdminService. *@
-                                            <form method="post" asp-page-handler="Duplicate">
-                                                <input type="hidden" name="ruleId" value="@rule.Id" />
-                                                <button type="submit" class="icon-action"
-                                                        title="Copy @rule.Name" aria-label="Copy @rule.Name">
-                                                    <i class="bi bi-copy" aria-hidden="true"></i>
-                                                </button>
-                                            </form>
-                                            @* The one action whose two states are worth distinguishing at
-                                               a glance, so it carries a filled/slashed pair rather than
-                                               one icon that means opposite things. *@
-                                            <form method="post" asp-page-handler="SetEnabled">
-                                                <input type="hidden" name="ruleId" value="@rule.Id" />
-                                                <input type="hidden" name="enabled" value="@((!rule.IsEnabled).ToString().ToLowerInvariant())" />
-                                                <button type="submit" class="icon-action"
-                                                        title="@(rule.IsEnabled ? "Switch off" : "Switch on") @rule.Name"
-                                                        aria-label="@(rule.IsEnabled ? "Switch off" : "Switch on") @rule.Name">
-                                                    <i class="bi @(rule.IsEnabled ? "bi-toggle-on" : "bi-toggle-off")" aria-hidden="true"></i>
-                                                </button>
-                                            </form>
-                                            <button type="button" class="icon-action danger" data-open-modal="deleteRule-@rule.Id"
-                                                    title="Delete @rule.Name" aria-label="Delete @rule.Name">
-                                                <i class="bi bi-trash" aria-hidden="true"></i>
-                                            </button>
-                                        </span>
-                                    </td>
-                                </tr>
-                            }
-                        </tbody>
-                    </table>
-                </div>
-
-                @foreach (var rule in point.Rules)
-                {
-                    <div class="modal-backdrop" id="deleteRule-@rule.Id">
-                        <div class="modal">
-                            <h3>Delete "@rule.Name"?</h3>
-                            <p class="session-sub">
-                                Nothing will be sent at this point by this rule again, and it will not
-                                come back. What it has already sent stays in the run log.
-                            </p>
-                            <p class="session-sub">
-                                If you only want to pause it, use <strong>Switch off</strong> instead —
-                                that keeps the rule and its settings.
-                            </p>
-                            <form method="post" asp-page-handler="Delete">
-                                <input type="hidden" name="ruleId" value="@rule.Id" />
-                                <div class="modal-actions">
-                                    <button type="button" class="btn-secondary btn-sm" data-close-modal>Cancel</button>
-                                    <button type="submit" class="btn-primary btn-sm">Delete rule</button>
-                                </div>
-                            </form>
-                        </div>
-                    </div>
-                }
-            }
-        </div>
-
+    <h2 class="section-title">Sent by hand</h2>
+    <p class="session-sub">
+        These are the messages offered when somebody composes an email from a session or from the VE
+        directory. Nothing sends them on its own. Switching one off takes it off that list.
+    </p>
+    @foreach (var point in sentByHand)
+    {
+        <partial name="_MessageTriggerSection" model="point" />
     }
 
     <p class="session-sub">
-        A new rule never fires for anyone whose moment has already passed — add a seven-day reminder
-        today and nobody already inside seven days of their session hears from it. Switching a rule off
-        stops it immediately and queues nothing; switching it back on picks up from that moment. A
-        deleted rule is gone for good, and a trigger point with no rules simply sends nothing.
+        A new message never goes to anyone whose moment has already passed — add a seven-day reminder
+        today and nobody already inside seven days of their session hears from it. Switching a message
+        off stops it immediately and queues nothing; switching it back on picks up from that moment. A
+        deleted message is gone for good, and a moment with no messages simply sends nothing.
     </p>
 }

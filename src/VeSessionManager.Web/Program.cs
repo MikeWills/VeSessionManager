@@ -227,7 +227,6 @@ builder.Services.AddSingleton<AdminAccessScope>();
 builder.Services.AddScoped<TeamSettingsService>();
 builder.Services.AddScoped<VecManagementService>();
 builder.Services.AddScoped<FeeConfigurationService>();
-builder.Services.AddScoped<EmailTemplateAdminService>();
 builder.Services.AddScoped<UserManagementService>();
 builder.Services.AddScoped<SystemSettingsService>();
 

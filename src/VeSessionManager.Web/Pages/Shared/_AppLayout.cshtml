@@ -84,7 +84,7 @@
        [Authorize] — all six pages are Admins-only, which is why one gate wraps both groups. *@
     var vesGroupActive = activeNav is "VeDirectory" or "VeTags" or "VeImport";
     var reportsGroupActive = activeNav is "Stats" or "VeRoster" or "AuditioningReport";
-    var settingsGroupActive = activeNav is "AdminTeams" or "AdminTeamSettings" or "AdminUsers" or "AdminEmailTemplates" or "AdminMessageRules"
+    var settingsGroupActive = activeNav is "AdminTeams" or "AdminTeamSettings" or "AdminUsers" or "AdminMessageRules"
         or "AdminFees" or "AdminVecs" or "AdminAuditLog" or "AdminJobHistory" or "AdminJobSchedule" or "Reconciliation" or "AdminSystemSettings";
 }
 <!DOCTYPE html>
@@ -103,7 +103,7 @@
     <link rel="stylesheet" href="~/lib/bootstrap-icons/bootstrap-icons.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/app.css" asp-append-version="true" />
     @* For page-specific stylesheets that shouldn't load site-wide — currently only Quill's, on the
-       Email Templates page. Mirrors the existing Scripts section at the bottom. *@
+       two message editors. Mirrors the existing Scripts section at the bottom. *@
     @await RenderSectionAsync("Head", required: false)
 </head>
 <body class="vesm">
@@ -214,7 +214,7 @@
                         @* Visible to TeamAdmin as well, scoped to their own teams — it is the entry
                            point for every per-team page now, so gating it would strand the role. *@
                         <a class="item @(activeNav == "AdminTeams" ? "active" : "")" asp-page="/Admin/Teams">Teams</a>
-                        @* Team Settings, Team Maintenance and Email Templates are deliberately NOT
+                        @* Team Settings, Team Maintenance and Messages are deliberately NOT
                            here (2026-08-06). Each needs one team chosen, so a nav link lands on
                            "Select a team…" while the Teams row menu picks the team for you — a
                            strictly better route, now that Teams is reachable by TeamAdmin too.

@@ -1,5 +1,8 @@
-// Rich-text editing for the Email Templates admin page. Loaded only by that page — Quill is ~210KB
-// and has no business on every screen. See docs/email-template-editor.md.
+// Rich-text editing for the message editor (Admin -> Messages -> Edit/New). Loaded only by those two
+// pages — Quill is ~210KB and has no business on every screen. See docs/email-template-editor.md.
+//
+// Was email-template-editor.js, on the Email Templates page, until 2026-08-21: a message owns its
+// words now, so this is where bodies are authored. Nothing about the mechanism changed.
 //
 // The <textarea name="body"> stays the field the form actually posts, in both modes. Quill is a
 // second view onto it, never a replacement: switching to the HTML tab writes the editor's HTML into
@@ -44,9 +47,9 @@
     var textarea = document.getElementById(host.getAttribute("data-editor-for"));
     if (!textarea) return;
 
-    var wrapper = host.closest(".template-editor");
+    var wrapper = host.closest(".message-editor");
     // The placeholder chips sit in .roster-list, a sibling of the <form> — NOT inside
-    // .template-editor. Scoping the chip lookup to the wrapper found none and silently bound
+    // .message-editor. Scoping the chip lookup to the wrapper found none and silently bound
     // nothing, so clicking a chip did nothing at all. The per-template .session-panel is the
     // nearest element that contains both, which also keeps each card's chips bound to its own
     // editor when several templates are on the page.
@@ -99,9 +102,19 @@
     // Click a placeholder chip to insert it. Typing {{CandidateFirstName}} by hand is the single
     // easiest thing to get wrong, and a typo is only discoverable by reading Worker logs after a
     // real send — the renderer leaves an unknown placeholder as literal text and logs a warning.
-    card.querySelectorAll(".placeholder-chip").forEach(function (chip) {
+    //
+    // Two chip markups, because two screens grew them independently: .placeholder-chip[data-token]
+    // from the old template editor, and .token-chip[data-insert-token] from the message editor.
+    //
+    // ⚠️ app.js has its own handler for the second kind, for the compose screens that have no Quill.
+    // Both listeners fire on the same click, so each chip bound here is stamped data-token-handled
+    // and app.js bails on it — otherwise the tag is inserted twice, once into the hidden textarea
+    // and once into the editor. Checked at click time rather than bind time so it does not matter
+    // which script loaded first.
+    card.querySelectorAll(".placeholder-chip, .token-chip").forEach(function (chip) {
+      chip.setAttribute("data-token-handled", "true");
       chip.addEventListener("click", function () {
-        var token = chip.getAttribute("data-token");
+        var token = chip.getAttribute("data-token") || chip.getAttribute("data-insert-token");
         if (wrapper.classList.contains("show-html")) {
           var at = textarea.selectionStart != null ? textarea.selectionStart : textarea.value.length;
           textarea.value = textarea.value.slice(0, at) + token + textarea.value.slice(textarea.selectionEnd != null ? textarea.selectionEnd : at);

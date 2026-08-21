@@ -37,8 +37,8 @@ public class CandidateEmailModel(
     /// Which stored template the draft was taken from. Empty means a blank draft written from
     /// scratch — the case no template anticipated, which is half of why the picker exists.
     /// </summary>
-    [BindProperty(SupportsGet = true, Name = "template")]
-    public string SelectedTemplateKey { get; set; } = "";
+    [BindProperty(SupportsGet = true, Name = "message")]
+    public int SelectedMessageId { get; set; }
 
     [BindProperty]
     public string Subject { get; set; } = "";
@@ -59,14 +59,14 @@ public class CandidateEmailModel(
     /// <summary>Blank for most of a session's candidates most of the time — see <see cref="CallSignWarningCount"/>.</summary>
     public const string CallSignPlaceholder = "{{CallSign}}";
 
-    // Which templates can start one lives in ComposableEmailTemplates — the session's Email
+    // Which messages can start one lives in ComposableMessages — the session's Email
     // candidates menu offers the same list as shortcuts, and two copies would drift (#394 follow-up).
 
     /// <param name="LastSentDisplay">When this candidate last had the chosen template, or null. What makes a second pass over a session possible without sending twice.</param>
     /// <param name="CanReceive">From <see cref="CandidateCapabilities"/>, not computed here — that is the one home for "is this action applicable to this candidate" (#274).</param>
     public record Recipient(int Id, string Name, string? Email, string? CallSign, bool IsWithdrawn, string? LastSentDisplay, bool CanReceive);
 
-    public record TemplateChoice(string Key, string Label);
+    public record TemplateChoice(int Id, string Label);
 
     /// <summary>
     /// How many chosen-but-reachable candidates have no call sign yet, when the draft uses the token.
@@ -86,13 +86,17 @@ public class CandidateEmailModel(
 
         // Read at open time, never cached: an edit made in Admin → Email Templates is meant to take
         // effect on the next send, not the next deploy.
-        var template = string.IsNullOrEmpty(SelectedTemplateKey)
+        var source = SelectedMessageId == 0
             ? null
-            : await dbContext.EmailTemplates
-                .FirstOrDefaultAsync(t => t.TeamId == Session.TeamId && t.Key == SelectedTemplateKey, HttpContext.RequestAborted);
+            : await dbContext.MessageRules
+                .AsNoTracking()
+                .FirstOrDefaultAsync(r => r.TeamId == Session.TeamId && r.Id == SelectedMessageId
+                    && r.Trigger == MessageTrigger.ManualToCandidate, HttpContext.RequestAborted);
 
-        Subject = template?.Subject ?? "";
-        Body = template?.Body ?? "";
+        // Starting text, copied. Editing the draft never reaches back and changes the message
+        // somebody else starts from.
+        Subject = source?.Subject ?? "";
+        Body = source?.Body ?? "";
         return Page();
     }
 
@@ -104,7 +108,7 @@ public class CandidateEmailModel(
         if (SelectedCandidateIds.Length == 0)
         {
             TempData["ErrorMessage"] = "Choose at least one candidate to email.";
-            return RedirectToPage(new { id = Id, template = SelectedTemplateKey });
+            return RedirectToPage(new { id = Id, message = SelectedMessageId });
         }
 
         // Only ids this page offered. A posted id from another session must not become a recipient
@@ -117,7 +121,7 @@ public class CandidateEmailModel(
         }
 
         var user = await userManager.GetRequiredUserAsync(dbContext, User);
-        var label = Templates.FirstOrDefault(t => t.Key == SelectedTemplateKey)?.Label ?? CustomMessageLabel;
+        var label = Templates.FirstOrDefault(t => t.Id == SelectedMessageId)?.Label ?? CustomMessageLabel;
 
         var result = await notificationService.SendComposedAsync(
             Id, SelectedCandidateIds, Subject, Body, label, user.Id, HttpContext.RequestAborted);
@@ -125,7 +129,7 @@ public class CandidateEmailModel(
         if (result.Error is not null)
         {
             TempData["ErrorMessage"] = result.Error;
-            return RedirectToPage(new { id = Id, template = SelectedTemplateKey });
+            return RedirectToPage(new { id = Id, message = SelectedMessageId });
         }
 
         var message = $"Sent {result.Sent} email(s).";
@@ -163,8 +167,9 @@ public class CandidateEmailModel(
 
         Session = session;
 
-        Templates = [.. (await ComposableEmailTemplates.LoadAsync(dbContext, session.TeamId, HttpContext.RequestAborted))
-            .Select(c => new TemplateChoice(c.Key, c.Label))];
+        Templates = [.. (await ComposableMessages.LoadAsync(
+            dbContext, session.TeamId, MessageTrigger.ManualToCandidate, HttpContext.RequestAborted))
+            .Select(c => new TemplateChoice(c.Id, c.Label))];
 
         var candidates = await dbContext.Candidates
             .Where(c => c.SessionId == Id)
@@ -175,7 +180,7 @@ public class CandidateEmailModel(
         // sends count: "already had one" is a question about this message, not about email in general.
         // Read off Templates, not EmailTemplateLabels: a team-defined template's name lives on its own
         // row, and the registry fallback would answer with the generated key instead.
-        var label = Templates.FirstOrDefault(t => t.Key == SelectedTemplateKey)?.Label ?? CustomMessageLabel;
+        var label = Templates.FirstOrDefault(t => t.Id == SelectedMessageId)?.Label ?? CustomMessageLabel;
         var lastSent = await dbContext.CandidateEmailSends
             .Where(s => s.Candidate.SessionId == Id && s.TemplateLabel == label)
             .GroupBy(s => s.CandidateId)
