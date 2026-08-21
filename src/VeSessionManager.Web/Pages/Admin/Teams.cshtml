@@ -60,7 +60,7 @@
                    a labelled menu says what each one is.
 
                    Everything per-team lives here, so this row is the one stop for a team's
-                   configuration: credentials and settings, its people, its own email templates, and
+                   configuration: credentials and settings, its people, the messages it sends, and
                    the maintenance/refresh actions. Every one of those pages already takes a teamId,
                    so arriving from here skips the team picker you would otherwise have to re-answer
                    with the team already in front of you — no page changes were needed to add them,
@@ -84,6 +84,15 @@
                                 @(team.IsActive ? "Deactivate" : "Reactivate")
                             </button>
                         </form>
+                        @* Only for whoever may create a team — a TeamAdmin runs their team, they do
+                           not get to remove it. The handler checks the same thing; this only keeps
+                           the menu honest. *@
+                        @if (Model.CanCreateTeam)
+                        {
+                            <button type="button" class="item danger" data-open-modal="deleteTeam-@team.Id">
+                                Delete permanently
+                            </button>
+                        }
                     </div>
                 </td>
             </tr>
@@ -91,6 +100,48 @@
     </tbody>
 </table>
 </div>
+
+@if (Model.CanCreateTeam)
+{
+    @foreach (var team in Model.Teams)
+    {
+        @* Deliberately not a plain "are you sure": that question is answered reflexively, and the
+           mistake this action actually invites is pressing delete on the right-looking row of the
+           wrong team. Typing the name cannot be done by reflex, and it is checked on the server too
+           — a modal is not a permission. *@
+        <div class="modal-backdrop" id="deleteTeam-@team.Id">
+            <div class="modal">
+                <h3>Delete "@team.Name" permanently?</h3>
+                <p>
+                    This removes <strong>@team.SessionCount session(s)</strong> and
+                    <strong>@team.CandidateCount candidate(s)</strong>, along with every payment,
+                    message, VE membership, ARRL archive and piece of history belonging to this team.
+                    <strong>It cannot be undone.</strong>
+                </p>
+                <p class="session-sub">
+                    A VE who examines for another team keeps their record — they just lose this
+                    membership. Square keeps its own record of every payment and refund, and ARRL
+                    keeps whatever was filed with them; the copies on this server go.
+                </p>
+                <p class="session-sub">
+                    If you only want the app to stop working on this team, use
+                    <strong>Deactivate</strong> instead. That is reversible and keeps everything.
+                </p>
+                <form method="post" asp-page-handler="Delete" asp-antiforgery="true">
+                    <input type="hidden" name="teamId" value="@team.Id" />
+                    <div class="field">
+                        <label for="confirmName-@team.Id">Type <strong>@team.Name</strong> to confirm</label>
+                        <input id="confirmName-@team.Id" name="confirmName" autocomplete="off" required />
+                    </div>
+                    <div class="modal-actions">
+                        <button type="button" class="btn-secondary btn-sm" data-close-modal>Cancel</button>
+                        <button type="submit" class="btn-danger btn-sm">Delete this team</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    }
+}
 
 <div class="modal-backdrop" id="createTeamModal">
     <div class="modal">

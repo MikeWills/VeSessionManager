@@ -225,6 +225,7 @@ builder.Services.AddScoped<PasswordResetService>();
 // Phase 9c: Admin Config Screens — SystemAdmin/TeamAdmin config surface (Pages/Admin/).
 builder.Services.AddSingleton<AdminAccessScope>();
 builder.Services.AddScoped<TeamSettingsService>();
+builder.Services.AddScoped<TeamDeletionService>();
 builder.Services.AddScoped<VecManagementService>();
 builder.Services.AddScoped<FeeConfigurationService>();
 builder.Services.AddScoped<UserManagementService>();

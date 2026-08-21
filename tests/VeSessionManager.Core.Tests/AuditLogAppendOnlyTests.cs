@@ -77,10 +77,19 @@ public class AuditLogAppendOnlyTests
     /// <para>Moving or renaming either file fails the test too. That is deliberate: it forces whoever
     /// moves it to come here and re-affirm the exemption rather than carrying it along silently.</para>
     /// </summary>
+    /// <summary>
+    /// The only files allowed to remove an audit row, each because deleting the SUBJECT of the row
+    /// without the row leaves a record of something that cannot be looked up.
+    /// </summary>
     private static readonly string[] SanctionedDeleteFiles =
     [
         "RecordRetentionService.cs",
-        "UserManagementService.cs"
+        "UserManagementService.cs",
+
+        // Mike, 2026-08-21, on the hard team delete: "Log the team delete, but delete the audit
+        // logs." The deletion's own entry is written with TeamId null so this sweep cannot reach it
+        // — see TeamDeletionService.DeleteAsync, and the test that pins it.
+        "TeamDeletionService.cs"
     ];
 
     private static IEnumerable<string> SourceFiles() =>
