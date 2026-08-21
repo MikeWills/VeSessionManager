@@ -79,10 +79,14 @@ else if (Model.SendingRules.Count == 1)
                     <div class="field" style="max-width:220px; margin:0;">
                         <label for="scheduleDays">@rule.ParameterPrompt</label>
                         <input id="scheduleDays" name="parameterDays" type="number"
-                               min="@MessageDelay.Format(MessageDelay.Minimum)"
+                               min="0.5"
                                max="@MessageDelay.Format(MessageDelay.Maximum)"
-                               step="@MessageDelay.Format(MessageDelay.Step)"
+                               step="0.5"
                                value="@rule.ParameterDaysText" required />
+                        <select name="parameterUnit" class="filter-select">
+                            <option value="@((int)MessageDelayUnit.Days)">days</option>
+                            <option value="@((int)MessageDelayUnit.Hours)">hours</option>
+                        </select>
                     </div>
                 }
                 @if (rule.Channel == VeSessionManager.Core.Entities.MessageChannel.Email)

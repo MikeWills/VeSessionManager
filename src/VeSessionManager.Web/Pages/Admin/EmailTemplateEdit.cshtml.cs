@@ -100,7 +100,7 @@ public class EmailTemplateEditModel(
     /// posted rule must be one of the rules that actually sends <i>this</i> template. Without that
     /// second check a valid template id plus somebody else's rule id would edit their rule.</para>
     /// </summary>
-    public async Task<IActionResult> OnPostScheduleAsync(int ruleId, decimal? parameterDays, MessageRecipient recipient)
+    public async Task<IActionResult> OnPostScheduleAsync(int ruleId, decimal? parameterDays, MessageRecipient recipient, MessageDelayUnit parameterUnit = MessageDelayUnit.Days)
     {
         var loaded = await LoadAsync();
         if (loaded is not null) return loaded;
@@ -110,7 +110,7 @@ public class EmailTemplateEditModel(
             return NotFound();
         }
 
-        if (!MessageDelayField.TryToHours(parameterDays, out var parameterHours))
+        if (!MessageDelayField.TryToHours(parameterDays, parameterUnit, out var parameterHours))
         {
             TempData["ErrorMessage"] = MessageDelayField.RangeMessage;
             return RedirectToPage(new { id = Id });

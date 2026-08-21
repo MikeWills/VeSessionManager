@@ -40,6 +40,14 @@ public class MessageRuleEditModel(
     [BindProperty]
     public decimal? ParameterDays { get; set; }
 
+    /// <summary>
+    /// Days or hours. Hours exist for #116 — an hour before a session, which a day-denominated
+    /// field could not express without a 12-hour floor. Defaults to days, which is how a team
+    /// usually thinks about a reminder.
+    /// </summary>
+    [BindProperty]
+    public MessageDelayUnit ParameterUnit { get; set; } = MessageDelayUnit.Days;
+
     [BindProperty]
     public MessageRecipient Recipient { get; set; }
 
@@ -83,7 +91,11 @@ public class MessageRuleEditModel(
 
         Name = Rule.Name;
         TemplateKey = Rule.TemplateKey;
-        ParameterDays = MessageDelay.ToDays(Rule.ParameterHours);
+        // Reopened in the unit it was saved in, via ForDisplay — otherwise a rule set to 1 hour comes
+        // back as the nearest half-day and saving the form silently moves it (#116).
+        var display = MessageDelay.ForDisplay(Rule.ParameterHours);
+        ParameterDays = display?.Value;
+        ParameterUnit = display?.Unit ?? MessageDelayUnit.Days;
         Recipient = Rule.Recipient;
         Channel = Rule.Channel;
         DiscordChannelId = Rule.DiscordChannelId;
@@ -101,7 +113,7 @@ public class MessageRuleEditModel(
         var loaded = await LoadAsync();
         if (loaded is not null) return loaded;
 
-        if (!MessageDelayField.TryToHours(ParameterDays, out var parameterHours))
+        if (!MessageDelayField.TryToHours(ParameterDays, ParameterUnit, out var parameterHours))
         {
             TempData["ErrorMessage"] = MessageDelayField.RangeMessage;
             return RedirectToPage(new { id = Id });

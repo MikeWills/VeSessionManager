@@ -308,4 +308,114 @@ public class DiscordMessageRuleTests
 
         Assert.Null(dbContext.Candidates.Single().RegistrationConfirmationSentUtc);
     }
+
+    // ---- Per-session fan-out (docs/trigger-recipient-matrix.md) --------------------------------
+    // SingleDigest batches everything one scan returned across ALL of a team's sessions into one
+    // message. That is why #116 cannot say "x candidates registered to test at xx:xx" — there is no
+    // single session for the message to be about.
+
+    /// <summary>
+    /// The gap, stated as a test: two sessions, one scan, and a digest cannot tell them apart.
+    /// This is what PerSession fixes and why it had to exist before #116.
+    /// </summary>
+    [Fact]
+    public async Task ADigest_CannotTellTwoSessionsApart()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        await SeedTemplateAsync(dbContext, team, "Post", "{{Count}} registrations");
+        await SeedDiscordRuleAsync(dbContext, team, MessageFanOut.SingleDigest);
+        await SeedCandidatesAsync(dbContext, await SeedSessionAsync(dbContext, team), "Roana Glory");
+        await SeedCandidatesAsync(dbContext, await SeedSessionAsync(dbContext, team), "Sam Vale");
+
+        var discord = new MessageRuleTestHarness.FakeDiscordChannelClient();
+        await RunAsync(dbContext, team, discord);
+
+        var post = Assert.Single(discord.Posts);
+        Assert.Contains("2 registrations", post.Message);   // both sessions fused into one number
+    }
+
+    /// <summary>One post per session, which is the whole point.</summary>
+    [Fact]
+    public async Task PerSession_PostsOncePerSession()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        await SeedTemplateAsync(dbContext, team, "Post", "{{Count}} registered for {{SessionTitle}}");
+        await SeedDiscordRuleAsync(dbContext, team, MessageFanOut.PerSession);
+        await SeedCandidatesAsync(dbContext, await SeedSessionAsync(dbContext, team), "Roana Glory", "Sam Vale");
+        await SeedCandidatesAsync(dbContext, await SeedSessionAsync(dbContext, team), "Tam Okonkwo");
+
+        var discord = new MessageRuleTestHarness.FakeDiscordChannelClient();
+        await RunAsync(dbContext, team, discord);
+
+        Assert.Equal(2, discord.Posts.Count);
+        Assert.Contains(discord.Posts, p => p.Message.Contains("2 registered"));
+        Assert.Contains(discord.Posts, p => p.Message.Contains("1 registered"));
+    }
+
+    /// <summary>
+    /// Every subject is still marked, exactly as for a digest — one marker per post would leave the
+    /// rest looking unsent, and the next arrival would re-announce them.
+    /// </summary>
+    [Fact]
+    public async Task PerSession_StillMarksEverySubject()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        await SeedTemplateAsync(dbContext, team, "Post", "{{Count}}");
+        await SeedDiscordRuleAsync(dbContext, team, MessageFanOut.PerSession);
+        await SeedCandidatesAsync(dbContext, await SeedSessionAsync(dbContext, team), "Roana Glory", "Sam Vale");
+
+        var discord = new MessageRuleTestHarness.FakeDiscordChannelClient();
+        var result = await RunAsync(dbContext, team, discord);
+
+        Assert.Single(discord.Posts);
+        Assert.Equal(2, result.Sent);
+        Assert.Equal(2, dbContext.MessageRuleRuns.Count());
+    }
+
+    /// <summary>
+    /// The session tokens a digest cannot answer. #116 asks for "x candidates registered to test at
+    /// xx:xx eastern time" — every part of that sentence needs a single session to be about.
+    /// </summary>
+    [Fact]
+    public async Task PerSession_RendersTheSessionsOwnTokens()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        await SeedTemplateAsync(dbContext, team, "Post", "{{SessionTitle}} at {{SessionDate}} — {{Count}} of {{RegisteredCount}}");
+        await SeedDiscordRuleAsync(dbContext, team, MessageFanOut.PerSession);
+        await SeedCandidatesAsync(dbContext, await SeedSessionAsync(dbContext, team), "Roana Glory");
+
+        var discord = new MessageRuleTestHarness.FakeDiscordChannelClient();
+        await RunAsync(dbContext, team, discord);
+
+        var post = Assert.Single(discord.Posts);
+        Assert.Contains("August", post.Message);
+        Assert.Contains("ET", post.Message);          // Eastern, per SessionTimeFormatter
+        Assert.DoesNotContain("{{", post.Message);    // nothing left unrendered
+    }
+
+    /// <summary>
+    /// <c>{{Subjects}}</c> lists only that session's people. A post naming somebody who is not on the
+    /// session it is about would be worse than the fused digest it replaces.
+    /// </summary>
+    [Fact]
+    public async Task PerSession_ListsOnlyThatSessionsSubjects()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        await SeedTemplateAsync(dbContext, team, "Post", "{{Subjects}}");
+        await SeedDiscordRuleAsync(dbContext, team, MessageFanOut.PerSession);
+        await SeedCandidatesAsync(dbContext, await SeedSessionAsync(dbContext, team), "Roana Glory");
+        await SeedCandidatesAsync(dbContext, await SeedSessionAsync(dbContext, team), "Sam Vale");
+
+        var discord = new MessageRuleTestHarness.FakeDiscordChannelClient();
+        await RunAsync(dbContext, team, discord);
+
+        var roana = Assert.Single(discord.Posts, p => p.Message.Contains("Roana Glory"));
+        Assert.DoesNotContain("Sam Vale", roana.Message);
+    }
+
 }

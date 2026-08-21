@@ -303,8 +303,31 @@ public enum MessageRecipient
 {
     Candidate = 0,
     TeamAdminAddress = 1,
+
+    /// <summary>
+    /// The VE running the session, from ExamTools' Team Lead field via <c>Session.TeamLeadCallSign</c>.
+    /// Dispatchable since the trigger × recipient work — see <c>MessageRecipientResolver</c>.
+    ///
+    /// <para>⚠️ Not the same population as <see cref="SessionManagers"/>, despite "Team Lead = SM":
+    /// this resolves through a <b>VE record</b> and the person may have no app account at all. That
+    /// equivalence is true of the people and false of the plumbing.</para>
+    /// </summary>
     SessionLead = 2,
-    DiscordChannel = 3
+
+    DiscordChannel = 3,
+
+    /// <summary>Every app user with <c>TeamAdmin</c> on the rule's team.</summary>
+    TeamAdmins = 4,
+
+    /// <summary>
+    /// Every app user with <c>SystemAdmin</c>. <b>Not team-scoped</b> — a SystemAdmin spans every team
+    /// by definition, and requiring a <c>UserTeam</c> row would resolve to nobody for the one role
+    /// always entitled to know.
+    /// </summary>
+    SystemAdmins = 5,
+
+    /// <summary>Every app user with <c>SessionManager</c> on the rule's team. Mike, 2026-08-20: "All SMs is a third role option."</summary>
+    SessionManagers = 6
 }
 
 /// <summary>
@@ -327,7 +350,20 @@ public enum MessageFanOut
     /// "one per candidate", which is the opposite of what it selects and is exactly the forty-posts
     /// mistake the <see cref="MessageFanOut"/> field exists to prevent.</para>
     /// </summary>
-    SingleDigest = 1
+    SingleDigest = 1,
+
+    /// <summary>
+    /// One message per <b>session</b>, covering that session's subjects.
+    ///
+    /// <para>The middle ground <see cref="SingleDigest"/> could not express. A digest batches
+    /// everything one scan returned across <i>all</i> of a team's sessions, which is why a post could
+    /// never say "x candidates registered to test at xx:xx" — there was no single session for the
+    /// sentence to be about. Grouping restores that, and with it the session's own tokens.</para>
+    ///
+    /// <para>Subjects with no session are grouped together and rendered without the session tokens,
+    /// rather than dropped: a payment-subject rule set to PerSession should still send something.</para>
+    /// </summary>
+    PerSession = 2
 }
 
 /// <summary>

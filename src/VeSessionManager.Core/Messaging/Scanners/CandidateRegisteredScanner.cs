@@ -63,6 +63,17 @@ public class CandidateRegisteredScanner(
                 Trigger, skippedPastSessionCount, team.Id);
         }
 
+        // Registered candidates per session, counted once for the whole scan. This is NOT the
+        // number of subjects — subjects are filtered by having an email, not being purged, and not
+        // already having a terminal run — and "x candidates registered to test" means this number.
+        // Only PerSession renders it, but the scanner is the thing holding the sessions.
+        var sessionIds = candidates.Select(c => c.SessionId).Distinct().ToList();
+        var registeredCounts = await dbContext.Candidates
+            .Where(c => sessionIds.Contains(c.SessionId))
+            .GroupBy(c => c.SessionId)
+            .Select(g => new { SessionId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.SessionId, x => x.Count, cancellationToken);
+
         return [.. candidates.Select(candidate => new MessageSubject(
             candidate.Id,
             MessageSubjectType.Candidate,
@@ -80,8 +91,21 @@ public class CandidateRegisteredScanner(
                 ["PrivacyPolicyUrl"] = emailSettings.PrivacyPolicyUrl
             },
             sentUtc => candidate.RegistrationConfirmationSentUtc = sentUtc)
-            { SessionLeadCallSign = candidate.Session.TeamLeadCallSign })];
+            {
+                SessionLeadCallSign = candidate.Session.TeamLeadCallSign,
+                Session = SessionContext(candidate.Session, registeredCounts)
+            })];
     }
+
+    /// <summary>
+    /// The session a <see cref="MessageFanOut.PerSession"/> message would be about. Built here rather
+    /// than in the dispatcher because the scanner is the thing that already loaded the session.
+    /// </summary>
+    private static MessageSessionContext SessionContext(Session session, IReadOnlyDictionary<int, int> registeredCounts) =>
+        new(session.Id,
+            session.Title,
+            session.ScheduledStartUtc,
+            registeredCounts.TryGetValue(session.Id, out var count) ? count : 0);
 
     /// <summary>Blank when the session's Vec doesn't support the youth program, or the InitialExam
     /// Payment has no token (fee collection disabled) — a Team's template copy for a
