@@ -43,8 +43,18 @@ public class MessageRuleNewModel(
     [BindProperty]
     public string Name { get; set; } = "";
 
+    /// <summary>The subject line. The message owns its own words now — see <see cref="Body"/>.</summary>
     [BindProperty]
-    public string TemplateKey { get; set; } = "";
+    public string Subject { get; set; } = "";
+
+    /// <summary>
+    /// The message itself, authored here rather than in a separate template.
+    ///
+    /// <para>That split was what made the available tags unanswerable: they depend on the trigger,
+    /// and a template had none. Authoring against the trigger is what lets this page list them.</para>
+    /// </summary>
+    [BindProperty]
+    public string Body { get; set; } = "";
 
     /// <summary>
     /// A template to arrive already pointing at (#409), so a link from a template does not land you in
@@ -108,19 +118,22 @@ public class MessageRuleNewModel(
             return Forbid();
         }
 
-        await LoadTemplatesAsync();
-
-        // Resolved against the templates this page is already offering, so a stale link, another
-        // team's id, or a VE template all select nothing rather than being honoured. Not the security
-        // control — CreateAsync re-checks and is team-scoped — but silently pre-selecting nothing
-        // reads as a broken field, and pre-selecting something illegal reads as an offer.
+        // Starting text, when somebody arrived from a template. Team-scoped and candidate-audience
+        // only, so a stale link or another team's id starts blank rather than being honoured — the
+        // same rule the old pre-selection followed, now copying words instead of choosing a key.
+        //
+        // ⚠️ A copy, deliberately. The message owns its words from here on, so editing it never
+        // reaches back and changes the template somebody else started from.
         if (TemplateId is { } templateId)
         {
-            TemplateKey = await dbContext.EmailTemplates
+            var source = await dbContext.EmailTemplates
                 .AsNoTracking()
                 .Where(t => t.Id == templateId && t.TeamId == TeamId && t.Audience == EmailTemplateAudience.Candidates)
-                .Select(t => t.Key)
-                .FirstOrDefaultAsync(HttpContext.RequestAborted) ?? "";
+                .Select(t => new { t.Subject, t.Body })
+                .FirstOrDefaultAsync(HttpContext.RequestAborted);
+
+            Subject = source?.Subject ?? "";
+            Body = source?.Body ?? "";
         }
 
         // Whatever the chosen trigger's default is, so the delay box is never blank on arrival.
@@ -143,7 +156,7 @@ public class MessageRuleNewModel(
         }
 
         var result = await messageRuleAdminService.CreateAsync(
-            TeamId, Trigger, Name, TemplateKey, parameterHours, Recipient, user.Id, HttpContext.RequestAborted,
+            TeamId, Trigger, Name, Subject, Body, parameterHours, Recipient, user.Id, HttpContext.RequestAborted,
             Channel, DiscordChannelId, FanOut);
 
         if (result == MessageRuleActionResult.Success)
@@ -158,9 +171,7 @@ public class MessageRuleNewModel(
             MessageRuleActionResult.ParameterRequired => MessageDelayField.RequiredMessage,
             MessageRuleActionResult.ParameterOutOfRange => MessageDelayField.RangeMessage,
             MessageRuleActionResult.RecipientNotLegal => "That trigger cannot send to that recipient.",
-            MessageRuleActionResult.TemplateNotFound => "Pick a template that exists on this team.",
-            MessageRuleActionResult.TemplateAudienceMismatch =>
-                "That template is written for VEs. A rule can only send one written for candidates — its VE placeholders would all come out blank.",
+            MessageRuleActionResult.MessageRequired => "Give the message a subject and something to say.",
             MessageRuleActionResult.DiscordChannelRequired => "A Discord rule needs a channel id — without one it would post nowhere.",
             MessageRuleActionResult.DigestNeedsAChannel =>
                 "A single digest only makes sense on a channel. On email it would mean one message to one address listing everybody else.",

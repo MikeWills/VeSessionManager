@@ -49,7 +49,24 @@ public class MessageRule
     /// take history with it, and a team writes its own templates (#144), so the set is not fixed by
     /// what the code looks up.</para>
     /// </summary>
-    public required string TemplateKey { get; set; }
+    /// <summary>
+    /// The subject line, and <see cref="Body"/> the words. <b>The message owns them</b> (2026-08-21).
+    ///
+    /// <para>These used to live on an <c>EmailTemplate</c> the rule pointed at by key. That split is
+    /// what made the tag list unanswerable: available placeholders depend on the trigger, the body was
+    /// authored somewhere that had no trigger, so the editor could show nothing. Mike: <i>"there's no
+    /// way currently that you can link up a template to the correct rule so that a person can have the
+    /// right tags available to them."</i></para>
+    ///
+    /// <para>The reuse that split bought — one body, several schedules — is better served by copying
+    /// a message and changing the timing, which is what somebody wanting a second pre-session note
+    /// actually does. Reuse across <i>triggers</i> was the part that could not work, because the tags
+    /// differ.</para>
+    /// </summary>
+    public required string Subject { get; set; }
+
+    /// <inheritdoc cref="Subject"/>
+    public required string Body { get; set; }
 
     public MessageChannel Channel { get; set; } = MessageChannel.Email;
 

@@ -76,7 +76,11 @@ public class DiscordMessageRuleTests
     private static async Task<MessageRule> SeedDiscordRuleAsync(
         AppDbContext dbContext, Team team, MessageFanOut fanOut, string templateKey = "Post", ulong? channelId = ChannelId)
     {
-        var rule = MessageRuleTestHarness.NewRule(team, MessageTrigger.CandidateRegistered, templateKey, null, Now.AddYears(-1));
+        // The message owns its words now, so the rule takes the body the test seeded as a template
+        // rather than a key pointing at it. Read back from the context so each test still writes the
+        // content it asserts on, in one place.
+        var body = (await dbContext.EmailTemplates.FirstAsync(t => t.TeamId == team.Id && t.Key == templateKey)).Body;
+        var rule = MessageRuleTestHarness.NewRule(team, MessageTrigger.CandidateRegistered, body, null, Now.AddYears(-1));
         rule.Channel = MessageChannel.Discord;
         rule.DiscordChannelId = channelId;
         rule.FanOut = fanOut;

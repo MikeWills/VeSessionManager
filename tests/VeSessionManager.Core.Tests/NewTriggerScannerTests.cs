@@ -81,7 +81,7 @@ public class NewTriggerScannerTests
     private static async Task<MessageRule> SeedRuleAsync(
         AppDbContext dbContext, Team team, MessageTrigger trigger, DateTime? createdUtc = null)
     {
-        var rule = MessageRuleTestHarness.NewRule(team, trigger, "Anything", null, createdUtc ?? Now.AddYears(-1));
+        var rule = MessageRuleTestHarness.NewRule(team, trigger, "Congratulations on call sign {{CallSign}}", null, createdUtc ?? Now.AddYears(-1));
         dbContext.MessageRules.Add(rule);
         await dbContext.SaveChangesAsync();
         return rule;

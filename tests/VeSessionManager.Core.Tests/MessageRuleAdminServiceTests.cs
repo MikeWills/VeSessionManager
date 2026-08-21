@@ -47,9 +47,10 @@ public class MessageRuleAdminServiceTests
 
     private static Task<MessageRuleActionResult> CreateReminderAsync(
         AppDbContext dbContext, Team team, int userId, int? hours = 24,
-        MessageRecipient recipient = MessageRecipient.Candidate, string name = "Day before", string templateKey = "DayBeforeReminder") =>
+        MessageRecipient recipient = MessageRecipient.Candidate, string name = "Day before",
+        string subject = "Your session is tomorrow", string body = "<p>See you then.</p>") =>
         CreateService(dbContext).CreateAsync(
-            team.Id, MessageTrigger.BeforeSessionStart, name, templateKey, hours, recipient, userId, CancellationToken.None);
+            team.Id, MessageTrigger.BeforeSessionStart, name, subject, body, hours, recipient, userId, CancellationToken.None);
 
     [Fact]
     public async Task Create_StoresTheRule_AndAuditsIt()
@@ -131,7 +132,7 @@ public class MessageRuleAdminServiceTests
         var (team, userId) = await SeedAsync(dbContext);
 
         var result = await CreateService(dbContext).CreateAsync(
-            team.Id, MessageTrigger.CandidateRegistered, "Confirmation", "DayBeforeReminder", null,
+            team.Id, MessageTrigger.CandidateRegistered, "Confirmation", "Subject", "DayBeforeReminder", null,
             MessageRecipient.Candidate, userId, CancellationToken.None);
 
         Assert.Equal(MessageRuleActionResult.Success, result);
@@ -155,87 +156,17 @@ public class MessageRuleAdminServiceTests
         var (team, userId) = await SeedAsync(dbContext);
 
         var result = await CreateService(dbContext).CreateAsync(
-            team.Id, MessageTrigger.CandidateRegistered, "Confirmation", "DayBeforeReminder", null,
+            team.Id, MessageTrigger.CandidateRegistered, "Confirmation", "Subject", "DayBeforeReminder", null,
             MessageRecipient.DiscordChannel, userId, CancellationToken.None);
 
         Assert.Equal(MessageRuleActionResult.RecipientNotLegal, result);
     }
 
-    /// <summary>A rule pointing at a template that does not exist records Failed on every tick, forever, with only a log line to show for it.</summary>
-    [Fact]
-    public async Task Create_PointingAtATemplateThatDoesNotExist_IsRefused()
-    {
-        await using var dbContext = CreateContext();
-        var (team, userId) = await SeedAsync(dbContext);
-
-        Assert.Equal(MessageRuleActionResult.TemplateNotFound,
-            await CreateReminderAsync(dbContext, team, userId, templateKey: "NoSuchTemplate"));
-    }
-
-    /// <summary>
-    /// <b>A rule cannot send a template written for VEs (#409).</b> Every scanner's subject is a
-    /// candidate or a payment, so <c>MessageSubject.Placeholders</c> only ever carries candidate
-    /// tokens — attach a VE template to a rule and the dispatcher renders a message written entirely
-    /// around <c>{{VeName}}</c>-shaped tokens with every one of them blank.
-    ///
-    /// <para>Refused rather than supported. A rule addressing the session lead with VE wording is a
-    /// coherent thing to want, but nothing renders those placeholders yet, and the failure mode
-    /// meanwhile is mail that sends successfully and says nothing.</para>
-    /// </summary>
-    [Fact]
-    public async Task Create_PointingAtAVeTemplate_IsRefused()
-    {
-        await using var dbContext = CreateContext();
-        var (team, userId) = await SeedAsync(dbContext);
-        dbContext.EmailTemplates.Add(new EmailTemplate
-        {
-            TeamId = team.Id, Key = "Custom.ve-callout", Subject = "Can you cover", Body = "Hi {{VeName}}",
-            Audience = EmailTemplateAudience.VolunteerExaminers, IsUserDefined = true
-        });
-        await dbContext.SaveChangesAsync();
-
-        Assert.Equal(MessageRuleActionResult.TemplateAudienceMismatch,
-            await CreateReminderAsync(dbContext, team, userId, templateKey: "Custom.ve-callout"));
-        Assert.Empty(dbContext.MessageRules);
-    }
-
-    /// <summary>Editing an existing rule onto a VE template is the same mistake arriving later.</summary>
-    [Fact]
-    public async Task Update_MovingARuleOntoAVeTemplate_IsRefused()
-    {
-        await using var dbContext = CreateContext();
-        var (team, userId) = await SeedAsync(dbContext);
-        dbContext.EmailTemplates.Add(new EmailTemplate
-        {
-            TeamId = team.Id, Key = "Custom.ve-callout", Subject = "Can you cover", Body = "Hi {{VeName}}",
-            Audience = EmailTemplateAudience.VolunteerExaminers, IsUserDefined = true
-        });
-        await dbContext.SaveChangesAsync();
-        await CreateReminderAsync(dbContext, team, userId);
-        var rule = await dbContext.MessageRules.SingleAsync();
-
-        var result = await CreateService(dbContext).UpdateAsync(
-            rule.Id, rule.Name, "Custom.ve-callout", 24, MessageRecipient.Candidate, userId, CancellationToken.None);
-
-        Assert.Equal(MessageRuleActionResult.TemplateAudienceMismatch, result);
-        Assert.Equal("DayBeforeReminder", (await dbContext.MessageRules.SingleAsync()).TemplateKey);
-    }
-
-    /// <summary>And a template belonging to a <b>different</b> team is no more usable than one that does not exist.</summary>
-    [Fact]
-    public async Task Create_PointingAtAnotherTeamsTemplate_IsRefused()
-    {
-        await using var dbContext = CreateContext();
-        var (team, userId) = await SeedAsync(dbContext);
-        var otherTeam = new Team { Name = "OTHER", CreatedUtc = Now };
-        dbContext.Teams.Add(otherTeam);
-        await dbContext.SaveChangesAsync();
-        dbContext.EmailTemplates.Add(new EmailTemplate { TeamId = otherTeam.Id, Key = "TheirOwn", Subject = "s", Body = "b" });
-        await dbContext.SaveChangesAsync();
-
-        Assert.Equal(MessageRuleActionResult.TemplateNotFound,
-            await CreateReminderAsync(dbContext, team, userId, templateKey: "TheirOwn"));
-    }
+    // ⚠️ Two more template-era refusals were deleted here on 2026-08-21, for the same reason as the
+    // one above: an edit could not swap in a VE-audience template, and neither create nor edit could
+    // point at another team's template. Both described ways of pointing at the wrong stored template.
+    // A message carries its own words now, so there is nothing to point at and nothing to get wrong —
+    // the failures are unreachable rather than caught, which is why no replacement test stands here.
 
     /// <summary>
     /// An edit leaves <c>CreatedUtc</c> alone. Refreshing it would mean a typo corrected an hour later
@@ -252,7 +183,7 @@ public class MessageRuleAdminServiceTests
         var createdUtc = rule.CreatedUtc;
 
         var result = await CreateService(dbContext).UpdateAsync(
-            rule.Id, "Two days before", "DayBeforeReminder", 48, MessageRecipient.Candidate, userId, CancellationToken.None);
+            rule.Id, "Two days before", "Subject", "DayBeforeReminder", 48, MessageRecipient.Candidate, userId, CancellationToken.None);
 
         Assert.Equal(MessageRuleActionResult.Success, result);
         var updated = await dbContext.MessageRules.SingleAsync();
@@ -271,7 +202,7 @@ public class MessageRuleAdminServiceTests
         var rule = await dbContext.MessageRules.SingleAsync();
 
         var result = await CreateService(dbContext).UpdateAsync(
-            rule.Id, "Silly", "DayBeforeReminder", 0, MessageRecipient.Candidate, userId, CancellationToken.None);
+            rule.Id, "Silly", "Subject", "DayBeforeReminder", 0, MessageRecipient.Candidate, userId, CancellationToken.None);
 
         Assert.Equal(MessageRuleActionResult.ParameterOutOfRange, result);
         Assert.Equal(24, (await dbContext.MessageRules.SingleAsync()).ParameterHours);
@@ -384,7 +315,7 @@ public class MessageRuleAdminServiceTests
         var (_, userId) = await SeedAsync(dbContext);
 
         Assert.Equal(MessageRuleActionResult.NotFound, await CreateService(dbContext)
-            .UpdateAsync(999, "x", "DayBeforeReminder", 24, MessageRecipient.Candidate, userId, CancellationToken.None));
+            .UpdateAsync(999, "x", "Subject", "DayBeforeReminder", 24, MessageRecipient.Candidate, userId, CancellationToken.None));
         Assert.Equal(MessageRuleActionResult.NotFound, await CreateService(dbContext)
             .SetEnabledAsync(999, false, userId, CancellationToken.None));
         Assert.Equal(MessageRuleActionResult.NotFound, await CreateService(dbContext)

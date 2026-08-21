@@ -33,8 +33,18 @@ public class MessageRuleEditModel(
     [BindProperty]
     public string Name { get; set; } = "";
 
+    /// <summary>The subject line. The message owns its own words now — see <see cref="Body"/>.</summary>
     [BindProperty]
-    public string TemplateKey { get; set; } = "";
+    public string Subject { get; set; } = "";
+
+    /// <summary>
+    /// The message itself, authored here rather than in a separate template.
+    ///
+    /// <para>That split was what made the available tags unanswerable: they depend on the trigger,
+    /// and a template had none. Authoring against the trigger is what lets this page list them.</para>
+    /// </summary>
+    [BindProperty]
+    public string Body { get; set; } = "";
 
     /// <summary>Days on the form, hours in the column — see <see cref="MessageDelay"/>. Halves are legal, so not an <c>int</c>.</summary>
     [BindProperty]
@@ -90,7 +100,8 @@ public class MessageRuleEditModel(
         if (loaded is not null) return loaded;
 
         Name = Rule.Name;
-        TemplateKey = Rule.TemplateKey;
+        Subject = Rule.Subject;
+        Body = Rule.Body;
         // Reopened in the unit it was saved in, via ForDisplay — otherwise a rule set to 1 hour comes
         // back as the nearest half-day and saving the form silently moves it (#116).
         var display = MessageDelay.ForDisplay(Rule.ParameterHours);
@@ -121,7 +132,7 @@ public class MessageRuleEditModel(
 
         var user = await userManager.GetRequiredUserAsync(dbContext, User);
         var result = await messageRuleAdminService.UpdateAsync(
-            Id, Name, TemplateKey, parameterHours, Recipient, user.Id, HttpContext.RequestAborted,
+            Id, Name, Subject, Body, parameterHours, Recipient, user.Id, HttpContext.RequestAborted,
             Channel, DiscordChannelId, FanOut,
             new MessageEnvelope(ReplyToSource, ReplyToOverride, CcAddress, BccAddress, MonitoringCopyOncePerRun));
 
@@ -137,9 +148,7 @@ public class MessageRuleEditModel(
             MessageRuleActionResult.ParameterRequired => MessageDelayField.RequiredMessage,
             MessageRuleActionResult.ParameterOutOfRange => MessageDelayField.RangeMessage,
             MessageRuleActionResult.RecipientNotLegal => "That trigger cannot send to that recipient.",
-            MessageRuleActionResult.TemplateNotFound => "Pick a template that exists on this team.",
-            MessageRuleActionResult.TemplateAudienceMismatch =>
-                "That template is written for VEs. A rule can only send one written for candidates — its VE placeholders would all come out blank.",
+            MessageRuleActionResult.MessageRequired => "Give the message a subject and something to say.",
             MessageRuleActionResult.DiscordChannelRequired => "A Discord rule needs a channel id — without one it would post nowhere.",
             MessageRuleActionResult.DigestNeedsAChannel =>
                 "A single digest only makes sense on a channel. On email it would mean one message to one address listing everybody else.",

@@ -1,10 +1,11 @@
+using VeSessionManager.Core.Email;
 using VeSessionManager.Core.Entities;
 
 namespace VeSessionManager.Core.Messaging;
 
 /// <summary>
-/// The two shapes a trigger can have, and the reason this is a named property rather than something
-/// each scanner just happens to do.
+/// The shapes a trigger can have, and the reason this is a named property rather than something each
+/// scanner just happens to do.
 /// </summary>
 public enum MessageTriggerMechanism
 {
@@ -12,7 +13,21 @@ public enum MessageTriggerMechanism
     State,
 
     /// <summary>Fires a configurable number of hours from an anchor instant. <c>MessageRule.ParameterHours</c> is that number.</summary>
-    TimeRelative
+    TimeRelative,
+
+    /// <summary>
+    /// Not fired at all — offered to a person on a compose screen, who chooses the moment and the
+    /// recipients (Mike, 2026-08-21).
+    ///
+    /// <para>No scanner, no delay, no recipient on the rule. It is a trigger point because that is
+    /// what makes its <b>tag list answerable</b>: a message authored without one cannot say which
+    /// placeholders apply, since that depends entirely on what sends it.</para>
+    ///
+    /// <para>⚠️ <c>MessageRuleService</c> must never scan these. A manual trigger with a scanner would
+    /// be a mail path nobody asked for — the VE-facing one especially, since every automated path in
+    /// this app is candidate- or payment-subject.</para>
+    /// </summary>
+    Manual
 }
 
 /// <summary>
@@ -117,7 +132,55 @@ public static class MessageTriggerDefinitions
             // Candidate only. This one says "the FCC requires extra steps of you", which is not news
             // to send anywhere but the person it is about.
             LegalRecipients: [MessageRecipient.Candidate, MessageRecipient.TeamAdminAddress, MessageRecipient.SessionLead, MessageRecipient.TeamAdmins, MessageRecipient.SystemAdmins, MessageRecipient.SessionManagers],
-            Placeholders: ["CandidateName", "CandidateFirstName", "SessionDate"])
+            Placeholders: ["CandidateName", "CandidateFirstName", "SessionDate"]),
+
+        // ---- Manual: offered on a compose screen, never scanned ---------------------------------
+        //
+        // Mike, 2026-08-21: a hand-composed email is a message whose trigger is "somebody pressed a
+        // button". Making that a trigger point is what makes the tag list answerable — a message
+        // authored without one cannot say which placeholders apply, because that depends on what
+        // sends it, and nothing knew yet. That was the whole defect.
+        //
+        // Placeholders come from the same Names lists the send paths already use, rather than a
+        // second copy written out here. Two lists of the same thing is how a tag comes to be offered
+        // that renders blank.
+        //
+        // LegalRecipients is empty and that is not "nobody may receive this" — a manual message is
+        // addressed at send time by picking people on the screen, so there is no recipient to choose
+        // on the rule.
+
+        new(MessageTrigger.ManualToCandidate,
+            MessageTriggerMechanism.Manual,
+            MessageSubjectType.Candidate,
+            DefaultParameterHours: null,
+            LegalRecipients: [],
+            Placeholders: CandidatePlaceholderValues.Names),
+
+        new(MessageTrigger.ManualToVe,
+            MessageTriggerMechanism.Manual,
+            MessageSubjectType.Candidate,
+            DefaultParameterHours: null,
+            LegalRecipients: [],
+            Placeholders: VolunteerExaminerPlaceholderValues.Names),
+
+        // The two per-candidate buttons. Each is its own trigger point rather than sharing one,
+        // because a button that sends one particular message is a moment — and its own trigger is
+        // what lets the editor show the tags that apply to it, which is the whole reason any of this
+        // moved.
+
+        new(MessageTrigger.ManualFelonyDisclosureInstructions,
+            MessageTriggerMechanism.Manual,
+            MessageSubjectType.Candidate,
+            DefaultParameterHours: null,
+            LegalRecipients: [],
+            Placeholders: CandidatePlaceholderValues.Names),
+
+        new(MessageTrigger.ManualYouthProgramInstructions,
+            MessageTriggerMechanism.Manual,
+            MessageSubjectType.Candidate,
+            DefaultParameterHours: null,
+            LegalRecipients: [],
+            Placeholders: CandidatePlaceholderValues.Names)
     ];
 
     public static MessageTriggerDefinition For(MessageTrigger trigger) =>

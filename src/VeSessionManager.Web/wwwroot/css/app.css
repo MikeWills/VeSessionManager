@@ -830,3 +830,13 @@ footer.roster { margin-top: 28px; background: var(--surface); border: 1px solid 
    (0,1,1), and that specificity trap has already cost this file two live bugs. */
 .vesm .uls-timeline { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 .vesm .uls-timeline li { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+
+/* Click-to-insert tags on the message editor. Scoped as `.vesm .token-chip`, not `.token-chip` —
+   a single-class selector loses to `.vesm button`, which is (0,1,1), and that trap has cost this
+   file two live bugs already. */
+.vesm .token-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; }
+.vesm .token-chip {
+  font-family: inherit; font-size: 0.85em; padding: 2px 8px; border-radius: 999px;
+  border: 1px solid var(--rule); background: var(--surface); color: var(--ink-soft); cursor: pointer;
+}
+.vesm .token-chip:hover { color: var(--ink); border-color: var(--ink-soft); }

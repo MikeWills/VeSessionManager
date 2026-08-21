@@ -235,24 +235,44 @@ public static class EmailDefaultsSeeder
         team.MessageRulesSeededUtc = createdUtc;
     }
 
+    /// <summary>
+    /// Seeds one example message, <b>switched off</b>.
+    ///
+    /// <para>Off is deliberate (Mike, 2026-08-21): these are examples of what a team can set up, not
+    /// a set of emails a new team starts sending to real people without having read them. A team
+    /// turns on the ones it wants.</para>
+    ///
+    /// <para>The words are copied from the template of the same name seeded moments earlier, so there
+    /// is one source of the text while both models exist. That lookup goes away with the template
+    /// table itself.</para>
+    /// </summary>
     private static void SeedRule(
         AppDbContext dbContext, ILogger logger, Team team, MessageTrigger trigger, string name, string templateKey,
         int? parameterHours, MessageRecipient recipient, DateTime createdUtc)
     {
+        var source = dbContext.EmailTemplates.Local.FirstOrDefault(t => t.TeamId == team.Id && t.Key == templateKey)
+            ?? dbContext.EmailTemplates.FirstOrDefault(t => t.TeamId == team.Id && t.Key == templateKey);
+        if (source is null)
+        {
+            logger.LogWarning("No seeded text for {TemplateKey}; skipping the example message for team {TeamId}", templateKey, team.Id);
+            return;
+        }
+
         dbContext.MessageRules.Add(new MessageRule
         {
             TeamId = team.Id,
             Name = name,
             Trigger = trigger,
             ParameterHours = parameterHours,
-            TemplateKey = templateKey,
+            Subject = source.Subject,
+            Body = source.Body,
             Channel = MessageChannel.Email,
             Recipient = recipient,
             FanOut = MessageFanOut.PerRecipient,
-            IsEnabled = true,
+            IsEnabled = false,
             CreatedUtc = createdUtc
         });
-        logger.LogInformation("Seeded default MessageRule {Trigger} (\"{Name}\") for team {TeamId}", trigger, name, team.Id);
+        logger.LogInformation("Seeded example message {Trigger} (\"{Name}\") for team {TeamId}, switched off", trigger, name, team.Id);
     }
 
     private static async Task SeedTemplateIfMissingAsync(AppDbContext dbContext, ILogger logger, Team team, string key, string subject, string body)

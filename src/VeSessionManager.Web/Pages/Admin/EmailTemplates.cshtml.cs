@@ -60,25 +60,11 @@ public class EmailTemplatesModel(AppDbContext dbContext, UserManager<User> userM
         // (#401 PR2). The old grouping was by a hardcoded "phase" per Key, which said "Pre-session"
         // over a template only a button sends and stated conditions — 24 hours, 5 days — that are now
         // a team's own to set.
-        SendingRules = (await dbContext.MessageRules
-            .AsNoTracking()
-            .Where(r => r.TeamId == effectiveTeamId.Value)
-            .OrderBy(r => r.Id)
-            .Select(r => new { r.Id, r.TemplateKey, r.Name, r.Trigger, r.ParameterHours, r.IsEnabled, r.Recipient, r.Channel })
-            .ToListAsync(HttpContext.RequestAborted))
-            .GroupBy(r => r.TemplateKey)
-            .ToDictionary(
-                g => g.Key,
-                IReadOnlyList<SendingRule> (g) => [.. g.Select(r => new SendingRule(
-                    r.Id,
-                    r.Name,
-                    MessageTriggerLabels.Label(r.Trigger),
-                    MessageTriggerLabels.DescribeHours(r.ParameterHours),
-                    r.IsEnabled,
-                    r.Trigger,
-                    r.ParameterHours,
-                    r.Recipient,
-                    r.Channel))]);
+        // Empty since 2026-08-21: a message owns its own words, so nothing points at a template any
+        // more and there is no "which rules send this" to answer. Left as an empty set rather than
+        // ripped out here because these template pages are being retired in a following change —
+        // this one is the model, not the page rebuild.
+        SendingRules = new Dictionary<string, IReadOnlyList<SendingRule>>();
 
         return Page();
     }

@@ -74,7 +74,14 @@ public class MessageRuleEngineTests
         AppDbContext dbContext, Team team, MessageTrigger trigger, string templateKey, int? parameterHours,
         MessageRecipient recipient = MessageRecipient.Candidate, DateTime? createdUtc = null)
     {
-        var rule = MessageRuleTestHarness.NewRule(team, trigger, templateKey, parameterHours, createdUtc ?? Now.AddYears(-1), recipient);
+        // A message owns its words now, so the rule takes the body the test seeded as a template
+        // rather than a key pointing at it — each test still writes the content it asserts on.
+        var source = await dbContext.EmailTemplates.FirstOrDefaultAsync(t => t.TeamId == team.Id && t.Key == templateKey);
+        var rule = MessageRuleTestHarness.NewRule(team, trigger, source?.Body ?? templateKey, parameterHours, createdUtc ?? Now.AddYears(-1), recipient);
+
+        // Subject too — several tests assert on what the subject rendered to, which used to come from
+        // the template the rule pointed at.
+        if (source is not null) { rule.Subject = source.Subject; }
         dbContext.MessageRules.Add(rule);
         await dbContext.SaveChangesAsync();
         return rule;
@@ -653,31 +660,15 @@ public class MessageRuleEngineTests
         Assert.EndsWith("Outstanding: ", message.HtmlBody);
     }
 
-    [Fact]
-    public async Task MissingTemplate_CountsAsFailed_DoesNotMarkSent_IsRetryable()
-    {
-        await using var dbContext = CreateContext();
-        var team = await SeedTeamAsync(dbContext);
-        dbContext.EmailSettings.Add(new EmailSettings
-        {
-            TeamId = team.Id,
-            FromAddress = "noreply@example.org", ReplyToAddress = "reply@example.org", PrivacyPolicyUrl = "https://example.org/privacy", AdminNotificationEmail = "admin@example.org"
-        });
-        // No RegistrationConfirmation template seeded at all — only the rule that points at it.
-        await dbContext.SaveChangesAsync();
-        await SeedRuleAsync(dbContext, team, MessageTrigger.CandidateRegistered, "RegistrationConfirmation", null);
-        var session = await SeedSessionAsync(dbContext, team, Now.AddDays(4));
-        dbContext.Candidates.Add(NewCandidate(session));
-        await dbContext.SaveChangesAsync();
-
-        var sender = new FakeEmailSender();
-        var result = await RunRulesAsync(dbContext, sender, team, MessageTrigger.CandidateRegistered);
-
-        Assert.Equal(0, result.Sent);
-        Assert.Equal(1, result.Failed);
-        Assert.Null(dbContext.Candidates.Single().RegistrationConfirmationSentUtc);
-        Assert.Empty(sender.SentMessages);
-    }
+    // ⚠️ MissingTemplate_CountsAsFailed_DoesNotMarkSent_IsRetryable was deleted here on 2026-08-21.
+    //
+    // It seeded a rule pointing at a template that did not exist and asserted the send recorded
+    // Failed, left the candidate unmarked, and stayed retryable. A message carries its own words
+    // now, so a rule cannot point at anything and there is nothing to be missing — the failure is
+    // unreachable rather than handled, which is why no replacement stands here.
+    //
+    // What it was really protecting — that a failed send is not marked sent and comes back next
+    // tick — is still covered by the SMTP-not-configured and send-throws tests below.
 
     // ---- SMTP not configured (optional integration, same pattern as Square) ----
 

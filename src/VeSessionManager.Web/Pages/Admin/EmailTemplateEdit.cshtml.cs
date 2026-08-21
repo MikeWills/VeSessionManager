@@ -189,24 +189,8 @@ public class EmailTemplateEditModel(
         }
 
         Template = template;
-        // Materialized first: the labels are lookups, not expressions EF can translate.
-        var rules = await dbContext.MessageRules
-            .AsNoTracking()
-            .Where(r => r.TeamId == template.TeamId && r.TemplateKey == template.Key)
-            .OrderBy(r => r.Id)
-            .Select(r => new { r.Id, r.Name, r.Trigger, r.ParameterHours, r.IsEnabled, r.Recipient, r.Channel })
-            .ToListAsync(HttpContext.RequestAborted);
-
-        SendingRules = [.. rules.Select(r => new EmailTemplatesModel.SendingRule(
-            r.Id,
-            r.Name,
-            MessageTriggerLabels.Label(r.Trigger),
-            MessageTriggerLabels.DescribeHours(r.ParameterHours),
-            r.IsEnabled,
-            r.Trigger,
-            r.ParameterHours,
-            r.Recipient,
-            r.Channel))];
+        // Empty since 2026-08-21 — see EmailTemplates.cshtml.cs. Nothing points at a template now.
+        SendingRules = [];
         return null;
     }
 }

@@ -39,13 +39,13 @@ public class MessageRuleAdminService(AppDbContext dbContext, TimeProvider timePr
     public const int MaxParameterHours = 8760;
 
     public async Task<MessageRuleActionResult> CreateAsync(
-        int teamId, MessageTrigger trigger, string name, string templateKey, int? parameterHours,
+        int teamId, MessageTrigger trigger, string name, string subject, string body, int? parameterHours,
         MessageRecipient recipient, int userId, CancellationToken cancellationToken,
         MessageChannel channel = MessageChannel.Email, ulong? discordChannelId = null, MessageFanOut fanOut = MessageFanOut.PerRecipient,
         MessageEnvelope? envelope = null)
     {
         envelope ??= MessageEnvelope.Default;
-        var validation = await ValidateAsync(teamId, trigger, name, templateKey, parameterHours, recipient, channel, discordChannelId, fanOut, envelope, cancellationToken);
+        var validation = await ValidateAsync(teamId, trigger, name, subject, body, parameterHours, recipient, channel, discordChannelId, fanOut, envelope, cancellationToken);
         if (validation != MessageRuleActionResult.Success)
         {
             return validation;
@@ -58,7 +58,8 @@ public class MessageRuleAdminService(AppDbContext dbContext, TimeProvider timePr
             Name = name.Trim(),
             Trigger = trigger,
             ParameterHours = parameterHours,
-            TemplateKey = templateKey,
+            Subject = subject.Trim(),
+            Body = body,
             Channel = channel,
             DiscordChannelId = channel == MessageChannel.Discord ? discordChannelId : null,
             Recipient = recipient,
@@ -83,7 +84,7 @@ public class MessageRuleAdminService(AppDbContext dbContext, TimeProvider timePr
         await dbContext.SaveChangesAsync(cancellationToken);
 
         dbContext.AddAuditLog(userId, "MessageRuleCreated", nameof(MessageRule), rule.Id,
-            $"Team {teamId} rule '{rule.Name}' on {trigger} ({Describe(parameterHours)}) via {DescribeDestination(rule)}, template '{templateKey}'.", now);
+            $"Team {teamId} rule '{rule.Name}' on {trigger} ({Describe(parameterHours)}) via {DescribeDestination(rule)}.", now);
         await dbContext.SaveChangesAsync(cancellationToken);
         return MessageRuleActionResult.Success;
     }
@@ -98,7 +99,7 @@ public class MessageRuleAdminService(AppDbContext dbContext, TimeProvider timePr
     /// mean a typo corrected an hour later silently skips everybody in between.</para>
     /// </summary>
     public async Task<MessageRuleActionResult> UpdateAsync(
-        int messageRuleId, string name, string templateKey, int? parameterHours,
+        int messageRuleId, string name, string subject, string body, int? parameterHours,
         MessageRecipient recipient, int userId, CancellationToken cancellationToken,
         MessageChannel channel = MessageChannel.Email, ulong? discordChannelId = null, MessageFanOut fanOut = MessageFanOut.PerRecipient,
         MessageEnvelope? envelope = null)
@@ -110,14 +111,15 @@ public class MessageRuleAdminService(AppDbContext dbContext, TimeProvider timePr
             return MessageRuleActionResult.NotFound;
         }
 
-        var validation = await ValidateAsync(rule.TeamId, rule.Trigger, name, templateKey, parameterHours, recipient, channel, discordChannelId, fanOut, envelope, cancellationToken);
+        var validation = await ValidateAsync(rule.TeamId, rule.Trigger, name, subject, body, parameterHours, recipient, channel, discordChannelId, fanOut, envelope, cancellationToken);
         if (validation != MessageRuleActionResult.Success)
         {
             return validation;
         }
 
         rule.Name = name.Trim();
-        rule.TemplateKey = templateKey;
+        rule.Subject = subject.Trim();
+        rule.Body = body;
         rule.ParameterHours = parameterHours;
         rule.Recipient = recipient;
         rule.Channel = channel;
@@ -131,7 +133,7 @@ public class MessageRuleAdminService(AppDbContext dbContext, TimeProvider timePr
 
         var now = timeProvider.GetUtcNow().UtcDateTime;
         dbContext.AddAuditLog(userId, "MessageRuleUpdated", nameof(MessageRule), rule.Id,
-            $"Team {rule.TeamId} rule '{rule.Name}' on {rule.Trigger} set to {Describe(parameterHours)} via {DescribeDestination(rule)}, template '{templateKey}'.", now);
+            $"Team {rule.TeamId} rule '{rule.Name}' on {rule.Trigger} set to {Describe(parameterHours)} via {DescribeDestination(rule)}.", now);
         await dbContext.SaveChangesAsync(cancellationToken);
         return MessageRuleActionResult.Success;
     }
@@ -164,7 +166,11 @@ public class MessageRuleAdminService(AppDbContext dbContext, TimeProvider timePr
             Name = $"{original.Name} (copy)",
             Trigger = original.Trigger,
             ParameterHours = original.ParameterHours,
-            TemplateKey = original.TemplateKey,
+            // The words come with it. Copying is how somebody makes a second pre-session message and
+            // changes the timing — the reuse the old template split was meant to provide, in the one
+            // direction that actually holds (same trigger, different schedule).
+            Subject = original.Subject,
+            Body = original.Body,
             Channel = original.Channel,
             DiscordChannelId = original.DiscordChannelId,
             Recipient = original.Recipient,
@@ -319,7 +325,7 @@ public class MessageRuleAdminService(AppDbContext dbContext, TimeProvider timePr
     /// a rule that silently never fires is indistinguishable from a quiet week.
     /// </summary>
     private async Task<MessageRuleActionResult> ValidateAsync(
-        int teamId, MessageTrigger trigger, string name, string templateKey, int? parameterHours,
+        int teamId, MessageTrigger trigger, string name, string subject, string body, int? parameterHours,
         MessageRecipient recipient, MessageChannel channel, ulong? discordChannelId, MessageFanOut fanOut,
         MessageEnvelope envelope, CancellationToken cancellationToken)
     {
@@ -378,31 +384,19 @@ public class MessageRuleAdminService(AppDbContext dbContext, TimeProvider timePr
             }
         }
 
-        // Checked against this team's own templates, and it has to be: a rule pointing at a key that
-        // does not exist records Failed on every tick, forever, and the only sign is a log line.
-        if (string.IsNullOrWhiteSpace(templateKey))
+        // A message owns its own words now (2026-08-21), so there is no key to look up and no way to
+        // point at something that does not exist — the whole TemplateNotFound class of failure is
+        // gone rather than guarded. What is left is that there have to BE words: an empty body sends
+        // a blank email, which is worse than refusing.
+        if (string.IsNullOrWhiteSpace(subject) || string.IsNullOrWhiteSpace(body))
         {
-            return MessageRuleActionResult.TemplateNotFound;
+            return MessageRuleActionResult.MessageRequired;
         }
 
-        var template = await dbContext.EmailTemplates
-            .AsNoTracking()
-            .Where(t => t.TeamId == teamId && t.Key == templateKey)
-            .Select(t => new { t.Audience })
-            .FirstOrDefaultAsync(cancellationToken);
-        if (template is null)
-        {
-            return MessageRuleActionResult.TemplateNotFound;
-        }
-
-        // A rule can only send a template written for candidates (#409). Every scanner's subject is a
-        // candidate or a payment, so MessageSubject.Placeholders only ever carries candidate tokens —
-        // a VE template rendered through this path comes out with every {{VeName}}-shaped token blank,
-        // and the send *succeeds*, which is the worst available outcome.
-        if (template.Audience != EmailTemplateAudience.Candidates)
-        {
-            return MessageRuleActionResult.TemplateAudienceMismatch;
-        }
+        // The audience check went with it. A message is authored against its own trigger, so it can
+        // only ever use that trigger's placeholders — the mismatch #409 guarded against (a VE-worded
+        // template rendered through a candidate-subject scanner, every token blank, and the send
+        // *succeeding*) is now impossible to express rather than caught.
 
         return ValidateEnvelope(channel, recipient, envelope);
     }
@@ -477,15 +471,16 @@ public enum MessageRuleActionResult
     /// </summary>
     TriggerNotConfigurable,
 
-    /// <summary>No template with that key on this team. A rule pointing at nothing records Failed on every tick with only a log line to show for it.</summary>
-    TemplateNotFound,
-
     /// <summary>
-    /// The template is written for VEs, and a rule can only send one written for candidates (#409).
-    /// Nothing in the dispatch path supplies VE placeholders, so the message would send successfully
-    /// with every one of its tokens blank.
+    /// The message has no subject or no body. An empty one sends a blank email, which is worse than
+    /// refusing to save it.
+    ///
+    /// <para>Replaced <c>TemplateNotFound</c> and <c>TemplateAudienceMismatch</c> on 2026-08-21, when
+    /// a message started owning its own words. Both of those guarded consequences of the split: a rule
+    /// pointing at a key that did not exist, and a VE-worded template rendered through a
+    /// candidate-subject scanner with every token blank. Neither can be expressed now.</para>
     /// </summary>
-    TemplateAudienceMismatch,
+    MessageRequired,
 
     /// <summary>A Discord rule arrived with no channel id. It would post nowhere, forever, while looking configured (#401 PR4).</summary>
     DiscordChannelRequired,

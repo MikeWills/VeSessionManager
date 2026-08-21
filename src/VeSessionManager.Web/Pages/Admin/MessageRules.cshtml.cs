@@ -168,11 +168,6 @@ public class MessageRulesModel(
             .OrderBy(r => r.Id)
             .ToListAsync(HttpContext.RequestAborted);
 
-        // The template key each rule points at may not exist — a template can be deleted out from
-        // under a rule (#144 allows deleting team-defined ones). Surfaced on the row rather than left
-        // to fail silently every night with one log line.
-        var templateKeys = Templates.Select(t => t.Key).ToHashSet();
-
         Sections = [.. MessageTriggerDefinitions.All.Select(definition => new TriggerSection(
             definition.Trigger,
             MessageTriggerLabels.Label(definition.Trigger),
@@ -180,9 +175,7 @@ public class MessageRulesModel(
             [.. rules.Where(r => r.Trigger == definition.Trigger).Select(r => new RuleRow(
                 r.Id,
                 r.Name,
-                r.TemplateKey,
-                LabelFor(r.TemplateKey),
-                templateKeys.Contains(r.TemplateKey),
+                r.Subject,
                 MessageTriggerLabels.DescribeHours(r.ParameterHours),
                 DestinationLabel(r),
                 r.IsEnabled))]))];
@@ -193,9 +186,6 @@ public class MessageRulesModel(
         ? $"Discord{(rule.FanOut == MessageFanOut.SingleDigest ? " (one digest)" : "")}"
         : MessageTriggerLabels.Label(rule.Recipient);
 
-    private string LabelFor(string key) =>
-        Templates.FirstOrDefault(t => t.Key == key) is { } template ? template.Label : key;
-
     private void SetStatus(MessageRuleActionResult result, string success) =>
         TempData[result == MessageRuleActionResult.Success ? "StatusMessage" : "ErrorMessage"] = result switch
         {
@@ -204,9 +194,7 @@ public class MessageRulesModel(
             MessageRuleActionResult.ParameterRequired => MessageDelayField.RequiredMessage,
             MessageRuleActionResult.ParameterOutOfRange => MessageDelayField.RangeMessage,
             MessageRuleActionResult.RecipientNotLegal => "That trigger cannot send to that recipient.",
-            MessageRuleActionResult.TemplateNotFound => "Pick a template that exists on this team.",
-            MessageRuleActionResult.TemplateAudienceMismatch =>
-                "That template is written for VEs. A rule can only send one written for candidates.",
+            MessageRuleActionResult.MessageRequired => "Give the message a subject and something to say.",
             MessageRuleActionResult.DiscordChannelRequired => "A Discord rule needs a channel id — without one it would post nowhere.",
             MessageRuleActionResult.DigestNeedsAChannel =>
                 "A single digest only makes sense on a channel. On email it would mean one message to one address listing everybody else.",
@@ -224,14 +212,12 @@ public class MessageRulesModel(
         string Blurb,
         IReadOnlyList<RuleRow> Rules);
 
-    /// <param name="TemplateExists">False when the rule points at a template that is no longer there — the row says so, because otherwise this fails nightly in silence.</param>
+    /// <param name="Subject">The message's own subject line. Was a template name until 2026-08-21, when a message started owning its words — there is no separate template to be missing any more, which is why the "template no longer exists" column went with it.</param>
     /// <param name="ParameterLabel">"1 day", "half a day" — the same words the form takes, so a rule reads back the way it was written.</param>
     public record RuleRow(
         int Id,
         string Name,
-        string TemplateKey,
-        string TemplateLabel,
-        bool TemplateExists,
+        string Subject,
         string ParameterLabel,
         string RecipientLabel,
         bool IsEnabled);

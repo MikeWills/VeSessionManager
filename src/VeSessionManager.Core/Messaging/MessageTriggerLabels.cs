@@ -24,6 +24,10 @@ public static class MessageTriggerLabels
         MessageTrigger.CandidateTested => "When a candidate has tested",
         MessageTrigger.LicenseGranted => "When the FCC grants a license",
         MessageTrigger.FelonyDisclosureDeclared => "When a felony disclosure is declared",
+        MessageTrigger.ManualToCandidate => "When you email candidates by hand",
+        MessageTrigger.ManualToVe => "When you email VEs by hand",
+        MessageTrigger.ManualFelonyDisclosureInstructions => "When you send felony disclosure instructions",
+        MessageTrigger.ManualYouthProgramInstructions => "When you send youth program instructions",
         _ => trigger.ToString()
     };
 
@@ -47,6 +51,14 @@ public static class MessageTriggerLabels
         MessageTrigger.FelonyDisclosureDeclared =>
             "Fires for a candidate who declared a felony conviction on their application, telling them the FCC requires an explanation. "
             + "Worth sending before the session, while there is still someone to ask — which is exactly why it is no longer tied to marking a session completed.",
+        MessageTrigger.ManualToCandidate =>
+            "Offered when you pick candidates on a session and write to them. Nothing sends it on its own — you choose the moment and the people.",
+        MessageTrigger.ManualToVe =>
+            "Offered when you write to VEs from the VE Directory. Nothing sends it on its own — you choose the moment and the people.",
+        MessageTrigger.ManualFelonyDisclosureInstructions =>
+            "Offered on a candidate who declared a felony conviction. You send it; it can be sent more than once.",
+        MessageTrigger.ManualYouthProgramInstructions =>
+            "Offered on a candidate taking the youth rate. You send it; it can be sent more than once.",
         _ => ""
     };
 

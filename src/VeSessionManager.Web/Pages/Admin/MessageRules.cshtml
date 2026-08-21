@@ -61,7 +61,7 @@ else
                                 <th>Rule</th>
                                 <th>When</th>
                                 <th>To</th>
-                                <th>Template</th>
+                                <th>Subject</th>
                                 <th></th>
                             </tr>
                         </thead>
@@ -78,16 +78,11 @@ else
                                     </td>
                                     <td>@rule.ParameterLabel</td>
                                     <td>@rule.RecipientLabel</td>
-                                    <td>
-                                        @rule.TemplateLabel
-                                        @if (!rule.TemplateExists)
-                                        {
-                                            @* A rule pointing at a template that is gone records a
-                                               failure every night with nothing but a log line to show
-                                               for it. Said here instead. *@
-                                            <span class="chip chip-brick">Template missing</span>
-                                        }
-                                    </td>
+                                    @* The message's own subject. It used to name the template the rule
+                                       pointed at, with a "Template missing" chip beside it — a message
+                                       owns its words now, so there is nothing separate left to go
+                                       missing and nothing to warn about. *@
+                                    <td>@rule.Subject</td>
                                     @* Two different questions, so two actions: switching off is "not
                                        right now" and keeps the rule on the screen; deleting is "we do
                                        not do this". Delete is confirmed and does not come back — the

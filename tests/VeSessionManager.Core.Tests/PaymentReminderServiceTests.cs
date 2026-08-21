@@ -147,10 +147,10 @@ public class PaymentReminderServiceTests
 
         // The two rules that replaced this service's own sends. CreatedUtc a year back so it bounds
         // nothing — these tests are about the thresholds, and the bound has its own tests.
-        dbContext.MessageRules.Add(MessageRuleTestHarness.NewRule(
-            team, MessageTrigger.FccFeeOutstanding, "FccFeeReminder5Day", 120, Now.AddYears(-1)));
-        dbContext.MessageRules.Add(MessageRuleTestHarness.NewRule(
-            team, MessageTrigger.PaymentUnpaid, "PaymentExpirationNotice", 240, Now.AddYears(-1), MessageRecipient.TeamAdminAddress));
+        dbContext.MessageRules.Add(await MessageRuleTestHarness.NewRuleFromSeededTextAsync(dbContext,
+            team, MessageTrigger.FccFeeOutstanding, "FRN {{Frn}} still owes the FCC", 120, Now.AddYears(-1)));
+        dbContext.MessageRules.Add(await MessageRuleTestHarness.NewRuleFromSeededTextAsync(dbContext,
+            team, MessageTrigger.PaymentUnpaid, "The {{PaymentAmount}} exam fee link has expired", 240, Now.AddYears(-1), MessageRecipient.TeamAdminAddress));
 
         await dbContext.SaveChangesAsync();
     }
@@ -534,30 +534,10 @@ public class PaymentReminderServiceTests
         Assert.Equal(0, result.RemindersSent);
     }
 
-    [Fact]
-    public async Task Reminder_MissingTemplate_CountsAsFailed_IsRetryable()
-    {
-        await using var dbContext = CreateContext();
-        var team = await SeedTeamAsync(dbContext);
-        dbContext.EmailSettings.Add(new EmailSettings
-        {
-            TeamId = team.Id,
-            FromAddress = "noreply@example.org", ReplyToAddress = "reply@example.org",
-            PrivacyPolicyUrl = "https://example.org/privacy", AdminNotificationEmail = "admin@example.org"
-        });
-        // The rule exists and points at a template that does not.
-        dbContext.MessageRules.Add(MessageRuleTestHarness.NewRule(
-            team, MessageTrigger.FccFeeOutstanding, "FccFeeReminder5Day", 120, Now.AddYears(-1)));
-        await dbContext.SaveChangesAsync();
-        await SeedCandidateWithPaymentAsync(dbContext, team, applicationDateEnteredUtc: Now.AddDays(-5));
-        var sender = new FakeEmailSender();
+    // ⚠️ Reminder_MissingTemplate_CountsAsFailed_IsRetryable was deleted here on 2026-08-21, for the
+    // same reason as its twin in MessageRuleEngineTests: a message owns its own words, so a rule
+    // cannot point at a template that is not there. The failure it covered is unreachable.
 
-        var result = await CreateService(dbContext, sender).RunAsync(team, CancellationToken.None);
-
-        Assert.Equal(0, result.RemindersSent);
-        Assert.Equal(1, result.Failed);
-        Assert.Null((await dbContext.Candidates.SingleAsync()).FccFeeReminderSentUtc);
-    }
 
     // ---- 10-day expiration ----
 

@@ -25,7 +25,7 @@ public class MessageRuleSeedingTests
     }
 
     [Fact]
-    public async Task ANewTeam_GetsTheFourRulesThatReproduceTodaysBehaviour()
+    public async Task ANewTeam_GetsFourExampleMessages_AllSwitchedOff()
     {
         await using var dbContext = CreateContext();
         var team = await SeedTeamAsync(dbContext);
@@ -40,10 +40,15 @@ public class MessageRuleSeedingTests
         Assert.Equal(240, rules.Single(r => r.Trigger == MessageTrigger.PaymentUnpaid).ParameterHours);
         Assert.Equal(MessageRecipient.TeamAdminAddress, rules.Single(r => r.Trigger == MessageTrigger.PaymentUnpaid).Recipient);
 
-        // Each points at a template the same call just seeded — a rule naming a key nothing provides
-        // is a rule that can only ever record Failed.
-        var keys = await dbContext.EmailTemplates.Where(t => t.TeamId == team.Id).Select(t => t.Key).ToListAsync();
-        Assert.All(rules, r => Assert.Contains(r.TemplateKey, keys));
+        // ⚠️ All four arrive SWITCHED OFF (Mike, 2026-08-21: "keep them all turned off"). They are
+        // examples of what a team can set up, not mail a new team starts sending to real people
+        // before anybody has read it. A team turns on the ones it wants.
+        Assert.All(rules, r => Assert.False(r.IsEnabled));
+
+        // And each carries its own words rather than a key pointing at a template — which is the
+        // whole change. A message with no body could only ever send a blank email.
+        Assert.All(rules, r => Assert.False(string.IsNullOrWhiteSpace(r.Subject)));
+        Assert.All(rules, r => Assert.False(string.IsNullOrWhiteSpace(r.Body)));
     }
 
     /// <summary>
