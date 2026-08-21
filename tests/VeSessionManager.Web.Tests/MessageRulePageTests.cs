@@ -27,11 +27,6 @@ public class MessageRulePageTests
         using var scope = factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
-        db.EmailTemplates.Add(new EmailTemplate
-        {
-            TeamId = factory.Seeded.TeamId, Key = templateKey, Subject = "Seeded starting subject", Body = "<p>Seeded starting body</p>"
-        });
-
         var rule = new MessageRule
         {
             TeamId = factory.Seeded.TeamId,
@@ -48,54 +43,17 @@ public class MessageRulePageTests
         return rule.Id;
     }
 
-    /// <summary>
-    /// <b>#409: arriving from a template must not mean finding it again.</b> The whole complaint was
-    /// leaving the template, going to Message Rules, and picking that template out of a list of
-    /// thirty — so the link carries it and the picker opens on it.
-    /// </summary>
-    [Fact]
-    public async Task ArrivingFromATemplate_CopiesItsWordsIntoTheNewMessage()
-    {
-        using var factory = new WebAppFactory();
-        await SeedRuleAsync(factory);
-        var client = factory.CreateClientAs(UserRole.SystemAdmin);
-
-        int templateId;
-        using (var scope = factory.Services.CreateScope())
-        {
-            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-            templateId = await db.EmailTemplates
-                .Where(t => t.Key == "DayBeforeReminder").Select(t => t.Id).FirstAsync();
-        }
-
-        var html = await client.GetStringAsync(
-            $"/Admin/MessageRuleNew?teamId={factory.Seeded.TeamId}&templateId={templateId}");
-
-        // A copy, not a link: the message owns its words from here on, so editing it never reaches
-        // back and changes the template somebody else started from.
-        Assert.Contains("Seeded starting subject", html);
-        Assert.Contains("Seeded starting body", html);
-    }
-
-    /// <summary>
-    /// An id that is not one of this team's candidate templates selects nothing rather than being
-    /// honoured. Not the security control — create is validated server-side and team-scoped — but a
-    /// stale link silently pre-selecting nothing looks like the field is broken.
-    /// </summary>
-    [Fact]
-    public async Task ArrivingWithATemplateIdThatIsNotOurs_SelectsNothing()
-    {
-        using var factory = new WebAppFactory();
-        await SeedRuleAsync(factory);
-        var client = factory.CreateClientAs(UserRole.SystemAdmin);
-
-        var html = await client.GetStringAsync(
-            $"/Admin/MessageRuleNew?teamId={factory.Seeded.TeamId}&templateId=99999");
-
-        // Scoped to the template picker: Recipient and the channel radios always have a selection,
-        // so a bare "nothing is selected" assertion would pass for the wrong reason.
-        Assert.DoesNotMatch("value=\"DayBeforeReminder\"[^>]*selected", html);
-    }
+    // ⚠️ Four facts were deleted here on 2026-08-21, with the template/rule split:
+    // ArrivingFromATemplate_CopiesItsWordsIntoTheNewMessage,
+    // ArrivingWithATemplateIdThatIsNotOurs_SelectsNothing,
+    // TheTemplateEditor_WithNoRule_LinksStraightToTheCreateForm, and AVeTemplate_IsNotOfferedARule.
+    // All four asserted on arriving at the create form carrying a template (#409) — the picker, the
+    // ?templateId= link, and which templates were eligible for one.
+    //
+    // Nothing replaces them, and the reason is not that the coverage moved: a message owns its own
+    // Subject/Body now, and the tags it may use depend on its trigger. So a message is authored
+    // against its trigger, and there is no separate thing to arrive "from" — no template list, no
+    // link carrying one, and no audience rule deciding which may be attached to a rule.
 
     // ⚠️ TheTemplatesList_OffersToAddARule_CarryingTheTemplate_EvenWhenOneExists was deleted here on
     // 2026-08-21. It asserted the Email Templates list offered a way to add a second rule for a
@@ -105,63 +63,6 @@ public class MessageRulePageTests
     // rules to offer. Making a second message is copying an existing one and changing its timing,
     // which MessageRuleAdminService.DuplicateAsync already does and has its own tests.
 
-
-    /// <summary>A template nothing sends is where somebody most needs the offer, so the zero case links in-place too rather than out to the list.</summary>
-    [Fact]
-    public async Task TheTemplateEditor_WithNoRule_LinksStraightToTheCreateForm()
-    {
-        using var factory = new WebAppFactory();
-        int templateId;
-        using (var scope = factory.Services.CreateScope())
-        {
-            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-            var template = new EmailTemplate
-            {
-                TeamId = factory.Seeded.TeamId, Key = "Custom.unscheduled",
-                Subject = "s", Body = "b", IsUserDefined = true, DisplayName = "Unscheduled"
-            };
-            db.EmailTemplates.Add(template);
-            await db.SaveChangesAsync();
-            templateId = template.Id;
-        }
-        var client = factory.CreateClientAs(UserRole.SystemAdmin);
-
-        var html = await client.GetStringAsync($"/Admin/EmailTemplateEdit/{templateId}");
-
-        Assert.Matches($"MessageRuleNew[^\"]*templateId={templateId}", html);
-    }
-
-    /// <summary>
-    /// A VE template cannot be attached to a rule at all (#409), so the offer must not appear on one —
-    /// an affordance leading straight to a refusal is worse than none.
-    /// </summary>
-    [Fact]
-    public async Task AVeTemplate_IsNotOfferedARule()
-    {
-        using var factory = new WebAppFactory();
-        int templateId;
-        using (var scope = factory.Services.CreateScope())
-        {
-            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-            var template = new EmailTemplate
-            {
-                TeamId = factory.Seeded.TeamId, Key = "Custom.ve-callout", Subject = "s", Body = "b",
-                IsUserDefined = true, DisplayName = "VE callout",
-                Audience = EmailTemplateAudience.VolunteerExaminers
-            };
-            db.EmailTemplates.Add(template);
-            await db.SaveChangesAsync();
-            templateId = template.Id;
-        }
-        var client = factory.CreateClientAs(UserRole.SystemAdmin);
-
-        var editor = await client.GetStringAsync($"/Admin/EmailTemplateEdit/{templateId}");
-        var newRule = await client.GetStringAsync($"/Admin/MessageRuleNew?teamId={factory.Seeded.TeamId}");
-
-        Assert.DoesNotContain("MessageRuleNew", editor);
-        // Nor offered in the picker, which is the other half of the same rule.
-        Assert.DoesNotContain("Custom.ve-callout", newRule);
-    }
 
     [Fact]
     public async Task EveryTriggerPointRenders_EvenWithNoRulesOnIt()
@@ -178,7 +79,7 @@ public class MessageRulePageTests
 
         // And says so, rather than leaving a silent gap. "Nothing happens here" is the most useful
         // thing this page has to tell somebody who has never configured it.
-        Assert.Contains("No rules — nothing is sent at this point.", html);
+        Assert.Contains("No messages — nothing is sent at this point.", html);
     }
 
     [Fact]
@@ -211,7 +112,7 @@ public class MessageRulePageTests
 
         Assert.Contains("Switch off", html);
         Assert.Contains($"deleteRule-{id}", html);
-        Assert.Contains("Delete rule", html);
+        Assert.Contains("Delete message", html);
         // The modal says which of the two the reader probably wants, since the destructive one is the
         // easier click to reach for.
         Assert.Contains("Switch off</strong> instead", html);

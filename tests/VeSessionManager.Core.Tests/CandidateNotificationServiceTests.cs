@@ -84,19 +84,25 @@ public class CandidateNotificationServiceTests
             PrivacyPolicyUrl = "https://example.org/privacy",
             AdminNotificationEmail = "admin@example.org"
         });
-        dbContext.EmailTemplates.Add(new EmailTemplate
+        dbContext.MessageRules.Add(new MessageRule
         {
             TeamId = team.Id,
-            Key = "RegistrationConfirmation",
+            Name = "RegistrationConfirmation",
+            Trigger = MessageTrigger.CandidateRegistered,
             Subject = "Registered for {{SessionDate}}",
-            Body = "Hi {{CandidateFirstName}} ({{CandidateName}}), Zoom: {{ZoomJoinUrl}}, Pay: {{PaymentLinkUrl}}, Privacy: {{PrivacyPolicyUrl}}"
+            Body = "Hi {{CandidateFirstName}} ({{CandidateName}}), Zoom: {{ZoomJoinUrl}}, Pay: {{PaymentLinkUrl}}, Privacy: {{PrivacyPolicyUrl}}",
+            // A year back so CreatedUtc bounds nothing: these tests are about the send.
+            CreatedUtc = Now.AddYears(-1)
         });
-        dbContext.EmailTemplates.Add(new EmailTemplate
+        dbContext.MessageRules.Add(new MessageRule
         {
             TeamId = team.Id,
-            Key = "DayBeforeReminder",
+            Name = "DayBeforeReminder",
+            Trigger = MessageTrigger.BeforeSessionStart,
             Subject = "Reminder for {{SessionDate}}",
-            Body = "Hi {{CandidateFirstName}}, Zoom: {{ZoomJoinUrl}}, Outstanding: {{OutstandingPaymentLinkUrl}}"
+            Body = "Hi {{CandidateFirstName}}, Zoom: {{ZoomJoinUrl}}, Outstanding: {{OutstandingPaymentLinkUrl}}",
+            // A year back so CreatedUtc bounds nothing: these tests are about the send.
+            CreatedUtc = Now.AddYears(-1)
         });
         await dbContext.SaveChangesAsync();
     }
@@ -191,16 +197,22 @@ public class CandidateNotificationServiceTests
     /// they carry the marker value rather than borrowing a trigger that would read as a lie.
     /// </summary>
     [Fact]
-    public async Task SendYouthProgramInstructionsAsync_RecordsARunMarkedSentByHand()
+    public async Task SendYouthProgramInstructionsAsync_RecordsARunAgainstItsOwnTrigger()
     {
         await using var dbContext = CreateContext();
         var team = await SeedTeamAsync(dbContext);
         await SeedEmailSettingsAndTemplatesAsync(dbContext, team);
         var session = await SeedSessionAsync(dbContext, team, Now.AddDays(5));
         session.Vec.SupportsYouthProgram = true;
-        dbContext.EmailTemplates.Add(new EmailTemplate
+        dbContext.MessageRules.Add(new MessageRule
         {
-            TeamId = team.Id, Key = "ArrlYouthProgramInstructions", Subject = "Youth Program", Body = "Hi"
+            TeamId = team.Id,
+            Name = "ArrlYouthProgramInstructions",
+            Trigger = MessageTrigger.ManualYouthProgramInstructions,
+            Subject = "Youth Program",
+            Body = "Hi",
+            // A year back so CreatedUtc bounds nothing: these tests are about the send.
+            CreatedUtc = Now.AddYears(-1)
         });
         var candidate = NewCandidate(session);
         candidate.CallSign = "KE0ABC";
@@ -211,7 +223,10 @@ public class CandidateNotificationServiceTests
             .SendYouthProgramInstructionsAsync(candidate.Id, CancellationToken.None);
 
         var run = Assert.Single(dbContext.MessageRuleRuns);
-        Assert.Equal(MessageTrigger.SentByHand, run.Trigger);
+        // ⚠️ Was SentByHand — a single marker meaning "a person sent something outside any rule".
+        // Each per-candidate button has its own trigger now (2026-08-21), which is what gives it its
+        // own tag list, so the run records which button rather than only that a human pressed one.
+        Assert.Equal(MessageTrigger.ManualYouthProgramInstructions, run.Trigger);
         Assert.Equal(CandidateNotificationService.YouthProgramLabel, run.RuleName);
     }
 
@@ -251,10 +266,15 @@ public class CandidateNotificationServiceTests
             TeamId = team.Id, FromAddress = "noreply@example.org", ReplyToAddress = "reply@example.org",
             PrivacyPolicyUrl = "https://example.org/privacy", AdminNotificationEmail = "admin@example.org"
         });
-        dbContext.EmailTemplates.Add(new EmailTemplate
+        dbContext.MessageRules.Add(new MessageRule
         {
-            TeamId = team.Id, Key = "ArrlYouthProgramInstructions", Subject = "Youth Program",
-            Body = "Hi {{CandidateName}} ({{CallSign}})"
+            TeamId = team.Id,
+            Name = "ArrlYouthProgramInstructions",
+            Trigger = MessageTrigger.ManualYouthProgramInstructions,
+            Subject = "Youth Program",
+            Body = "Hi {{CandidateName}} ({{CallSign}})",
+            // A year back so CreatedUtc bounds nothing: these tests are about the send.
+            CreatedUtc = Now.AddYears(-1)
         });
         var candidate = NewCandidate(session);
         candidate.CallSign = "KE0ABC";
@@ -301,10 +321,15 @@ public class CandidateNotificationServiceTests
             TeamId = team.Id, FromAddress = "noreply@example.org", ReplyToAddress = "reply@example.org",
             PrivacyPolicyUrl = "https://example.org/privacy", AdminNotificationEmail = "admin@example.org"
         });
-        dbContext.EmailTemplates.Add(new EmailTemplate
+        dbContext.MessageRules.Add(new MessageRule
         {
-            TeamId = team.Id, Key = "FelonyDisclosureInstructions", Subject = "Additional FCC steps",
-            Body = "Hi {{CandidateName}}, additional FCC steps are required."
+            TeamId = team.Id,
+            Name = "FelonyDisclosureInstructions",
+            Trigger = MessageTrigger.ManualFelonyDisclosureInstructions,
+            Subject = "Additional FCC steps",
+            Body = "Hi {{CandidateName}}, additional FCC steps are required.",
+            // A year back so CreatedUtc bounds nothing: these tests are about the send.
+            CreatedUtc = Now.AddYears(-1)
         });
         var candidate = NewCandidate(session);
         candidate.HasFelonyDisclosure = hasFelonyDisclosure;
@@ -397,8 +422,26 @@ public class CandidateNotificationServiceTests
         team.IntegrationOverridesEnabled = true;
         team.EmailEnabled = false;
         dbContext.Vecs.Single().SupportsYouthProgram = true;
-        dbContext.EmailTemplates.Add(new EmailTemplate { TeamId = team.Id, Key = "ArrlYouthProgramInstructions", Subject = "Youth", Body = "Youth" });
-        dbContext.EmailTemplates.Add(new EmailTemplate { TeamId = team.Id, Key = "RegistrationConfirmation", Subject = "Registered", Body = "Registered" });
+        dbContext.MessageRules.Add(new MessageRule
+        {
+            TeamId = team.Id,
+            Name = "ArrlYouthProgramInstructions",
+            Trigger = MessageTrigger.ManualYouthProgramInstructions,
+            Subject = "Youth",
+            Body = "Youth",
+            // A year back so CreatedUtc bounds nothing: these tests are about the send.
+            CreatedUtc = Now.AddYears(-1)
+        });
+        dbContext.MessageRules.Add(new MessageRule
+        {
+            TeamId = team.Id,
+            Name = "RegistrationConfirmation",
+            Trigger = MessageTrigger.CandidateRegistered,
+            Subject = "Registered",
+            Body = "Registered",
+            // A year back so CreatedUtc bounds nothing: these tests are about the send.
+            CreatedUtc = Now.AddYears(-1)
+        });
         await dbContext.SaveChangesAsync();
 
         var sender = new FakeEmailSender();

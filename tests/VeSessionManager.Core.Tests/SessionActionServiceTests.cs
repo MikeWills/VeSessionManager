@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using VeSessionManager.Core;
@@ -112,11 +112,6 @@ public class SessionActionServiceTests
         {
             TeamId = team.Id, FromAddress = "noreply@example.org", ReplyToAddress = "reply@example.org",
             PrivacyPolicyUrl = "https://example.org/privacy", AdminNotificationEmail = "admin@example.org"
-        });
-        dbContext.EmailTemplates.Add(new EmailTemplate
-        {
-            TeamId = team.Id, Key = "FelonyDisclosureInstructions", Subject = "FCC steps required",
-            Body = "Hi {{CandidateName}}, additional FCC steps are required."
         });
         await dbContext.SaveChangesAsync();
 

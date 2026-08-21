@@ -16,11 +16,10 @@ namespace VeSessionManager.Core.Tests;
 /// that creates the same rows. It is also the only version that can be tested without standing up
 /// the whole web host — and an untestable guard is how #233 and #234 ended up unexercised.</para>
 ///
-/// <para>What this prevents concretely: <c>Team.Name</c>, <c>Vec.Name</c>,
-/// <c>EmailTemplate.Subject</c> and <c>EmailTemplate.Body</c> are all <c>required</c> columns.
-/// Writing null gives a <c>DbUpdateException</c> and an unhandled 500; writing <c>""</c> is worse,
-/// because it succeeds and leaves a nameless team or a blank template that every screen then renders
-/// as empty.</para>
+/// <para>What this prevents concretely: <c>Team.Name</c> and <c>Vec.Name</c> are both
+/// <c>required</c> columns. Writing null gives a <c>DbUpdateException</c> and an unhandled 500;
+/// writing <c>""</c> is worse, because it succeeds and leaves a nameless team or VEC that every
+/// screen then renders as empty.</para>
 /// </summary>
 public class RequiredInputGuardTests
 {
@@ -113,41 +112,7 @@ public class RequiredInputGuardTests
 
     // ---- Email templates -------------------------------------------------------------------
 
-    /// <summary>
-    /// The one where a blank value succeeds instead of throwing, which is the worse failure: the
-    /// template is still "configured", and the next candidate email goes out with an empty subject
-    /// or an empty body.
-    /// </summary>
-    [Theory]
-    [InlineData(null, "body")]
-    [InlineData("", "body")]
-    [InlineData("   ", "body")]
-    [InlineData("subject", null)]
-    [InlineData("subject", "")]
-    [InlineData("subject", "   ")]
-    public async Task UpdatingAnEmailTemplate_WithBlankSubjectOrBody_IsRefused(string? subject, string? body)
-    {
-        await using var dbContext = CreateContext();
-        var user = await SeedUserAsync(dbContext);
-        var team = new Team { Name = "HRCC", CreatedUtc = Now };
-        dbContext.Teams.Add(team);
-        var template = new EmailTemplate
-        {
-            Team = team,
-            Key = "RegistrationConfirmation",
-            Subject = "Original subject",
-            Body = "Original body"
-        };
-        dbContext.EmailTemplates.Add(template);
-        await dbContext.SaveChangesAsync();
-
-        var result = await new EmailTemplateAdminService(dbContext, new FixedTimeProvider(Now))
-            .UpdateAsync(template.Id, subject!, body!, user.Id, CancellationToken.None);
-
-        Assert.Equal(EmailTemplateActionResult.ContentRequired, result);
-
-        var reloaded = await dbContext.EmailTemplates.AsNoTracking().SingleAsync();
-        Assert.Equal("Original subject", reloaded.Subject);
-        Assert.Equal("Original body", reloaded.Body);
-    }
+    // Nothing stands in place of the blank-subject/blank-body theory that lived here: EmailTemplate
+    // and EmailTemplateAdminService are gone, and a message's words are MessageRule.Subject/Body now,
+    // guarded by that feature's own tests rather than by this file.
 }

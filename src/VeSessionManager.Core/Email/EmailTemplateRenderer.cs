@@ -7,11 +7,11 @@ using VeSessionManager.Core.Data;
 namespace VeSessionManager.Core.Email;
 
 /// <summary>
-/// Loads a Team's EmailTemplate by Key and substitutes {{Placeholder}} tokens. A placeholder
+/// Substitutes {{Placeholder}} tokens into a message's subject and body. A placeholder
 /// present in the caller's dictionary (even with an empty-string value, e.g. PaymentLinkUrl when
 /// nothing's outstanding) substitutes cleanly. A placeholder the caller never provided a value
 /// for at all — almost always a template typo — is left as the literal "{{Typo}}" text (so a
-/// broken template is visibly broken, not silently mangled) and logged as a warning, per the spec.
+/// broken message is visibly broken, not silently mangled) and logged as a warning, per the spec.
 ///
 /// Body is sent as real HTML (SmtpEmailSender sets HtmlBody), so placeholder values there are
 /// HTML-encoded before substitution — several placeholders (CandidateName, etc.) ultimately come
@@ -19,23 +19,15 @@ namespace VeSessionManager.Core.Email;
 /// encoding an HTML/script-bearing name would be injected verbatim into a real HTML email rendered
 /// by the recipient's mail client. Subject is plain text, so it's left unencoded.
 ///
-/// Multi-team: template content is per-team customizable (confirmed with the user), not shared —
-/// each Team has its own full set of templates, keyed by (TeamId, Key). See docs/multi-team.md.
+/// Multi-team: message content is per-team (confirmed with the user), not shared — each Team writes
+/// its own. See docs/multi-team.md.
+///
+/// <para><b>Renders text, never a row (2026-08-21).</b> This used to have a RenderAsync(teamId, key)
+/// overload that loaded an EmailTemplate first. The table is gone — a message owns its words — and
+/// every sender already went through RenderTextAsync anyway.</para>
 /// </summary>
 public partial class EmailTemplateRenderer(AppDbContext dbContext, ILogger<EmailTemplateRenderer> logger)
 {
-    public async Task<RenderedEmail?> RenderAsync(int teamId, string templateKey, IReadOnlyDictionary<string, string> placeholders, CancellationToken cancellationToken)
-    {
-        var template = await dbContext.EmailTemplates.FirstOrDefaultAsync(t => t.TeamId == teamId && t.Key == templateKey, cancellationToken);
-        if (template is null)
-        {
-            logger.LogError("No EmailTemplate found for team {TeamId}, key {TemplateKey} — cannot send", teamId, templateKey);
-            return null;
-        }
-
-        return await RenderTextAsync(teamId, template.Subject, template.Body, placeholders, templateKey, cancellationToken);
-    }
-
     /// <summary>
     /// The same rendering, over text that is <b>not</b> a stored template — a draft someone composed
     /// on the Email candidates screen, starting from one and editing it (#144).

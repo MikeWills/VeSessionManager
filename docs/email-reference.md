@@ -17,8 +17,10 @@ but this doc is the one place with the full picture across all seven templates. 
 code ever disagree, trust the code — specifically
 `src/VeSessionManager.Core/Email/EmailTemplatePlaceholders.cs`, a registry hand-collected from the
 real send-time code and guarded by `EmailTemplatePlaceholdersTests.cs` so it can't silently drift.
-That registry is also what the Admin UI's template editor (`Pages/Admin/EmailTemplates.cshtml`,
-`SystemAdmin`/`TeamAdmin` only) shows as placeholder chips next to the editor.
+That registry is also what the message editor (`Pages/Admin/MessageRuleEdit.cshtml`,
+`SystemAdmin`/`TeamAdmin` only) draws its clickable tag chips from — though what it offers is the
+chosen *trigger's* tags rather than the whole registry, which is the point of authoring a message
+against its trigger.
 
 ## The seven templates
 
@@ -240,11 +242,14 @@ shared across teams, confirmed with the user during the multi-team build-out:
   singleton), holding `FromAddress`/`FromDisplayName`/`ReplyToAddress`/`PrivacyPolicyUrl`/
   `AdminNotificationEmail`. Seeded once per team with obviously-placeholder values
   (`noreply@example.org`, etc.) — never re-seeded over a real edit.
-- **Template content**: `EmailTemplate`, keyed by `(TeamId, Key)` — each team can word things
-  differently. Seeded once per team with real starting-example content (not final copy) the first
-  time that `Key` doesn't exist yet for that team; never overwritten after. Edit via
-  `Pages/Admin/EmailTemplates.cshtml` (`SystemAdmin`/`TeamAdmin`, edit-only — no create/delete,
-  since the set of `Key`s is fixed by what the sending code actually looks up) or directly in the DB.
+- **Message content**: `MessageRule.Subject`/`Body`, per team — each team can word things
+  differently. Seeded once per team with real starting-example content (not final copy), tracked by
+  `Team.MessageRulesSeededUtc` so a deleted message never comes back. Edit via
+  `Pages/Admin/MessageRuleEdit.cshtml` (`SystemAdmin`/`TeamAdmin`) or directly in the DB.
+  ⚠️ **Until 2026-08-21 this was an `EmailTemplate` table keyed by `(TeamId, Key)`, and a rule
+  pointed at one by key.** That split is gone: the tags a message may use depend on its trigger, and
+  a template had none, so the editor could never say which were available. See
+  `docs/trigger-points.md`.
 - If SMTP isn't configured for a team, every send attempt for that team is skipped quietly (one
   `INFO` log line naming the backlog count, never a repeating `ERROR`) and every guard field stays
   null — the moment credentials are set, the next poll/job tick sends everything backlogged with no

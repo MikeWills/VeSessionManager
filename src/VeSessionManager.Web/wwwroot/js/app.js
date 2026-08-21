@@ -668,6 +668,11 @@
 
   document.querySelectorAll("[data-insert-token]").forEach(function (chip) {
     chip.addEventListener("click", function () {
+      // Left to message-editor.js where Quill is running: it owns the body in visual mode, and both
+      // handlers firing on one click inserts the tag twice. Read at click time, not bind time, so
+      // script load order does not matter.
+      if (chip.getAttribute("data-token-handled") === "true") { return; }
+
       // Whichever box they were last in, so a tag can go in the subject as easily as the body.
       // Falls back to the message, which is where all but a couple of tags belong.
       var field = lastMessageField || document.querySelector("[data-token-target='body']");

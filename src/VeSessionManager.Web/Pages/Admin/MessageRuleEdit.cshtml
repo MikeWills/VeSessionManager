@@ -104,8 +104,20 @@
         </div>
 
         <div class="field" style="max-width:640px;">
-            <label asp-for="Body">Message</label>
-            <textarea asp-for="Body" data-token-target="body" rows="12" required></textarea>
+            <label for="body">Message</label>
+            @* The textarea remains the field that posts, in both tabs — Quill is a second view onto
+               it, never a replacement. Without JS the page degrades to a plain textarea, which is
+               exactly what this was before the editor moved here from the Email Templates page. *@
+            <div class="message-editor">
+                <div class="editor-tabs" role="tablist">
+                    <button type="button" class="editor-tab" role="tab" data-mode="visual" aria-selected="true">Visual</button>
+                    <button type="button" class="editor-tab" role="tab" data-mode="html" aria-selected="false">HTML</button>
+                </div>
+                <div class="editor-visual" data-editor-for="body">
+                    <div class="editor-surface"></div>
+                </div>
+                <textarea id="body" asp-for="Body" data-token-target="body" rows="12" required></textarea>
+            </div>
 
             @* Click to insert, rather than a list to retype. A hand-typed {{CandidateFirstName}} that
                is a letter out renders blank, and nothing anywhere says it went wrong — the send just
@@ -191,3 +203,11 @@
     reaches people not yet reminded, never people who already were. And this rule still never fires for
     anyone whose moment passed before it was created.
 </p>
+
+@section Scripts {
+    <script src="~/lib/quill/quill.js"></script>
+    <script src="~/js/message-editor.js" asp-append-version="true"></script>
+}
+@section Head {
+    <link rel="stylesheet" href="~/lib/quill/quill.snow.css" />
+}

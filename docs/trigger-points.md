@@ -777,4 +777,65 @@ History survives: `MessageRuleRun.MessageRuleId` is `SetNull` and the row snapsh
 trigger, so what was already sent outlives the rules that sent it.
 
 Seeded examples arrive **switched off** — examples of what a team can set up, not mail a new team
-starts sending to real people before anybody has read it.
+starts sending to real people before anybody has read it. (Amended in the same change: the
+*hand-sent* ones arrive **on**. See below.)
+
+## The compose screens pick a message (2026-08-21)
+
+Second half of the same change. The two hand-compose screens — Session Detail's *Email candidates*
+and the VE Directory's *message* — used to offer a list of **template keys**. They offer this team's
+messages on the matching manual trigger now, and post an `int` id rather than a string key.
+
+`ComposableMessages` is the one place that list is built, because two screens ask the same question:
+the compose screen itself, and the session menu that offers shortcuts straight into it. Two copies
+would drift the moment a message was added to one.
+
+⚠️ **The automatic messages are deliberately no longer offered as starting text.** The old list
+included the registration confirmation and the day-before reminder, which reads as a convenience —
+but their bodies are written around tags the manual path does not supply (`{{ZoomJoinUrl}}`,
+`{{PaymentLinkUrl}}`). Starting from one produced a draft whose tags render blank and whose send
+*succeeds*, which is precisely the class of failure this whole change exists to remove. A manual
+message is written against a manual trigger, and the tags shown while writing it are the ones that
+will resolve.
+
+For a manual message, **off means "not offered"** rather than "not scanned" — there is no scan to
+stop. That is the whole difference in what the flag means on those four triggers.
+
+## `EmailTemplate` is gone (2026-08-21)
+
+Third and last part. The entity, its table, its four admin pages, `EmailTemplateAdminService` and
+the `EmailTemplates` DbSet are all deleted, and `Admin → Email Templates` no longer exists. What was
+two screens describing two halves of one thing is one screen: **Messages**.
+
+### The seeder seeds messages
+
+`EmailDefaultsSeeder` used to seed seven templates and then four rules pointing at four of them by
+key — the copy step existed only so both models could hold the same words while both existed. It
+seeds the same seven pieces of text once now, each on the trigger that sends it, from one `Seeds`
+list.
+
+⚠️ **Automatic messages arrive off; hand-sent ones arrive on.** The risk being avoided is unread mail
+going out by itself, and a message nothing sends until somebody presses a button is not that. Seeding
+the hand-sent ones off would leave the felony-disclosure and youth-program buttons silently doing
+nothing, which reads as broken rather than as safe.
+
+The `Team.MessageRulesSeededUtc` tombstone is unchanged and still load-bearing: a per-message
+"does this team have one for this trigger?" check re-adds a message somebody deleted on the next
+Worker start, quietly resuming a send they had stopped.
+
+### The page is called Messages
+
+Grouped by trigger, as it was. Manual triggers sit under their own **Sent by hand** heading, because
+"when" and "to" are empty for them and mixing them in among the scheduled ones invites reading a
+blank delay as a bug. Row actions are unchanged: edit, copy, switch on/off, delete.
+
+Plain words throughout, at Mike's instruction — he could not read his own form:
+
+> *"Do not over complicate the user interface ... just call it carbon copy and blind carbon copy, or
+> C.C. or BCC. You had a big long explanation about what it was and even I was confused, and I built
+> it ... there's also something about a per cycle or tick or something and I found that confusing
+> myself."*
+
+So: **Cc** and **Bcc** with one short line each, and *"Only send one copy, even when the message goes
+to many people"* where the fan-out control used to explain itself in a paragraph. The reasoning moved
+into code comments, which is where it was useful anyway.

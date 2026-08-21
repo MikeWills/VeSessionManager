@@ -171,7 +171,7 @@ public class CandidateNotificationService(
         if (!await TrySendAsync(
             team, credentials, YouthProgramInstructionsKey, candidate, emailSettings, placeholders,
             // No trigger point sends this one — a person decides — so it is the marker value.
-            MessageTrigger.SentByHand, YouthProgramLabel, cancellationToken))
+            MessageTrigger.ManualYouthProgramInstructions, YouthProgramLabel, cancellationToken))
         {
             return CandidateEmailSendResult.TemplateMissing;
         }
@@ -246,7 +246,7 @@ public class CandidateNotificationService(
             team, credentials, FelonyDisclosureInstructionsKey, candidate, emailSettings, placeholders,
             // A rule can send this too (FelonyDisclosureDeclaredScanner), so it records the same
             // trigger either way and the history does not care which path produced it.
-            MessageTrigger.FelonyDisclosureDeclared, FelonyInstructionsLabel, cancellationToken))
+            MessageTrigger.ManualFelonyDisclosureInstructions, FelonyInstructionsLabel, cancellationToken))
         {
             return CandidateEmailSendResult.TemplateMissing;
         }
@@ -422,11 +422,24 @@ public class CandidateNotificationService(
         Team team, EmailCredentials credentials, string templateKey, Candidate candidate, EmailSettings emailSettings,
         Dictionary<string, string> placeholders, MessageTrigger trigger, string label, CancellationToken cancellationToken)
     {
-        var rendered = await templateRenderer.RenderAsync(team.Id, templateKey, placeholders, cancellationToken);
-        if (rendered is null)
+        // The message for whatever sends this, rather than a template looked up by key (2026-08-21).
+        // The trigger was already being passed for the run marker, so it was the thing identifying
+        // this send all along — the key was a second name for the same fact, and the one that could
+        // point at nothing.
+        //
+        // Switched off means not sent: for these, "off" is how a team declines an email it does not
+        // want, and there is no scan to stop instead.
+        var message = await dbContext.MessageRules
+            .AsNoTracking()
+            .FirstOrDefaultAsync(r => r.TeamId == team.Id && r.Trigger == trigger && r.IsEnabled, cancellationToken);
+        if (message is null)
         {
+            logger.LogInformation("Team {TeamId} has no enabled message for {Trigger} — nothing sent for {Label}", team.Id, trigger, label);
             return false;
         }
+
+        var rendered = await templateRenderer.RenderTextAsync(
+            team.Id, message.Subject, message.Body, placeholders, message.Name, cancellationToken);
 
         await emailSender.SendAsync(
             credentials,

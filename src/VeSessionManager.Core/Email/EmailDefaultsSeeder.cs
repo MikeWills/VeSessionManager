@@ -6,26 +6,22 @@ using VeSessionManager.Core.Entities;
 namespace VeSessionManager.Core.Email;
 
 /// <summary>
-/// Seeds one EmailSettings row, the EmailTemplate rows, and (since #401) the four MessageRules that
-/// reproduce this app's original automatic sends, per Team, if they don't already
-/// exist for that team. Unlike DevDataSeeder, this runs in every environment (not just
-/// Development) — real deployments need real template rows to send anything, not just local
-/// dev convenience data. Idempotent per-row (checks existence individually, per team) so it never
-/// overwrites an Admin's edits to seeded content, matching the spec's "treat that content as a
-/// starting point... not the source of truth going forward."
+/// What a team starts with: one <see cref="EmailSettings"/> row and a set of example
+/// <see cref="MessageRule"/>s, per team. Runs in every environment, unlike DevDataSeeder — a real
+/// deployment needs these rows to send anything at all.
 ///
-/// Multi-team: both EmailSettings and EmailTemplate content are per-team (confirmed with the
-/// user — templates are customizable per team, not shared) — this loops every Team and seeds a
-/// full set for each, rather than seeding once globally. See docs/multi-team.md.
+/// <para><b>Templates are gone (2026-08-21).</b> This used to seed seven <c>EmailTemplate</c> rows and
+/// then four rules pointing at four of them by key. A message owns its words now, so there is one
+/// pass and one table: the same seven pieces of text, each on the trigger that sends it.</para>
 ///
-/// **Two callers, and the important one is team creation** (moved here from the Worker project
-/// 2026-08-04). This used to run *only* at Worker startup, over whichever teams existed at that
-/// moment — so a team created afterwards through Admin → Teams had no templates and, worse, no
-/// EmailSettings row, which made CandidateNotificationService skip that team entirely with one log
-/// line and send nothing at all. The Web process could create a team that only a restart of a
-/// different process could make functional, and nothing said so. TeamSettingsService.CreateAsync now
-/// calls SeedForTeamAsync directly; the Worker's startup sweep stays as an idempotent backfill for
-/// teams that predate this (and for any created while the Worker was down).
+/// <para><b>Two callers, and the important one is team creation</b> (moved here from the Worker
+/// project 2026-08-04). This used to run <i>only</i> at Worker startup, over whichever teams existed
+/// at that moment — so a team created afterwards through Admin → Teams had no EmailSettings row,
+/// which made CandidateNotificationService skip that team entirely with one log line and send
+/// nothing. The Web process could create a team that only a restart of a different process could
+/// make functional, and nothing said so. <c>TeamSettingsService.CreateAsync</c> now calls
+/// <see cref="SeedForTeamAsync"/> directly; the Worker's startup sweep stays as an idempotent
+/// backfill for teams that predate this (and for any created while the Worker was down).</para>
 /// </summary>
 public static class EmailDefaultsSeeder
 {
@@ -54,20 +50,93 @@ public static class EmailDefaultsSeeder
                 AdminNotificationEmail = "admin@example.org",
                 // DateTime.UtcNow rather than an injected TimeProvider, which every service here
                 // uses (audit item D-16). Deliberate: this is a static startup seeder with no DI
-                // scope of its own, and threading a clock through three static methods and two call
-                // sites would buy a testable timestamp nothing asserts on — the seeder's tests are
-                // about which rows appear, not when. If this ever becomes an instance service, take
-                // the clock then.
+                // scope of its own, and threading a clock through would buy a testable timestamp
+                // nothing asserts on — the seeder's tests are about which rows appear, not when.
                 UpdatedUtc = DateTime.UtcNow
             });
             logger.LogWarning("Seeded default EmailSettings for team {TeamId} ({TeamName}) with placeholder From/Reply-To/PrivacyPolicy/AdminNotification values — these must be updated before sending real candidate email",
                 team.Id, team.Name);
         }
 
-        // Deliberately demonstrates the formatting an Admin has available (headings, bold, a
-        // bullet list, links) and every placeholder this template key supports — not meant to be
-        // the final wording, just a real, edit-in-place starting point per the spec.
-        await SeedTemplateIfMissingAsync(dbContext, logger, team, "RegistrationConfirmation",
+        SeedMessages(dbContext, logger, team);
+    }
+
+    /// <summary>
+    /// The example messages, seeded <b>once per team, ever</b> — recorded by
+    /// <see cref="Team.MessageRulesSeededUtc"/>.
+    ///
+    /// <para>That tombstone is load-bearing (#401 PR2). A per-message "does this team have one for
+    /// this trigger?" check re-adds a message somebody deleted on the very next Worker start, quietly
+    /// resuming a send they had stopped. Setting a team up is a one-time act, not an invariant to
+    /// maintain, and a team that wants nothing at a trigger point is entitled to have nothing.</para>
+    ///
+    /// <para><b><c>CreatedUtc</c> is the risky line, and it is deliberately "now".</b> Every scan is
+    /// bounded by it, so a message created at this moment never fires for a subject whose trigger
+    /// moment already passed. On an existing deployment that means somebody who registered this
+    /// morning and has not had their confirmation yet will not get one — accepted, and confirmed with
+    /// Mike, as the price of the direction that cannot mass-mail.</para>
+    /// </summary>
+    private static void SeedMessages(AppDbContext dbContext, ILogger logger, Team team)
+    {
+        if (team.MessageRulesSeededUtc is not null)
+        {
+            return;
+        }
+
+        var createdUtc = DateTime.UtcNow;
+
+        foreach (var seed in Seeds.All)
+        {
+            dbContext.MessageRules.Add(new MessageRule
+            {
+                TeamId = team.Id,
+                Name = seed.Name,
+                Trigger = seed.Trigger,
+                ParameterHours = seed.ParameterHours,
+                Subject = seed.Subject,
+                Body = seed.Body,
+                Channel = MessageChannel.Email,
+                Recipient = seed.Recipient,
+                FanOut = MessageFanOut.PerRecipient,
+                IsEnabled = seed.Enabled,
+                CreatedUtc = createdUtc
+            });
+        }
+
+        team.MessageRulesSeededUtc = createdUtc;
+        logger.LogInformation("Seeded {Count} example messages for team {TeamId} ({TeamName})", Seeds.All.Count, team.Id, team.Name);
+    }
+
+    /// <param name="Enabled">
+    /// <b>Automatic messages arrive off; hand-sent ones arrive on</b> (Mike, 2026-08-21: "keep them
+    /// all turned off"). The risk being avoided is unread mail going out by itself, and a message
+    /// nothing sends until somebody presses a button is not that — off would leave the
+    /// felony-disclosure and youth-program buttons silently doing nothing, which reads as broken
+    /// rather than as safe.
+    /// </param>
+    /// <param name="Recipient">
+    /// Ignored for a manual trigger, whose <c>LegalRecipients</c> is empty: the people are picked at
+    /// send time, so the field is not even rendered on those.
+    /// </param>
+    private sealed record MessageSeed(
+        MessageTrigger Trigger,
+        string Name,
+        string Subject,
+        string Body,
+        int? ParameterHours,
+        MessageRecipient Recipient,
+        bool Enabled);
+
+    /// <summary>
+    /// The seven starting messages. The wording deliberately demonstrates the formatting a team has
+    /// available (headings, bold, a bullet list, links) and the tags each trigger actually supplies —
+    /// a real, edit-in-place starting point rather than final copy.
+    /// </summary>
+    private static class Seeds
+    {
+        private static readonly MessageSeed RegistrationConfirmation = new(
+            MessageTrigger.CandidateRegistered,
+            "Registration confirmation",
             "Your VE Exam Session Registration",
             """
             <p>Hi {{CandidateFirstName}},</p>
@@ -82,9 +151,12 @@ public static class EmailDefaultsSeeder
             <p>Payment link (if applicable): {{PaymentLinkUrl}}</p>
             <p>Questions? Just reply to this email — {{CandidateFirstName}}, we're happy to help.</p>
             <p><a href="{{PrivacyPolicyUrl}}">Privacy Policy</a></p>
-            """);
+            """,
+            ParameterHours: null, MessageRecipient.Candidate, Enabled: false);
 
-        await SeedTemplateIfMissingAsync(dbContext, logger, team, "DayBeforeReminder",
+        private static readonly MessageSeed DayBeforeReminder = new(
+            MessageTrigger.BeforeSessionStart,
+            "Reminder 24 hours before the session",
             "Reminder: Your VE Exam Session is Tomorrow",
             """
             <p>Hi {{CandidateFirstName}},</p>
@@ -96,17 +168,17 @@ public static class EmailDefaultsSeeder
             </ul>
             <p>Outstanding payment link (if applicable): {{OutstandingPaymentLinkUrl}}</p>
             <p>See you then, {{CandidateFirstName}}!</p>
-            """);
+            """,
+            ParameterHours: 24, MessageRecipient.Candidate, Enabled: false);
 
-        // #219: replaces PaymentReminder5Day, which chased the team's exam fee — money already
-        // collected at the session, and so never actually outstanding when this fires. A new key
-        // rather than new copy under the old one, because a deployment that customised the old
-        // template must not have its text silently repurposed to a different fee. The old row is
-        // simply no longer sent; see EmailTemplateTriggers.Retired.
+        // #219: chases the FCC's own application fee, not the team's exam fee — that one is collected
+        // at the session and so was never actually outstanding when the old reminder fired.
         //
         // No payment link anywhere in this body, on purpose. FCC bills the applicant directly, and
         // the team's Square link pays a different bill.
-        await SeedTemplateIfMissingAsync(dbContext, logger, team, "FccFeeReminder5Day",
+        private static readonly MessageSeed FccFeeReminder = new(
+            MessageTrigger.FccFeeOutstanding,
+            "FCC fee reminder after 5 days",
             "Action needed: the FCC is still waiting for your application fee",
             """
             <p>Hi {{CandidateName}},</p>
@@ -122,25 +194,31 @@ public static class EmailDefaultsSeeder
             it is worth checking your spam folder before starting over.</p>
             <p>If you have already paid, you can ignore this — it can take a few days for the FCC to
             record it.</p>
-            """);
+            """,
+            ParameterHours: 120, MessageRecipient.Candidate, Enabled: false);
 
-        await SeedTemplateIfMissingAsync(dbContext, logger, team, "PaymentExpirationNotice",
+        // The one that never went to a candidate: it tells the Session Manager a payment link has
+        // gone stale. That used to be a special case inside the send path; it is a field now.
+        private static readonly MessageSeed PaymentExpirationNotice = new(
+            MessageTrigger.PaymentUnpaid,
+            "Unpaid payment notice after 10 days",
             "Unpaid Exam Fee Expired",
             """
             <p>{{CandidateName}}'s exam fee ({{PaymentAmount}}) from the session on {{SessionDate}} has gone
             10+ days without payment and is now marked expired.</p>
-            <p>This is an internal notice — it goes to the Session Manager (EmailSettings.AdminNotificationEmail),
-            not the candidate.</p>
-            """);
+            <p>This is an internal notice — it goes to the Session Manager, not the candidate.</p>
+            """,
+            ParameterHours: 240, MessageRecipient.TeamAdminAddress, Enabled: false);
 
-        // Sent by a per-candidate button, NOT automatically (#221; this comment said otherwise until
-        // #314/L-19). It used to fire from SessionActionService.MarkCompletedAsync for anyone whose
-        // Tested flag that call flipped — which meant an email about someone's felony disclosure went
-        // out as a side effect of a bulk status change, and could only ever arrive AFTER the exam,
-        // when the candidate can no longer easily ask anyone about it. It is now offered whenever a
-        // disclosure is declared, and Tested is not consulted at all. Informational only: the club
-        // has no role beyond telling them extra FCC steps are required.
-        await SeedTemplateIfMissingAsync(dbContext, logger, team, "FelonyDisclosureInstructions",
+        // Sent by a per-candidate button, NOT automatically (#221). It used to fire from
+        // SessionActionService.MarkCompletedAsync for anyone whose Tested flag that call flipped —
+        // which meant an email about someone's felony disclosure went out as a side effect of a bulk
+        // status change, and could only ever arrive AFTER the exam, when the candidate can no longer
+        // easily ask anyone about it. Informational only: the club has no role beyond telling them
+        // extra FCC steps are required.
+        private static readonly MessageSeed FelonyDisclosureInstructions = new(
+            MessageTrigger.ManualFelonyDisclosureInstructions,
+            "Felony disclosure instructions",
             "Important: Additional FCC Steps Required",
             """
             <p>Hi {{CandidateName}},</p>
@@ -150,16 +228,15 @@ public static class EmailDefaultsSeeder
             <p>This is an FCC requirement, not something our club administers — we can't advise on the
             content of your submission, only let you know it's required.</p>
             <p>Questions about the process itself should go to the FCC directly.</p>
-            """);
+            """,
+            ParameterHours: null, MessageRecipient.Candidate, Enabled: true);
 
-        // Phase 9b: manual, per-candidate trigger from the Session Manager ("Send ARRL Youth Program
-        // instructions"), only surfaced when the session's Vec.SupportsYouthProgram = true.
-        // #144. Unlike every other template here, nothing sends this one: it is the starting text for
-        // a message composed on a session's "Email candidates" screen, edited per send. The seeded
-        // copy is therefore more obviously a placeholder than the others — what a team points new
-        // licensees at is local knowledge this app cannot guess, and the whole point of storing it is
-        // that they write it once and keep it.
-        await SeedTemplateIfMissingAsync(dbContext, logger, team, "GettingStartedLocally",
+        // #144. The seeded copy is more obviously a placeholder than the others, on purpose: what a
+        // team points new licensees at is local knowledge this app cannot guess, and the whole point
+        // of storing it is that they write it once and keep it.
+        private static readonly MessageSeed GettingStartedLocally = new(
+            MessageTrigger.ManualToCandidate,
+            "Getting started locally",
             "Welcome to amateur radio — getting started locally",
             """
             <p>Hi {{CandidateFirstName}},</p>
@@ -174,9 +251,14 @@ public static class EmailDefaultsSeeder
             </ul>
             <p>Reply to this email if you have questions — someone here will answer.</p>
             <p>{{TeamName}}</p>
-            """);
+            """,
+            ParameterHours: null, MessageRecipient.Candidate, Enabled: true);
 
-        await SeedTemplateIfMissingAsync(dbContext, logger, team, "ArrlYouthProgramInstructions",
+        // Phase 9b: a per-candidate button, only surfaced when the session's Vec.SupportsYouthProgram
+        // is true.
+        private static readonly MessageSeed YouthProgramInstructions = new(
+            MessageTrigger.ManualYouthProgramInstructions,
+            "Youth program instructions",
             "ARRL Youth Program — Discount/Reimbursement Instructions",
             """
             <p>Hi {{CandidateName}},</p>
@@ -184,105 +266,18 @@ public static class EmailDefaultsSeeder
             for ARRL's youth discount/FCC-fee-reimbursement scholarship program.</p>
             <p>Details and the submission form are available from ARRL — reach out to us if you have
             questions about your eligibility.</p>
-            """);
+            """,
+            ParameterHours: null, MessageRecipient.Candidate, Enabled: true);
 
-        await SeedMessageRulesAsync(dbContext, logger, team);
-    }
-
-    /// <summary>
-    /// The four rules that reproduce what this app sent automatically before trigger points existed
-    /// (#401) — 24 hours before a session, 5 days into an outstanding FCC fee, 10 days into an unpaid
-    /// payment, and a confirmation on registration. Seeded per team so a team starts with today's
-    /// behaviour and edits from there, exactly as the templates above are.
-    ///
-    /// <para><b><c>CreatedUtc</c> is the risky line, and it is deliberately "now".</b> Every scan is
-    /// bounded by it, so a rule created at this moment never fires for a subject whose trigger moment
-    /// already passed. On an existing deployment that means somebody who registered this morning and
-    /// has not had their confirmation yet will not get one — accepted, and confirmed with Mike, as the
-    /// price of the direction that cannot mass-mail. The migration that backfills a
-    /// <c>MessageRuleRun</c> per already-sent message is the second, independent guard against the
-    /// same thing; either alone would do, which is the point.</para>
-    ///
-    /// <para><b>Once per team, ever</b> — recorded by <see cref="Team.MessageRulesSeededUtc"/>, unlike
-    /// the templates above which are checked row by row. That difference is load-bearing (#401 PR2):
-    /// a per-trigger check re-adds a rule somebody deleted on the very next Worker start, quietly
-    /// resuming a send they had stopped. Setting a new team up is a one-time act, not an invariant to
-    /// maintain, and a team that wants no rule at a trigger point is entitled to have none.</para>
-    /// </summary>
-    private static async Task SeedMessageRulesAsync(AppDbContext dbContext, ILogger logger, Team team)
-    {
-        if (team.MessageRulesSeededUtc is not null)
-        {
-            return;
-        }
-
-        var createdUtc = DateTime.UtcNow;
-
-        SeedRule(dbContext, logger, team, MessageTrigger.CandidateRegistered,
-            "Registration confirmation", "RegistrationConfirmation", parameterHours: null, MessageRecipient.Candidate, createdUtc);
-
-        SeedRule(dbContext, logger, team, MessageTrigger.BeforeSessionStart,
-            "Reminder 24 hours before the session", "DayBeforeReminder", parameterHours: 24, MessageRecipient.Candidate, createdUtc);
-
-        SeedRule(dbContext, logger, team, MessageTrigger.FccFeeOutstanding,
-            "FCC fee reminder after 5 days", "FccFeeReminder5Day", parameterHours: 120, MessageRecipient.Candidate, createdUtc);
-
-        // The one that never went to a candidate: it tells the Session Manager a payment link has
-        // gone stale. That used to be a special case inside the send path; it is a field now.
-        SeedRule(dbContext, logger, team, MessageTrigger.PaymentUnpaid,
-            "Unpaid payment notice after 10 days", "PaymentExpirationNotice", parameterHours: 240, MessageRecipient.TeamAdminAddress, createdUtc);
-
-        team.MessageRulesSeededUtc = createdUtc;
-    }
-
-    /// <summary>
-    /// Seeds one example message, <b>switched off</b>.
-    ///
-    /// <para>Off is deliberate (Mike, 2026-08-21): these are examples of what a team can set up, not
-    /// a set of emails a new team starts sending to real people without having read them. A team
-    /// turns on the ones it wants.</para>
-    ///
-    /// <para>The words are copied from the template of the same name seeded moments earlier, so there
-    /// is one source of the text while both models exist. That lookup goes away with the template
-    /// table itself.</para>
-    /// </summary>
-    private static void SeedRule(
-        AppDbContext dbContext, ILogger logger, Team team, MessageTrigger trigger, string name, string templateKey,
-        int? parameterHours, MessageRecipient recipient, DateTime createdUtc)
-    {
-        var source = dbContext.EmailTemplates.Local.FirstOrDefault(t => t.TeamId == team.Id && t.Key == templateKey)
-            ?? dbContext.EmailTemplates.FirstOrDefault(t => t.TeamId == team.Id && t.Key == templateKey);
-        if (source is null)
-        {
-            logger.LogWarning("No seeded text for {TemplateKey}; skipping the example message for team {TeamId}", templateKey, team.Id);
-            return;
-        }
-
-        dbContext.MessageRules.Add(new MessageRule
-        {
-            TeamId = team.Id,
-            Name = name,
-            Trigger = trigger,
-            ParameterHours = parameterHours,
-            Subject = source.Subject,
-            Body = source.Body,
-            Channel = MessageChannel.Email,
-            Recipient = recipient,
-            FanOut = MessageFanOut.PerRecipient,
-            IsEnabled = false,
-            CreatedUtc = createdUtc
-        });
-        logger.LogInformation("Seeded example message {Trigger} (\"{Name}\") for team {TeamId}, switched off", trigger, name, team.Id);
-    }
-
-    private static async Task SeedTemplateIfMissingAsync(AppDbContext dbContext, ILogger logger, Team team, string key, string subject, string body)
-    {
-        if (await dbContext.EmailTemplates.AnyAsync(t => t.TeamId == team.Id && t.Key == key))
-        {
-            return;
-        }
-
-        dbContext.EmailTemplates.Add(new EmailTemplate { TeamId = team.Id, Key = key, Subject = subject, Body = body });
-        logger.LogInformation("Seeded default EmailTemplate {Key} for team {TeamId}", key, team.Id);
+        public static readonly IReadOnlyList<MessageSeed> All =
+        [
+            RegistrationConfirmation,
+            DayBeforeReminder,
+            FccFeeReminder,
+            PaymentExpirationNotice,
+            FelonyDisclosureInstructions,
+            GettingStartedLocally,
+            YouthProgramInstructions
+        ];
     }
 }

@@ -1,3 +1,4 @@
+using VeSessionManager.Core.Messaging;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using VeSessionManager.Core.Data;
@@ -25,7 +26,7 @@ public class MessageRuleSeedingTests
     }
 
     [Fact]
-    public async Task ANewTeam_GetsFourExampleMessages_AllSwitchedOff()
+    public async Task ANewTeam_GetsExampleMessages_AutomaticOnesSwitchedOff()
     {
         await using var dbContext = CreateContext();
         var team = await SeedTeamAsync(dbContext);
@@ -34,16 +35,28 @@ public class MessageRuleSeedingTests
         await dbContext.SaveChangesAsync();
 
         var rules = await dbContext.MessageRules.Where(r => r.TeamId == team.Id).ToListAsync();
-        Assert.Equal(4, rules.Count);
+
+        // Four automatic, three hand-sent. The hand-sent ones were templates with no rule until the
+        // content refactor; they are messages on their own manual triggers now.
+        Assert.Equal(7, rules.Count);
         Assert.Equal(24, rules.Single(r => r.Trigger == MessageTrigger.BeforeSessionStart).ParameterHours);
         Assert.Equal(120, rules.Single(r => r.Trigger == MessageTrigger.FccFeeOutstanding).ParameterHours);
         Assert.Equal(240, rules.Single(r => r.Trigger == MessageTrigger.PaymentUnpaid).ParameterHours);
         Assert.Equal(MessageRecipient.TeamAdminAddress, rules.Single(r => r.Trigger == MessageTrigger.PaymentUnpaid).Recipient);
 
-        // ⚠️ All four arrive SWITCHED OFF (Mike, 2026-08-21: "keep them all turned off"). They are
-        // examples of what a team can set up, not mail a new team starts sending to real people
-        // before anybody has read it. A team turns on the ones it wants.
-        Assert.All(rules, r => Assert.False(r.IsEnabled));
+        // ⚠️ The AUTOMATIC ones arrive switched off (Mike, 2026-08-21: "keep them all turned off") —
+        // examples of what a team can set up, not mail a new team starts sending to real people before
+        // anybody has read it.
+        var automatic = rules.Where(r => MessageTriggerDefinitions.For(r.Trigger).Mechanism != MessageTriggerMechanism.Manual).ToList();
+        Assert.Equal(4, automatic.Count);
+        Assert.All(automatic, r => Assert.False(r.IsEnabled));
+
+        // The hand-sent ones arrive ON. The risk being avoided is unread mail going out by itself, and
+        // a message nothing sends until somebody presses a button is not that — off would leave the
+        // felony-disclosure and youth-program buttons silently doing nothing, which reads as broken.
+        var manual = rules.Where(r => MessageTriggerDefinitions.For(r.Trigger).Mechanism == MessageTriggerMechanism.Manual).ToList();
+        Assert.Equal(3, manual.Count);
+        Assert.All(manual, r => Assert.True(r.IsEnabled));
 
         // And each carries its own words rather than a key pointing at a template — which is the
         // whole change. A message with no body could only ever send a blank email.
@@ -100,7 +113,7 @@ public class MessageRuleSeedingTests
         await dbContext.SaveChangesAsync();
 
         var rules = await dbContext.MessageRules.ToListAsync();
-        Assert.Equal(4, rules.Count);
+        Assert.Equal(7, rules.Count);
         Assert.Equal(48, rules.Single(r => r.Trigger == MessageTrigger.BeforeSessionStart).ParameterHours);
         Assert.False(rules.Single(r => r.Trigger == MessageTrigger.PaymentUnpaid).IsEnabled);
     }
@@ -130,7 +143,10 @@ public class MessageRuleSeedingTests
 
         var rules = await dbContext.MessageRules.ToListAsync();
         Assert.DoesNotContain(rules, r => r.Trigger == MessageTrigger.PaymentUnpaid);
-        Assert.Equal(3, rules.Count);
+
+        // One fewer than a full seed: the deleted one stays deleted. Six rather than three since the
+        // three hand-sent messages joined the set.
+        Assert.Equal(6, rules.Count);
     }
 
     /// <summary>Deleting every one of them is an answer too — "we send nothing automatically" must survive a restart.</summary>
@@ -169,7 +185,7 @@ public class MessageRuleSeedingTests
         await EmailDefaultsSeeder.SeedForTeamAsync(dbContext, NullLogger.Instance, team);
         await dbContext.SaveChangesAsync();
 
-        Assert.Equal(4, await dbContext.MessageRules.CountAsync());
+        Assert.Equal(7, await dbContext.MessageRules.CountAsync());
     }
 
     /// <summary>Rules are per team, like the credentials that send them.</summary>
@@ -182,7 +198,7 @@ public class MessageRuleSeedingTests
 
         await EmailDefaultsSeeder.SeedAsync(dbContext, NullLogger.Instance);
 
-        Assert.Equal(4, await dbContext.MessageRules.CountAsync(r => r.TeamId == teamA.Id));
-        Assert.Equal(4, await dbContext.MessageRules.CountAsync(r => r.TeamId == teamB.Id));
+        Assert.Equal(7, await dbContext.MessageRules.CountAsync(r => r.TeamId == teamA.Id));
+        Assert.Equal(7, await dbContext.MessageRules.CountAsync(r => r.TeamId == teamB.Id));
     }
 }

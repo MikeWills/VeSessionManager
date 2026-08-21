@@ -57,16 +57,6 @@ public class MessageRuleNewModel(
     public string Body { get; set; } = "";
 
     /// <summary>
-    /// A template to arrive already pointing at (#409), so a link from a template does not land you in
-    /// a picker holding thirty of them. Its <b>id</b> rather than its key: the generated
-    /// <c>Custom.&lt;slug&gt;</c> key is deliberately never rendered anywhere — it is the mechanism
-    /// keeping team-defined templates from colliding with the ones code looks up by name, and a query
-    /// string is as public as a table cell. Resolved to a key in <see cref="OnGetAsync"/>.
-    /// </summary>
-    [BindProperty(SupportsGet = true)]
-    public int? TemplateId { get; set; }
-
-    /// <summary>
     /// Days, converted to hours on the way in — see <see cref="MessageDelay"/> for why the form and the
     /// column disagree on the unit. Half-days are legal, so this cannot be an <c>int</c>.
     /// </summary>
@@ -93,8 +83,6 @@ public class MessageRuleNewModel(
     [BindProperty]
     public MessageFanOut FanOut { get; set; } = MessageFanOut.PerRecipient;
 
-    public IReadOnlyList<MessageRulesModel.TemplateOption> Templates { get; private set; } = [];
-
     public IReadOnlyList<MessageTriggerDefinition> Triggers => MessageTriggerDefinitions.All;
 
     public static string Label(MessageTrigger trigger) => MessageTriggerLabels.Label(trigger);
@@ -116,24 +104,6 @@ public class MessageRuleNewModel(
         if (user is null || !adminAccessScope.CanManageTeam(user, TeamId))
         {
             return Forbid();
-        }
-
-        // Starting text, when somebody arrived from a template. Team-scoped and candidate-audience
-        // only, so a stale link or another team's id starts blank rather than being honoured — the
-        // same rule the old pre-selection followed, now copying words instead of choosing a key.
-        //
-        // ⚠️ A copy, deliberately. The message owns its words from here on, so editing it never
-        // reaches back and changes the template somebody else started from.
-        if (TemplateId is { } templateId)
-        {
-            var source = await dbContext.EmailTemplates
-                .AsNoTracking()
-                .Where(t => t.Id == templateId && t.TeamId == TeamId && t.Audience == EmailTemplateAudience.Candidates)
-                .Select(t => new { t.Subject, t.Body })
-                .FirstOrDefaultAsync(HttpContext.RequestAborted);
-
-            Subject = source?.Subject ?? "";
-            Body = source?.Body ?? "";
         }
 
         // Whatever the chosen trigger's default is, so the delay box is never blank on arrival.
@@ -180,14 +150,4 @@ public class MessageRuleNewModel(
         return RedirectToPage(new { teamId = TeamId, trigger = Trigger });
     }
 
-    // Candidate-audience only (#409). Every scanner's subject is a candidate or a payment, so a VE
-    // template rendered through a rule comes out with every one of its tokens blank — and the send
-    // succeeds. Refused in MessageRuleAdminService.ValidateAsync too; this is so it is never offered.
-    private async Task LoadTemplatesAsync() =>
-        Templates = await dbContext.EmailTemplates
-            .AsNoTracking()
-            .Where(t => t.TeamId == TeamId && t.Audience == EmailTemplateAudience.Candidates)
-            .OrderBy(t => t.Key)
-            .Select(t => new MessageRulesModel.TemplateOption(t.Key, t.DisplayName))
-            .ToListAsync(HttpContext.RequestAborted);
 }

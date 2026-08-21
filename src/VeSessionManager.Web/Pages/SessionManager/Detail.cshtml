@@ -139,7 +139,7 @@
                         @foreach (var choice in Model.EmailTemplateChoices)
                         {
                             <a class="item" asp-page="/SessionManager/CandidateEmail"
-                               asp-route-id="@Model.Session.Id" asp-route-template="@choice.Key">@choice.Label</a>
+                               asp-route-id="@Model.Session.Id" asp-route-message="@choice.Id">@choice.Label</a>
                         }
                         <hr>
                         <a class="item" asp-page="/SessionManager/CandidateEmail" asp-route-id="@Model.Session.Id">Write your own</a>

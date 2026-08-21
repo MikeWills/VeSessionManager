@@ -28,7 +28,7 @@ public class EmailLogoTests
     private static AppDbContext CreateContext() =>
         new(new DbContextOptionsBuilder<AppDbContext>().UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
 
-    private static async Task<Team> SeedTeamAsync(AppDbContext dbContext, string body, byte[]? logo = null)
+    private static async Task<Team> SeedTeamAsync(AppDbContext dbContext, byte[]? logo = null)
     {
         var team = new Team { Name = "Test Team", ExamToolsTeamCode = "TEST" };
         if (logo is not null)
@@ -38,7 +38,6 @@ public class EmailLogoTests
         }
 
         dbContext.Teams.Add(team);
-        dbContext.EmailTemplates.Add(new EmailTemplate { Team = team, Key = "RegistrationConfirmation", Subject = "Hi", Body = body });
         await dbContext.SaveChangesAsync();
         return team;
     }
@@ -52,10 +51,11 @@ public class EmailLogoTests
     public async Task LogoPlaceholder_BecomesACidImageTag_AndAttachesTheBytes()
     {
         using var dbContext = CreateContext();
-        var team = await SeedTeamAsync(dbContext, "<p>{{Logo}}</p><p>Hi {{CandidateName}}</p>", PngBytes());
+        var team = await SeedTeamAsync(dbContext, PngBytes());
 
-        var rendered = await CreateRenderer(dbContext).RenderAsync(
-            team.Id, "RegistrationConfirmation", new Dictionary<string, string> { ["CandidateName"] = "Ada" }, CancellationToken.None);
+        var rendered = await CreateRenderer(dbContext).RenderTextAsync(
+            team.Id, "Hi", "<p>{{Logo}}</p><p>Hi {{CandidateName}}</p>",
+            new Dictionary<string, string> { ["CandidateName"] = "Ada" }, "RegistrationConfirmation", CancellationToken.None);
 
         Assert.NotNull(rendered);
         Assert.Contains($"src=\"cid:{InlineImage.TeamLogoContentId}\"", rendered!.Body);
@@ -72,10 +72,11 @@ public class EmailLogoTests
     public async Task LogoPlaceholder_IsNotHtmlEncoded()
     {
         using var dbContext = CreateContext();
-        var team = await SeedTeamAsync(dbContext, "<p>{{Logo}}</p>", PngBytes());
+        var team = await SeedTeamAsync(dbContext, PngBytes());
 
-        var rendered = await CreateRenderer(dbContext).RenderAsync(
-            team.Id, "RegistrationConfirmation", new Dictionary<string, string>(), CancellationToken.None);
+        var rendered = await CreateRenderer(dbContext).RenderTextAsync(
+            team.Id, "Hi", "<p>{{Logo}}</p>",
+            new Dictionary<string, string>(), "RegistrationConfirmation", CancellationToken.None);
 
         Assert.DoesNotContain("&lt;img", rendered!.Body);
         Assert.Contains("<img", rendered.Body);
@@ -90,12 +91,14 @@ public class EmailLogoTests
     public async Task OtherPlaceholders_AreStillHtmlEncoded_EvenAlongsideTheLogo()
     {
         using var dbContext = CreateContext();
-        var team = await SeedTeamAsync(dbContext, "<p>{{Logo}}</p><p>{{CandidateName}}</p>", PngBytes());
+        var team = await SeedTeamAsync(dbContext, PngBytes());
 
-        var rendered = await CreateRenderer(dbContext).RenderAsync(
+        var rendered = await CreateRenderer(dbContext).RenderTextAsync(
             team.Id,
-            "RegistrationConfirmation",
+            "Hi",
+            "<p>{{Logo}}</p><p>{{CandidateName}}</p>",
             new Dictionary<string, string> { ["CandidateName"] = "<script>alert(1)</script>" },
+            "RegistrationConfirmation",
             CancellationToken.None);
 
         Assert.DoesNotContain("<script>", rendered!.Body);
@@ -107,10 +110,11 @@ public class EmailLogoTests
     public async Task NoLogoUploaded_RendersToNothing_AndAttachesNothing()
     {
         using var dbContext = CreateContext();
-        var team = await SeedTeamAsync(dbContext, "<p>{{Logo}}</p><p>Hi</p>");
+        var team = await SeedTeamAsync(dbContext);
 
-        var rendered = await CreateRenderer(dbContext).RenderAsync(
-            team.Id, "RegistrationConfirmation", new Dictionary<string, string>(), CancellationToken.None);
+        var rendered = await CreateRenderer(dbContext).RenderTextAsync(
+            team.Id, "Hi", "<p>{{Logo}}</p><p>Hi</p>",
+            new Dictionary<string, string>(), "RegistrationConfirmation", CancellationToken.None);
 
         Assert.DoesNotContain("{{Logo}}", rendered!.Body);
         Assert.DoesNotContain("<img", rendered.Body);
@@ -122,10 +126,11 @@ public class EmailLogoTests
     public async Task TemplateWithoutThePlaceholder_AttachesNothing_EvenWhenTheTeamHasALogo()
     {
         using var dbContext = CreateContext();
-        var team = await SeedTeamAsync(dbContext, "<p>Hi {{CandidateName}}</p>", PngBytes());
+        var team = await SeedTeamAsync(dbContext, PngBytes());
 
-        var rendered = await CreateRenderer(dbContext).RenderAsync(
-            team.Id, "RegistrationConfirmation", new Dictionary<string, string> { ["CandidateName"] = "Ada" }, CancellationToken.None);
+        var rendered = await CreateRenderer(dbContext).RenderTextAsync(
+            team.Id, "Hi", "<p>Hi {{CandidateName}}</p>",
+            new Dictionary<string, string> { ["CandidateName"] = "Ada" }, "RegistrationConfirmation", CancellationToken.None);
 
         Assert.Null(rendered!.InlineLogo);
     }

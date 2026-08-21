@@ -42,14 +42,6 @@ public class MessageRule
     public int? ParameterHours { get; set; }
 
     /// <summary>
-    /// Which of this team's <see cref="EmailTemplate.Key"/>s to render.
-    ///
-    /// <para>A string rather than a foreign key, for the same reason
-    /// <see cref="CandidateEmailSend.TemplateLabel"/> is one: a template renamed or removed must not
-    /// take history with it, and a team writes its own templates (#144), so the set is not fixed by
-    /// what the code looks up.</para>
-    /// </summary>
-    /// <summary>
     /// The subject line, and <see cref="Body"/> the words. <b>The message owns them</b> (2026-08-21).
     ///
     /// <para>These used to live on an <c>EmailTemplate</c> the rule pointed at by key. That split is

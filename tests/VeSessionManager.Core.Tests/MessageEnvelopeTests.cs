@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using VeSessionManager.Core.Admin;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Email;
@@ -61,10 +61,6 @@ public class MessageEnvelopeTests
             PrivacyPolicyUrl = "https://example.org/privacy",
             AdminNotificationEmail = "admin@example.org"
         });
-        dbContext.EmailTemplates.Add(new EmailTemplate
-        {
-            TeamId = team.Id, Key = "Confirm", Subject = "Hi {{CandidateName}}", Body = "<p>Hello</p>"
-        });
         await dbContext.SaveChangesAsync();
         return team;
     }
@@ -73,7 +69,8 @@ public class MessageEnvelopeTests
         AppDbContext dbContext, Team team, MessageReplyToSource replyToSource = MessageReplyToSource.EmailSettings,
         string? replyToOverride = null, string? bcc = null, bool oncePerRun = true)
     {
-        var rule = MessageRuleTestHarness.NewRule(team, MessageTrigger.CandidateRegistered, "Confirm", null, Now.AddYears(-1));
+        var rule = MessageRuleTestHarness.NewRule(team, MessageTrigger.CandidateRegistered, "<p>Hello</p>", null, Now.AddYears(-1));
+        rule.Subject = "Hi {{CandidateName}}";
         rule.ReplyToSource = replyToSource;
         rule.ReplyToOverride = replyToOverride;
         rule.BccAddress = bcc;

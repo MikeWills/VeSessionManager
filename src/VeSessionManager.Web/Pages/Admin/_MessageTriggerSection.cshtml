@@ -1,0 +1,138 @@
+@model VeSessionManager.Web.Pages.Admin.MessageRulesModel.TriggerSection
+@*
+    One moment and whatever messages a team has hung on it, including none.
+
+    A partial rather than two copies of the markup: the automatic and hand-sent groups differ only in
+    whether the "When" and "To" columns mean anything, and duplicating ninety lines of table and modal
+    to express that is how the two drift.
+*@
+<div class="session-panel" style="display:block; margin-bottom:20px;">
+    <div class="section-head">
+        <div>
+            <h3>@Model.Label</h3>
+            <p class="session-sub">@Model.Blurb</p>
+        </div>
+        <a class="btn-secondary btn-sm" asp-page="/Admin/MessageRuleNew"
+           asp-route-teamId="@ViewContext.RouteData.Values["teamId"]" asp-route-trigger="@((int)Model.Trigger)">+ New message</a>
+    </div>
+
+    @if (Model.Rules.Count == 0)
+    {
+        @* Said plainly rather than left blank. "Nothing happens here" is information — it is the whole
+           reason every moment renders whether or not it is configured. *@
+        <p class="session-sub">No messages — nothing is sent at this point.</p>
+    }
+    else
+    {
+        <div class="table-scroll">
+            <table class="cards">
+                <thead>
+                    <tr>
+                        <th>Message</th>
+                        @if (!Model.IsSentByHand)
+                        {
+                            <th>When</th>
+                            <th>To</th>
+                        }
+                        <th>Subject</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var rule in Model.Rules)
+                    {
+                        <tr>
+                            <td>
+                                <span class="session-title">@rule.Name</span>
+                                @if (!rule.IsEnabled)
+                                {
+                                    <span class="chip chip-neutral">Off</span>
+                                }
+                            </td>
+                            @if (!Model.IsSentByHand)
+                            {
+                                <td>@rule.ParameterLabel</td>
+                                <td>@rule.RecipientLabel</td>
+                            }
+                            @* The message's own subject. It used to name the template the rule pointed
+                               at, with a "Template missing" chip beside it — a message owns its words
+                               now, so there is nothing separate left to go missing. *@
+                            <td>@rule.Subject</td>
+                            @* Two different questions, so two actions: switching off is "not right
+                               now" and keeps the message on the screen; deleting is "we do not do
+                               this". Delete is confirmed and does not come back — the seeder sets a
+                               team up once and never re-adds. *@
+                            @* One line, always — see .row-actions-inline. Four quiet icons rather than
+                               four buttons: a glyph in a full button is four times the width, which is
+                               what wrapped these onto a second line for the longer names. *@
+                            <td class="row-actions">
+                                <span class="row-actions-inline">
+                                    <a class="icon-action" asp-page="/Admin/MessageRuleEdit" asp-route-id="@rule.Id"
+                                       title="Edit @rule.Name" aria-label="Edit @rule.Name">
+                                        <i class="bi bi-pencil" aria-hidden="true"></i>
+                                    </a>
+                                    @* Copying is how you get "and again a week earlier" without
+                                       retyping the words, recipient and channel. The copy arrives
+                                       switched off — see MessageRuleAdminService. *@
+                                    <form method="post" asp-page-handler="Duplicate">
+                                        <input type="hidden" name="ruleId" value="@rule.Id" />
+                                        <button type="submit" class="icon-action"
+                                                title="Copy @rule.Name" aria-label="Copy @rule.Name">
+                                            <i class="bi bi-copy" aria-hidden="true"></i>
+                                        </button>
+                                    </form>
+                                    @* The one action whose two states are worth distinguishing at a
+                                       glance, so it carries a filled/slashed pair rather than one icon
+                                       that means opposite things. *@
+                                    <form method="post" asp-page-handler="SetEnabled">
+                                        <input type="hidden" name="ruleId" value="@rule.Id" />
+                                        <input type="hidden" name="enabled" value="@((!rule.IsEnabled).ToString().ToLowerInvariant())" />
+                                        <button type="submit" class="icon-action"
+                                                title="@(rule.IsEnabled ? "Switch off" : "Switch on") @rule.Name"
+                                                aria-label="@(rule.IsEnabled ? "Switch off" : "Switch on") @rule.Name">
+                                            <i class="bi @(rule.IsEnabled ? "bi-toggle-on" : "bi-toggle-off")" aria-hidden="true"></i>
+                                        </button>
+                                    </form>
+                                    <button type="button" class="icon-action danger" data-open-modal="deleteRule-@rule.Id"
+                                            title="Delete @rule.Name" aria-label="Delete @rule.Name">
+                                        <i class="bi bi-trash" aria-hidden="true"></i>
+                                    </button>
+                                </span>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        @foreach (var rule in Model.Rules)
+        {
+            <div class="modal-backdrop" id="deleteRule-@rule.Id">
+                <div class="modal">
+                    <h3>Delete "@rule.Name"?</h3>
+                    <p class="session-sub">
+                        @if (Model.IsSentByHand)
+                        {
+                            <text>It will no longer be offered when somebody composes a message, and it will not come back. What it has already sent stays in the send log.</text>
+                        }
+                        else
+                        {
+                            <text>Nothing will be sent at this point by this message again, and it will not come back. What it has already sent stays in the send log.</text>
+                        }
+                    </p>
+                    <p class="session-sub">
+                        If you only want to pause it, use <strong>Switch off</strong> instead — that
+                        keeps the message and its settings.
+                    </p>
+                    <form method="post" asp-page-handler="Delete">
+                        <input type="hidden" name="ruleId" value="@rule.Id" />
+                        <div class="modal-actions">
+                            <button type="button" class="btn-secondary btn-sm" data-close-modal>Cancel</button>
+                            <button type="submit" class="btn-primary btn-sm">Delete message</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        }
+    }
+</div>

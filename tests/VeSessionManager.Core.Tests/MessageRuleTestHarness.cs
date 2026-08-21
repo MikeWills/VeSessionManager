@@ -83,24 +83,6 @@ public static class MessageRuleTestHarness
     /// A rule with <c>CreatedUtc</c> far enough in the past to bound nothing, which is what a test
     /// about a scanner's predicate wants. Tests about the bound itself pass their own.
     /// </summary>
-    /// <summary>
-    /// A rule carrying the words of a seeded template, for tests written before a message owned its
-    /// own content — they assert on what that seeded text renders to, and the text is still the point.
-    /// Falls back to the key as the body when nothing was seeded, so a test that never cared is
-    /// unaffected.
-    /// </summary>
-    public static async Task<MessageRule> NewRuleFromSeededTextAsync(
-        AppDbContext dbContext, Team team, MessageTrigger trigger, string templateKey, int? parameterHours,
-        DateTime createdUtc, MessageRecipient recipient = MessageRecipient.Candidate)
-    {
-        var source = await dbContext.EmailTemplates
-            .FirstOrDefaultAsync(t => t.TeamId == team.Id && t.Key == templateKey);
-
-        var rule = NewRule(team, trigger, source?.Body ?? templateKey, parameterHours, createdUtc, recipient);
-        if (source is not null) { rule.Subject = source.Subject; }
-        return rule;
-    }
-
     public static MessageRule NewRule(
         Team team, MessageTrigger trigger, string body, int? parameterHours, DateTime createdUtc,
         MessageRecipient recipient = MessageRecipient.Candidate) => new()

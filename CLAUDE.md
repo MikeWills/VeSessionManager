@@ -126,6 +126,25 @@ would be pure duplication — and goes straight to `CHANGELOG.md` instead. Non-p
 redesigns, hardening passes) start here and move to `CHANGELOG.md` once the section is at/over the
 cap and a newer entry needs to be added; oldest goes first.
 
+- **A message owns its own words, and there are no templates any more (2026-08-21).** Issue #401,
+  three stacked commits. See `docs/trigger-points.md`. Mike found the defect from the screen: **the
+  tags a body may use depend on the trigger that sends it, and a template had none** — so the editor
+  could show nothing. Not a missing affordance, an unanswerable question, and it is why my original
+  argument for the split (reuse) does not survive: reuse across *triggers* is exactly the part that
+  cannot work. Four things worth carrying forward. **Manual sends are trigger points too** — Mike's
+  insight, and what made it collapse to one object rather than two: a hand-composed email is a message
+  whose mechanism is "somebody pressed a button", so `Manual` joins `State` and `TimeRelative` and the
+  tag list becomes answerable everywhere. **Automatic messages seed off, hand-sent ones seed on** —
+  the risk is unread mail going out by itself, and a message nothing sends until a button is pressed
+  is not that; seeding those off would leave two candidate buttons silently doing nothing, which reads
+  as broken rather than as safe. ⚠️ **The migration deletes rather than converts** (Mike: *"delete it
+  all and re-create it all"*) — a `TemplateKey` renamed to `Subject` would leave every rule with
+  `DayBeforeReminder` as its subject and an empty body, which is nonsense that looks like data;
+  history survives because `MessageRuleRun` is `SetNull` and snapshots the name and trigger. And
+  **the rich-text editor moved rather than died** — it lived on the deleted Templates page, so
+  `message-editor.js` now serves the message editor; `app.js`'s own tag-chip handler bails on any chip
+  Quill has claimed (`data-token-handled`), because both firing on one click inserts the tag twice.
+
 - **The FCC application timeline is on screen now (2026-08-20).** Issue #195, opened as an idea
   recorded in a doc and never filed. See `docs/uls-watcher.md`. ExamTools' ULS mirror has always
   returned human-readable application history (`code_text: "Redlight Review Completed"`) with dates,
@@ -246,16 +265,6 @@ cap and a newer entry needs to be added; oldest goes first.
   scanners prefetch links; and **the subscribe box is gated by a team switch** because a team that
   does not email every VE about every session must not show a box implying it does. Still missing for
   full CAN-SPAM: a physical postal address in the footer, which no team field holds.
-
-- **Teams can write their own email templates (2026-08-16).** Issue #144, second PR — same doc.
-  `EmailTemplateAdminService` was deliberately edit-only because "the set of Keys is fixed by what the
-  services look up", and **that reasoning is why create/delete is safe rather than why it was
-  blocked**: a team-defined template is never looked up by anything, so nothing can break by its
-  absence. Two things worth carrying forward: **the dot in the generated `Custom.<slug>` key is the
-  whole mechanism** keeping the two populations apart — no shipped key has one, so a typed name can
-  never collide with a key the code looks up, including one added years from now; and **a rename must
-  not move the key**, since history rows and any open compose screen refer to it, which is also why
-  `CandidateEmailSend` stores a label string rather than a foreign key.
 
 Everything through Phase 0-10's initial build (ExamTools ingestion, Zoom/Discord, Square, email
 notifications, FCC ULS watcher, payment reminders, VE tracking, VEC submission tracker, admin

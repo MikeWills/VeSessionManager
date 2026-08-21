@@ -77,7 +77,7 @@ public class TeamPickerTests : IClassFixture<WebAppFactory>
     [Fact]
     public async Task AnAdminConfigPageOffersNoAllTeamsOption()
     {
-        var (html, teamCount) = await GetAsync("/Admin/EmailTemplates");
+        var (html, teamCount) = await GetAsync("/Admin/MessageRules");
 
         Assert.Contains(SecondTeamName, html);
         Assert.Equal(teamCount, TeamRadioCount(html));

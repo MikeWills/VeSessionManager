@@ -86,7 +86,6 @@ public class MessageRuleEditModel(
     public bool MonitoringCopyOncePerRun { get; set; }
 
     public MessageRule Rule { get; private set; } = null!;
-    public IReadOnlyList<MessageRulesModel.TemplateOption> Templates { get; private set; } = [];
 
     public MessageTriggerDefinition Definition => MessageTriggerDefinitions.For(Rule.Trigger);
     public bool TakesParameter => Definition.Mechanism == MessageTriggerMechanism.TimeRelative;
@@ -182,13 +181,6 @@ public class MessageRuleEditModel(
         }
 
         Rule = rule;
-        Templates = await dbContext.EmailTemplates
-            .AsNoTracking()
-            // Candidate-audience only (#409) — see MessageRuleNew.LoadTemplatesAsync.
-            .Where(t => t.TeamId == rule.TeamId && t.Audience == EmailTemplateAudience.Candidates)
-            .OrderBy(t => t.Key)
-            .Select(t => new MessageRulesModel.TemplateOption(t.Key, t.DisplayName))
-            .ToListAsync(HttpContext.RequestAborted);
         return null;
     }
 }

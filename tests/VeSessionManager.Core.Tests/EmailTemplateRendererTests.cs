@@ -7,6 +7,9 @@ using Xunit;
 
 namespace VeSessionManager.Core.Tests;
 
+// The "missing template key returns null" test that used to live here is gone, and nothing stands
+// in its place: message content is now MessageRule.Subject/Body handed straight to RenderTextAsync,
+// so there is no row that can be missing and no null for the renderer to return.
 public class EmailTemplateRendererTests
 {
     private static readonly DateTime Now = new(2026, 7, 20, 12, 0, 0, DateTimeKind.Utc);
@@ -35,17 +38,12 @@ public class EmailTemplateRendererTests
     {
         await using var dbContext = CreateContext();
         var team = await SeedTeamAsync(dbContext);
-        dbContext.EmailTemplates.Add(new EmailTemplate
-        {
-            TeamId = team.Id,
-            Key = "Test",
-            Subject = "Hello {{FirstName}}",
-            Body = "<p>Hi {{FirstName}}, your session is {{SessionDate}}.</p>"
-        });
-        await dbContext.SaveChangesAsync();
 
-        var result = await CreateRenderer(dbContext).RenderAsync(team.Id, "Test",
+        var result = await CreateRenderer(dbContext).RenderTextAsync(team.Id,
+            "Hello {{FirstName}}",
+            "<p>Hi {{FirstName}}, your session is {{SessionDate}}.</p>",
             new Dictionary<string, string> { ["FirstName"] = "Roana", ["SessionDate"] = "July 24" },
+            "Test",
             CancellationToken.None);
 
         Assert.NotNull(result);
@@ -62,17 +60,12 @@ public class EmailTemplateRendererTests
         // verbatim; Subject is plain text and stays unencoded.
         await using var dbContext = CreateContext();
         var team = await SeedTeamAsync(dbContext);
-        dbContext.EmailTemplates.Add(new EmailTemplate
-        {
-            TeamId = team.Id,
-            Key = "Test",
-            Subject = "Hi {{CandidateName}}",
-            Body = "<p>Hi {{CandidateName}}, welcome.</p>"
-        });
-        await dbContext.SaveChangesAsync();
 
-        var result = await CreateRenderer(dbContext).RenderAsync(team.Id, "Test",
+        var result = await CreateRenderer(dbContext).RenderTextAsync(team.Id,
+            "Hi {{CandidateName}}",
+            "<p>Hi {{CandidateName}}, welcome.</p>",
             new Dictionary<string, string> { ["CandidateName"] = "<script>alert(1)</script>" },
+            "Test",
             CancellationToken.None);
 
         Assert.NotNull(result);
@@ -85,17 +78,12 @@ public class EmailTemplateRendererTests
     {
         await using var dbContext = CreateContext();
         var team = await SeedTeamAsync(dbContext);
-        dbContext.EmailTemplates.Add(new EmailTemplate
-        {
-            TeamId = team.Id,
-            Key = "Test",
-            Subject = "Subject",
-            Body = "Payment link: {{PaymentLinkUrl}}"
-        });
-        await dbContext.SaveChangesAsync();
 
-        var result = await CreateRenderer(dbContext).RenderAsync(team.Id, "Test",
+        var result = await CreateRenderer(dbContext).RenderTextAsync(team.Id,
+            "Subject",
+            "Payment link: {{PaymentLinkUrl}}",
             new Dictionary<string, string> { ["PaymentLinkUrl"] = "" },
+            "Test",
             CancellationToken.None);
 
         Assert.NotNull(result);
@@ -107,17 +95,12 @@ public class EmailTemplateRendererTests
     {
         await using var dbContext = CreateContext();
         var team = await SeedTeamAsync(dbContext);
-        dbContext.EmailTemplates.Add(new EmailTemplate
-        {
-            TeamId = team.Id,
-            Key = "Test",
-            Subject = "Subject",
-            Body = "Hi {{Typo}}, welcome."
-        });
-        await dbContext.SaveChangesAsync();
 
-        var result = await CreateRenderer(dbContext).RenderAsync(team.Id, "Test",
+        var result = await CreateRenderer(dbContext).RenderTextAsync(team.Id,
+            "Subject",
+            "Hi {{Typo}}, welcome.",
             new Dictionary<string, string>(),
+            "Test",
             CancellationToken.None);
 
         Assert.NotNull(result);
@@ -126,32 +109,16 @@ public class EmailTemplateRendererTests
     }
 
     [Fact]
-    public async Task MissingTemplateKey_ReturnsNull_DoesNotThrow()
-    {
-        await using var dbContext = CreateContext();
-        var team = await SeedTeamAsync(dbContext);
-
-        var result = await CreateRenderer(dbContext).RenderAsync(team.Id, "DoesNotExist", new Dictionary<string, string>(), CancellationToken.None);
-
-        Assert.Null(result);
-    }
-
-    [Fact]
     public async Task MultiplePlaceholders_SameKey_AllSubstituted()
     {
         await using var dbContext = CreateContext();
         var team = await SeedTeamAsync(dbContext);
-        dbContext.EmailTemplates.Add(new EmailTemplate
-        {
-            TeamId = team.Id,
-            Key = "Test",
-            Subject = "Subject",
-            Body = "{{Name}}, {{Name}} again, and {{Other}}."
-        });
-        await dbContext.SaveChangesAsync();
 
-        var result = await CreateRenderer(dbContext).RenderAsync(team.Id, "Test",
+        var result = await CreateRenderer(dbContext).RenderTextAsync(team.Id,
+            "Subject",
+            "{{Name}}, {{Name}} again, and {{Other}}.",
             new Dictionary<string, string> { ["Name"] = "Roana", ["Other"] = "x" },
+            "Test",
             CancellationToken.None);
 
         Assert.NotNull(result);
@@ -164,12 +131,9 @@ public class EmailTemplateRendererTests
         await using var dbContext = CreateContext();
         var teamA = await SeedTeamAsync(dbContext);
         var teamB = await SeedTeamAsync(dbContext);
-        dbContext.EmailTemplates.Add(new EmailTemplate { TeamId = teamA.Id, Key = "Test", Subject = "A", Body = "Team A" });
-        dbContext.EmailTemplates.Add(new EmailTemplate { TeamId = teamB.Id, Key = "Test", Subject = "B", Body = "Team B" });
-        await dbContext.SaveChangesAsync();
 
-        var resultA = await CreateRenderer(dbContext).RenderAsync(teamA.Id, "Test", new Dictionary<string, string>(), CancellationToken.None);
-        var resultB = await CreateRenderer(dbContext).RenderAsync(teamB.Id, "Test", new Dictionary<string, string>(), CancellationToken.None);
+        var resultA = await CreateRenderer(dbContext).RenderTextAsync(teamA.Id, "A", "Team A", new Dictionary<string, string>(), "Test", CancellationToken.None);
+        var resultB = await CreateRenderer(dbContext).RenderTextAsync(teamB.Id, "B", "Team B", new Dictionary<string, string>(), "Test", CancellationToken.None);
 
         Assert.Equal("Team A", resultA?.Body);
         Assert.Equal("Team B", resultB?.Body);
@@ -192,17 +156,12 @@ public class EmailTemplateRendererTests
     {
         await using var dbContext = CreateContext();
         var team = await SeedTeamAsync(dbContext);
-        dbContext.EmailTemplates.Add(new EmailTemplate
-        {
-            TeamId = team.Id,
-            Key = "Test",
-            Subject = "Session for {{FirstName}}",
-            Body = "<p>Hi</p>"
-        });
-        await dbContext.SaveChangesAsync();
 
-        var result = await CreateRenderer(dbContext).RenderAsync(team.Id, "Test",
+        var result = await CreateRenderer(dbContext).RenderTextAsync(team.Id,
+            "Session for {{FirstName}}",
+            "<p>Hi</p>",
             new Dictionary<string, string> { ["FirstName"] = "Roana\r\nBcc: victim@example.org" },
+            "Test",
             CancellationToken.None);
 
         Assert.NotNull(result);
@@ -221,17 +180,12 @@ public class EmailTemplateRendererTests
     {
         await using var dbContext = CreateContext();
         var team = await SeedTeamAsync(dbContext);
-        dbContext.EmailTemplates.Add(new EmailTemplate
-        {
-            TeamId = team.Id,
-            Key = "Test",
-            Subject = "For {{FirstName}}",
-            Body = "<p>Hi</p>"
-        });
-        await dbContext.SaveChangesAsync();
 
-        var result = await CreateRenderer(dbContext).RenderAsync(team.Id, "Test",
+        var result = await CreateRenderer(dbContext).RenderTextAsync(team.Id,
+            "For {{FirstName}}",
+            "<p>Hi</p>",
             new Dictionary<string, string> { ["FirstName"] = "Ada O'Brien & Co" },
+            "Test",
             CancellationToken.None);
 
         Assert.Equal("For Ada O'Brien & Co", result!.Subject);
@@ -253,17 +207,14 @@ public class EmailTemplateRendererTests
         var team = await SeedTeamAsync(dbContext);
         team.LogoBytes = [1, 2, 3];
         team.LogoContentType = "image/png";
-        dbContext.EmailTemplates.Add(new EmailTemplate
-        {
-            TeamId = team.Id,
-            Key = "Test",
-            Subject = "Hi",
-            Body = "<div>{{Logo}}</div>"
-        });
         await dbContext.SaveChangesAsync();
 
-        var result = await CreateRenderer(dbContext).RenderAsync(team.Id, "Test",
-            new Dictionary<string, string>(), CancellationToken.None);
+        var result = await CreateRenderer(dbContext).RenderTextAsync(team.Id,
+            "Hi",
+            "<div>{{Logo}}</div>",
+            new Dictionary<string, string>(),
+            "Test",
+            CancellationToken.None);
 
         // Live markup, not &lt;img …&gt;.
         Assert.Contains("<img src=\"cid:", result!.Body);
@@ -276,17 +227,12 @@ public class EmailTemplateRendererTests
     {
         await using var dbContext = CreateContext();
         var team = await SeedTeamAsync(dbContext);
-        dbContext.EmailTemplates.Add(new EmailTemplate
-        {
-            TeamId = team.Id,
-            Key = "Test",
-            Subject = "Hi",
-            Body = "<div>{{Logo}}</div>"
-        });
-        await dbContext.SaveChangesAsync();
 
-        var result = await CreateRenderer(dbContext).RenderAsync(team.Id, "Test",
+        var result = await CreateRenderer(dbContext).RenderTextAsync(team.Id,
+            "Hi",
+            "<div>{{Logo}}</div>",
             new Dictionary<string, string> { ["Logo"] = "<script>alert(1)</script>" },
+            "Test",
             CancellationToken.None);
 
         // No logo uploaded, so it renders empty — and the caller's value never appears.

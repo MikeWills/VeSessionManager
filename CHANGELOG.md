@@ -8,6 +8,19 @@ that window, or immediately if it's phase-numbered work already summarized in "C
 design rationale for any entry still lives in its linked `/docs/*.md` file, not here or in
 CLAUDE.md — this file, like CLAUDE.md's Change Log, is pointers only.
 
+- **Teams can write their own email templates (2026-08-16).** Issue #144, second PR.
+  ⚠️ **Superseded 2026-08-21 — `EmailTemplate` and this screen are deleted.** A message owns its own
+  subject and body now; see CLAUDE.md's Change Log and `docs/trigger-points.md`. Kept because the
+  reasoning still applies to any future "team-defined vs shipped" split.
+  `EmailTemplateAdminService` was deliberately edit-only because "the set of Keys is fixed by what the
+  services look up", and **that reasoning is why create/delete is safe rather than why it was
+  blocked**: a team-defined template is never looked up by anything, so nothing can break by its
+  absence. Two things worth carrying forward: **the dot in the generated `Custom.<slug>` key is the
+  whole mechanism** keeping the two populations apart — no shipped key has one, so a typed name can
+  never collide with a key the code looks up, including one added years from now; and **a rename must
+  not move the key**, since history rows and any open compose screen refer to it, which is also why
+  `CandidateEmailSend` stores a label string rather than a foreign key.
+
 - **Alerts have a bell now, and it links at the row rather than the list (2026-08-16).** Issue #339.
   See `docs/alerts.md`. The reconciliation badge was a number on an item **inside a closed dropdown** —
   invisible until you opened a menu you had no reason to open, to check a page you had no reason to

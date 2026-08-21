@@ -19,11 +19,11 @@
 <form method="get" class="filters" style="margin-bottom:18px;">
     <label class="ve-search" style="max-width:320px;">
         <span class="visually-hidden">Start from</span>
-        <select name="template" data-autosubmit class="filter-select" aria-label="Start from a template">
+        <select name="message" data-autosubmit class="filter-select" aria-label="Start from a message">
             <option value="">(no template) — write your own</option>
             @foreach (var choice in Model.Templates)
             {
-                <option value="@choice.Key" selected="@(choice.Key == Model.SelectedTemplateKey)">@choice.Label</option>
+                <option value="@choice.Id" selected="@(choice.Id == Model.SelectedMessageId)">@choice.Label</option>
             }
         </select>
     </label>
@@ -42,10 +42,10 @@
 }
 
 <form method="post">
-    @* name="template", matching the [BindProperty(Name = "template")] — not the property's own name,
+    @* name="message", matching the [BindProperty(Name = "message")] — not the property's own name,
        which binds nothing and would have labelled every send "Custom message". Caught by
        FormBindingTests, not by a passing send test. *@
-    <input type="hidden" name="template" value="@Model.SelectedTemplateKey" />
+    <input type="hidden" name="message" value="@Model.SelectedMessageId" />
     <div class="ve-panel">
         <h2>Message</h2>
         <p class="session-sub">

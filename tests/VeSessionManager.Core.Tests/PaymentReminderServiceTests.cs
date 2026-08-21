@@ -128,29 +128,27 @@ public class PaymentReminderServiceTests
             PrivacyPolicyUrl = "https://example.org/privacy",
             AdminNotificationEmail = "admin@example.org"
         });
-        dbContext.EmailTemplates.Add(new EmailTemplate
-        {
-            TeamId = team.Id,
-            Key = "FccFeeReminder5Day",
-            Subject = "The FCC is waiting for its fee",
-            // No payment placeholder anywhere, matching the seeded default. A test template that
-            // offered one would let a link creep back into the send path unnoticed (#218/#219).
-            Body = "Hi {{CandidateName}}, session {{SessionDate}}, FRN {{Frn}}"
-        });
-        dbContext.EmailTemplates.Add(new EmailTemplate
-        {
-            TeamId = team.Id,
-            Key = "PaymentExpirationNotice",
-            Subject = "Expired",
-            Body = "{{CandidateName}} owes {{PaymentAmount}} from {{SessionDate}}"
-        });
+        // The two rules that replaced this service's own sends, carrying their own words since
+        // 2026-08-21 — they used to point at the two templates seeded just above this. CreatedUtc a
+        // year back so it bounds nothing: these tests are about the thresholds, and the bound has its
+        // own tests.
+        //
+        // ⚠️ No payment placeholder anywhere in the FCC-fee body, matching the seeded default. A test
+        // body that offered one would let a link creep back into that send path unnoticed
+        // (#218/#219) — FCC bills the applicant directly, and the team's Square link pays a different
+        // bill.
+        var fccFeeReminder = MessageRuleTestHarness.NewRule(
+            team, MessageTrigger.FccFeeOutstanding,
+            "Hi {{CandidateName}}, session {{SessionDate}}, FRN {{Frn}}", 120, Now.AddYears(-1));
+        fccFeeReminder.Subject = "The FCC is waiting for its fee";
+        dbContext.MessageRules.Add(fccFeeReminder);
 
-        // The two rules that replaced this service's own sends. CreatedUtc a year back so it bounds
-        // nothing — these tests are about the thresholds, and the bound has its own tests.
-        dbContext.MessageRules.Add(await MessageRuleTestHarness.NewRuleFromSeededTextAsync(dbContext,
-            team, MessageTrigger.FccFeeOutstanding, "FRN {{Frn}} still owes the FCC", 120, Now.AddYears(-1)));
-        dbContext.MessageRules.Add(await MessageRuleTestHarness.NewRuleFromSeededTextAsync(dbContext,
-            team, MessageTrigger.PaymentUnpaid, "The {{PaymentAmount}} exam fee link has expired", 240, Now.AddYears(-1), MessageRecipient.TeamAdminAddress));
+        var expirationNotice = MessageRuleTestHarness.NewRule(
+            team, MessageTrigger.PaymentUnpaid,
+            "{{CandidateName}} owes {{PaymentAmount}} from {{SessionDate}}", 240, Now.AddYears(-1),
+            MessageRecipient.TeamAdminAddress);
+        expirationNotice.Subject = "Expired";
+        dbContext.MessageRules.Add(expirationNotice);
 
         await dbContext.SaveChangesAsync();
     }

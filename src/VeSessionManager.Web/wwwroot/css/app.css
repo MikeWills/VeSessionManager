@@ -566,22 +566,22 @@ footer.roster { margin-top: 28px; background: var(--surface); border: 1px solid 
    here is the chrome around it plus the theming Quill's Snow skin doesn't do — Snow is light-only,
    and this app has a theme toggle, so every hard-coded light value it ships needs an override
    below or the editor is a white slab in dark mode. */
-.template-editor .editor-tabs { display: flex; gap: 4px; margin-bottom: -1px; }
-.template-editor .editor-tab { font-family: "IBM Plex Mono", monospace; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; padding: 7px 12px; border: 1px solid var(--line-strong); border-bottom-color: transparent; border-radius: 5px 5px 0 0; background: var(--paper); color: var(--ink-soft); cursor: pointer; }
-.template-editor .editor-tab.active { background: var(--surface); color: var(--ink); }
+.message-editor .editor-tabs { display: flex; gap: 4px; margin-bottom: -1px; }
+.message-editor .editor-tab { font-family: "IBM Plex Mono", monospace; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; padding: 7px 12px; border: 1px solid var(--line-strong); border-bottom-color: transparent; border-radius: 5px 5px 0 0; background: var(--paper); color: var(--ink-soft); cursor: pointer; }
+.message-editor .editor-tab.active { background: var(--surface); color: var(--ink); }
 
 /* Exactly one of the two views is present at a time, so the tab is a real mode switch rather than
    two things fighting over the same value. */
-.template-editor .editor-visual { display: block; }
-.template-editor > textarea { display: none; }
-.template-editor.show-html .editor-visual { display: none; }
-.template-editor.show-html > textarea { display: block; }
-.template-editor > textarea { font-family: "IBM Plex Mono", monospace; font-size: 13px; line-height: 1.5; border-radius: 0 5px 5px 5px; }
+.message-editor .editor-visual { display: block; }
+.message-editor > textarea { display: none; }
+.message-editor.show-html .editor-visual { display: none; }
+.message-editor.show-html > textarea { display: block; }
+.message-editor > textarea { font-family: "IBM Plex Mono", monospace; font-size: 13px; line-height: 1.5; border-radius: 0 5px 5px 5px; }
 
-.template-editor .ql-toolbar.ql-snow { border-color: var(--line-strong); border-radius: 0 5px 0 0; background: var(--paper); }
-.template-editor .ql-container.ql-snow { border-color: var(--line-strong); border-radius: 0 0 5px 5px; background: var(--surface); font-family: "IBM Plex Sans", system-ui, sans-serif; font-size: 14px; }
-.template-editor .ql-editor { min-height: 200px; color: var(--ink); }
-.template-editor .ql-editor.ql-blank::before { color: var(--ink-soft); font-style: normal; }
+.message-editor .ql-toolbar.ql-snow { border-color: var(--line-strong); border-radius: 0 5px 0 0; background: var(--paper); }
+.message-editor .ql-container.ql-snow { border-color: var(--line-strong); border-radius: 0 0 5px 5px; background: var(--surface); font-family: "IBM Plex Sans", system-ui, sans-serif; font-size: 14px; }
+.message-editor .ql-editor { min-height: 200px; color: var(--ink); }
+.message-editor .ql-editor.ql-blank::before { color: var(--ink-soft); font-style: normal; }
 
 /* Clickable placeholder chips. They're <button>s for keyboard reach, so the button reset in the
    Buttons section has to be undone at a specificity that beats `.vesm button` (0,1,1) — the same
@@ -590,13 +590,13 @@ footer.roster { margin-top: 28px; background: var(--surface); border: 1px solid 
 .vesm .placeholder-chip:hover { background: var(--line); }
 
 /* Quill's Snow skin hard-codes light greys for its toolbar icons and dropdowns. */
-:root[data-theme="dark"] .template-editor .ql-snow .ql-stroke { stroke: var(--ink-soft); }
-:root[data-theme="dark"] .template-editor .ql-snow .ql-fill { fill: var(--ink-soft); }
-:root[data-theme="dark"] .template-editor .ql-snow .ql-picker { color: var(--ink-soft); }
-:root[data-theme="dark"] .template-editor .ql-snow .ql-picker-options { background: var(--surface); border-color: var(--line-strong); }
-:root[data-theme="dark"] .template-editor .ql-snow.ql-toolbar button:hover .ql-stroke { stroke: var(--ink); }
-:root[data-theme="dark"] .template-editor .ql-snow.ql-toolbar button:hover .ql-fill { fill: var(--ink); }
-:root[data-theme="dark"] .template-editor .ql-snow a { color: var(--focus); }
+:root[data-theme="dark"] .message-editor .ql-snow .ql-stroke { stroke: var(--ink-soft); }
+:root[data-theme="dark"] .message-editor .ql-snow .ql-fill { fill: var(--ink-soft); }
+:root[data-theme="dark"] .message-editor .ql-snow .ql-picker { color: var(--ink-soft); }
+:root[data-theme="dark"] .message-editor .ql-snow .ql-picker-options { background: var(--surface); border-color: var(--line-strong); }
+:root[data-theme="dark"] .message-editor .ql-snow.ql-toolbar button:hover .ql-stroke { stroke: var(--ink); }
+:root[data-theme="dark"] .message-editor .ql-snow.ql-toolbar button:hover .ql-fill { fill: var(--ink); }
+:root[data-theme="dark"] .message-editor .ql-snow a { color: var(--focus); }
 
 .vesm-alert { border-radius: 8px; padding: 10px 16px; font-size: 13px; margin-bottom: 20px; }
 .vesm-alert.success { background: var(--green-dim); color: var(--chip-green-text); border: 1px solid var(--green); }

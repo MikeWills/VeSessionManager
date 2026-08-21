@@ -30,8 +30,8 @@ public class VeEmailModel(
     [BindProperty(SupportsGet = true)]
     public int? TeamId { get; set; }
 
-    [BindProperty(SupportsGet = true, Name = "template")]
-    public string SelectedTemplateKey { get; set; } = "";
+    [BindProperty(SupportsGet = true, Name = "message")]
+    public int SelectedMessageId { get; set; }
 
     /// <summary>Narrows the list to VEs who asked to hear about this team's sessions. Only meaningful — and only offered — when the team allows subscriptions at all.</summary>
     [BindProperty(SupportsGet = true)]
@@ -61,7 +61,7 @@ public class VeEmailModel(
 
     public static IReadOnlyList<string> Placeholders => VolunteerExaminerPlaceholderValues.Names;
 
-    public record TemplateChoice(string Key, string Label);
+    public record TemplateChoice(int Id, string Label);
 
     /// <summary>What the history and audit line record for a draft written from scratch.</summary>
     public const string CustomMessageLabel = "Custom message";
@@ -76,10 +76,12 @@ public class VeEmailModel(
             return Page();
         }
 
-        var template = string.IsNullOrEmpty(SelectedTemplateKey)
+        var template = SelectedMessageId == 0
             ? null
-            : await dbContext.EmailTemplates
-                .FirstOrDefaultAsync(t => t.TeamId == TeamId && t.Key == SelectedTemplateKey, HttpContext.RequestAborted);
+            : await dbContext.MessageRules
+                .AsNoTracking()
+                .FirstOrDefaultAsync(r => r.TeamId == TeamId && r.Id == SelectedMessageId
+                    && r.Trigger == MessageTrigger.ManualToVe, HttpContext.RequestAborted);
 
         Subject = template?.Subject ?? "";
         Body = template?.Body ?? "";
@@ -99,7 +101,7 @@ public class VeEmailModel(
         if (SelectedVeIds.Length == 0)
         {
             TempData["ErrorMessage"] = "Choose at least one VE to email.";
-            return RedirectToPage(new { teamId = TeamId, template = SelectedTemplateKey, subscribedOnly = SubscribedOnly });
+            return RedirectToPage(new { teamId = TeamId, message = SelectedMessageId, subscribedOnly = SubscribedOnly });
         }
 
         // Only ids this page offered. The service re-scopes independently — both are deliberate, and
@@ -111,7 +113,7 @@ public class VeEmailModel(
         }
 
         var user = await userManager.GetRequiredUserAsync(dbContext, User);
-        var label = Templates.FirstOrDefault(t => t.Key == SelectedTemplateKey)?.Label ?? CustomMessageLabel;
+        var label = Templates.FirstOrDefault(t => t.Id == SelectedMessageId)?.Label ?? CustomMessageLabel;
 
         var result = await messageService.SendAsync(
             TeamId.Value, SelectedVeIds, Subject, Body, label, user.Id, HttpContext.RequestAborted);
@@ -119,7 +121,7 @@ public class VeEmailModel(
         if (result.Error is not null)
         {
             TempData["ErrorMessage"] = result.Error;
-            return RedirectToPage(new { teamId = TeamId, template = SelectedTemplateKey, subscribedOnly = SubscribedOnly });
+            return RedirectToPage(new { teamId = TeamId, message = SelectedMessageId, subscribedOnly = SubscribedOnly });
         }
 
         var message = $"Sent {result.Sent} email(s).";
@@ -174,13 +176,12 @@ public class VeEmailModel(
 
         TagNames = [.. Recipients.SelectMany(r => r.Tags).Distinct().OrderBy(n => n)];
 
-        // Only templates written for this audience: a candidate template's {{CandidateFirstName}}
-        // resolves to nothing here and would reach a VE as literal text.
-        Templates = await dbContext.EmailTemplates
-            .Where(t => t.TeamId == effectiveTeamId && t.IsUserDefined && t.Audience == EmailTemplateAudience.VolunteerExaminers)
-            .OrderBy(t => t.DisplayName)
-            .Select(t => new TemplateChoice(t.Key, t.DisplayName ?? t.Key))
-            .ToListAsync(HttpContext.RequestAborted);
+        // Only messages written for this audience — the ManualToVe trigger is what carries that now.
+        // A candidate-facing message's {{CandidateFirstName}} resolves to nothing here and would reach
+        // a VE as literal text, which is the mismatch the trigger split removes rather than guards.
+        Templates = [.. (await ComposableMessages.LoadAsync(
+            dbContext, effectiveTeamId.Value, MessageTrigger.ManualToVe, HttpContext.RequestAborted))
+            .Select(c => new TemplateChoice(c.Id, c.Label))];
 
         return null;
     }

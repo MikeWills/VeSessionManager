@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using VeSessionManager.Core.Admin;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Entities;
@@ -35,12 +35,6 @@ public class MessageRuleAdminServiceTests
         var user = new User { Name = "Admin", Email = "admin@example.org", Role = UserRole.TeamAdmin };
         dbContext.Teams.Add(team);
         dbContext.Users.Add(user);
-        await dbContext.SaveChangesAsync();
-
-        dbContext.EmailTemplates.Add(new EmailTemplate
-        {
-            TeamId = team.Id, Key = "DayBeforeReminder", Subject = "Tomorrow", Body = "Hi"
-        });
         await dbContext.SaveChangesAsync();
         return (team, user.Id);
     }
