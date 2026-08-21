@@ -839,3 +839,25 @@ Plain words throughout, at Mike's instruction — he could not read his own form
 So: **Cc** and **Bcc** with one short line each, and *"Only send one copy, even when the message goes
 to many people"* where the fan-out control used to explain itself in a paragraph. The reasoning moved
 into code comments, which is where it was useful anyway.
+
+### ⚠️ A manual message must be invisible to the scan
+
+Found running the Worker, not by a test (2026-08-21). Manual triggers have no scanner by design —
+nothing scans a button press — but `MessageRuleService` loaded every *enabled* rule and looked one up
+per trigger. The three hand-sent messages seeded switched on therefore produced
+`No scanner is registered…` at **ERROR**, for every team, on every tick: nine per pass on a
+three-team deployment.
+
+The error itself is right and stays. A rule somebody created and can see enabled on screen doing
+nothing at all is indistinguishable from working, and that deserves to shout. What was wrong was
+asking the question of a message whose whole point is that a person sends it.
+
+`ManualTriggers` is built from `MessageTriggerDefinitions.All` and excluded in the query.
+
+⚠️ **Built from the list rather than by calling `For(rule.Trigger)` per rule**, which *throws* for
+anything outside it — `SentByHand` is in the enum and deliberately absent from `All`. Asking would
+have turned a correct, quiet error into a crashed tick.
+
+This is the failure mode the optional-integration rule in CLAUDE.md names directly: a repeating
+ERROR for an ordinary state teaches people to stop reading the log, and the next real error goes
+with it.

@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using VeSessionManager.Core.Data;
@@ -52,8 +53,13 @@ public static class MessageRuleTestHarness
         }
     }
 
+    /// <param name="logger">
+    /// Pass a capturing logger to assert on what the scan did or did not log — see
+    /// <c>ManualMessageScanTests</c>, where the whole point is that nothing is logged at ERROR.
+    /// </param>
     public static MessageRuleService Create(
-        AppDbContext dbContext, IEmailSender emailSender, TimeProvider timeProvider, IDiscordChannelMessageClient? discordClient = null)
+        AppDbContext dbContext, IEmailSender emailSender, TimeProvider timeProvider,
+        IDiscordChannelMessageClient? discordClient = null, ILogger<MessageRuleService>? logger = null)
     {
         var appOptions = Options.Create(new AppOptions { PublicBaseUrl = PublicBaseUrl });
         IMessageTriggerScanner[] scanners =
@@ -76,7 +82,7 @@ public static class MessageRuleTestHarness
             timeProvider,
             NullLogger<MessageDispatchService>.Instance);
 
-        return new MessageRuleService(dbContext, scanners, dispatch, timeProvider, NullLogger<MessageRuleService>.Instance);
+        return new MessageRuleService(dbContext, scanners, dispatch, timeProvider, logger ?? NullLogger<MessageRuleService>.Instance);
     }
 
     /// <summary>
