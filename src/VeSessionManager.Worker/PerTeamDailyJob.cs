@@ -67,7 +67,10 @@ public abstract class PerTeamDailyJob(
         using (var tickScope = scopeFactory.CreateScope())
         {
             var tickDbContext = tickScope.ServiceProvider.GetRequiredService<AppDbContext>();
-            teamIds = await tickDbContext.Teams.Select(t => t.Id).ToListAsync(stoppingToken);
+            // Deactivated teams are skipped, same as SessionIngestionJob. This one covers five jobs
+            // at once — message rules, payment reminders, reconciliation, refund status and the Square
+            // link purge — so the two enumeration sites between them are the whole of it.
+            teamIds = await tickDbContext.Teams.Where(Team.IsActiveExpression).Select(t => t.Id).ToListAsync(stoppingToken);
         }
 
         foreach (var teamId in teamIds)

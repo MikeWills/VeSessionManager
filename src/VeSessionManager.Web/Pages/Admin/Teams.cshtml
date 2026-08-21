@@ -46,6 +46,12 @@
                     {
                         <span class="chip chip-brick" title="Outbound calls suppressed for this team">Muted: @string.Join(", ", team.MutedIntegrations)</span>
                     }
+                    @* Deactivated teams stay on this list on purpose — it is not a soft delete, and
+                       reactivating or deleting are the only two actions left for one. *@
+                    @if (!team.IsActive)
+                    {
+                        <span class="chip chip-brick" title="Deactivated @EasternTimeFormatter.Format(team.DeactivatedUtc!.Value, "MMM d, yyyy") — the app does not poll or send for this team">Inactive</span>
+                    }
                 </td>
                 <td data-sort-value="@team.CreatedUtc.ToString("o")">@EasternTimeFormatter.Format(team.CreatedUtc, "MMM d, yyyy")</td>
                 @* One kebab menu, matching Vecs.cshtml — the row-action pattern used across the
@@ -70,6 +76,15 @@
                         <a class="item" asp-page="./EmailTemplates" asp-route-teamId="@team.Id">Email templates</a>
                         <a class="item" asp-page="./MessageRules" asp-route-teamId="@team.Id">Message rules</a>
                         <a class="item" asp-page="./TeamMaintenance" asp-route-teamId="@team.Id">Maintenance</a>
+                        @* Last, and separated, because it is the only entry that changes whether the
+                           app acts for this team at all rather than showing or configuring something. *@
+                        <form method="post" asp-page-handler="SetActive" asp-antiforgery="true">
+                            <input type="hidden" name="teamId" value="@team.Id" />
+                            <input type="hidden" name="active" value="@((!team.IsActive).ToString().ToLowerInvariant())" />
+                            <button type="submit" class="item @(team.IsActive ? "danger" : "")">
+                                @(team.IsActive ? "Deactivate" : "Reactivate")
+                            </button>
+                        </form>
                     </div>
                 </td>
             </tr>
