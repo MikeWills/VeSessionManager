@@ -71,14 +71,15 @@ public class TeamsModel(
                 t.ZoomEnabled,
                 t.DiscordEnabled,
                 t.SquareEnabled,
-                t.EmailEnabled
+                t.EmailEnabled,
+                t.DeactivatedUtc
             })
             .ToListAsync(HttpContext.RequestAborted);
 
         // Muted set resolved in memory: Team.MutedIntegrations is C# and EF cannot translate it, and
         // restating the rule here in a form it could translate is exactly the duplication #305 was
         // about.
-        Teams = [.. rows.Select(t => new TeamRow(t.Id, t.Name, t.CreatedUtc, new Team
+        Teams = [.. rows.Select(t => new TeamRow(t.Id, t.Name, t.CreatedUtc, t.DeactivatedUtc, new Team
         {
             Name = t.Name,
             IntegrationOverridesEnabled = t.IntegrationOverridesEnabled,
@@ -89,6 +90,35 @@ public class TeamsModel(
         }.MutedIntegrations))];
 
         return Page();
+    }
+
+    /// <summary>
+    /// Stops or resumes the app acting for a team. Reversible, and deliberately leaves the team on
+    /// this list — see <see cref="Team.DeactivatedUtc"/>.
+    /// </summary>
+    public async Task<IActionResult> OnPostSetActiveAsync(int teamId, bool active)
+    {
+        var user = await userManager.GetUserWithManagerAsync(dbContext, User);
+        if (user is null)
+        {
+            return Forbid();
+        }
+
+        // Same gate as creating one: this is a deployment-shaping action, not a per-team setting.
+        if (!adminAccessScope.CanCreateTeam(user))
+        {
+            return Forbid();
+        }
+
+        var result = await teamSettingsService.SetActiveAsync(teamId, active, user.Id, CancellationToken.None);
+        TempData[result == TeamActionResult.Success ? "StatusMessage" : "ErrorMessage"] = result switch
+        {
+            TeamActionResult.Success when active => "Team reactivated — the app will poll and send for it again.",
+            TeamActionResult.Success => "Team deactivated — no ingestion, message rules or reconciliation until it is turned back on.",
+            TeamActionResult.NotFound => "That team no longer exists.",
+            _ => "Could not change that team."
+        };
+        return RedirectToPage();
     }
 
     public async Task<IActionResult> OnPostCreateAsync(string name)
@@ -123,5 +153,9 @@ public class TeamsModel(
     /// Surfaced here so a muted team is recognizable at a glance: its data looks exactly like real
     /// data, and the whole risk of the feature is mistaking one for the other.
     /// </param>
-    public record TeamRow(int Id, string Name, DateTime CreatedUtc, IReadOnlyList<TeamIntegration> MutedIntegrations);
+    public record TeamRow(int Id, string Name, DateTime CreatedUtc, DateTime? DeactivatedUtc, IReadOnlyList<TeamIntegration> MutedIntegrations)
+    {
+        /// <summary>See <see cref="Team.DeactivatedUtc"/> — a deactivated team is still listed, deliberately.</summary>
+        public bool IsActive => DeactivatedUtc is null;
+    }
 }

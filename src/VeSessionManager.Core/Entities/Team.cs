@@ -45,6 +45,36 @@ public class Team
     public int ZoomBreakoutRoomCount { get; set; } = 2;
 
     /// <summary>Which Discord server this team's events post to — the bot itself is shared globally (Discord:BotToken, confirmed with the user), only the Guild varies per team. Null means this team hasn't picked one yet.</summary>
+    /// <summary>
+    /// When this team was deactivated, or null while it is active.
+    ///
+    /// <para>Deactivation stops the app <b>acting</b> for a team — no ingestion, no message rules, no
+    /// reconciliation — while keeping everything it knows, and it is undoable. That is the difference
+    /// from deleting the team, which is for when the data itself should go.</para>
+    ///
+    /// <para>⚠️ <b>Not a soft delete.</b> A deactivated team still appears on admin screens: somebody
+    /// has to be able to find it to reactivate it, or to decide to delete it. A team that vanished
+    /// from the list would be unreachable by the only two actions that still apply to it.</para>
+    ///
+    /// <para>A timestamp rather than a bool because "why did this team stop polling?" is answered by a
+    /// date, and that is the question somebody actually asks.</para>
+    /// </summary>
+    public DateTime? DeactivatedUtc { get; set; }
+
+    /// <summary>Whether the app should act for this team. See <see cref="DeactivatedUtc"/>.</summary>
+    public bool IsActive => DeactivatedUtc is null;
+
+    /// <summary>
+    /// The query-side form of <see cref="IsActive"/>, for the background jobs.
+    ///
+    /// <para>One expression rather than a predicate each caller writes, because there is more than one
+    /// place that enumerates teams — <c>SessionIngestionJob</c> and <c>PerTeamDailyJob</c>, the latter
+    /// serving five jobs — and the two drifting is precisely how a deactivated team would carry on
+    /// polling from one of them.</para>
+    /// </summary>
+    public static readonly System.Linq.Expressions.Expression<Func<Team, bool>> IsActiveExpression =
+        team => team.DeactivatedUtc == null;
+
     public ulong? DiscordGuildId { get; set; }
 
     /// <summary>

@@ -526,6 +526,44 @@ public class TeamSettingsService(AppDbContext dbContext, TimeProvider timeProvid
         };
     }
 
+    /// <summary>
+    /// Stops or resumes the app acting for a team.
+    ///
+    /// <para>Deactivation is the reversible answer to "I no longer want to monitor this team": no
+    /// ingestion, no message rules, no reconciliation, while everything the app knows stays exactly
+    /// where it is. Deleting the team is the other answer, for when the data itself should go.</para>
+    ///
+    /// <para>⚠️ Deliberately does <b>not</b> hide the team from admin screens. It is not a soft
+    /// delete — somebody has to be able to find it to turn it back on, or to decide to delete it.</para>
+    /// </summary>
+    public async Task<TeamActionResult> SetActiveAsync(int teamId, bool active, int userId, CancellationToken cancellationToken)
+    {
+        var team = await dbContext.Teams.FirstOrDefaultAsync(t => t.Id == teamId, cancellationToken);
+        if (team is null)
+        {
+            return TeamActionResult.NotFound;
+        }
+
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+        if (team.IsActive == active)
+        {
+            // Already in the asked-for state. Nothing to save and nothing to audit — an audit entry
+            // for a change that did not happen is noise in the one log people trust.
+            return TeamActionResult.Success;
+        }
+
+        team.DeactivatedUtc = active ? null : now;
+
+        AddAudit(userId, active ? "TeamReactivated" : "TeamDeactivated", team.Id,
+            active
+                ? $"Team {team.Id} ({team.Name}) reactivated — the app resumes polling and sending for it."
+                : $"Team {team.Id} ({team.Name}) deactivated — no ingestion, message rules or reconciliation until it is reactivated.",
+            now);
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return TeamActionResult.Success;
+    }
+
     private async Task<TeamActionResult> SaveTeamUpdateAsync(Team team, string action, int userId, CancellationToken cancellationToken)
     {
         var now = timeProvider.GetUtcNow().UtcDateTime;

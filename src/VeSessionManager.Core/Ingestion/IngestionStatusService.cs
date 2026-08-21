@@ -54,8 +54,12 @@ public class IngestionStatusService(
         // "is the Worker alive" is a deployment-wide question, and a TeamAdmin viewing one team must
         // not be told the Worker is down because *their* team happens to be newly created. The
         // per-team rows below are the part that gets scoped.
-        var newestAcrossAllTeams = await dbContext.Teams.MaxAsync(t => (DateTime?)t.LastIngestionRunUtc, cancellationToken);
-        var anyTeams = await dbContext.Teams.AnyAsync(cancellationToken);
+        // Active teams only. A deactivated team is deliberately not polled, so its LastIngestionRunUtc
+        // freezes — and counting it here would report the Worker as down for the whole deployment, on
+        // the strength of a team nobody asked it to touch.
+        var newestAcrossAllTeams = await dbContext.Teams.Where(Team.IsActiveExpression)
+            .MaxAsync(t => (DateTime?)t.LastIngestionRunUtc, cancellationToken);
+        var anyTeams = await dbContext.Teams.Where(Team.IsActiveExpression).AnyAsync(cancellationToken);
 
         var query = dbContext.Teams.AsQueryable();
         if (teamIds is not null)

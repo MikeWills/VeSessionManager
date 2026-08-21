@@ -1,3 +1,4 @@
+using VeSessionManager.Core.Entities;
 using Microsoft.EntityFrameworkCore;
 using VeSessionManager.Core.Admin;
 using VeSessionManager.Core.Data;
@@ -78,7 +79,10 @@ public class SessionIngestionJob(
             // the query is trivial (once per tick, not once per team) and means an admin's
             // edit takes effect on the very next tick, not after a Worker restart.
             normalIntervalMinutes = (await systemSettingsService.GetAsync(stoppingToken)).SessionIngestionIntervalMinutes;
-            teamIds = await tickDbContext.Teams.Select(t => t.Id).ToListAsync(stoppingToken);
+            // Deactivated teams are skipped entirely — that is what deactivation means. Filtered
+            // here rather than inside the pipeline so nothing downstream has to remember: a
+            // deactivated team simply never enters the loop.
+            teamIds = await tickDbContext.Teams.Where(Team.IsActiveExpression).Select(t => t.Id).ToListAsync(stoppingToken);
         }
 
         foreach (var teamId in teamIds)
