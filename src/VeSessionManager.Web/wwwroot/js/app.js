@@ -652,6 +652,25 @@
     });
   });
 
+  // ---- Reply-to address, only when a specific one was chosen -------------------------------
+  //
+  // The box is meaningless unless "a specific address" is selected, and a field captioned "used
+  // only with the option you did not pick" is a question the form should not be asking.
+  //
+  // Same shape as the channel fields above: the server renders the initial state, this handles the
+  // change. Value 2 is MessageReplyToSource.Custom — read off the option rather than hardcoded, so
+  // renumbering the enum cannot silently invert this.
+  document.addEventListener("change", function (event) {
+    var select = event.target.closest("[data-reply-to-source]");
+    if (!select) return;
+
+    var field = document.getElementById("replyToOverrideField");
+    if (!field) return;
+
+    var custom = select.getAttribute("data-custom-value");
+    field.hidden = select.value !== custom;
+  });
+
   // ---- Insert a tag into a message ---------------------------------------------------------
   //
   // The tags a message can use depend on its trigger, and retyping {{CandidateFirstName}} by hand is
