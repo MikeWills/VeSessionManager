@@ -839,3 +839,23 @@ Plain words throughout, at Mike's instruction — he could not read his own form
 So: **Cc** and **Bcc** with one short line each, and *"Only send one copy, even when the message goes
 to many people"* where the fan-out control used to explain itself in a paragraph. The reasoning moved
 into code comments, which is where it was useful anyway.
+
+### ⚠️ The upgrade path nearly left every existing team silent
+
+Found while writing the local test steps, not by a test. `MessagesOwnTheirContent` deletes every
+rule; `Team.MessageRulesSeededUtc` says "already set up, never seed again". Each is right on its own,
+and together they leave **every team that already existed with no messages at all, permanently** —
+while a brand-new team gets the seven examples.
+
+Nothing fails and nothing logs. The Messages page just says "No messages" everywhere, the two
+per-candidate buttons silently do nothing, and it reads as broken rather than as a fresh start.
+
+`ReseedMessagesForTeamsLeftWithNone` clears the tombstone **only for teams with no messages** — a
+team created in the window between the two migrations already has its seven, and clearing its
+tombstone would give it fourteen.
+
+One case is knowingly swept up: a team that deleted every message *on purpose* gets the examples
+back, because nothing records the difference between "we send nothing deliberately" and "the
+migration took them". The cost is one team switching seven examples off again; the alternative was
+every existing team sending nothing forever. If that ever matters, the fix is a column recording why
+the tombstone was cleared, not a cleverer predicate.
