@@ -18,7 +18,14 @@ namespace VeSessionManager.Web;
 /// <c>[Authorize]</c>. Per-parent rather than a single blanket check because the two parents differ:
 /// Teams admits SystemAdmin and TeamAdmin, VECs is SystemAdmin only.
 /// </param>
-public sealed record ParentCrumb(string Page, string Label, string Eyebrow, string ParentRoles)
+/// <param name="Href">
+/// An explicit URL to use instead of <paramref name="Page"/>, for returning to a list that was
+/// filtered. Null uses the page path, which lands on the unfiltered first page.
+///
+/// <para>Always build this with <see cref="SafeReturnUrl.Or"/> — it comes from the query string,
+/// so an unvalidated one turns a breadcrumb on an authenticated page into an open redirect.</para>
+/// </param>
+public sealed record ParentCrumb(string Page, string Label, string Eyebrow, string ParentRoles, string? Href = null)
 {
     public bool IsReachableBy(System.Security.Claims.ClaimsPrincipal user) =>
         ParentRoles.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)

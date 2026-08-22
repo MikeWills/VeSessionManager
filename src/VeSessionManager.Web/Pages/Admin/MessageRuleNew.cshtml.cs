@@ -83,6 +83,13 @@ public class MessageRuleNewModel(
     [BindProperty]
     public MessageFanOut FanOut { get; set; } = MessageFanOut.PerRecipient;
 
+    /// <summary>
+    /// The list this page was opened from, filters and all. Bound from the query string, so it is
+    /// never used without <see cref="SafeReturnUrl"/> validating it.
+    /// </summary>
+    [BindProperty(SupportsGet = true, Name = "return")]
+    public string? ReturnUrl { get; set; }
+
     public IReadOnlyList<MessageTriggerDefinition> Triggers => MessageTriggerDefinitions.All;
 
     public static string Label(MessageTrigger trigger) => MessageTriggerLabels.Label(trigger);
@@ -132,7 +139,7 @@ public class MessageRuleNewModel(
         if (result == MessageRuleActionResult.Success)
         {
             TempData["StatusMessage"] = "Rule created.";
-            return RedirectToPage("/Admin/MessageRules", new { teamId = TeamId });
+            return Redirect(SafeReturnUrl.Or(Url, ReturnUrl, Url.Page("/Admin/MessageRules", new { teamId = TeamId })!));
         }
 
         TempData["ErrorMessage"] = result switch

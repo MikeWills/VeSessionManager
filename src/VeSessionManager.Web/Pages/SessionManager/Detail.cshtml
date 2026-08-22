@@ -7,7 +7,9 @@
     Layout = "_AppLayout";
 }
 
-<div class="crumb"><a asp-page="./Index"><i class="bi bi-arrow-left" aria-hidden="true"></i> Sessions</a> / @Model.Session.BreadcrumbLabel</div>
+@* Back to the list as it was — filters, sort and page — rather than the unfiltered first page.
+   Validated, because it arrives in the query string. See SafeReturnUrl. *@
+<div class="crumb"><a href="@SafeReturnUrl.Or(Url, Model.ReturnUrl, Url.Page("./Index")!)"><i class="bi bi-arrow-left" aria-hidden="true"></i> Sessions</a> / @Model.Session.BreadcrumbLabel</div>
 
 @if (Model.Session.RescheduleFlagged)
 {

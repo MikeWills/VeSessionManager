@@ -10,7 +10,8 @@
 
 <div class="page-head">
     <div>
-        <partial name="_ParentCrumb" model='new ParentCrumb("./MessageRules", "Message Rules", "Per team", RoleGroups.Admins)' />
+        <partial name="_ParentCrumb" model='new ParentCrumb("./MessageRules", "Messages", "Per team", RoleGroups.Admins,
+                 SafeReturnUrl.Or(Url, Model.ReturnUrl, Url.Page("/Admin/MessageRules", new { teamId = Model.TeamId })!))' />
         <h1>New rule</h1>
         <p class="session-sub">A moment, a template, and who it goes to.</p>
     </div>

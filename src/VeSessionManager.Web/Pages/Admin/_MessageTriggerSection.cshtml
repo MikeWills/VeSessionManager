@@ -12,8 +12,10 @@
             <h3>@Model.Label</h3>
             <p class="session-sub">@Model.Blurb</p>
         </div>
+        @* Carries the list's own URL so the form can come back to it — see SafeReturnUrl. *@
         <a class="btn-secondary btn-sm" asp-page="/Admin/MessageRuleNew"
-           asp-route-teamId="@ViewContext.RouteData.Values["teamId"]" asp-route-trigger="@((int)Model.Trigger)">+ New message</a>
+           asp-route-teamId="@Model.TeamId" asp-route-trigger="@((int)Model.Trigger)"
+           asp-route-return="@Model.ListUrl">+ New message</a>
     </div>
 
     @if (Model.Rules.Count == 0)
@@ -68,6 +70,7 @@
                             <td class="row-actions">
                                 <span class="row-actions-inline">
                                     <a class="icon-action" asp-page="/Admin/MessageRuleEdit" asp-route-id="@rule.Id"
+                                       asp-route-return="@Model.ListUrl"
                                        title="Edit @rule.Name" aria-label="Edit @rule.Name">
                                         <i class="bi bi-pencil" aria-hidden="true"></i>
                                     </a>
