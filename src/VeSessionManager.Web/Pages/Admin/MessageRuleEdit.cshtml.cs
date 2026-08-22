@@ -87,6 +87,16 @@ public class MessageRuleEditModel(
 
     public MessageRule Rule { get; private set; } = null!;
 
+    /// <summary>
+    /// The team's own reply-to address, named on screen rather than described.
+    ///
+    /// <para>"Your team's reply-to address" does not say <i>what</i> that is, so the option cannot be
+    /// checked against what somebody expects — which is exactly the doubt Mike raised looking at the
+    /// form. Null when no EmailSettings row exists yet, which the caption then says plainly instead of
+    /// implying an address is configured.</para>
+    /// </summary>
+    public string? TeamReplyToAddress { get; private set; }
+
     public MessageTriggerDefinition Definition => MessageTriggerDefinitions.For(Rule.Trigger);
     public bool TakesParameter => Definition.Mechanism == MessageTriggerMechanism.TimeRelative;
     public string TriggerLabel => MessageTriggerLabels.Label(Rule.Trigger);
@@ -181,6 +191,11 @@ public class MessageRuleEditModel(
         }
 
         Rule = rule;
+        TeamReplyToAddress = await dbContext.EmailSettings
+            .AsNoTracking()
+            .Where(e => e.TeamId == rule.TeamId)
+            .Select(e => e.ReplyToAddress)
+            .FirstOrDefaultAsync(HttpContext.RequestAborted);
         return null;
     }
 }

@@ -49,13 +49,19 @@
 
         <div class="field" style="max-width:420px;">
             <span class="label-text">Send it as</span>
+            @* ⚠️ checked is set explicitly. asp-for on a radio compares the MODEL value against
+               the value attribute as strings, and an enum stringifies to its NAME — so "Email"
+               never matches "0" and neither radio was ever marked. The form then showed no send
+               method at all for a message that plainly had one (Mike, 2026-08-21). *@
             <label style="font-weight:400;">
                 <input type="radio" asp-for="Channel" value="@((int)VeSessionManager.Core.Entities.MessageChannel.Email)"
+                       checked="@(Model.Channel == VeSessionManager.Core.Entities.MessageChannel.Email)"
                        data-channel-radio="edit" />
                 An email
             </label>
             <label style="font-weight:400;">
                 <input type="radio" asp-for="Channel" value="@((int)VeSessionManager.Core.Entities.MessageChannel.Discord)"
+                       checked="@(Model.Channel == VeSessionManager.Core.Entities.MessageChannel.Discord)"
                        data-channel-radio="edit" />
                 A Discord post
             </label>
@@ -145,11 +151,37 @@
                     <option value="@((int)VeSessionManager.Core.Entities.MessageReplyToSource.SessionLead)">The session's lead VE</option>
                     <option value="@((int)VeSessionManager.Core.Entities.MessageReplyToSource.Custom)">A specific address</option>
                 </select>
-                @* Said plainly because the fallback is silent by design — a reply reaching the team is
-                   better than one reaching nobody, but somebody should know it can happen. *@
-                <span class="session-sub">
-                    If the lead cannot be worked out — no call sign on the session, or no VE record with an
-                    email — replies go to your team's address instead.
+                @* One caption per option, each shown with its own.
+
+                   There used to be a single caption describing the session-lead fallback, on screen
+                   whichever option was chosen — so it was wrong two thirds of the time, and read as
+                   an instruction about the selection somebody had actually made. Mike, looking at the
+                   form: "the messaging doesn't align with the dropdowns very well."
+
+                   Server-renders the initial state and app.js swaps them on change, the same shape as
+                   the address box below. Without JavaScript all three show, which is wordy rather
+                   than wrong. *@
+                <span class="session-sub" data-reply-to-hint="@((int)VeSessionManager.Core.Entities.MessageReplyToSource.EmailSettings)"
+                      hidden="@(Model.ReplyToSource != VeSessionManager.Core.Entities.MessageReplyToSource.EmailSettings)">
+                    @if (Model.TeamReplyToAddress is { Length: > 0 } teamAddress)
+                    {
+                        <text>Replies go to <strong>@teamAddress</strong>, from this team's email settings.</text>
+                    }
+                    else
+                    {
+                        <text>This team has no reply-to address set yet — set one in Team Settings, or replies will go nowhere useful.</text>
+                    }
+                </span>
+                @* The fallback is silent by design — a reply reaching the team beats one reaching
+                   nobody — but somebody should know it can happen. *@
+                <span class="session-sub" data-reply-to-hint="@((int)VeSessionManager.Core.Entities.MessageReplyToSource.SessionLead)"
+                      hidden="@(Model.ReplyToSource != VeSessionManager.Core.Entities.MessageReplyToSource.SessionLead)">
+                    Replies go to whoever led the session. If that cannot be worked out — no call sign on
+                    the session, or no VE record with an email — they go to your team's address instead.
+                </span>
+                <span class="session-sub" data-reply-to-hint="@((int)VeSessionManager.Core.Entities.MessageReplyToSource.Custom)"
+                      hidden="@(Model.ReplyToSource != VeSessionManager.Core.Entities.MessageReplyToSource.Custom)">
+                    Replies go to the address below, whoever the message is about.
                 </span>
             </div>
 
@@ -165,7 +197,7 @@
                  hidden="@(Model.ReplyToSource != VeSessionManager.Core.Entities.MessageReplyToSource.Custom)">
                 <label asp-for="ReplyToOverride">Reply-to address</label>
                 <input asp-for="ReplyToOverride" type="email" />
-                <span class="session-sub">Replies to this message go here instead of to your team.</span>
+                <span class="session-sub">Where replies to this message go.</span>
             </div>
 
             @* From is deliberately absent. Changing it means SPF/DKIM/DMARC on a domain this app does
