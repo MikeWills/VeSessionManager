@@ -262,6 +262,62 @@ public class MessageRulePageTests
         Assert.DoesNotMatch("id=\"delayField\"[^>]*hidden", timeRelative);
     }
 
+    /// <summary>
+    /// The reply-to box only means anything with "a specific address" chosen, so it is not shown
+    /// otherwise (Mike, 2026-08-21). A field captioned "used only with the option you did not pick" is
+    /// a question the form should not be asking.
+    ///
+    /// <para>Same shape as the delay field above: server-rendered initial state, app.js handles the
+    /// change, and the server ignores a stray value either way — so with JavaScript unavailable the
+    /// form is cluttered rather than broken.</para>
+    /// </summary>
+    [Theory]
+    [InlineData(MessageReplyToSource.EmailSettings, true)]
+    [InlineData(MessageReplyToSource.SessionLead, true)]
+    [InlineData(MessageReplyToSource.Custom, false)]
+    public async Task TheReplyToAddressIsShownOnlyForASpecificAddress(MessageReplyToSource source, bool expectHidden)
+    {
+        using var factory = new WebAppFactory();
+        var id = await SeedRuleAsync(factory);
+
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var rule = await db.MessageRules.FirstAsync(r => r.Id == id);
+            rule.ReplyToSource = source;
+            await db.SaveChangesAsync();
+        }
+
+        var client = factory.CreateClientAs(UserRole.SystemAdmin);
+        var html = await client.GetStringAsync($"/Admin/MessageRuleEdit/{id}");
+
+        if (expectHidden)
+        {
+            Assert.Matches("id=\"replyToOverrideField\"[^>]*hidden", html);
+        }
+        else
+        {
+            Assert.DoesNotMatch("id=\"replyToOverrideField\"[^>]*hidden", html);
+        }
+    }
+
+    /// <summary>
+    /// ⚠️ The value the script compares against comes from the enum, not a number typed into app.js.
+    /// Renumbering <c>MessageReplyToSource</c> would otherwise invert the whole control silently —
+    /// the box would appear for every option except the one that needs it.
+    /// </summary>
+    [Fact]
+    public async Task TheReplyToToggleReadsTheEnumValueFromTheMarkup()
+    {
+        using var factory = new WebAppFactory();
+        var id = await SeedRuleAsync(factory);
+        var client = factory.CreateClientAs(UserRole.SystemAdmin);
+
+        var html = await client.GetStringAsync($"/Admin/MessageRuleEdit/{id}");
+
+        Assert.Contains($"data-custom-value=\"{(int)MessageReplyToSource.Custom}\"", html);
+    }
+
     private static async Task<string> AntiforgeryTokenAsync(HttpClient client, string url)
     {
         var page = await client.GetStringAsync(url);

@@ -140,7 +140,7 @@
 
             <div class="field" style="max-width:420px;">
                 <label asp-for="ReplyToSource">Replies go to</label>
-                <select asp-for="ReplyToSource" class="filter-select">
+                <select asp-for="ReplyToSource" class="filter-select" data-reply-to-source data-custom-value="@((int)VeSessionManager.Core.Entities.MessageReplyToSource.Custom)">
                     <option value="@((int)VeSessionManager.Core.Entities.MessageReplyToSource.EmailSettings)">Your team's reply-to address</option>
                     <option value="@((int)VeSessionManager.Core.Entities.MessageReplyToSource.SessionLead)">The session's lead VE</option>
                     <option value="@((int)VeSessionManager.Core.Entities.MessageReplyToSource.Custom)">A specific address</option>
@@ -153,10 +153,19 @@
                 </span>
             </div>
 
-            <div class="field" style="max-width:420px;">
+            @* Only meaningful with "a specific address" chosen, so it is not shown otherwise —
+               a box captioned "used only with the option you did not pick" is a question the
+               form should not be asking (Mike, 2026-08-21).
+
+               Initial state is server-rendered and app.js handles the change, matching the
+               channel fields above. Hidden rather than removed: with JavaScript unavailable
+               every field is simply visible, which is a cluttered form rather than a broken
+               one, and the server ignores a stray value either way. *@
+            <div class="field" style="max-width:420px;" id="replyToOverrideField"
+                 hidden="@(Model.ReplyToSource != VeSessionManager.Core.Entities.MessageReplyToSource.Custom)">
                 <label asp-for="ReplyToOverride">Reply-to address</label>
                 <input asp-for="ReplyToOverride" type="email" />
-                <span class="session-sub">Used only with "a specific address" above.</span>
+                <span class="session-sub">Replies to this message go here instead of to your team.</span>
             </div>
 
             @* From is deliberately absent. Changing it means SPF/DKIM/DMARC on a domain this app does
