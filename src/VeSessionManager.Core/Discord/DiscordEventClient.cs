@@ -46,8 +46,10 @@ public sealed class DiscordEventClient : IDiscordEventClient, IDiscordChannelMes
     public async Task UpdateEventAsync(ulong guildId, string eventId, DiscordEventRequest request, CancellationToken cancellationToken)
     {
         var guild = await GetGuildAsync(guildId, cancellationToken);
+        // A typed exception, not a message: this is the one Discord failure the caller can fix by
+        // itself, and it can only do that if it can tell this apart from a permission problem.
         var scheduledEvent = await guild.GetEventAsync(ulong.Parse(eventId))
-            ?? throw new InvalidOperationException($"Discord scheduled event {eventId} no longer exists (deleted outside the app?).");
+            ?? throw new DiscordEventNotFoundException(guildId, eventId);
 
         await scheduledEvent.ModifyAsync(props =>
         {

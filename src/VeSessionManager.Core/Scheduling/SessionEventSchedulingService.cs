@@ -298,7 +298,30 @@ public class SessionEventSchedulingService(
             }
             else
             {
-                await discordEventClient.UpdateEventAsync(guildId, session.DiscordEventId, discordRequest, cancellationToken);
+                try
+                {
+                    await discordEventClient.UpdateEventAsync(guildId, session.DiscordEventId, discordRequest, cancellationToken);
+                }
+                catch (DiscordEventNotFoundException ex)
+                {
+                    // Somebody deleted the event in Discord. Forgetting the id is the whole
+                    // recovery: discordSettled below reads "id is not null", so clearing it leaves
+                    // the session unsettled and the create branch above picks it up next pass —
+                    // and that branch lists the guild first, so an event recreated by hand in the
+                    // meantime is adopted rather than duplicated.
+                    //
+                    // ⚠️ Not rethrown, so the pass is not counted as a failure. Before this, the
+                    // id stayed and every tick logged the same error forever while the session
+                    // silently never got another event (found in Mike's Worker log, 2026-08-21).
+                    // Only THIS exception is swallowed — a permission problem or a bad token still
+                    // surfaces, because forgetting the id there would create a duplicate the
+                    // moment access came back.
+                    logger.LogWarning(ex,
+                        "Discord event {DiscordEventId} for session {ExamToolsSessionId} no longer exists — forgetting it so a new one is created on the next pass",
+                        session.DiscordEventId, session.ExamToolsSessionId);
+                    session.DiscordEventId = null;
+                    await dbContext.SaveChangesAsync(cancellationToken);
+                }
             }
         }
 
