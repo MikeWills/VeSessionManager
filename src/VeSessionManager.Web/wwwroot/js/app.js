@@ -664,6 +664,14 @@
     var select = event.target.closest("[data-reply-to-source]");
     if (!select) return;
 
+    // One caption per option, each shown with its own. A single caption describing the session-lead
+    // fallback used to sit under the dropdown whichever option was chosen, so it was wrong two thirds
+    // of the time and read as advice about the selection actually made.
+    var hints = document.querySelectorAll("[data-reply-to-hint]");
+    Array.prototype.forEach.call(hints, function (hint) {
+      hint.hidden = hint.getAttribute("data-reply-to-hint") !== select.value;
+    });
+
     var field = document.getElementById("replyToOverrideField");
     if (!field) return;
 

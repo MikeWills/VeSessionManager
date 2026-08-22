@@ -79,17 +79,23 @@
 
         <div class="field" style="max-width:420px;">
             <span class="label-text">Send it as</span>
+            @* ⚠️ checked is set explicitly — see MessageRuleEdit for why asp-for alone leaves
+               both radios unmarked on an enum. Here it also means the form arrives with a send
+               method already chosen rather than neither. *@
             <label style="font-weight:400;">
-                <input type="radio" asp-for="Channel" value="@((int)MessageChannel.Email)" data-channel-radio="new" />
+                <input type="radio" asp-for="Channel" value="@((int)MessageChannel.Email)"
+                       checked="@(Model.Channel == MessageChannel.Email)" data-channel-radio="new" />
                 An email
             </label>
             <label style="font-weight:400;">
-                <input type="radio" asp-for="Channel" value="@((int)MessageChannel.Discord)" data-channel-radio="new" />
+                <input type="radio" asp-for="Channel" value="@((int)MessageChannel.Discord)"
+                       checked="@(Model.Channel == MessageChannel.Discord)" data-channel-radio="new" />
                 A Discord post
             </label>
         </div>
 
-        <div class="field" style="max-width:320px;" data-channel-only="Email" data-channel-group="new">
+        <div class="field" style="max-width:320px;" data-channel-only="Email" data-channel-group="new"
+             hidden="@(Model.Channel == MessageChannel.Discord)">
             <label asp-for="Recipient">Who receives it</label>
             <select asp-for="Recipient" id="recipientPicker" class="filter-select">
                 @* Every recipient any trigger allows, filtered to the chosen one by the script below —
@@ -104,7 +110,8 @@
             </select>
         </div>
 
-        <div class="field" style="max-width:420px;" data-channel-only="Discord" data-channel-group="new" hidden>
+        <div class="field" style="max-width:420px;" data-channel-only="Discord" data-channel-group="new"
+             hidden="@(Model.Channel != MessageChannel.Discord)" hidden>
             <label asp-for="DiscordChannelId">Discord channel id</label>
             <input asp-for="DiscordChannelId" type="text" inputmode="numeric" placeholder="e.g. 1042938475610293847" />
             <span class="session-sub">
@@ -113,7 +120,8 @@
             </span>
         </div>
 
-        <div class="field" style="max-width:420px;" data-channel-only="Discord" data-channel-group="new" hidden>
+        <div class="field" style="max-width:420px;" data-channel-only="Discord" data-channel-group="new"
+             hidden="@(Model.Channel != MessageChannel.Discord)" hidden>
             <label asp-for="FanOut">How many posts</label>
             <select asp-for="FanOut" class="filter-select">
                 <option value="@((int)MessageFanOut.SingleDigest)">One post covering everybody</option>

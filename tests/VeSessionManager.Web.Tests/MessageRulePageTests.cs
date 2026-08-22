@@ -318,6 +318,132 @@ public class MessageRulePageTests
         Assert.Contains($"data-custom-value=\"{(int)MessageReplyToSource.Custom}\"", html);
     }
 
+    /// <summary>
+    /// ⚠️ <c>asp-for</c> on a radio compares the MODEL value against the <c>value</c> attribute as
+    /// strings, and an enum stringifies to its NAME — so <c>Email</c> never matched <c>"0"</c> and
+    /// neither radio was ever marked. The form showed no send method at all for a message that plainly
+    /// had one, which is how Mike found it (2026-08-21).
+    /// </summary>
+    [Theory]
+    [InlineData(MessageChannel.Email, 0)]
+    [InlineData(MessageChannel.Discord, 1)]
+    public async Task TheSendMethodShowsWhichOneIsSelected(MessageChannel channel, int expectedValue)
+    {
+        using var factory = new WebAppFactory();
+        var id = await SeedRuleAsync(factory);
+        await MutateRuleAsync(factory, id, r =>
+        {
+            r.Channel = channel;
+            if (channel == MessageChannel.Discord)
+            {
+                r.DiscordChannelId = 123UL;
+                r.Recipient = MessageRecipient.DiscordChannel;
+            }
+        });
+
+        var client = factory.CreateClientAs(UserRole.SystemAdmin);
+        var html = await client.GetStringAsync($"/Admin/MessageRuleEdit/{id}");
+
+        var radios = Regex.Matches(html, "<input type=\"radio\"[^>]*name=\"Channel\"[^>]*>")
+            .Select(m => m.Value)
+            .ToList();
+        Assert.Equal(2, radios.Count);
+        Assert.Single(radios, r => r.Contains("checked"));
+        Assert.Contains($"value=\"{expectedValue}\"", Assert.Single(radios, r => r.Contains("checked")));
+    }
+
+    /// <summary>
+    /// One caption per option, each shown with its own. A single caption describing the session-lead
+    /// fallback used to sit under the dropdown whichever option was chosen — so it was wrong two
+    /// thirds of the time and read as advice about the selection actually made. Mike: <i>"the
+    /// messaging doesn't align with the dropdowns very well."</i>
+    /// </summary>
+    [Theory]
+    [InlineData(MessageReplyToSource.EmailSettings)]
+    [InlineData(MessageReplyToSource.SessionLead)]
+    [InlineData(MessageReplyToSource.Custom)]
+    public async Task OnlyTheChosenOptionsCaptionIsShown(MessageReplyToSource source)
+    {
+        using var factory = new WebAppFactory();
+        var id = await SeedRuleAsync(factory);
+        await MutateRuleAsync(factory, id, r => r.ReplyToSource = source);
+
+        var client = factory.CreateClientAs(UserRole.SystemAdmin);
+        var html = await client.GetStringAsync($"/Admin/MessageRuleEdit/{id}");
+
+        foreach (var candidate in Enum.GetValues<MessageReplyToSource>())
+        {
+            var pattern = $"data-reply-to-hint=\"{(int)candidate}\"[^>]*hidden";
+            if (candidate == source)
+            {
+                Assert.DoesNotMatch(pattern, html);
+            }
+            else
+            {
+                Assert.Matches(pattern, html);
+            }
+        }
+    }
+
+    /// <summary>
+    /// "Your team's reply-to address" does not say <i>what</i> that is, so the option cannot be checked
+    /// against what somebody expects — which is the doubt that prompted this. The caption names it.
+    /// </summary>
+    [Fact]
+    public async Task TheTeamOptionNamesTheActualAddress()
+    {
+        using var factory = new WebAppFactory();
+        var id = await SeedRuleAsync(factory);
+        await MutateRuleAsync(factory, id, r => r.ReplyToSource = MessageReplyToSource.EmailSettings);
+
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            db.EmailSettings.Add(new EmailSettings
+            {
+                TeamId = factory.Seeded.TeamId,
+                FromAddress = "noreply@example.org",
+                ReplyToAddress = "replies@example.org",
+                PrivacyPolicyUrl = "https://example.org/privacy",
+                AdminNotificationEmail = "admin@example.org",
+                UpdatedUtc = DateTime.UtcNow
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var client = factory.CreateClientAs(UserRole.SystemAdmin);
+        var html = await client.GetStringAsync($"/Admin/MessageRuleEdit/{id}");
+
+        Assert.Contains("replies@example.org", html);
+    }
+
+    /// <summary>
+    /// ⚠️ The other half, and it is not hypothetical — the test harness seeds no EmailSettings row, and
+    /// nor does a team until the seeder has run for it. Saying "your team's reply-to address" when the
+    /// team has none implies an address is configured and quietly points replies nowhere.
+    /// </summary>
+    [Fact]
+    public async Task WithNoTeamAddressSet_TheCaptionSaysSoRatherThanImplyingOne()
+    {
+        using var factory = new WebAppFactory();
+        var id = await SeedRuleAsync(factory);
+        await MutateRuleAsync(factory, id, r => r.ReplyToSource = MessageReplyToSource.EmailSettings);
+
+        var client = factory.CreateClientAs(UserRole.SystemAdmin);
+        var html = await client.GetStringAsync($"/Admin/MessageRuleEdit/{id}");
+
+        Assert.Contains("no reply-to address set yet", html);
+    }
+
+    private static async Task MutateRuleAsync(WebAppFactory factory, int id, Action<MessageRule> mutate)
+    {
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var rule = await db.MessageRules.FirstAsync(r => r.Id == id);
+        mutate(rule);
+        await db.SaveChangesAsync();
+    }
+
     private static async Task<string> AntiforgeryTokenAsync(HttpClient client, string url)
     {
         var page = await client.GetStringAsync(url);
