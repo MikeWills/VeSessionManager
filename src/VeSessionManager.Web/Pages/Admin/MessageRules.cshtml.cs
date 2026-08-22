@@ -159,11 +159,14 @@ public class MessageRulesModel(
             .OrderBy(r => r.Id)
             .ToListAsync(HttpContext.RequestAborted);
 
+        var listUrl = $"/Admin/MessageRules?teamId={teamId}";
         Sections = [.. MessageTriggerDefinitions.All.Select(definition => new TriggerSection(
             definition.Trigger,
             MessageTriggerLabels.Label(definition.Trigger),
             MessageTriggerLabels.Blurb(definition.Trigger),
             definition.Mechanism == MessageTriggerMechanism.Manual,
+            teamId,
+            listUrl,
             [.. rules.Where(r => r.Trigger == definition.Trigger).Select(r => new RuleRow(
                 r.Id,
                 r.Name,
@@ -203,11 +206,17 @@ public class MessageRulesModel(
     /// a manual trigger — somebody chose the moment and picks the people at send time — and a blank
     /// delay sitting in a column of real ones reads as a bug rather than as "not applicable".
     /// </param>
+    /// <param name="ListUrl">
+    /// This page as it currently stands, filters and all, handed to every link that leaves it so the
+    /// way back is the view you left rather than the unfiltered first page.
+    /// </param>
     public record TriggerSection(
         MessageTrigger Trigger,
         string Label,
         string Blurb,
         bool IsSentByHand,
+        int TeamId,
+        string ListUrl,
         IReadOnlyList<RuleRow> Rules);
 
     /// <param name="Subject">The message's own subject line. Was a template name until 2026-08-21, when a message started owning its words — there is no separate template to be missing any more, which is why the "template no longer exists" column went with it.</param>

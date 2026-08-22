@@ -49,6 +49,17 @@ public class DetailModel(
     [BindProperty(SupportsGet = true)]
     public int Id { get; set; }
 
+    /// <summary>
+    /// The sessions list this page was opened from, filters, sort and page number and all. Bound from
+    /// the query string, so it is never used without <see cref="SafeReturnUrl"/> validating it.
+    ///
+    /// <para>The list can hand this over because it already builds its own URL for paging
+    /// (<c>Index.BuildPageUrl</c>); this page could never reconstruct it, having never seen the
+    /// filters.</para>
+    /// </summary>
+    [BindProperty(SupportsGet = true, Name = "return")]
+    public string? ReturnUrl { get; set; }
+
     public SessionSummary Session { get; private set; } = null!;
     /// <summary>Candidates still on this session. Withdrawn ones are held separately — see <see cref="WithdrawnCandidates"/>.</summary>
     public IReadOnlyList<CandidateRow> Candidates { get; private set; } = [];

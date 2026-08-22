@@ -130,7 +130,10 @@
                 <td class="count">@session.CandidateCount</td>
                 <td><span class="chip @session.StatusChipClass">@session.StatusChipLabel</span></td>
                 <td><span class="chip @session.VecSubmissionChipClass">@session.VecSubmissionChipLabel</span></td>
-                <td><a class="view-link" asp-page="./Detail" asp-route-id="@session.Id">View <i class="bi bi-arrow-right" aria-hidden="true"></i></a></td>
+                @* Hands the detail page this exact view — every filter, the sort and the page number — so its
+                       back link returns here rather than to an unfiltered first page. *@
+                <td><a class="view-link" asp-page="./Detail" asp-route-id="@session.Id"
+                       asp-route-return="@Model.BuildPageUrl(Model.PageNumber)">View <i class="bi bi-arrow-right" aria-hidden="true"></i></a></td>
                 @* Row action menu (requested 2026-07-30) — same kebab/menu component the candidate
                    roster on the Detail page uses. Every item posts the session id and is re-authorized
                    server-side; the Can* flags only decide what's worth rendering. *@

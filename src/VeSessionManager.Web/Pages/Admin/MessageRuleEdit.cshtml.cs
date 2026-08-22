@@ -86,6 +86,13 @@ public class MessageRuleEditModel(
     public bool MonitoringCopyOncePerRun { get; set; }
 
     public MessageRule Rule { get; private set; } = null!;
+    /// <summary>
+    /// The list this page was opened from, filters and all. Bound from the query string, so it is
+    /// never used without <see cref="SafeReturnUrl"/> validating it.
+    /// </summary>
+    [BindProperty(SupportsGet = true, Name = "return")]
+    public string? ReturnUrl { get; set; }
+
 
     /// <summary>
     /// The team's own reply-to address, named on screen rather than described.
@@ -136,7 +143,7 @@ public class MessageRuleEditModel(
         if (!MessageDelayField.TryToHours(ParameterDays, ParameterUnit, out var parameterHours))
         {
             TempData["ErrorMessage"] = MessageDelayField.RangeMessage;
-            return RedirectToPage(new { id = Id });
+            return RedirectToPage(new { id = Id, @return = ReturnUrl });
         }
 
         var user = await userManager.GetRequiredUserAsync(dbContext, User);
@@ -148,7 +155,8 @@ public class MessageRuleEditModel(
         if (result == MessageRuleActionResult.Success)
         {
             TempData["StatusMessage"] = "Rule updated.";
-            return RedirectToPage("/Admin/MessageRules", new { teamId = Rule.TeamId });
+            // Back to the view they came from, filters intact, rather than the unfiltered first page.
+        return Redirect(SafeReturnUrl.Or(Url, ReturnUrl, Url.Page("/Admin/MessageRules", new { teamId = Rule.TeamId })!));
         }
 
         TempData["ErrorMessage"] = result switch

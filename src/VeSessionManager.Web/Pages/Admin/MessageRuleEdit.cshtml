@@ -9,7 +9,8 @@
 
 <div class="page-head">
     <div>
-        <partial name="_ParentCrumb" model='new ParentCrumb("./MessageRules", "Message Rules", "Per team", RoleGroups.Admins)' />
+        <partial name="_ParentCrumb" model='new ParentCrumb("./MessageRules", "Messages", "Per team", RoleGroups.Admins,
+                 SafeReturnUrl.Or(Url, Model.ReturnUrl, Url.Page("/Admin/MessageRules", new { teamId = Model.Rule.TeamId })!))' />
         <h1>@Model.Rule.Name</h1>
         <p class="session-sub">@Model.TriggerLabel — @Model.TriggerBlurb</p>
     </div>
