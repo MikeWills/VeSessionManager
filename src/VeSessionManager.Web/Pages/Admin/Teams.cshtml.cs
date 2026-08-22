@@ -34,7 +34,8 @@ public class TeamsModel(
     AppDbContext dbContext,
     UserManager<User> userManager,
     AdminAccessScope adminAccessScope,
-    TeamSettingsService teamSettingsService) : PageModel
+    TeamSettingsService teamSettingsService,
+    TeamDeletionService teamDeletionService) : PageModel
 {
     public IReadOnlyList<TeamRow> Teams { get; private set; } = [];
 
@@ -76,10 +77,26 @@ public class TeamsModel(
             })
             .ToListAsync(HttpContext.RequestAborted);
 
+        // How much each team holds, for the delete confirmation. Two grouped queries rather than a
+        // per-row count: this list is short but the counts are only ever read by one modal, and N+1
+        // queries to fill in a dialog most visits never open is the wrong trade.
+        var teamIds = rows.Select(t => t.Id).ToList();
+        var sessionCounts = await dbContext.Sessions
+            .Where(x => teamIds.Contains(x.TeamId))
+            .GroupBy(x => x.TeamId)
+            .Select(g => new { TeamId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(g => g.TeamId, g => g.Count, HttpContext.RequestAborted);
+        var candidateCounts = await dbContext.Candidates
+            .Where(c => teamIds.Contains(c.Session.TeamId))
+            .GroupBy(c => c.Session.TeamId)
+            .Select(g => new { TeamId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(g => g.TeamId, g => g.Count, HttpContext.RequestAborted);
+
         // Muted set resolved in memory: Team.MutedIntegrations is C# and EF cannot translate it, and
         // restating the rule here in a form it could translate is exactly the duplication #305 was
         // about.
-        Teams = [.. rows.Select(t => new TeamRow(t.Id, t.Name, t.CreatedUtc, t.DeactivatedUtc, new Team
+        Teams = [.. rows.Select(t => new TeamRow(t.Id, t.Name, t.CreatedUtc, t.DeactivatedUtc,
+            sessionCounts.GetValueOrDefault(t.Id), candidateCounts.GetValueOrDefault(t.Id), new Team
         {
             Name = t.Name,
             IntegrationOverridesEnabled = t.IntegrationOverridesEnabled,
@@ -121,6 +138,55 @@ public class TeamsModel(
         return RedirectToPage();
     }
 
+    /// <summary>
+    /// Deletes a team and everything it owns, permanently.
+    ///
+    /// <para><b>The typed name is the guard, and it is deliberately not a second "are you sure".</b>
+    /// A confirm dialog is answered reflexively; typing the team's name cannot be, and it is the one
+    /// check that catches the actual mistake this action invites — pressing delete on the right-looking
+    /// row of the wrong team. Checked here rather than only in the browser, because a modal is not a
+    /// permission.</para>
+    /// </summary>
+    public async Task<IActionResult> OnPostDeleteAsync(int teamId, string? confirmName)
+    {
+        var user = await userManager.GetUserWithManagerAsync(dbContext, User);
+        if (user is null)
+        {
+            return Forbid();
+        }
+
+        // Same gate as creating one, and for the same reason: this shapes the deployment rather than
+        // configuring a team. A TeamAdmin manages their team; they do not get to remove it.
+        if (!adminAccessScope.CanCreateTeam(user))
+        {
+            return Forbid();
+        }
+
+        var team = await dbContext.Teams.AsNoTracking().FirstOrDefaultAsync(t => t.Id == teamId);
+        if (team is null)
+        {
+            TempData["ErrorMessage"] = "That team no longer exists.";
+            return RedirectToPage();
+        }
+
+        if (!string.Equals(confirmName?.Trim(), team.Name, StringComparison.Ordinal))
+        {
+            TempData["ErrorMessage"] = $"Nothing was deleted — the name typed did not match \u201c{team.Name}\u201d exactly.";
+            return RedirectToPage();
+        }
+
+        var (result, summary) = await teamDeletionService.DeleteAsync(teamId, user.Id, CancellationToken.None);
+        TempData[result == TeamActionResult.Success ? "StatusMessage" : "ErrorMessage"] = result switch
+        {
+            TeamActionResult.Success =>
+                $"\u201c{team.Name}\u201d deleted, along with {summary!.Sessions} session(s), {summary.Candidates} candidate(s) "
+                + $"and {summary.Messages} message(s). Square and ARRL keep their own records.",
+            TeamActionResult.NotFound => "That team no longer exists.",
+            _ => "Could not delete that team."
+        };
+        return RedirectToPage();
+    }
+
     public async Task<IActionResult> OnPostCreateAsync(string name)
     {
         var user = await userManager.GetUserWithManagerAsync(dbContext, User);
@@ -153,7 +219,15 @@ public class TeamsModel(
     /// Surfaced here so a muted team is recognizable at a glance: its data looks exactly like real
     /// data, and the whole risk of the feature is mistaking one for the other.
     /// </param>
-    public record TeamRow(int Id, string Name, DateTime CreatedUtc, DateTime? DeactivatedUtc, IReadOnlyList<TeamIntegration> MutedIntegrations)
+    /// <param name="SessionCount">Shown only in the delete confirmation — a number somebody can check against what they expect, and the last chance to notice the wrong team.</param>
+    public record TeamRow(
+        int Id,
+        string Name,
+        DateTime CreatedUtc,
+        DateTime? DeactivatedUtc,
+        int SessionCount,
+        int CandidateCount,
+        IReadOnlyList<TeamIntegration> MutedIntegrations)
     {
         /// <summary>See <see cref="Team.DeactivatedUtc"/> — a deactivated team is still listed, deliberately.</summary>
         public bool IsActive => DeactivatedUtc is null;

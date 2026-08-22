@@ -8,6 +8,19 @@ that window, or immediately if it's phase-numbered work already summarized in "C
 design rationale for any entry still lives in its linked `/docs/*.md` file, not here or in
 CLAUDE.md — this file, like CLAUDE.md's Change Log, is pointers only.
 
+- **VEs can be emailed, and can tell you to stop (2026-08-16).** Issue #191. See `docs/ve-email.md`.
+  A message screen off the VE Directory (one team sends, over its own SMTP), contact **presence**
+  icons rather than the values on the directory rows, a CAN-SPAM unsubscribe, and an opt-in
+  subscription gated by a per-team switch. Four things worth carrying forward: **the unsubscribe stops
+  session invitations too** — deliberate, and it costs somebody a phone call, but a partly-honoured
+  unsubscribe is one that filtered rather than stopped; **its token is stored in the clear**, the one
+  deliberate exception to the hash-at-rest convention, because a hash cannot be re-derived and
+  re-minting per send would break the link in every message already delivered (which is what the
+  30-day rule is about); **the opt-out page changes nothing on a GET**, since mail clients and
+  scanners prefetch links; and **the subscribe box is gated by a team switch** because a team that
+  does not email every VE about every session must not show a box implying it does. Still missing for
+  full CAN-SPAM: a physical postal address in the footer, which no team field holds.
+
 - **Teams can write their own email templates (2026-08-16).** Issue #144, second PR.
   ⚠️ **Superseded 2026-08-21 — `EmailTemplate` and this screen are deleted.** A message owns its own
   subject and body now; see CLAUDE.md's Change Log and `docs/trigger-points.md`. Kept because the
