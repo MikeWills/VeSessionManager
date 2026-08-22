@@ -78,6 +78,12 @@ public class SessionEventSchedulingServiceTests
         public List<ulong> GuildIdsUsed { get; } = [];
         public List<DiscordEvent> ExistingEvents { get; } = [];
         public Exception? ThrowOnCreate { get; set; }
+
+        /// <summary>Reports the stored event as gone, the way Discord does when somebody deletes it there.</summary>
+        public bool EventDeletedInDiscord { get; set; }
+
+        /// <summary>Any other update failure — a permission problem, a bad token — which must NOT be recovered from.</summary>
+        public Exception? ThrowOnUpdate { get; set; }
         public bool IsConfigured { get; set; } = true;
         private int _nextId = 2000;
 
@@ -96,6 +102,16 @@ public class SessionEventSchedulingServiceTests
         {
             GuildIdsUsed.Add(guildId);
             UpdateCalls.Add(eventId);
+            if (EventDeletedInDiscord)
+            {
+                throw new DiscordEventNotFoundException(guildId, eventId);
+            }
+
+            if (ThrowOnUpdate is not null)
+            {
+                throw ThrowOnUpdate;
+            }
+
             return Task.CompletedTask;
         }
 
@@ -477,6 +493,113 @@ public class SessionEventSchedulingServiceTests
         Assert.Empty(zoom.UpdateCalls);
         Assert.Empty(discord.CreateCalls);
         Assert.Empty(discord.UpdateCalls);
+    }
+
+    /// <summary>
+    /// Somebody deleted the event in Discord. The app holds an id for something that no longer
+    /// exists, and until 2026-08-21 that was permanent: every tick tried to update it, threw, logged
+    /// an error and left the id in place — so the session never got another event and the log carried
+    /// the same failure forever. Found on Mike's own deployment, in the log, not by a test.
+    ///
+    /// <para>Forgetting the id is the whole recovery. It leaves the session unsettled, which is what
+    /// brings it back on the next pass.</para>
+    /// </summary>
+    [Fact]
+    public async Task DiscordEventDeletedOutsideTheApp_ForgetsTheIdRatherThanFailingForever()
+    {
+        await using var dbContext = CreateContext();
+        var (vec, feeConfig) = await SeedRefsAsync(dbContext);
+        var team = await SeedTeamAsync(dbContext);
+        var session = NewSession(vec, feeConfig, team);
+        session.ZoomMeetingId = "zoom-1";
+        session.ZoomJoinUrl = "https://zoom.us/j/zoom-1";
+        session.DiscordEventId = "discord-gone";
+        session.ZoomDiscordSyncedStartUtc = SessionStart;
+        dbContext.Sessions.Add(session);
+        await dbContext.SaveChangesAsync();
+
+        session.ScheduledStartUtc = SessionStart.AddDays(7);
+        await dbContext.SaveChangesAsync();
+
+        var zoom = new FakeZoomClient();
+        var discord = new FakeDiscordEventClient { EventDeletedInDiscord = true };
+        var result = await CreateService(dbContext, zoom, discord).RunAsync(team, CancellationToken.None);
+
+        var saved = dbContext.Sessions.Single();
+        Assert.Null(saved.DiscordEventId);
+
+        // Not counted as a failure — nothing is wrong that the next pass will not fix.
+        Assert.Equal(0, result.SessionsFailed);
+
+        // And not settled either, which is what brings it back next tick.
+        Assert.NotEqual(saved.ScheduledStartUtc, saved.ZoomDiscordSyncedStartUtc);
+    }
+
+    /// <summary>
+    /// The pass after: with the id forgotten, the ordinary create path runs — and because that path
+    /// lists the guild first, an event somebody recreated by hand is adopted rather than duplicated.
+    /// </summary>
+    [Fact]
+    public async Task AfterForgettingADeletedEvent_TheNextPassCreatesANewOne()
+    {
+        await using var dbContext = CreateContext();
+        var (vec, feeConfig) = await SeedRefsAsync(dbContext);
+        var team = await SeedTeamAsync(dbContext);
+        var session = NewSession(vec, feeConfig, team);
+        session.ZoomMeetingId = "zoom-1";
+        session.ZoomJoinUrl = "https://zoom.us/j/zoom-1";
+        session.DiscordEventId = "discord-gone";
+        session.ZoomDiscordSyncedStartUtc = SessionStart;
+        dbContext.Sessions.Add(session);
+        await dbContext.SaveChangesAsync();
+
+        session.ScheduledStartUtc = SessionStart.AddDays(7);
+        await dbContext.SaveChangesAsync();
+
+        var zoom = new FakeZoomClient();
+        var discord = new FakeDiscordEventClient { EventDeletedInDiscord = true };
+        var service = CreateService(dbContext, zoom, discord);
+
+        await service.RunAsync(team, CancellationToken.None);
+        Assert.Empty(discord.CreateCalls);
+
+        // Discord is healthy on the next pass, and the session is picked up because it never settled.
+        discord.EventDeletedInDiscord = false;
+        var second = await service.RunAsync(team, CancellationToken.None);
+
+        Assert.Single(discord.CreateCalls);
+        Assert.Equal(1, second.SessionsSynced);
+        Assert.NotNull(dbContext.Sessions.Single().DiscordEventId);
+    }
+
+    /// <summary>
+    /// ⚠️ Only a missing event is recovered from. Anything else — a permission problem, a bad token, a
+    /// guild the bot was removed from — must still surface, because forgetting the id there would
+    /// create a second event the moment access came back.
+    /// </summary>
+    [Fact]
+    public async Task AnyOtherDiscordFailure_StillFailsAndKeepsTheId()
+    {
+        await using var dbContext = CreateContext();
+        var (vec, feeConfig) = await SeedRefsAsync(dbContext);
+        var team = await SeedTeamAsync(dbContext);
+        var session = NewSession(vec, feeConfig, team);
+        session.ZoomMeetingId = "zoom-1";
+        session.ZoomJoinUrl = "https://zoom.us/j/zoom-1";
+        session.DiscordEventId = "discord-1";
+        session.ZoomDiscordSyncedStartUtc = SessionStart;
+        dbContext.Sessions.Add(session);
+        await dbContext.SaveChangesAsync();
+
+        session.ScheduledStartUtc = SessionStart.AddDays(7);
+        await dbContext.SaveChangesAsync();
+
+        var zoom = new FakeZoomClient();
+        var discord = new FakeDiscordEventClient { ThrowOnUpdate = new InvalidOperationException("403 Forbidden") };
+        var result = await CreateService(dbContext, zoom, discord).RunAsync(team, CancellationToken.None);
+
+        Assert.Equal(1, result.SessionsFailed);
+        Assert.Equal("discord-1", dbContext.Sessions.Single().DiscordEventId);
     }
 
     [Fact]

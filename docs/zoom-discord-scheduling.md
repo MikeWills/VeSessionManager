@@ -113,3 +113,33 @@ need). See [Discord.Net's guild scheduled events guide](https://docs.discordnet.
   validation would otherwise throw for a naive `Local`-inferred conversion.
 - Package: `Discord.Net.Rest` (chosen over `Discord.Net.WebSocket`, which requires a persistent
   gateway connection this job never needs).
+
+## An event deleted in Discord is recovered from, not retried forever (2026-08-21)
+
+Found in the Worker log on Mike's own deployment, not by a test:
+
+```
+[ERR] Failed to sync Zoom/Discord for session 6950a55a887662328eb6a169
+System.InvalidOperationException: Discord scheduled event 1532165026406731887 no longer exists
+```
+
+`UpdateEventAsync` threw, the caller logged it, and **`Session.DiscordEventId` stayed set** — so every
+tick tried to update an event that was gone, failed the same way, and the session never got another
+one. A recoverable state that read as a permanent error, once per tick, forever.
+
+It also contradicted the query-before-create pattern the rest of this file is about: a resource that
+disappeared should be re-created, not retried against a dead id.
+
+**The recovery is to forget the id.** `discordSettled` is `DiscordEventId is not null`, so clearing it
+leaves the session unsettled and the ordinary create branch picks it up on the next pass — and that
+branch lists the guild first, so an event somebody recreated by hand in the meantime is adopted
+rather than duplicated. No new state, no retry counter.
+
+⚠️ **Only a missing event is swallowed**, via the dedicated `DiscordEventNotFoundException`. A
+permission problem, a bad token or a guild the bot was removed from still surfaces as a failure —
+forgetting the id on any of those would create a second event the moment access came back. That is
+what the typed exception buys over the `InvalidOperationException` with an explanatory message it
+replaced: the caller can tell the two apart.
+
+`DeleteEventAsync` is deliberately not part of this — it already treats an already-gone event as
+success, because there the absence is the goal.
