@@ -21,6 +21,28 @@ public class MessageRuleService(
     TimeProvider timeProvider,
     ILogger<MessageRuleService> logger)
 {
+    /// <summary>
+    /// Triggers nothing scans, because a person sets them off. Excluded from the query entirely
+    /// rather than skipped inside the loop: the loop's job is to find a scanner, and there is
+    /// deliberately none for these.
+    ///
+    /// <para><b>Found running the Worker, 2026-08-21.</b> The three hand-sent messages a team is
+    /// seeded with arrive switched ON — correctly, since off would leave two per-candidate buttons
+    /// silently doing nothing — and the scan loaded every enabled rule. So each tick logged
+    /// "No scanner is registered" at ERROR for every one of them, on every team: nine per pass on a
+    /// three-team deployment. A repeating ERROR for an ordinary state is what teaches people to stop
+    /// reading the log, and the next real error goes with it.</para>
+    ///
+    /// <para>⚠️ Built from <see cref="MessageTriggerDefinitions.All"/> rather than by calling
+    /// <c>For(rule.Trigger)</c> per rule, which <b>throws</b> for anything outside that list —
+    /// <c>SentByHand</c> is in the enum and deliberately absent from it. Asking would turn a
+    /// correct, quiet error into a crashed tick.</para>
+    /// </summary>
+    private static readonly MessageTrigger[] ManualTriggers =
+        [.. MessageTriggerDefinitions.All
+            .Where(d => d.Mechanism == MessageTriggerMechanism.Manual)
+            .Select(d => d.Trigger)];
+
     /// <param name="onlyTriggers">
     /// Restrict the pass to these trigger points, or null for all of them. <c>TeamPipeline</c> passes
     /// <see cref="MessageTrigger.CandidateRegistered"/> alone: the pipeline runs on the ~5-minute
@@ -36,7 +58,9 @@ public class MessageRuleService(
         var now = timeProvider.GetUtcNow().UtcDateTime;
 
         var rules = await dbContext.MessageRules
-            .Where(r => r.TeamId == team.Id && r.IsEnabled && (onlyTriggers == null || onlyTriggers.Contains(r.Trigger)))
+            .Where(r => r.TeamId == team.Id && r.IsEnabled
+                     && !ManualTriggers.Contains(r.Trigger)
+                     && (onlyTriggers == null || onlyTriggers.Contains(r.Trigger)))
             .OrderBy(r => r.Id)
             .ToListAsync(cancellationToken);
 
