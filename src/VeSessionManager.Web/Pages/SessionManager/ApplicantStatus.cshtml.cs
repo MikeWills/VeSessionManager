@@ -112,7 +112,20 @@ public class ApplicantStatusModel(
             .Where(c => (teamIds == null || teamIds.Contains(c.Session.TeamId))
                 && c.Tested
                 && (c.ApplicationStatus == CandidateApplicationStatus.Unmatched || c.ApplicationStatus == CandidateApplicationStatus.Received))
-            .OrderBy(c => c.ApplicationDateEnteredUtc ?? c.DateRegisteredUtc)
+            // Session date, oldest first (Mike, 2026-08-24). This is a working queue: the session
+            // waiting longest is the one to chase, so it belongs at the top.
+            //
+            // ⚠️ It used to order by the date the FCC received the application, falling back to
+            // registration — close enough to look right where everyone sits in a similar window,
+            // and wrong exactly where it matters. An application the FCC never received has no
+            // received date, so it sorted by registration instead: the candidate nobody has heard
+            // anything about, who is the most worth chasing, could land anywhere in the list.
+            //
+            // Name breaks the tie so a session with several people pending renders in a stable
+            // order rather than whatever the database returns; without it the rows can swap
+            // places between refreshes and read as though something changed.
+            .OrderBy(c => c.Session.ScheduledStartUtc)
+            .ThenBy(c => c.Name)
             .ToListAsync();
 
         // DaysPendingCssClass needs one boolean per candidate — "does this person owe money" — which

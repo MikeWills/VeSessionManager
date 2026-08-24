@@ -79,6 +79,103 @@ public class ApplicantStatusPageTests : IClassFixture<WebAppFactory>
         await db.SaveChangesAsync();
     }
 
+    /// <summary>
+    /// ⚠️ <b>Session date ascending, oldest first</b> (Mike, 2026-08-24). This is a working queue, and
+    /// the session waiting longest is the one to chase — so it belongs at the top rather than buried
+    /// under sessions that have barely started waiting.
+    ///
+    /// <para>It used to order by the date the FCC received the application, falling back to
+    /// registration. Close enough to look right on a screen where most people sit in a similar
+    /// window, and wrong exactly when it matters: an application the FCC never received sorts by
+    /// registration date instead, so the candidate nobody has heard about — the one most worth
+    /// chasing — could sit anywhere in the list.</para>
+    ///
+    /// <para>Ordered server-side rather than by seeding the client sorter's stored preference: the
+    /// column headers still re-sort, and this is the order the page arrives in, with or without
+    /// JavaScript.</para>
+    /// </summary>
+    [Fact]
+    public async Task PendingRowsAreOrderedBySessionDate_OldestFirst()
+    {
+        var sessionIds = await SeedPendingAcrossSessionsAsync();
+
+        var client = _factory.CreateClientAs(UserRole.SystemAdmin);
+        var html = await client.GetStringAsync(Url);
+
+        var order = PendingCandidateNames(html);
+        Assert.Equal(["Oldest session", "Middle session", "Newest session"], order);
+        Assert.Equal(3, sessionIds.Count);
+    }
+
+    /// <summary>
+    /// Three pending candidates on three sessions, seeded newest-first so a query that kept the
+    /// insertion order — or the old application-received order — comes out visibly wrong rather than
+    /// accidentally right.
+    /// </summary>
+    private async Task<List<int>> SeedPendingAcrossSessionsAsync()
+    {
+        using var scope = _factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+
+        db.Candidates.RemoveRange(await db.Candidates.ToListAsync());
+        await db.SaveChangesAsync();
+
+        var template = await db.Sessions.AsNoTracking().FirstAsync();
+        var ids = new List<int>();
+
+        // Deliberately inserted newest session first, and with application-received dates running the
+        // OPPOSITE way to session date — so the old ordering and the new one disagree.
+        var plan = new[]
+        {
+            (Name: "Newest session", Days: -1, Received: -30),
+            (Name: "Middle session", Days: -20, Received: -20),
+            (Name: "Oldest session", Days: -60, Received: -1)
+        };
+
+        foreach (var (name, days, received) in plan)
+        {
+            var session = new Session
+            {
+                TeamId = template.TeamId,
+                VecId = template.VecId,
+                FeeConfigurationId = template.FeeConfigurationId,
+                ExamToolsSessionId = $"order-{Guid.NewGuid():N}",
+                Title = name,
+                ExtId = name,
+                ScheduledStartUtc = DateTime.UtcNow.AddDays(days),
+                Status = SessionStatus.Active
+            };
+            db.Sessions.Add(session);
+            await db.SaveChangesAsync();
+            ids.Add(session.Id);
+
+            db.Candidates.Add(new Candidate
+            {
+                SessionId = session.Id,
+                Name = name,
+                Email = $"{Guid.NewGuid():N}@localhost",
+                DateRegisteredUtc = DateTime.UtcNow.AddDays(days),
+                ApplicationDateEnteredUtc = DateTime.UtcNow.AddDays(received),
+                Tested = true,
+                ApplicationStatus = CandidateApplicationStatus.Received
+            });
+            await db.SaveChangesAsync();
+        }
+
+        return ids;
+    }
+
+    /// <summary>The candidate names in the pending table, in the order the page rendered them.</summary>
+    private static List<string> PendingCandidateNames(string html)
+    {
+        var table = Regex.Match(html, """<table class="cards" data-sortable="pending-fcc-grant">.*?</table>""", RegexOptions.Singleline).Value;
+        Assert.NotEmpty(table);
+
+        var body = Regex.Match(table, "<tbody>.*?</tbody>", RegexOptions.Singleline).Value;
+        return [.. Regex.Matches(body, """<td><a [^>]*CandidateDetail[^>]*>([^<]+)</a></td>""")
+            .Select(m => m.Groups[1].Value.Trim())];
+    }
+
     /// <summary>The number rendered in the pill beside the "Pending FCC grant" heading.</summary>
     private static string HeadingCount(string html) =>
         Regex.Match(html, """Pending FCC grant<span class="pill-count[^"]*">(\d+)</span>""").Groups[1].Value;
