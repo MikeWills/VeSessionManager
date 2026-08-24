@@ -26,6 +26,7 @@ namespace VeSessionManager.Web.Pages.SessionManager;
 /// locked to their own.</para>
 /// </summary>
 [Authorize(Roles = RoleGroups.Admins)]
+[RemembersFilters]
 public class VeTagsModel(
     AppDbContext dbContext,
     UserManager<User> userManager,

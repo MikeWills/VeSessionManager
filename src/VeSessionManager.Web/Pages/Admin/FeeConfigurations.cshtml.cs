@@ -21,6 +21,7 @@ namespace VeSessionManager.Web.Pages.Admin;
 // across every team, so one team's admin editing it would change what every other team charges. The
 // per-team checks further down are left in place as a second line rather than removed.
 [Authorize(Roles = RoleGroups.SystemAdminOnly)]
+[RemembersFilters]
 public class FeeConfigurationsModel(AppDbContext dbContext, UserManager<User> userManager, SessionAccessScope accessScope, FeeConfigurationService feeConfigurationService) : PageModel
 {
     [BindProperty(SupportsGet = true)]

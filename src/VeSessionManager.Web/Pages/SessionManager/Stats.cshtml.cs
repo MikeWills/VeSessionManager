@@ -34,6 +34,7 @@ namespace VeSessionManager.Web.Pages.SessionManager;
 /// Requested 2026-08-15.</para>
 /// </summary>
 [Authorize(Roles = RoleGroups.Admins)]
+[RemembersFilters]
 public class StatsModel(
     AppDbContext dbContext,
     UserManager<User> userManager,

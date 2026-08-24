@@ -28,6 +28,7 @@ namespace VeSessionManager.Web.Pages.SessionManager;
 /// candidate detail page remain the source of truth for anything older.
 /// </summary>
 [Authorize(Roles = RoleGroups.AllRoles)]
+[RemembersFilters]
 public class ApplicantStatusModel(
     AppDbContext dbContext,
     UserManager<User> userManager,

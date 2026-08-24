@@ -27,6 +27,7 @@ namespace VeSessionManager.Web.Pages.Admin;
 /// re-resolve through AdminAccessScope rather than trusting the form.
 /// </summary>
 [Authorize(Roles = RoleGroups.Admins)]
+[RemembersFilters]
 public class TeamMaintenanceModel(
     AppDbContext dbContext,
     UserManager<User> userManager,
