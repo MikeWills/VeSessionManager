@@ -24,6 +24,7 @@ namespace VeSessionManager.Web.Pages.SessionManager;
 /// shared by every row so this doesn't turn into N+1 selects.
 /// </summary>
 [Authorize(Roles = RoleGroups.SessionStaff)]
+[RemembersFilters]
 public class UnmatchedPaymentsModel(
     AppDbContext dbContext,
     UserManager<User> userManager,

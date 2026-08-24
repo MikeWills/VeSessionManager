@@ -26,6 +26,7 @@ namespace VeSessionManager.Web.Pages.Admin;
 /// button.</para>
 /// </summary>
 [Authorize(Roles = RoleGroups.Admins)]
+[RemembersFilters]
 public class ReconciliationModel(
     AppDbContext dbContext,
     UserManager<User> userManager,

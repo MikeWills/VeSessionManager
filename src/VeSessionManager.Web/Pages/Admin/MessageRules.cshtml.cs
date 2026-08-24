@@ -25,6 +25,7 @@ namespace VeSessionManager.Web.Pages.Admin;
 /// is deliberately no "All teams" option to fall back to.</para>
 /// </summary>
 [Authorize(Roles = RoleGroups.Admins)]
+[RemembersFilters]
 public class MessageRulesModel(
     AppDbContext dbContext,
     UserManager<User> userManager,

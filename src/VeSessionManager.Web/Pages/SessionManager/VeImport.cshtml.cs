@@ -22,6 +22,7 @@ namespace VeSessionManager.Web.Pages.SessionManager;
 /// no sensible answer to "which one" while "all teams" is selected.</para>
 /// </summary>
 [Authorize(Roles = RoleGroups.Admins)]
+[RemembersFilters]
 public class VeImportModel(
     AppDbContext dbContext,
     UserManager<User> userManager,

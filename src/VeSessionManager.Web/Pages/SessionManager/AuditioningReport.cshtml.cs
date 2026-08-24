@@ -28,6 +28,7 @@ namespace VeSessionManager.Web.Pages.SessionManager;
 /// admin-only screens — which is also why the stats page is aggregate-only.</para>
 /// </summary>
 [Authorize(Roles = RoleGroups.Admins)]
+[RemembersFilters]
 public class AuditioningReportModel(
     AppDbContext dbContext,
     UserManager<User> userManager,

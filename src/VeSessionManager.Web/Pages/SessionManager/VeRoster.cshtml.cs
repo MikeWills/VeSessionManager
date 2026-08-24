@@ -49,6 +49,7 @@ namespace VeSessionManager.Web.Pages.SessionManager;
 /// page must not be shown a link that 403s.
 /// </summary>
 [Authorize(Roles = RoleGroups.Admins)]
+[RemembersFilters]
 public class VeRosterModel(AppDbContext dbContext, UserManager<User> userManager, SessionAccessScope accessScope, VolunteerExaminerReportService reportService, TimeProvider timeProvider) : PageModel
 {
     [BindProperty(SupportsGet = true)]

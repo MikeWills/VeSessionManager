@@ -459,8 +459,16 @@ builder.Services.AddAuthorization(options =>
 // StaleAuthCookieFilter runs on every page: a cookie can outlive the account it names, and without
 // it that lands as a 500 the person cannot act on. See the filter's own remarks.
 builder.Services.AddScoped<StaleAuthCookieFilter>();
+builder.Services.AddScoped<RememberFiltersPageFilter>();
 builder.Services.AddRazorPages(options =>
-    options.Conventions.ConfigureFilter(new ServiceFilterAttribute(typeof(StaleAuthCookieFilter))));
+{
+    options.Conventions.ConfigureFilter(new ServiceFilterAttribute(typeof(StaleAuthCookieFilter)));
+
+    // Filters survive navigating away and back (#459). Registered globally but inert unless a
+    // page model carries [RemembersFilters], so it costs one attribute check per request on
+    // every page that does not opt in.
+    options.Conventions.ConfigureFilter(new ServiceFilterAttribute(typeof(RememberFiltersPageFilter)));
+});
 
 var app = builder.Build();
 

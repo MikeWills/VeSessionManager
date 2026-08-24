@@ -29,6 +29,7 @@ namespace VeSessionManager.Web.Pages.SessionManager;
 /// authentication.</para>
 /// </summary>
 [Authorize]
+[RemembersFilters]
 public class RenewalMonitorModel(
     AppDbContext dbContext,
     UserManager<User> userManager,

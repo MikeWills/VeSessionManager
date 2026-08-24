@@ -26,6 +26,7 @@ namespace VeSessionManager.Web.Pages.SessionManager;
 /// attribute; a role that cannot load the page must not be shown a link that 403s.</para>
 /// </summary>
 [Authorize(Roles = RoleGroups.Admins)]
+[RemembersFilters]
 public class VeDirectoryModel(
     AppDbContext dbContext,
     UserManager<User> userManager,

@@ -29,6 +29,7 @@ namespace VeSessionManager.Web.Pages.Admin;
 /// has one meaningful order anyway; the filters are what make an older entry reachable.</para>
 /// </summary>
 [Authorize(Roles = RoleGroups.Admins)]
+[RemembersFilters]
 public class AuditLogModel(AppDbContext dbContext, UserManager<User> userManager, AdminAccessScope adminAccessScope) : PageModel
 {
     internal static readonly int[] AllowedPageSizes = [25, 50, 100, 200];

@@ -206,6 +206,27 @@
                     }
                 </a>
             }
+            @* FCC (#458). Deliberately ungated: every one of these is a public FCC page, and a VE at
+               any level ends up on them — they are the three tabs people keep open beside this app.
+
+               Every link opens in a new tab, because they are somewhere else entirely and losing an
+               in-progress session screen to a license lookup is the whole reason people keep them
+               open separately. rel="noopener noreferrer" alongside target="_blank", matching the
+               Support link below.
+
+               ⚠️ No activeNav here, and nothing to highlight: these leave the app. And no deep links
+               into a specific licence or application — wireless2.fcc.gov answers automated requests
+               with an Akamai 403, and this app deliberately ships only the one licence link shape it
+               has actually verified (FccUlsLinks). These are the plain search pages, typed by a
+               person, which is what the FCC expects of them. *@
+            <div class="nav-group">
+                <button type="button" class="kebab">FCC <i class="bi bi-caret-down-fill" aria-hidden="true"></i></button>
+                <div class="menu">
+                    <a class="item" href="https://wireless2.fcc.gov/UlsApp/ApplicationSearch/searchAppl.jsp" target="_blank" rel="noopener noreferrer">Application Search</a>
+                    <a class="item" href="https://wireless2.fcc.gov/UlsApp/UlsSearch/searchLicense.jsp" target="_blank" rel="noopener noreferrer">License Search</a>
+                    <a class="item" href="https://apps.fcc.gov/cores/userLogin.do" target="_blank" rel="noopener noreferrer">CORES</a>
+                </div>
+            </div>
             @if (currentUser?.Role is UserRole.SystemAdmin or UserRole.TeamAdmin)
             {
                 <div class="nav-group">

@@ -23,6 +23,7 @@ namespace VeSessionManager.Web.Pages.Admin;
 // suppresses the back-forward cache.
 [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
 [Authorize(Roles = RoleGroups.Admins)]
+[RemembersFilters]
 public class TeamSettingsModel(AppDbContext dbContext, UserManager<User> userManager, AdminAccessScope adminAccessScope, TeamSettingsService teamSettingsService) : PageModel
 {
     [BindProperty(SupportsGet = true)]

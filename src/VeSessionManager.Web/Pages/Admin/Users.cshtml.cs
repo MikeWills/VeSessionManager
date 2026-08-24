@@ -19,6 +19,7 @@ namespace VeSessionManager.Web.Pages.Admin;
 /// than one team.
 /// </summary>
 [Authorize(Roles = RoleGroups.Admins)]
+[RemembersFilters]
 public class UsersModel(AppDbContext dbContext, UserManager<User> userManager, AdminAccessScope adminAccessScope, UserManagementService userManagementService) : PageModel
 {
     [BindProperty(SupportsGet = true)]
