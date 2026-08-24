@@ -30,6 +30,28 @@
         <li><strong>Payment processing</strong> — generating and tracking payment for exam fees</li>
     </ul>
 
+    @* Added 2026-08-24 when the filter cookie was generalised across the admin pages. The page had
+       said nothing about cookies at all, which was the real gap — not a banner. Every one of these is
+       first-party and functional; there is no analytics, no third party and nothing that tracks
+       anybody, which is the sentence a reader actually wants. *@
+    <h2>Cookies</h2>
+    <p>
+        This site uses four cookies, all set by this site itself. None are used for advertising,
+        analytics, or tracking you across other websites, and none are shared with anyone.
+    </p>
+    <ul>
+        <li><strong>Sign-in</strong> — keeps you signed in. Only set once you log in.</li>
+        <li><strong>Security</strong> — protects forms against cross-site request forgery.</li>
+        <li><strong>Filter preferences</strong> — two cookies remembering the filters you last chose on
+            a list, so a page you come back to looks the way you left it. Only set for signed-in
+            volunteer examiners and administrators.</li>
+    </ul>
+    <p>
+        If you are a candidate rather than a volunteer, the filter cookies are never set for you — the
+        pages that use them require an account. Clearing your browser's cookies for this site removes
+        all of them; you will simply be signed out and any remembered filters will reset.
+    </p>
+
     <h2>How long we keep it</h2>
     @if (Model.PiiRetentionWindowDays is int days)
     {
