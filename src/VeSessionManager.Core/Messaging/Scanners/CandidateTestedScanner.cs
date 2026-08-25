@@ -31,6 +31,7 @@ public class CandidateTestedScanner(AppDbContext dbContext) : IMessageTriggerSca
             .Where(r => r.MessageRuleId == rule.Id && MessageRuleOutcomes.Terminal.Contains(r.Outcome))
             .Select(r => r.SubjectId);
 
+        var floorUtc = MessageRuleEligibility.FloorUtc(team, rule);
         var candidates = await dbContext.Candidates
             .Include(c => c.Session)
             .Where(c => c.PiiPurgedUtc == null
@@ -40,7 +41,7 @@ public class CandidateTestedScanner(AppDbContext dbContext) : IMessageTriggerSca
                         // The moment, and the bound. Null means "tested before this column existed",
                         // which excludes every backfilled candidate without needing an age window.
                         && c.TestedUtc != null
-                        && c.TestedUtc >= rule.CreatedUtc
+                        && c.TestedUtc >= floorUtc
                         // A withdrawn candidate is ApplicationStatus.NotTested and never actually sat
                         // anything, whatever a bulk "mark session completed" left on the row.
                         && c.ApplicationStatus != CandidateApplicationStatus.NotTested
