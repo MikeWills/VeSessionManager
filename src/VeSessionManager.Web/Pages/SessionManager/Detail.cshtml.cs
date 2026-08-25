@@ -488,6 +488,12 @@ public class DetailModel(
 
         var statusLabel = CandidatePresentation.StatusLabel(candidate.ApplicationStatus);
 
+        var cityStateLine = isWithdrawn
+            ? "—"
+            : string.Join(", ", new[] { candidate.City, candidate.State }.Where(s => !string.IsNullOrWhiteSpace(s))) is { Length: > 0 } line
+                ? line
+                : "—";
+
         var frnLine = isWithdrawn
             ? "record retained for stats"
             : candidate.Frn is not null
@@ -508,6 +514,7 @@ public class DetailModel(
             isWithdrawn,
             CandidatePresentation.DisplayName(candidate),
             isWithdrawn ? "—" : candidate.CallSign ?? "—",
+            cityStateLine,
             frnLine,
             meterSegments,
             statusLabel,
@@ -564,6 +571,8 @@ public class DetailModel(
         bool IsWithdrawn,
         string DisplayName,
         string CallSignOrDash,
+        /// <summary>"City, ST", or whichever half is on file, or "—" — #463, "who's local." Blank/"—" for a withdrawn candidate, whose City/State were cleared with the rest of their PII.</summary>
+        string CityStateLine,
         string FrnLine,
         string[] MeterSegments,
         string StatusLabel,

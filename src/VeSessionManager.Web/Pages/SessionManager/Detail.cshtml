@@ -160,6 +160,10 @@
     <thead>
         <tr>
             <th>Candidate</th>
+            @* #463 — "who's local." Its own column rather than folded into the Candidate cell's
+               call sign/FRN sub-line: that sub-line is identity data, this is a filter/scan
+               question someone answers by scanning the column, not by opening a row. *@
+            <th>City</th>
             <th>Application status</th>
             <th>Payment</th>
             <th>Tested</th>
@@ -169,7 +173,7 @@
     <tbody>
         @if (Model.Candidates.Count == 0)
         {
-            <tr><td colspan="5">No candidates registered for this session yet.</td></tr>
+            <tr><td colspan="6">No candidates registered for this session yet.</td></tr>
         }
         @foreach (var candidate in Model.Candidates)
         {
@@ -199,6 +203,7 @@
                         <div><span class="refund-tag" title="Declared a felony disclosure and has not been sent the FCC instructions. Send them from this row's menu.">Needs FCC disclosure info</span></div>
                     }
                 </td>
+                <td data-sort-value="@candidate.CityStateLine">@candidate.CityStateLine</td>
                 <td>
                     <div class="status-row">
                         <div class="meter">

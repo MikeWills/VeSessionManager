@@ -74,6 +74,16 @@ public class ExamToolsApplicant
 
     public string Email { get; set; } = "";
 
+    /// <summary>
+    /// Registration city/state (#463 — "who's local"). Confirmed present on this endpoint's applicant
+    /// rows alongside <c>addr</c>/<c>zip</c>, neither of which is mapped here — nothing needs a street
+    /// address, and the issue only asked for city/state.
+    /// </summary>
+    public string? City { get; set; }
+
+    /// <inheritdoc cref="City"/>
+    public string? State { get; set; }
+
     /// <summary>ExamTools uses an all-zeros placeholder when the applicant registered without an FRN.</summary>
     public string Frn { get; set; } = "";
 
