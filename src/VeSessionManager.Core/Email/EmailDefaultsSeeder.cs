@@ -197,18 +197,12 @@ public static class EmailDefaultsSeeder
             """,
             ParameterHours: 120, MessageRecipient.Candidate, Enabled: false);
 
-        // The one that never went to a candidate: it tells the Session Manager a payment link has
-        // gone stale. That used to be a special case inside the send path; it is a field now.
-        private static readonly MessageSeed PaymentExpirationNotice = new(
-            MessageTrigger.PaymentUnpaid,
-            "Unpaid payment notice after 10 days",
-            "Unpaid Exam Fee Expired",
-            """
-            <p>{{CandidateName}}'s exam fee ({{PaymentAmount}}) from the session on {{SessionDate}} has gone
-            10+ days without payment and is now marked expired.</p>
-            <p>This is an internal notice — it goes to the Session Manager, not the candidate.</p>
-            """,
-            ParameterHours: 240, MessageRecipient.TeamAdminAddress, Enabled: false);
+        // PaymentExpirationNotice (MessageTrigger.PaymentUnpaid) removed 2026-08-25. Mike: "PaymentUnpaid
+        // is literally worthless. If they didn't pay the test session fee, they couldn't test and/or
+        // the VEC would not process it." Its condition — an FCC application entered for a candidate
+        // who never paid to test — cannot legitimately arise, so nothing was ever going to be sent.
+        // PaymentUnpaidBeforeSession replaces the real need this was reaching for, and is not seeded
+        // — like every trigger added since (CandidateTested, LicenseGranted, ...), a team opts in.
 
         // Sent by a per-candidate button, NOT automatically (#221). It used to fire from
         // SessionActionService.MarkCompletedAsync for anyone whose Tested flag that call flipped —
@@ -274,7 +268,6 @@ public static class EmailDefaultsSeeder
             RegistrationConfirmation,
             DayBeforeReminder,
             FccFeeReminder,
-            PaymentExpirationNotice,
             FelonyDisclosureInstructions,
             GettingStartedLocally,
             YouthProgramInstructions

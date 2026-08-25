@@ -292,6 +292,19 @@ public enum MessageTrigger
     ManualYouthProgramInstructions = 10,
 
     /// <summary>
+    /// The exam fee is still unpaid and the session is coming up (Mike, 2026-08-25) — a candidate who
+    /// has not paid cannot test, so a team may want to chase this before the session rather than
+    /// after.
+    ///
+    /// <para><b>Not <see cref="PaymentUnpaid"/> repurposed.</b> That trigger's clock starts from the
+    /// FCC application date, which for most candidates does not exist yet before their session —
+    /// there would be nothing to anchor on. Its hours also drive the real
+    /// <c>Payment.ExpiredUnpaid</c> write, so changing what it means would move that too. This is a
+    /// new trigger with its own clock: the session's own start time, counting backward.</para>
+    /// </summary>
+    PaymentUnpaidBeforeSession = 11,
+
+    /// <summary>
     /// Not a trigger point — a note on a run saying a person pressed a button (#417).
     ///
     /// <para>A hand-send has no moment to scan for, but <c>MessageRuleRun.Trigger</c> is not nullable

@@ -14,6 +14,14 @@ independent things:
 **Ruling on unmarked cells:** *"If I didn't say Y or N, then it's a N."* Everything left blank in the
 worksheet is therefore a deliberate no, not an open question.
 
+**Amended 2026-08-25.** `PaymentUnpaid` — the row below — is gone: Mike, "PaymentUnpaid is literally
+worthless. If they didn't pay the test session fee, they couldn't test and/or the VEC would not
+process it." Its condition (an FCC application entered for a candidate who never paid) cannot
+legitimately arise. `PaymentUnpaidBeforeSession` replaced the real need it was reaching for — fires
+before the session, while the fee is still unpaid — and was carried forward on this same matrix's
+shape: candidate-facing, staff-addressable, no Discord channel, all three fan-outs. The table below is
+left as the 2026-08-20 worksheet it records; it is not a live spec.
+
 ## The matrix
 
 | Trigger | Subject | Candidate | VEs (Discord) | Session lead / SM | Admin roles | Own address |

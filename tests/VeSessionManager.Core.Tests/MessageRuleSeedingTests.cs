@@ -9,8 +9,12 @@ using Xunit;
 namespace VeSessionManager.Core.Tests;
 
 /// <summary>
-/// What a team starts with (#401): the four rules reproducing this app's original automatic sends,
-/// seeded by <see cref="EmailDefaultsSeeder"/> the same way its templates are.
+/// What a team starts with (#401): the rules reproducing this app's original automatic sends, seeded
+/// by <see cref="EmailDefaultsSeeder"/> the same way its templates are.
+///
+/// <para>Three automatic since 2026-08-25, not four — <c>PaymentUnpaid</c> was removed (Mike: "If
+/// they didn't pay the test session fee, they couldn't test and/or the VEC would not process it").
+/// Six seeded messages in total now, not seven.</para>
 /// </summary>
 public class MessageRuleSeedingTests
 {
@@ -36,19 +40,17 @@ public class MessageRuleSeedingTests
 
         var rules = await dbContext.MessageRules.Where(r => r.TeamId == team.Id).ToListAsync();
 
-        // Four automatic, three hand-sent. The hand-sent ones were templates with no rule until the
+        // Three automatic, three hand-sent. The hand-sent ones were templates with no rule until the
         // content refactor; they are messages on their own manual triggers now.
-        Assert.Equal(7, rules.Count);
+        Assert.Equal(6, rules.Count);
         Assert.Equal(24, rules.Single(r => r.Trigger == MessageTrigger.BeforeSessionStart).ParameterHours);
         Assert.Equal(120, rules.Single(r => r.Trigger == MessageTrigger.FccFeeOutstanding).ParameterHours);
-        Assert.Equal(240, rules.Single(r => r.Trigger == MessageTrigger.PaymentUnpaid).ParameterHours);
-        Assert.Equal(MessageRecipient.TeamAdminAddress, rules.Single(r => r.Trigger == MessageTrigger.PaymentUnpaid).Recipient);
 
         // ⚠️ The AUTOMATIC ones arrive switched off (Mike, 2026-08-21: "keep them all turned off") —
         // examples of what a team can set up, not mail a new team starts sending to real people before
         // anybody has read it.
         var automatic = rules.Where(r => MessageTriggerDefinitions.For(r.Trigger).Mechanism != MessageTriggerMechanism.Manual).ToList();
-        Assert.Equal(4, automatic.Count);
+        Assert.Equal(3, automatic.Count);
         Assert.All(automatic, r => Assert.False(r.IsEnabled));
 
         // The hand-sent ones arrive ON. The risk being avoided is unread mail going out by itself, and
@@ -105,7 +107,7 @@ public class MessageRuleSeedingTests
 
         var reminder = await dbContext.MessageRules.SingleAsync(r => r.Trigger == MessageTrigger.BeforeSessionStart);
         reminder.ParameterHours = 48;
-        var disabled = await dbContext.MessageRules.SingleAsync(r => r.Trigger == MessageTrigger.PaymentUnpaid);
+        var disabled = await dbContext.MessageRules.SingleAsync(r => r.Trigger == MessageTrigger.FccFeeOutstanding);
         disabled.IsEnabled = false;
         await dbContext.SaveChangesAsync();
 
@@ -113,9 +115,9 @@ public class MessageRuleSeedingTests
         await dbContext.SaveChangesAsync();
 
         var rules = await dbContext.MessageRules.ToListAsync();
-        Assert.Equal(7, rules.Count);
+        Assert.Equal(6, rules.Count);
         Assert.Equal(48, rules.Single(r => r.Trigger == MessageTrigger.BeforeSessionStart).ParameterHours);
-        Assert.False(rules.Single(r => r.Trigger == MessageTrigger.PaymentUnpaid).IsEnabled);
+        Assert.False(rules.Single(r => r.Trigger == MessageTrigger.FccFeeOutstanding).IsEnabled);
     }
 
     /// <summary>
@@ -135,18 +137,17 @@ public class MessageRuleSeedingTests
         await EmailDefaultsSeeder.SeedForTeamAsync(dbContext, NullLogger.Instance, team);
         await dbContext.SaveChangesAsync();
 
-        dbContext.MessageRules.Remove(await dbContext.MessageRules.SingleAsync(r => r.Trigger == MessageTrigger.PaymentUnpaid));
+        dbContext.MessageRules.Remove(await dbContext.MessageRules.SingleAsync(r => r.Trigger == MessageTrigger.FccFeeOutstanding));
         await dbContext.SaveChangesAsync();
 
         await EmailDefaultsSeeder.SeedForTeamAsync(dbContext, NullLogger.Instance, team);
         await dbContext.SaveChangesAsync();
 
         var rules = await dbContext.MessageRules.ToListAsync();
-        Assert.DoesNotContain(rules, r => r.Trigger == MessageTrigger.PaymentUnpaid);
+        Assert.DoesNotContain(rules, r => r.Trigger == MessageTrigger.FccFeeOutstanding);
 
-        // One fewer than a full seed: the deleted one stays deleted. Six rather than three since the
-        // three hand-sent messages joined the set.
-        Assert.Equal(6, rules.Count);
+        // One fewer than a full seed: the deleted one stays deleted.
+        Assert.Equal(5, rules.Count);
     }
 
     /// <summary>Deleting every one of them is an answer too — "we send nothing automatically" must survive a restart.</summary>
@@ -185,7 +186,7 @@ public class MessageRuleSeedingTests
         await EmailDefaultsSeeder.SeedForTeamAsync(dbContext, NullLogger.Instance, team);
         await dbContext.SaveChangesAsync();
 
-        Assert.Equal(7, await dbContext.MessageRules.CountAsync());
+        Assert.Equal(6, await dbContext.MessageRules.CountAsync());
     }
 
     /// <summary>Rules are per team, like the credentials that send them.</summary>
@@ -198,7 +199,7 @@ public class MessageRuleSeedingTests
 
         await EmailDefaultsSeeder.SeedAsync(dbContext, NullLogger.Instance);
 
-        Assert.Equal(7, await dbContext.MessageRules.CountAsync(r => r.TeamId == teamA.Id));
-        Assert.Equal(7, await dbContext.MessageRules.CountAsync(r => r.TeamId == teamB.Id));
+        Assert.Equal(6, await dbContext.MessageRules.CountAsync(r => r.TeamId == teamA.Id));
+        Assert.Equal(6, await dbContext.MessageRules.CountAsync(r => r.TeamId == teamB.Id));
     }
 }

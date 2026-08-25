@@ -80,11 +80,15 @@ public class ManualTriggerTests
     /// <para><c>SentByHand</c> is excluded deliberately: it is a marker written on a <c>MessageRuleRun</c>
     /// to record that a person sent something outside any rule, not a trigger a rule can use. The
     /// service refuses it as <c>TriggerNotConfigurable</c>.</para>
+    ///
+    /// <para><c>PaymentUnpaid</c> is excluded too, as of 2026-08-25 — removed from the configurable
+    /// list, not the enum, so old <c>MessageRuleRun</c> history naming it still renders. See
+    /// <c>MessageTriggerDefinitions.All</c>'s own comment for why.</para>
     /// </summary>
     [Fact]
     public void EveryConfigurableTrigger_IsDefined()
     {
-        foreach (var trigger in Enum.GetValues<MessageTrigger>().Where(t => t != MessageTrigger.SentByHand))
+        foreach (var trigger in Enum.GetValues<MessageTrigger>().Where(t => t is not MessageTrigger.SentByHand and not MessageTrigger.PaymentUnpaid))
         {
             Assert.NotNull(MessageTriggerDefinitions.For(trigger));
         }

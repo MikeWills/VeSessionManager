@@ -12,15 +12,16 @@ using Xunit;
 namespace VeSessionManager.Core.Tests;
 
 /// <summary>
-/// The two money passes, end to end — <c>PaymentReminderService</c>'s local bookkeeping and the two
-/// trigger points that took over its messages (#401).
+/// <c>PaymentReminderService</c>'s local bookkeeping, plus the one trigger point that survived it
+/// (#401, then 2026-08-25).
 ///
-/// <para><b>Driven through both, in the order a deployment runs them</b> (see <see cref="Runner"/>).
-/// The FCC-fee reminder and the expiration notice are rules now, and expiring a payment is a
-/// separate job, but the behaviour anybody cares about is the composite — so the tests still assert
-/// "reminded, expired, flagged" and stayed almost entirely as they were. Expiring first is
-/// deliberate: it proves <c>PaymentUnpaidScanner</c> ignores <c>ExpiredUnpaid</c>, which is the one
-/// filter that would silently stop the notice ever going out.</para>
+/// <para><b>The notice half is gone.</b> <c>MessageTrigger.PaymentUnpaid</c> — "an exam fee has been
+/// unpaid for N hours, tell the admin" — is deleted. Mike: <i>"PaymentUnpaid is literally worthless.
+/// If they didn't pay the test session fee, they couldn't test and/or the VEC would not process it."</i>
+/// Its condition (an FCC application entered for a candidate who never paid) cannot legitimately
+/// arise, so nothing was ever really going to fire for a real reason. The <c>ExpiredUnpaid</c> write
+/// stays — it is not about telling anyone, it is what stops a dead payment link being treated as
+/// live — now on a plain constant instead of a rule's hours.</para>
 /// </summary>
 public class PaymentReminderServiceTests
 {
@@ -63,20 +64,18 @@ public class PaymentReminderServiceTests
         {
             var bookkeeping = await new PaymentReminderService(
                 dbContext,
-                new MessageThresholdService(dbContext),
                 new FixedTimeProvider(Now),
                 Options.Create(new PaymentReminderOptions { UnmatchedReviewWindowDays = unmatchedReviewWindowDays }),
                 NullLogger<PaymentReminderService>.Instance).RunAsync(team, cancellationToken);
 
             var rules = MessageRuleTestHarness.Create(dbContext, emailSender, new FixedTimeProvider(Now));
             var reminders = await rules.RunAsync(team, [MessageTrigger.FccFeeOutstanding], null, cancellationToken);
-            var notices = await rules.RunAsync(team, [MessageTrigger.PaymentUnpaid], null, cancellationToken);
 
             return new CombinedResult(
                 reminders.Sent,
                 bookkeeping.ExpirationsProcessed,
                 bookkeeping.CandidatesFlaggedForReview,
-                reminders.Failed + notices.Failed);
+                reminders.Failed);
         }
     }
 
@@ -143,13 +142,8 @@ public class PaymentReminderServiceTests
         fccFeeReminder.Subject = "The FCC is waiting for its fee";
         dbContext.MessageRules.Add(fccFeeReminder);
 
-        var expirationNotice = MessageRuleTestHarness.NewRule(
-            team, MessageTrigger.PaymentUnpaid,
-            "{{CandidateName}} owes {{PaymentAmount}} from {{SessionDate}}", 240, Now.AddYears(-1),
-            MessageRecipient.TeamAdminAddress);
-        expirationNotice.Subject = "Expired";
-        dbContext.MessageRules.Add(expirationNotice);
-
+        // No PaymentUnpaid rule any more — see the class summary. Expiration is a plain constant
+        // (PaymentReminderService.ExpiryHours) with no rule to seed.
         await dbContext.SaveChangesAsync();
     }
 
@@ -540,7 +534,7 @@ public class PaymentReminderServiceTests
     // ---- 10-day expiration ----
 
     [Fact]
-    public async Task Expiration_ExactlyTenDays_Fires_SetsExpiredUnpaid_SendsToAdmin()
+    public async Task Expiration_ExactlyTenDays_Fires_SetsExpiredUnpaid()
     {
         await using var dbContext = CreateContext();
         var team = await SeedTeamAsync(dbContext);
@@ -551,9 +545,13 @@ public class PaymentReminderServiceTests
         var result = await CreateService(dbContext, sender).RunAsync(team, CancellationToken.None);
 
         Assert.Equal(1, result.ExpirationsProcessed);
-        var message = Assert.Single(sender.SentMessages, m => m.ToAddress == "admin@example.org");
-        Assert.Contains("$15.00", message.HtmlBody);
         Assert.True((await dbContext.Payments.SingleAsync()).ExpiredUnpaid);
+
+        // Local bookkeeping only, always — no admin notice exists for it any more. (The FCC-fee
+        // reminder legitimately still fires here too — 10 days past the application is also past
+        // its own 5-day threshold — which is what ReminderAndExpiration_BothOverdueInOneRun_BothFire
+        // covers; this test is only about the admin notice being gone.)
+        Assert.DoesNotContain(sender.SentMessages, m => m.ToAddress == "admin@example.org");
     }
 
     [Fact]
@@ -585,35 +583,15 @@ public class PaymentReminderServiceTests
         Assert.Equal(1, result.ExpirationsProcessed);
     }
 
-    [Fact]
-    public async Task Expiration_AlreadyExpired_DoesNotResend()
-    {
-        await using var dbContext = CreateContext();
-        var team = await SeedTeamAsync(dbContext);
-        await SeedEmailSettingsAndTemplatesAsync(dbContext, team);
-        var (_, payment) = await SeedCandidateWithPaymentAsync(dbContext, team, applicationDateEnteredUtc: Now.AddDays(-20), expiredUnpaid: true);
-        await MarkAlreadyFiredAsync(dbContext, team, MessageTrigger.PaymentUnpaid, payment.Id, MessageSubjectType.Payment);
-        var sender = new FakeEmailSender();
-
-        var result = await CreateService(dbContext, sender).RunAsync(team, CancellationToken.None);
-
-        Assert.Equal(0, result.ExpirationsProcessed);
-        Assert.DoesNotContain(sender.SentMessages, m => m.ToAddress == "admin@example.org");
-    }
-
     /// <summary>
-    /// The split's sharpest edge (#401). <c>ExpiredUnpaid</c> is set by a different job now, and by
-    /// the time the rule scans it is normally already true — so <c>PaymentUnpaidScanner</c> must not
-    /// filter on it. If it did, the notice would silently never go out, and nothing would look wrong:
-    /// the flag would still be set, the payment would still be expired, and no email would exist to
-    /// miss.
-    ///
-    /// <para>It also describes exactly the pre-deploy row — expired long ago, no marker — which is why
-    /// the MessageRules migration backfills a marker from this flag rather than trusting the flag
-    /// itself.</para>
+    /// Idempotency here needs no run marker — it comes straight from the write's own query, which
+    /// excludes anything already <c>ExpiredUnpaid</c>. (⚠️ Two tests used to sit here:
+    /// <c>Expiration_FlagAlreadySetButNoRunMarker_StillSendsTheNotice</c> existed specifically to
+    /// prove the notice still fired even though the flag alone looked "done" — that distinction is
+    /// gone with the notice itself, and this test now covers exactly the same state that one did.)
     /// </summary>
     [Fact]
-    public async Task Expiration_FlagAlreadySetButNoRunMarker_StillSendsTheNotice()
+    public async Task Expiration_AlreadyExpired_DoesNotResend()
     {
         await using var dbContext = CreateContext();
         var team = await SeedTeamAsync(dbContext);
@@ -624,7 +602,9 @@ public class PaymentReminderServiceTests
         var result = await CreateService(dbContext, sender).RunAsync(team, CancellationToken.None);
 
         Assert.Equal(0, result.ExpirationsProcessed);
-        Assert.Contains(sender.SentMessages, m => m.ToAddress == "admin@example.org");
+        // No admin notice exists any more; the FCC-fee reminder is a separate, unrelated trigger
+        // that legitimately fires this far past the application date.
+        Assert.DoesNotContain(sender.SentMessages, m => m.ToAddress == "admin@example.org");
     }
 
     [Fact]
@@ -656,7 +636,7 @@ public class PaymentReminderServiceTests
     }
 
     [Fact]
-    public async Task Expiration_RetestPayment_FiresTenDaysAfterResultMarked_SetsExpiredUnpaid_SendsToAdmin()
+    public async Task Expiration_RetestPayment_FiresTenDaysAfterResultMarked_SetsExpiredUnpaid()
     {
         await using var dbContext = CreateContext();
         var team = await SeedTeamAsync(dbContext);
@@ -667,8 +647,8 @@ public class PaymentReminderServiceTests
         var result = await CreateService(dbContext, sender).RunAsync(team, CancellationToken.None);
 
         Assert.Equal(1, result.ExpirationsProcessed);
-        Assert.Single(sender.SentMessages, m => m.ToAddress == "admin@example.org");
         Assert.True((await dbContext.Payments.SingleAsync()).ExpiredUnpaid);
+        Assert.Empty(sender.SentMessages);
     }
 
     [Fact]
@@ -730,7 +710,8 @@ public class PaymentReminderServiceTests
 
         Assert.Equal(1, result.RemindersSent);
         Assert.Equal(1, result.ExpirationsProcessed);
-        Assert.Equal(2, sender.SentMessages.Count);
+        // One message, not two — the FCC-fee reminder only. Expiration sends nothing now.
+        Assert.Single(sender.SentMessages);
     }
 
     // ---- Unmatched review flag ----
@@ -827,32 +808,10 @@ public class PaymentReminderServiceTests
 
     // ---- SMTP not configured ----
 
-    /// <summary>
-    /// The expiry follows the team's own <c>PaymentUnpaid</c> hours (#401 PR2), not a constant. It has
-    /// to: the notice quotes that number, and a fixed expiry would mean telling somebody their link
-    /// expired on a day it did not — or expiring one silently a week before anybody is told.
-    /// </summary>
-    [Fact]
-    public async Task Expiration_FollowsTheTeamsOwnRule_NotTheOldTenDayConstant()
-    {
-        await using var dbContext = CreateContext();
-        var team = await SeedTeamAsync(dbContext);
-        await SeedEmailSettingsAndTemplatesAsync(dbContext, team);
-        // The team pushed its notice out to 30 days. A payment 20 days in is past the old constant and
-        // well short of what this team actually does.
-        (await dbContext.MessageRules.SingleAsync(r => r.Trigger == MessageTrigger.PaymentUnpaid)).ParameterHours = 720;
-        await SeedCandidateWithPaymentAsync(dbContext, team, applicationDateEnteredUtc: Now.AddDays(-20));
-        await dbContext.SaveChangesAsync();
-        var sender = new FakeEmailSender();
-
-        var result = await CreateService(dbContext, sender).RunAsync(team, CancellationToken.None);
-
-        Assert.Equal(0, result.ExpirationsProcessed);
-        Assert.False((await dbContext.Payments.SingleAsync()).ExpiredUnpaid);
-        // The notice has not gone out either, which is the pair that has to stay together. The
-        // FCC-fee reminder is a separate rule on its own clock and legitimately has.
-        Assert.DoesNotContain(sender.SentMessages, m => m.ToAddress == "admin@example.org");
-    }
+    // ⚠️ Expiration_FollowsTheTeamsOwnRule_NotTheOldTenDayConstant was deleted here on 2026-08-25.
+    // Its whole premise — a team's PaymentUnpaid rule could push the expiry threshold out to 30
+    // days — is now backwards: there is no rule, and every other Expiration_* test already proves
+    // the fixed 10-day/240-hour constant this reverted to.
 
     /// <summary>
     /// <b>Expiring now happens without SMTP (#401), and that is a change.</b> The old code returned

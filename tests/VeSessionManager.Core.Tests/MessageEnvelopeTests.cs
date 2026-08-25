@@ -312,7 +312,7 @@ public class MessageEnvelopeTests
         var userId = await SeedUserAsync(dbContext);
 
         var result = await CreateAdminService(dbContext).CreateAsync(
-            team.Id, MessageTrigger.PaymentUnpaid, "Unpaid notice", "Subject", "Confirm", 240, MessageRecipient.TeamAdminAddress,
+            team.Id, MessageTrigger.PaymentUnpaidBeforeSession, "Unpaid notice", "Subject", "Confirm", 24, MessageRecipient.TeamAdminAddress,
             userId, CancellationToken.None, envelope: MessageEnvelope.Default with { CcAddress = "treasurer@example.org" });
 
         Assert.Equal(MessageRuleActionResult.Success, result);

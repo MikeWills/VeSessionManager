@@ -880,3 +880,33 @@ back, because nothing records the difference between "we send nothing deliberate
 migration took them". The cost is one team switching seven examples off again; the alternative was
 every existing team sending nothing forever. If that ever matters, the fix is a column recording why
 the tombstone was cleared, not a cleverer predicate.
+
+## PaymentUnpaid removed, PaymentUnpaidBeforeSession added (2026-08-25)
+
+Mike: *"PaymentUnpaid is literally worthless. If they didn't pay the test session fee, they
+couldn't test and/or the VEC would not process it."*
+
+`PaymentUnpaid` — "an exam fee has gone unpaid for N hours, tell the admin" — anchored on the FCC
+application date. Its condition cannot legitimately arise: the FCC never receives an application for
+someone who never paid to test. Removed from `MessageTriggerDefinitions.All` (not the enum — old
+`MessageRuleRun` history still names it, and `Label()`/`Blurb()` still describe it for that history)
+and its two rows deleted from every team's `MessageRules` by `RemovePaymentUnpaidMessages`.
+
+⚠️ **Not a clean deletion.** `PaymentUnpaid`'s hours also drove a real bookkeeping write —
+`Payment.ExpiredUnpaid`, set by `PaymentReminderService.ProcessExpirationsAsync` — which has nothing
+to do with the notice and is shown on the candidate detail and Applicant Status pages. That write
+stays; it is back to a plain 240-hour constant (`PaymentReminderService.ExpiryHours`), exactly the
+shape it had before #401 PR2 made it configurable. `ApplicantStatus`'s "days pending" red-critical
+colouring, which also read this trigger's configured hours, degrades quietly rather than breaking —
+`MessageThresholdService.ConfiguredHoursByTeamAsync` simply finds no rule and returns nothing for it,
+so that column of the escalation never lights up any more. Left as-is rather than reworked, since the
+underlying condition it was colouring for is the same one Mike just called impossible.
+
+**`PaymentUnpaidBeforeSession` replaces the real need.** Fires N hours before the session while an
+exam fee is still unpaid — anchored on the session's own start time, exactly like
+`BeforeSessionStartScanner`, with the extra "and still unpaid" filter. Not seeded by default, like
+every trigger added since PR3 — a team opts in.
+
+No retest branch, unlike the scanner it replaces: that one needed one to anchor on the FCC
+application/result date, which a retest candidate never has in the normal shape. This anchors on the
+session itself, and a retest payment belongs to a session like any other.

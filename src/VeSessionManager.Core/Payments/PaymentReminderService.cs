@@ -39,11 +39,22 @@ namespace VeSessionManager.Core.Payments;
 /// </summary>
 public class PaymentReminderService(
     AppDbContext dbContext,
-    MessageThresholdService thresholds,
     TimeProvider timeProvider,
     IOptions<PaymentReminderOptions> options,
     ILogger<PaymentReminderService> logger)
 {
+    /// <summary>
+    /// Genuinely a constant again, as of 2026-08-25 — not a per-team rule's hours. <c>PaymentUnpaid</c>
+    /// (the message this write used to share a clock with) is gone: Mike's point was that its
+    /// condition — an FCC application entered for a candidate who never paid to test — cannot
+    /// legitimately arise, so nobody was ever going to be told about it anyway. The write itself
+    /// stays, because it is not about telling anyone: it is what stops a dead payment link being
+    /// treated as live, and that has to keep happening whether or not any message exists for it. 240
+    /// is the number the trigger used to default to, carried forward so behaviour does not change on
+    /// the day the message goes.
+    /// </summary>
+    private const int ExpiryHours = 240;
+
     public async Task<PaymentReminderResult> RunAsync(Team team, CancellationToken cancellationToken)
     {
         var result = new PaymentReminderResult();
@@ -72,17 +83,13 @@ public class PaymentReminderService(
     /// consequence for the scanner — by the time <c>PaymentUnpaidScanner</c> looks, this flag is
     /// usually already set, so that query must not filter on it.</para>
     ///
-    /// <para><b>It expires on the team's own clock (#401 PR2), not a constant.</b> The 10 days used to
-    /// be <c>ExpirationThresholdDays</c> here and the notice went out in the same breath, so the two
-    /// could not disagree. Now that a team sets the notice's hours, a fixed expiry would mean telling
-    /// somebody their link expired on a day it did not, or expiring one silently a week before anybody
-    /// is told. The fallback when a team has no rule — or has switched the notice off — is the
-    /// trigger's own default, which is the number this constant held.</para>
+    /// <para><b>Back to a plain constant (2026-08-25).</b> This briefly ran on a per-team rule's hours
+    /// (#401 PR2), because a notice used to go out in the same breath and the two had to agree. That
+    /// notice — <c>MessageTrigger.PaymentUnpaid</c> — is gone; see <see cref="ExpiryHours"/>.</para>
     /// </summary>
     private async Task ProcessExpirationsAsync(Team team, DateTime now, PaymentReminderResult result, CancellationToken cancellationToken)
     {
-        var expiryHours = await thresholds.HoursOrDefaultAsync(team.Id, MessageTrigger.PaymentUnpaid, cancellationToken);
-        var threshold = now.AddHours(-expiryHours);
+        var threshold = now.AddHours(-ExpiryHours);
         var paymentCutoff = PaymentEligibilityWindow.CutoffUtc(now);
 
         var payments = await dbContext.Payments

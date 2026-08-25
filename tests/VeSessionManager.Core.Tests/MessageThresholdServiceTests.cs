@@ -44,28 +44,28 @@ public class MessageThresholdServiceTests
         var team = await SeedTeamAsync(dbContext);
 
         var hours = await new MessageThresholdService(dbContext)
-            .HoursOrDefaultAsync(team.Id, MessageTrigger.PaymentUnpaid, CancellationToken.None);
+            .HoursOrDefaultAsync(team.Id, MessageTrigger.FccFeeOutstanding, CancellationToken.None);
 
-        // 240 — the number that was hardcoded as ExpirationThresholdDays = 10 before rules existed.
-        Assert.Equal(MessageTriggerDefinitions.For(MessageTrigger.PaymentUnpaid).DefaultParameterHours, hours);
+        Assert.Equal(MessageTriggerDefinitions.For(MessageTrigger.FccFeeOutstanding).DefaultParameterHours, hours);
     }
 
     /// <summary>
-    /// A disabled rule falls back too, and that is the point rather than an oversight: switching the
-    /// notice off says "stop telling people", not "stop expiring links". The two were split for
-    /// exactly this reason.
+    /// A disabled rule falls back too, and that is the point rather than an oversight: a switched-off
+    /// rule reports no boundary of its own, so anything still reading this trigger's threshold — the
+    /// Applicant Status colours, for whichever trigger still uses them — gets the trigger's plain
+    /// default rather than treating "disabled" as "zero hours".
     /// </summary>
     [Fact]
     public async Task HoursOrDefault_WithADisabledRule_StillFallsBack()
     {
         await using var dbContext = CreateContext();
         var team = await SeedTeamAsync(dbContext);
-        await AddRuleAsync(dbContext, team, MessageTrigger.PaymentUnpaid, 720, enabled: false);
+        await AddRuleAsync(dbContext, team, MessageTrigger.FccFeeOutstanding, 720, enabled: false);
 
         var hours = await new MessageThresholdService(dbContext)
-            .HoursOrDefaultAsync(team.Id, MessageTrigger.PaymentUnpaid, CancellationToken.None);
+            .HoursOrDefaultAsync(team.Id, MessageTrigger.FccFeeOutstanding, CancellationToken.None);
 
-        Assert.Equal(240, hours);
+        Assert.Equal(120, hours);
     }
 
     [Fact]
@@ -73,10 +73,10 @@ public class MessageThresholdServiceTests
     {
         await using var dbContext = CreateContext();
         var team = await SeedTeamAsync(dbContext);
-        await AddRuleAsync(dbContext, team, MessageTrigger.PaymentUnpaid, 720);
+        await AddRuleAsync(dbContext, team, MessageTrigger.FccFeeOutstanding, 720);
 
         Assert.Equal(720, await new MessageThresholdService(dbContext)
-            .HoursOrDefaultAsync(team.Id, MessageTrigger.PaymentUnpaid, CancellationToken.None));
+            .HoursOrDefaultAsync(team.Id, MessageTrigger.FccFeeOutstanding, CancellationToken.None));
     }
 
     /// <summary>Several rules on one trigger: the boundary anyone cares about is the first one that fires.</summary>
