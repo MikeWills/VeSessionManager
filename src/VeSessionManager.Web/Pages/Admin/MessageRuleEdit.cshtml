@@ -215,12 +215,14 @@
                 <span class="session-sub">A hidden copy. The recipient does not see this address.</span>
             </div>
 
-            @* Refused for candidate-facing rules in MessageRuleAdminService, not just discouraged
-               here: everyone on a Cc sees the address, and the person at it cannot unsubscribe. *@
+            @* Allowed on candidate-facing rules too (reversed 2026-08-25, Mike: "I want to CC my email
+               ... so they can see that I know") — the visibility is the point for some teams, not a
+               mistake to guard against. Still can't unsubscribe from it, which is why the hint says so
+               rather than staying silent. *@
             <div class="field" style="max-width:420px;">
                 <label asp-for="CcAddress">Cc</label>
                 <input asp-for="CcAddress" type="email" />
-                <span class="session-sub">A visible copy. Cannot be used on messages to candidates.</span>
+                <span class="session-sub">A visible copy. The recipient sees this address and cannot unsubscribe from it.</span>
             </div>
 
             @* Without this, a forty-candidate session puts forty identical copies in one inbox, which

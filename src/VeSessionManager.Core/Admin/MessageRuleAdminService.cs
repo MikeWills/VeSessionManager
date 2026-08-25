@@ -398,14 +398,15 @@ public class MessageRuleAdminService(AppDbContext dbContext, TimeProvider timePr
         // template rendered through a candidate-subject scanner, every token blank, and the send
         // *succeeding*) is now impossible to express rather than caught.
 
-        return ValidateEnvelope(channel, recipient, envelope);
+        return ValidateEnvelope(channel, envelope);
     }
 
     /// <summary>
-    /// The three envelope constraints, each of which exists because the obvious configuration is a
-    /// mistake rather than a preference.
+    /// The two envelope constraints, each of which exists because the obvious configuration is a
+    /// mistake rather than a preference. A third — refusing Cc on candidate-facing mail — was removed
+    /// 2026-08-25; see the comment below.
     /// </summary>
-    private static MessageRuleActionResult ValidateEnvelope(MessageChannel channel, MessageRecipient recipient, MessageEnvelope envelope)
+    private static MessageRuleActionResult ValidateEnvelope(MessageChannel channel, MessageEnvelope envelope)
     {
         // A channel post has no envelope at all — nobody is addressed, so there is nothing to reply to
         // and nobody to copy. Refused rather than ignored, so a rule cannot carry settings that look
@@ -423,14 +424,11 @@ public class MessageRuleAdminService(AppDbContext dbContext, TimeProvider timePr
             return MessageRuleActionResult.ReplyToRequired;
         }
 
-        // **A Cc'd person cannot unsubscribe**, because the footer's link belongs to the To recipient.
-        // On a candidate-facing rule that is a standing visible copy nobody can stop, and it discloses
-        // the address to every candidate besides. A Bcc is fine — invisible, and the same shape as the
-        // team monitoring copy that has always existed.
-        if (!string.IsNullOrWhiteSpace(envelope.CcAddress) && recipient == MessageRecipient.Candidate)
-        {
-            return MessageRuleActionResult.CcNotAllowedOnCandidateMail;
-        }
+        // Cc on a candidate-facing rule used to be refused outright here — a Cc'd person cannot
+        // unsubscribe (the footer's link belongs to the To recipient) and every candidate sees the
+        // address. Mike, 2026-08-25: "I don't care, I want to CC my email in this case so they can
+        // see that I know." A team that wants the visibility — the point, not a side effect — is now
+        // free to accept the tradeoff. See MessageRule.CcAddress.
 
         return MessageRuleActionResult.Success;
     }
@@ -496,13 +494,5 @@ public enum MessageRuleActionResult
     EnvelopeNeedsEmail,
 
     /// <summary>Reply-To set to a custom address, with no address.</summary>
-    ReplyToRequired,
-
-    /// <summary>
-    /// A Cc on a rule that writes to candidates. The person Cc'd cannot unsubscribe — the footer's
-    /// link belongs to the To recipient — so it is a standing visible copy nobody can stop, and it
-    /// discloses that address to every candidate. Use Bcc, which is invisible and stoppable by the
-    /// team that set it.
-    /// </summary>
-    CcNotAllowedOnCandidateMail
+    ReplyToRequired
 }
