@@ -718,6 +718,8 @@ public class SessionIngestionService(
                     Name = applicant.FullName(),
                     FirstName = applicant.Firstname,
                     Email = applicant.Email,
+                    City = applicant.City,
+                    State = applicant.State,
                     Frn = applicant.FrnIsMissing() ? null : applicant.Frn,
                     FrnMissingAtRegistration = applicant.FrnIsMissing(),
                     HasFelonyDisclosure = applicant.HasFelony,
@@ -753,6 +755,18 @@ public class SessionIngestionService(
             if (existing.Email != applicant.Email)
             {
                 existing.Email = applicant.Email;
+                changed = true;
+            }
+
+            if (existing.City != applicant.City)
+            {
+                existing.City = applicant.City;
+                changed = true;
+            }
+
+            if (existing.State != applicant.State)
+            {
+                existing.State = applicant.State;
                 changed = true;
             }
 

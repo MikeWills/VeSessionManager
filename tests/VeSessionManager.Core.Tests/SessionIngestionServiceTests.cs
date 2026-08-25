@@ -148,13 +148,15 @@ public class SessionIngestionServiceTests
 
     private static ExamToolsApplicant Applicant(
         string id = "applicant-1", string first = "Roana", string last = "Glory",
-        string email = "roana@example.com", string frn = "0012345678") =>
+        string email = "roana@example.com", string frn = "0012345678", string? city = null, string? state = null) =>
         new()
         {
             Id = id,
             Firstname = first,
             Lastname = last,
             Email = email,
+            City = city,
+            State = state,
             Frn = frn,
             HasFelony = false,
             Created = new DateTime(2026, 7, 10, 2, 28, 2, DateTimeKind.Utc)
@@ -644,6 +646,43 @@ public class SessionIngestionServiceTests
         Assert.Equal(1, result.CandidatesUpdated);
         var candidate = Assert.Single(dbContext.Candidates);
         Assert.Equal("new-address@example.com", candidate.Email);
+    }
+
+    /// <summary>#463 — "who's local." Confirms the mapping on both the create and update paths, mirroring the Email coverage above.</summary>
+    [Fact]
+    public async Task NewApplicant_MapsCityAndState()
+    {
+        await using var dbContext = CreateContext();
+        await SeedVecAndFeeConfigAsync(dbContext);
+        var team = await SeedTeamAsync(dbContext);
+        var client = new FakeExamToolsClient();
+        client.SessionsFor(team.Id).Add(PendingSession(applicantCount: 1));
+        client.ApplicantsFor(team.Id)["session-1"] = [Applicant(city: "Belton", state: "MO")];
+
+        await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+
+        var candidate = Assert.Single(dbContext.Candidates);
+        Assert.Equal("Belton", candidate.City);
+        Assert.Equal("MO", candidate.State);
+    }
+
+    [Fact]
+    public async Task Repoll_AppliesChangedCityAndState()
+    {
+        await using var dbContext = CreateContext();
+        await SeedVecAndFeeConfigAsync(dbContext);
+        var team = await SeedTeamAsync(dbContext);
+        var client = new FakeExamToolsClient();
+        client.SessionsFor(team.Id).Add(PendingSession(applicantCount: 1));
+        client.ApplicantsFor(team.Id)["session-1"] = [Applicant(city: "Belton", state: "MO")];
+        await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+
+        client.ApplicantsFor(team.Id)["session-1"] = [Applicant(city: "Lee's Summit", state: "MO")];
+        var result = await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
+
+        Assert.Equal(1, result.CandidatesUpdated);
+        var candidate = Assert.Single(dbContext.Candidates);
+        Assert.Equal("Lee's Summit", candidate.City);
     }
 
     [Fact]

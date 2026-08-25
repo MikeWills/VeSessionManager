@@ -92,6 +92,8 @@ public class CandidatePiiFieldsTests
         nameof(Candidate.Name),
         nameof(Candidate.FirstName),
         nameof(Candidate.Email),
+        nameof(Candidate.City),
+        nameof(Candidate.State),
         nameof(Candidate.HasFelonyDisclosure)
     ];
 
@@ -182,6 +184,8 @@ public class CandidatePiiFieldsTests
     [InlineData(nameof(Candidate.Name))]
     [InlineData(nameof(Candidate.FirstName))] // Added 2026-08-03 — the field this whole test file exists for.
     [InlineData(nameof(Candidate.Email))]
+    [InlineData(nameof(Candidate.City))] // Added for #463 — the "who's local" column.
+    [InlineData(nameof(Candidate.State))]
     [InlineData(nameof(Candidate.HasFelonyDisclosure))]
     public void Clear_NamedPiiField_IsNulled(string propertyName)
     {
