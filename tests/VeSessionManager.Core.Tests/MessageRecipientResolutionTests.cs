@@ -262,7 +262,7 @@ public class LegalRecipientMatrixTests
     [InlineData(MessageTrigger.CandidateRegistered)]
     [InlineData(MessageTrigger.BeforeSessionStart)]
     [InlineData(MessageTrigger.FccFeeOutstanding)]
-    [InlineData(MessageTrigger.PaymentUnpaid)]
+    [InlineData(MessageTrigger.PaymentUnpaidBeforeSession)]
     [InlineData(MessageTrigger.CandidateTested)]
     [InlineData(MessageTrigger.LicenseGranted)]
     [InlineData(MessageTrigger.FelonyDisclosureDeclared)]
@@ -295,7 +295,7 @@ public class LegalRecipientMatrixTests
     [InlineData(MessageTrigger.BeforeSessionStart, true)]
     [InlineData(MessageTrigger.CandidateRegistered, false)]
     [InlineData(MessageTrigger.FccFeeOutstanding, false)]
-    [InlineData(MessageTrigger.PaymentUnpaid, false)]
+    [InlineData(MessageTrigger.PaymentUnpaidBeforeSession, false)]
     [InlineData(MessageTrigger.CandidateTested, false)]
     [InlineData(MessageTrigger.LicenseGranted, false)]
     public void OnlyTheSessionReminder_MayPostToADiscordChannel(MessageTrigger trigger, bool allowed)

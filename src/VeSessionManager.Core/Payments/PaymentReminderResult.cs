@@ -1,15 +1,15 @@
 namespace VeSessionManager.Core.Payments;
 
 /// <summary>
-/// What one <c>PaymentReminderService</c> run did. Two counters since #401 — the "FCC fee reminders
-/// sent" and "failed" counts went with the two messages that moved onto trigger points, and are
-/// reported by <c>MessageRuleResult</c> now.
+/// What one <c>PaymentReminderService</c> run did. Down to one counter — the exam-fee expiration pass
+/// (2026-08-25) went the same way the FCC-fee reminder / expiration notice did in #401, except this
+/// one had no replacement: it rested on a state ("our own exam fee unpaid after the fact") that
+/// cannot legitimately arise. See <c>PaymentReminderService</c>'s own summary.
 /// </summary>
 public class PaymentReminderResult
 {
-    public int ExpirationsProcessed { get; set; }
     public int CandidatesFlaggedForReview { get; set; }
 
     public override string ToString() =>
-        $"expirations processed {ExpirationsProcessed}, candidates flagged for review {CandidatesFlaggedForReview}";
+        $"candidates flagged for review {CandidatesFlaggedForReview}";
 }

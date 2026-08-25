@@ -95,15 +95,24 @@ public static class MessageTriggerDefinitions
             LegalRecipients: [MessageRecipient.Candidate, MessageRecipient.TeamAdminAddress, MessageRecipient.SessionLead, MessageRecipient.TeamAdmins, MessageRecipient.SystemAdmins, MessageRecipient.SessionManagers],
             Placeholders: ["CandidateName", "SessionDate", "Frn", "FccApplicationFileNumber"]),
 
-        new(MessageTrigger.PaymentUnpaid,
+        // MessageTrigger.PaymentUnpaid (was here, value 3) is deliberately NOT configurable any more
+        // (Mike, 2026-08-25: "PaymentUnpaid is literally worthless. If they didn't pay the test
+        // session fee, they couldn't test and/or the VEC would not process it."). Its anchor was the
+        // FCC application date, which by definition cannot exist for an unpaid candidate — the FCC
+        // never receives an application nobody paid to test for. The enum value stays (old
+        // MessageRuleRun history still names it) and Label()/Blurb() still describe it for that
+        // history; it is simply absent from this list, so nothing can create a new rule on it — see
+        // MessageRuleAdminService.ValidateAsync, which already refuses any trigger not in All.
+        //
+        // Added 2026-08-25: a candidate who has not paid cannot test, and every existing money
+        // trigger anchors on something AFTER the fact (the FCC application, the FCC fee). Nothing
+        // warned before the session, while there was still time to do something about it.
+        new(MessageTrigger.PaymentUnpaidBeforeSession,
             MessageTriggerMechanism.TimeRelative,
             MessageSubjectType.Payment,
-            DefaultParameterHours: 240,
-            // The one trigger whose message was never candidate-facing: it tells the Session Manager
-            // that a payment link has gone stale. Candidate is legal too — a team may reasonably want
-            // to chase the candidate instead of, or as well as, telling itself.
+            DefaultParameterHours: 24,
             LegalRecipients: [MessageRecipient.Candidate, MessageRecipient.TeamAdminAddress, MessageRecipient.SessionLead, MessageRecipient.TeamAdmins, MessageRecipient.SystemAdmins, MessageRecipient.SessionManagers],
-            Placeholders: ["CandidateName", "SessionDate", "PaymentAmount"]),
+            Placeholders: ["CandidateName", "SessionDate", "PaymentAmount", "PaymentLinkUrl"]),
 
         // --- Added in PR3. None of these is seeded: they are things this app could not do before,
         // not reproductions of prior behaviour, so a team opts in by creating a rule. ---

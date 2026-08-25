@@ -90,7 +90,7 @@ else
                        rules now, so naming "day 5" here would be right for one team and wrong for the
                        next. The colour still means the same thing — a boundary this team set has been
                        crossed — and Message Rules is where the number lives. *@
-                    <td class="count"><span class="@row.DaysPendingCssClass" title="@(row.DaysPendingCssClass == "days-critical" ? "Past this team's unpaid-payment threshold — the payment link is marked expired and the notice has gone out" : row.DaysPendingCssClass == "days-warning" ? "Past this team's FCC-fee reminder threshold — a reminder has gone to the candidate" : null)">@(row.DaysPending?.ToString() ?? "—")</span></td>
+                    <td class="count"><span class="@row.DaysPendingCssClass" title="@(row.DaysPendingCssClass == "days-warning" ? "Past this team's FCC-fee reminder threshold — a reminder has gone to the candidate" : null)">@(row.DaysPending?.ToString() ?? "—")</span></td>
                 </tr>
             }
         </tbody>

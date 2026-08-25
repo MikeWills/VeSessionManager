@@ -41,23 +41,26 @@ public class ApplicantStatusModel(
 
     /// <summary>
     /// The days-pending column is a countdown against what this team's own rules actually do, not an
-    /// arbitrary UI scale — amber once its FCC-fee reminder is due, red once its unpaid-payment notice
-    /// is. Both are anchored on ApplicationDateEnteredUtc, the same field this page counts from, so
-    /// the boundaries line up exactly.
+    /// arbitrary UI scale — amber once its FCC-fee reminder is due. Anchored on
+    /// ApplicationDateEnteredUtc, the same field this page counts from, so the boundary lines up
+    /// exactly.
     ///
-    /// <para><b>Read per team, not from a constant (#401 PR2).</b> These were
-    /// <c>PaymentReminderService.ReminderThresholdDays</c>/<c>ExpirationThresholdDays</c>, referenced
-    /// rather than re-declared precisely so the colours could not drift from the behaviour. Once a team
-    /// sets its own hours, a constant *is* the drift: it would show a red row on a day nothing happens.
-    /// This is the one non-obvious coupling in the whole of #401, and it is why the lookup below exists
-    /// rather than the page reading a number.</para>
+    /// <para><b>Read per team, not from a constant (#401 PR2).</b> This was
+    /// <c>PaymentReminderService.ReminderThresholdDays</c>, referenced rather than re-declared
+    /// precisely so the colour could not drift from the behaviour. Once a team sets its own hours, a
+    /// constant *is* the drift: it would show an amber row on a day nothing happens.</para>
     ///
     /// <para><b>A team with no enabled rule gets no colour at all</b>, which is the honest answer:
     /// nothing is going to happen on any particular day, so there is no boundary to warn about. The
     /// page merges teams, so this is resolved per row rather than once.</para>
+    ///
+    /// <para>There used to be a second, red "critical" tier keyed to the <c>PaymentUnpaid</c>
+    /// trigger's hours. Removed 2026-08-25 along with that trigger and the <c>Payment.ExpiredUnpaid</c>
+    /// write it coloured for — see <c>PaymentReminderService</c>'s own summary and CLAUDE.md's Known
+    /// Constraints ("No fee, no test"). The condition it warned about — this team's own exam fee still
+    /// unpaid once an FCC application exists — can't legitimately arise.</para>
     /// </summary>
     private IReadOnlyDictionary<int, int> reminderHoursByTeam = new Dictionary<int, int>();
-    private IReadOnlyDictionary<int, int> expiryHoursByTeam = new Dictionary<int, int>();
 
     [BindProperty(SupportsGet = true)]
     public int? TeamId { get; set; }
@@ -145,8 +148,6 @@ public class ApplicantStatusModel(
         var pendingTeamIds = pending.Select(c => c.Session.TeamId).Distinct().ToList();
         reminderHoursByTeam = await thresholds.ConfiguredHoursByTeamAsync(
             pendingTeamIds, MessageTrigger.FccFeeOutstanding, HttpContext.RequestAborted);
-        expiryHoursByTeam = await thresholds.ConfiguredHoursByTeamAsync(
-            pendingTeamIds, MessageTrigger.PaymentUnpaid, HttpContext.RequestAborted);
 
         Pending = pending.Select(c => ToPendingRow(c, now, candidatesWithUnpaid.Contains(c.Id))).ToList();
 
@@ -203,25 +204,23 @@ public class ApplicantStatusModel(
             FccUlsLinks.License(c.FccUlsLicenseKey));
     }
 
-    /// <summary>
-    /// Escalates the days-pending cell in step with PaymentReminderService's reminder/expiration
-    /// passes — see the threshold constants.
-    ///
-    /// <para>**Only escalates while an Unpaid payment actually exists**, because that is the precise
-    /// condition both of those passes require: no unpaid payment means no reminder will be sent and
-    /// nothing will ever be marked ExpiredUnpaid, so a red row would be warning about an event that
-    /// cannot happen. Mirrors the reminder query's own `Status == PaymentStatus.Unpaid` filter
-    /// (Paid and NotApplicable both correctly drop out). A candidate with no payment rows at all —
-    /// a fee-free session — likewise never escalates.</para>
-    /// </summary>
     /// <summary>Team name for a row, shown only when the picker offers more than one team — see the view.</summary>
     private string TeamNameFor(Candidate c) =>
         AvailableTeams.FirstOrDefault(t => t.Id == c.Session.TeamId).Name ?? "—";
 
     /// <summary>
-    /// Takes the unpaid flag rather than reading candidate.Payments — the page no longer loads them,
-    /// see the id query in OnGetAsync — and the team id, because the boundaries are that team's rules
-    /// now rather than two constants.
+    /// Escalates the days-pending cell in step with PaymentReminderService's reminder pass — see the
+    /// threshold lookup above.
+    ///
+    /// <para>**Only escalates while an Unpaid payment actually exists**, because that is the precise
+    /// condition the reminder pass requires: no unpaid payment means no reminder will be sent, so an
+    /// amber row would be warning about an event that cannot happen. Mirrors the reminder query's own
+    /// `Status == PaymentStatus.Unpaid` filter (Paid and NotApplicable both correctly drop out). A
+    /// candidate with no payment rows at all — a fee-free session — likewise never escalates.</para>
+    ///
+    /// <para>Takes the unpaid flag rather than reading candidate.Payments — the page no longer loads
+    /// them, see the id query in OnGetAsync — and the team id, because the boundary is that team's own
+    /// rule now rather than a constant.</para>
     ///
     /// <para>Compared in hours rather than converting a rule to whole days: a team is free to set 36
     /// hours, and rounding that to a day would put the colour on the wrong side of the boundary for
@@ -235,11 +234,6 @@ public class ApplicantStatusModel(
         }
 
         var hoursPending = days * 24;
-        if (expiryHoursByTeam.TryGetValue(teamId, out var expiryHours) && hoursPending >= expiryHours)
-        {
-            return "days-critical";
-        }
-
         return reminderHoursByTeam.TryGetValue(teamId, out var reminderHours) && hoursPending >= reminderHours
             ? "days-warning"
             : string.Empty;

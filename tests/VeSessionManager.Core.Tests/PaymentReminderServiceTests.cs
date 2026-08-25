@@ -12,15 +12,18 @@ using Xunit;
 namespace VeSessionManager.Core.Tests;
 
 /// <summary>
-/// The two money passes, end to end — <c>PaymentReminderService</c>'s local bookkeeping and the two
-/// trigger points that took over its messages (#401).
+/// <c>PaymentReminderService</c>'s local bookkeeping (now just the Unmatched review flag), plus the
+/// one money trigger that survived it — the FCC fee reminder.
 ///
-/// <para><b>Driven through both, in the order a deployment runs them</b> (see <see cref="Runner"/>).
-/// The FCC-fee reminder and the expiration notice are rules now, and expiring a payment is a
-/// separate job, but the behaviour anybody cares about is the composite — so the tests still assert
-/// "reminded, expired, flagged" and stayed almost entirely as they were. Expiring first is
-/// deliberate: it proves <c>PaymentUnpaidScanner</c> ignores <c>ExpiredUnpaid</c>, which is the one
-/// filter that would silently stop the notice ever going out.</para>
+/// <para><b>Both money-side <c>MessageTrigger.PaymentUnpaid</c> pieces are gone (#401, then fully
+/// 2026-08-25).</b> Mike: <i>"PaymentUnpaid is literally worthless. If they didn't pay the test
+/// session fee, they couldn't test and/or the VEC would not process it."</i> The notice went first;
+/// its <c>Payment.ExpiredUnpaid</c> bookkeeping write was kept a round longer on the theory that an
+/// unpaid retest fee was still a real case — checked against the real database and found to have
+/// never happened, not once, in this deployment's history. Both are gone now: see
+/// <c>PaymentReminderService</c>'s own doc comment and CLAUDE.md's "No fee, no test" Known
+/// Constraint. There is exactly one real "N days unpaid" trigger left, and it belongs to the FCC's
+/// own fee (<c>FccFeeOutstanding</c>), never to this team's own <c>Payment</c>.</para>
 /// </summary>
 public class PaymentReminderServiceTests
 {
@@ -51,11 +54,10 @@ public class PaymentReminderServiceTests
     }
 
     /// <summary>What one day's worth of both jobs did, flattened back into the shape these tests were written against.</summary>
-    private sealed record CombinedResult(int RemindersSent, int ExpirationsProcessed, int CandidatesFlaggedForReview, int Failed);
+    private sealed record CombinedResult(int RemindersSent, int CandidatesFlaggedForReview, int Failed);
 
     /// <summary>
-    /// Runs the expiry/flag pass and then the two money rules, one trigger at a time so the FCC-fee
-    /// reminder and the expiration notice stay separately countable.
+    /// Runs the flag pass and then the one remaining money rule.
     /// </summary>
     private sealed class Runner(AppDbContext dbContext, IEmailSender emailSender, int unmatchedReviewWindowDays)
     {
@@ -63,20 +65,17 @@ public class PaymentReminderServiceTests
         {
             var bookkeeping = await new PaymentReminderService(
                 dbContext,
-                new MessageThresholdService(dbContext),
                 new FixedTimeProvider(Now),
                 Options.Create(new PaymentReminderOptions { UnmatchedReviewWindowDays = unmatchedReviewWindowDays }),
                 NullLogger<PaymentReminderService>.Instance).RunAsync(team, cancellationToken);
 
             var rules = MessageRuleTestHarness.Create(dbContext, emailSender, new FixedTimeProvider(Now));
             var reminders = await rules.RunAsync(team, [MessageTrigger.FccFeeOutstanding], null, cancellationToken);
-            var notices = await rules.RunAsync(team, [MessageTrigger.PaymentUnpaid], null, cancellationToken);
 
             return new CombinedResult(
                 reminders.Sent,
-                bookkeeping.ExpirationsProcessed,
                 bookkeeping.CandidatesFlaggedForReview,
-                reminders.Failed + notices.Failed);
+                reminders.Failed);
         }
     }
 
@@ -143,13 +142,8 @@ public class PaymentReminderServiceTests
         fccFeeReminder.Subject = "The FCC is waiting for its fee";
         dbContext.MessageRules.Add(fccFeeReminder);
 
-        var expirationNotice = MessageRuleTestHarness.NewRule(
-            team, MessageTrigger.PaymentUnpaid,
-            "{{CandidateName}} owes {{PaymentAmount}} from {{SessionDate}}", 240, Now.AddYears(-1),
-            MessageRecipient.TeamAdminAddress);
-        expirationNotice.Subject = "Expired";
-        dbContext.MessageRules.Add(expirationNotice);
-
+        // No PaymentUnpaid rule any more — see the class summary. Expiration is a plain constant
+        // (PaymentReminderService.ExpiryHours) with no rule to seed.
         await dbContext.SaveChangesAsync();
     }
 
@@ -162,7 +156,6 @@ public class PaymentReminderServiceTests
         DateTime? dateRegisteredUtc = null,
         SessionStatus sessionStatus = SessionStatus.Active,
         PaymentStatus paymentStatus = PaymentStatus.Unpaid,
-        bool expiredUnpaid = false,
         DateTime? paymentReminderSentUtc = null,
         DateTime? scheduledStartUtc = null,
         // What the FCC fee reminder actually keys on (#219). Defaults to PendingVerification —
@@ -201,7 +194,7 @@ public class PaymentReminderServiceTests
         {
             CandidateId = candidate.Id, Reason = PaymentReason.InitialExam, Amount = 15m,
             Status = paymentStatus, PaymentLinkUrl = "https://square.link/u/abc", CreatedUtc = Now,
-            ExpiredUnpaid = expiredUnpaid, PaymentReminderSentUtc = paymentReminderSentUtc
+            PaymentReminderSentUtc = paymentReminderSentUtc
         };
         dbContext.Payments.Add(payment);
         await dbContext.SaveChangesAsync();
@@ -215,7 +208,6 @@ public class PaymentReminderServiceTests
         Team team,
         DateTime? resultMarkedUtc,
         PaymentStatus paymentStatus = PaymentStatus.Unpaid,
-        bool expiredUnpaid = false,
         DateTime? paymentReminderSentUtc = null)
     {
         var vec = new Vec { Name = "ARRL" };
@@ -247,7 +239,7 @@ public class PaymentReminderServiceTests
         {
             CandidateId = candidate.Id, Reason = PaymentReason.Retest, Amount = 15m,
             Status = paymentStatus, PaymentLinkUrl = "https://square.link/u/retest", CreatedUtc = Now,
-            ExpiredUnpaid = expiredUnpaid, PaymentReminderSentUtc = paymentReminderSentUtc
+            PaymentReminderSentUtc = paymentReminderSentUtc
         };
         dbContext.Payments.Add(payment);
         await dbContext.SaveChangesAsync();
@@ -279,23 +271,6 @@ public class PaymentReminderServiceTests
         Assert.Equal(0, result.RemindersSent);
         Assert.Empty(sender.SentMessages);
         Assert.Null((await dbContext.Candidates.SingleAsync()).FccFeeReminderSentUtc);
-    }
-
-    /// <summary>Same session age must not be silently expired out from under a real candidate either.</summary>
-    [Fact]
-    public async Task Expiration_ForALongPastSession_DoesNotFire()
-    {
-        await using var dbContext = CreateContext();
-        var team = await SeedTeamAsync(dbContext);
-        await SeedEmailSettingsAndTemplatesAsync(dbContext, team);
-        await SeedCandidateWithPaymentAsync(
-            dbContext, team, applicationDateEnteredUtc: Now.AddDays(-190), scheduledStartUtc: Now.AddDays(-200));
-        var sender = new FakeEmailSender();
-
-        var result = await CreateService(dbContext, sender).RunAsync(team, CancellationToken.None);
-
-        Assert.Equal(0, result.ExpirationsProcessed);
-        Assert.False((await dbContext.Payments.SingleAsync()).ExpiredUnpaid);
     }
 
     [Fact]
@@ -537,201 +512,15 @@ public class PaymentReminderServiceTests
     // cannot point at a template that is not there. The failure it covered is unreachable.
 
 
-    // ---- 10-day expiration ----
-
-    [Fact]
-    public async Task Expiration_ExactlyTenDays_Fires_SetsExpiredUnpaid_SendsToAdmin()
-    {
-        await using var dbContext = CreateContext();
-        var team = await SeedTeamAsync(dbContext);
-        await SeedEmailSettingsAndTemplatesAsync(dbContext, team);
-        await SeedCandidateWithPaymentAsync(dbContext, team, applicationDateEnteredUtc: Now.AddDays(-10));
-        var sender = new FakeEmailSender();
-
-        var result = await CreateService(dbContext, sender).RunAsync(team, CancellationToken.None);
-
-        Assert.Equal(1, result.ExpirationsProcessed);
-        var message = Assert.Single(sender.SentMessages, m => m.ToAddress == "admin@example.org");
-        Assert.Contains("$15.00", message.HtmlBody);
-        Assert.True((await dbContext.Payments.SingleAsync()).ExpiredUnpaid);
-    }
-
-    [Fact]
-    public async Task Expiration_BeforeTenDays_DoesNotFire()
-    {
-        await using var dbContext = CreateContext();
-        var team = await SeedTeamAsync(dbContext);
-        await SeedEmailSettingsAndTemplatesAsync(dbContext, team);
-        await SeedCandidateWithPaymentAsync(dbContext, team, applicationDateEnteredUtc: Now.AddDays(-9));
-        var sender = new FakeEmailSender();
-
-        var result = await CreateService(dbContext, sender).RunAsync(team, CancellationToken.None);
-
-        Assert.Equal(0, result.ExpirationsProcessed);
-        Assert.False((await dbContext.Payments.SingleAsync()).ExpiredUnpaid);
-    }
-
-    [Fact]
-    public async Task Expiration_AfterTenDays_Fires()
-    {
-        await using var dbContext = CreateContext();
-        var team = await SeedTeamAsync(dbContext);
-        await SeedEmailSettingsAndTemplatesAsync(dbContext, team);
-        await SeedCandidateWithPaymentAsync(dbContext, team, applicationDateEnteredUtc: Now.AddDays(-11));
-        var sender = new FakeEmailSender();
-
-        var result = await CreateService(dbContext, sender).RunAsync(team, CancellationToken.None);
-
-        Assert.Equal(1, result.ExpirationsProcessed);
-    }
-
-    [Fact]
-    public async Task Expiration_AlreadyExpired_DoesNotResend()
-    {
-        await using var dbContext = CreateContext();
-        var team = await SeedTeamAsync(dbContext);
-        await SeedEmailSettingsAndTemplatesAsync(dbContext, team);
-        var (_, payment) = await SeedCandidateWithPaymentAsync(dbContext, team, applicationDateEnteredUtc: Now.AddDays(-20), expiredUnpaid: true);
-        await MarkAlreadyFiredAsync(dbContext, team, MessageTrigger.PaymentUnpaid, payment.Id, MessageSubjectType.Payment);
-        var sender = new FakeEmailSender();
-
-        var result = await CreateService(dbContext, sender).RunAsync(team, CancellationToken.None);
-
-        Assert.Equal(0, result.ExpirationsProcessed);
-        Assert.DoesNotContain(sender.SentMessages, m => m.ToAddress == "admin@example.org");
-    }
-
-    /// <summary>
-    /// The split's sharpest edge (#401). <c>ExpiredUnpaid</c> is set by a different job now, and by
-    /// the time the rule scans it is normally already true — so <c>PaymentUnpaidScanner</c> must not
-    /// filter on it. If it did, the notice would silently never go out, and nothing would look wrong:
-    /// the flag would still be set, the payment would still be expired, and no email would exist to
-    /// miss.
-    ///
-    /// <para>It also describes exactly the pre-deploy row — expired long ago, no marker — which is why
-    /// the MessageRules migration backfills a marker from this flag rather than trusting the flag
-    /// itself.</para>
-    /// </summary>
-    [Fact]
-    public async Task Expiration_FlagAlreadySetButNoRunMarker_StillSendsTheNotice()
-    {
-        await using var dbContext = CreateContext();
-        var team = await SeedTeamAsync(dbContext);
-        await SeedEmailSettingsAndTemplatesAsync(dbContext, team);
-        await SeedCandidateWithPaymentAsync(dbContext, team, applicationDateEnteredUtc: Now.AddDays(-20), expiredUnpaid: true);
-        var sender = new FakeEmailSender();
-
-        var result = await CreateService(dbContext, sender).RunAsync(team, CancellationToken.None);
-
-        Assert.Equal(0, result.ExpirationsProcessed);
-        Assert.Contains(sender.SentMessages, m => m.ToAddress == "admin@example.org");
-    }
-
-    [Fact]
-    public async Task Expiration_GrantedCandidate_TerminalStatusSkipsIt()
-    {
-        await using var dbContext = CreateContext();
-        var team = await SeedTeamAsync(dbContext);
-        await SeedEmailSettingsAndTemplatesAsync(dbContext, team);
-        await SeedCandidateWithPaymentAsync(dbContext, team, status: CandidateApplicationStatus.Granted, applicationDateEnteredUtc: Now.AddDays(-20));
-        var sender = new FakeEmailSender();
-
-        var result = await CreateService(dbContext, sender).RunAsync(team, CancellationToken.None);
-
-        Assert.Equal(0, result.ExpirationsProcessed);
-    }
-
-    [Fact]
-    public async Task Expiration_FailedCandidateInitialExamPayment_StillSkipped()
-    {
-        await using var dbContext = CreateContext();
-        var team = await SeedTeamAsync(dbContext);
-        await SeedEmailSettingsAndTemplatesAsync(dbContext, team);
-        await SeedCandidateWithPaymentAsync(dbContext, team, status: CandidateApplicationStatus.Failed, applicationDateEnteredUtc: Now.AddDays(-20));
-        var sender = new FakeEmailSender();
-
-        var result = await CreateService(dbContext, sender).RunAsync(team, CancellationToken.None);
-
-        Assert.Equal(0, result.ExpirationsProcessed);
-    }
-
-    [Fact]
-    public async Task Expiration_RetestPayment_FiresTenDaysAfterResultMarked_SetsExpiredUnpaid_SendsToAdmin()
-    {
-        await using var dbContext = CreateContext();
-        var team = await SeedTeamAsync(dbContext);
-        await SeedEmailSettingsAndTemplatesAsync(dbContext, team);
-        await SeedFailedCandidateWithRetestPaymentAsync(dbContext, team, resultMarkedUtc: Now.AddDays(-11));
-        var sender = new FakeEmailSender();
-
-        var result = await CreateService(dbContext, sender).RunAsync(team, CancellationToken.None);
-
-        Assert.Equal(1, result.ExpirationsProcessed);
-        Assert.Single(sender.SentMessages, m => m.ToAddress == "admin@example.org");
-        Assert.True((await dbContext.Payments.SingleAsync()).ExpiredUnpaid);
-    }
-
-    [Fact]
-    public async Task Expiration_RetestPayment_BeforeTenDaysSinceResultMarked_DoesNotFire()
-    {
-        await using var dbContext = CreateContext();
-        var team = await SeedTeamAsync(dbContext);
-        await SeedEmailSettingsAndTemplatesAsync(dbContext, team);
-        await SeedFailedCandidateWithRetestPaymentAsync(dbContext, team, resultMarkedUtc: Now.AddDays(-9));
-        var sender = new FakeEmailSender();
-
-        var result = await CreateService(dbContext, sender).RunAsync(team, CancellationToken.None);
-
-        Assert.Equal(0, result.ExpirationsProcessed);
-        Assert.False((await dbContext.Payments.SingleAsync()).ExpiredUnpaid);
-    }
-
-    [Fact]
-    public async Task Expiration_NotApplicablePayment_Skipped()
-    {
-        await using var dbContext = CreateContext();
-        var team = await SeedTeamAsync(dbContext);
-        await SeedEmailSettingsAndTemplatesAsync(dbContext, team);
-        await SeedCandidateWithPaymentAsync(dbContext, team, applicationDateEnteredUtc: Now.AddDays(-20), paymentStatus: PaymentStatus.NotApplicable);
-        var sender = new FakeEmailSender();
-
-        var result = await CreateService(dbContext, sender).RunAsync(team, CancellationToken.None);
-
-        Assert.Equal(0, result.ExpirationsProcessed);
-    }
-
-    [Fact]
-    public async Task Expiration_CancelledSession_Skipped()
-    {
-        await using var dbContext = CreateContext();
-        var team = await SeedTeamAsync(dbContext);
-        await SeedEmailSettingsAndTemplatesAsync(dbContext, team);
-        await SeedCandidateWithPaymentAsync(dbContext, team, applicationDateEnteredUtc: Now.AddDays(-20), sessionStatus: SessionStatus.Cancelled);
-        var sender = new FakeEmailSender();
-
-        var result = await CreateService(dbContext, sender).RunAsync(team, CancellationToken.None);
-
-        Assert.Equal(0, result.ExpirationsProcessed);
-    }
-
-    [Fact]
-    public async Task ReminderAndExpiration_BothOverdueInOneRun_BothFire()
-    {
-        // Simulates catching up after downtime: a payment discovered for the first time at 12
-        // days old is eligible for both triggers simultaneously — each is independently idempotent
-        // via its own tracking field, so both firing in the same run is expected, not a bug.
-        await using var dbContext = CreateContext();
-        var team = await SeedTeamAsync(dbContext);
-        await SeedEmailSettingsAndTemplatesAsync(dbContext, team);
-        await SeedCandidateWithPaymentAsync(dbContext, team, applicationDateEnteredUtc: Now.AddDays(-12));
-        var sender = new FakeEmailSender();
-
-        var result = await CreateService(dbContext, sender).RunAsync(team, CancellationToken.None);
-
-        Assert.Equal(1, result.RemindersSent);
-        Assert.Equal(1, result.ExpirationsProcessed);
-        Assert.Equal(2, sender.SentMessages.Count);
-    }
+    // ⚠️ The whole "10-day expiration" test section — Expiration_ExactlyTenDays_Fires_SetsExpiredUnpaid,
+    // _BeforeTenDays_DoesNotFire, _AfterTenDays_Fires, _AlreadyExpired_DoesNotResend,
+    // _GrantedCandidate_TerminalStatusSkipsIt, _FailedCandidateInitialExamPayment_StillSkipped,
+    // _RetestPayment_FiresTenDaysAfterResultMarked_SetsExpiredUnpaid,
+    // _RetestPayment_BeforeTenDaysSinceResultMarked_DoesNotFire, _NotApplicablePayment_Skipped,
+    // _CancelledSession_Skipped, and ReminderAndExpiration_BothOverdueInOneRun_BothFire — was deleted
+    // here on 2026-08-25, along with Payment.ExpiredUnpaid and the write that set it. There is
+    // nothing left to test: the pass they exercised no longer exists. See the class summary and
+    // PaymentReminderService's own doc comment.
 
     // ---- Unmatched review flag ----
 
@@ -827,55 +616,25 @@ public class PaymentReminderServiceTests
 
     // ---- SMTP not configured ----
 
-    /// <summary>
-    /// The expiry follows the team's own <c>PaymentUnpaid</c> hours (#401 PR2), not a constant. It has
-    /// to: the notice quotes that number, and a fixed expiry would mean telling somebody their link
-    /// expired on a day it did not — or expiring one silently a week before anybody is told.
-    /// </summary>
-    [Fact]
-    public async Task Expiration_FollowsTheTeamsOwnRule_NotTheOldTenDayConstant()
-    {
-        await using var dbContext = CreateContext();
-        var team = await SeedTeamAsync(dbContext);
-        await SeedEmailSettingsAndTemplatesAsync(dbContext, team);
-        // The team pushed its notice out to 30 days. A payment 20 days in is past the old constant and
-        // well short of what this team actually does.
-        (await dbContext.MessageRules.SingleAsync(r => r.Trigger == MessageTrigger.PaymentUnpaid)).ParameterHours = 720;
-        await SeedCandidateWithPaymentAsync(dbContext, team, applicationDateEnteredUtc: Now.AddDays(-20));
-        await dbContext.SaveChangesAsync();
-        var sender = new FakeEmailSender();
-
-        var result = await CreateService(dbContext, sender).RunAsync(team, CancellationToken.None);
-
-        Assert.Equal(0, result.ExpirationsProcessed);
-        Assert.False((await dbContext.Payments.SingleAsync()).ExpiredUnpaid);
-        // The notice has not gone out either, which is the pair that has to stay together. The
-        // FCC-fee reminder is a separate rule on its own clock and legitimately has.
-        Assert.DoesNotContain(sender.SentMessages, m => m.ToAddress == "admin@example.org");
-    }
+    // ⚠️ Expiration_FollowsTheTeamsOwnRule_NotTheOldTenDayConstant was deleted here on 2026-08-25.
+    // Its whole premise — a team's PaymentUnpaid rule could push the expiry threshold out to 30
+    // days — no longer applies: there is no rule, and no expiration pass to push it on.
 
     /// <summary>
-    /// <b>Expiring now happens without SMTP (#401), and that is a change.</b> The old code returned
-    /// early from the whole expiration pass when a team had no SMTP credentials, so a deployment that
-    /// never configured email also never expired a payment link — the bookkeeping was hostage to the
-    /// notice. Splitting them made the notice a rule and left the write behind, which fixes that as a
-    /// side effect. Nothing is sent, and no marker is written, so every notice still goes out on the
-    /// first tick after credentials are entered.
+    /// The Unmatched review flag needs no SMTP — it never sends email, only logs and stamps a field.
     /// </summary>
     [Fact]
-    public async Task SmtpNotConfigured_SendsNothing_ButStillExpiresAndFlags()
+    public async Task SmtpNotConfigured_SendsNothing_ButStillFlags()
     {
         await using var dbContext = CreateContext();
         var team = await SeedTeamAsync(dbContext, emailConfigured: false);
         await SeedEmailSettingsAndTemplatesAsync(dbContext, team);
-        await SeedCandidateWithPaymentAsync(dbContext, team, applicationDateEnteredUtc: Now.AddDays(-20)); // due for both
         var (unmatchedCandidate, _) = await SeedCandidateWithPaymentAsync(dbContext, team, status: CandidateApplicationStatus.Unmatched, dateRegisteredUtc: Now.AddDays(-10));
         var sender = new FakeEmailSender();
 
         var result = await CreateService(dbContext, sender).RunAsync(team, CancellationToken.None);
 
         Assert.Equal(0, result.RemindersSent);
-        Assert.Equal(1, result.ExpirationsProcessed);
         Assert.Empty(sender.SentMessages);
         Assert.Empty(dbContext.MessageRuleRuns);
         Assert.Equal(1, result.CandidatesFlaggedForReview);

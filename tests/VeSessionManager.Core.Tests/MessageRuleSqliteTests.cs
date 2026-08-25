@@ -153,8 +153,9 @@ public class MessageRuleSqliteTests
         await using var connection = new SqliteConnection("DataSource=:memory:");
         await using var dbContext = await OpenAsync(connection);
 
-        await dbContext.Database.MigrateAsync();
+        await dbContext.GetService<IMigrator>().MigrateAsync(MigrationBeforeTheBackfill);
         var seed = await SeedAsync(dbContext);
+        await dbContext.Database.MigrateAsync();
 
         var rule = new MessageRule
         {
@@ -186,8 +187,9 @@ public class MessageRuleSqliteTests
         await using var connection = new SqliteConnection("DataSource=:memory:");
         await using var dbContext = await OpenAsync(connection);
 
-        await dbContext.Database.MigrateAsync();
+        await dbContext.GetService<IMigrator>().MigrateAsync(MigrationBeforeTheBackfill);
         var seed = await SeedAsync(dbContext);
+        await dbContext.Database.MigrateAsync();
 
         var rule = new MessageRule
         {
@@ -223,8 +225,9 @@ public class MessageRuleSqliteTests
         await using var connection = new SqliteConnection("DataSource=:memory:");
         await using var dbContext = await OpenAsync(connection);
 
-        await dbContext.Database.MigrateAsync();
+        await dbContext.GetService<IMigrator>().MigrateAsync(MigrationBeforeTheBackfill);
         var seed = await SeedAsync(dbContext);
+        await dbContext.Database.MigrateAsync();
 
         foreach (var name in new[] { "First rule", "Second rule" })
         {

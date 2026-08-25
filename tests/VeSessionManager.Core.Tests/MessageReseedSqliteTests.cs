@@ -68,7 +68,7 @@ public class MessageReseedSqliteTests
         await EmailDefaultsSeeder.SeedForTeamAsync(dbContext, NullLogger.Instance, reloaded);
         await dbContext.SaveChangesAsync();
 
-        Assert.Equal(7, await dbContext.MessageRules.CountAsync(r => r.TeamId == team.Id));
+        Assert.Equal(6, await dbContext.MessageRules.CountAsync(r => r.TeamId == team.Id));
         Assert.NotNull((await dbContext.Teams.FirstAsync(t => t.Id == team.Id)).MessageRulesSeededUtc);
     }
 

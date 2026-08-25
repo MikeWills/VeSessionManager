@@ -172,10 +172,6 @@
                     {
                         <span class="mismatch-tag" title="Matched via Square anyway — this team's real-world payments don't always equal the amount owed (e.g. the ARRL youth rate) until confirmed at test time.">@payment.AmountMismatchLine</span>
                     }
-                    @if (payment.ExpiredUnpaid)
-                    {
-                        <span class="mismatch-tag">Expired unpaid</span>
-                    }
                     @if (payment.SquareOrderCompleted)
                     {
                         <span class="mono" style="font-size:.85em;color:var(--ink-soft)">Square order completed</span>

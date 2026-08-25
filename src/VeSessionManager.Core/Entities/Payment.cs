@@ -67,8 +67,6 @@ public class Payment
     /// </summary>
     public string? SquareIdempotencyKey { get; set; }
 
-    /// <summary>True if the 10-day unpaid window passed.</summary>
-    public bool ExpiredUnpaid { get; set; }
     public DateTime? PaymentReminderSentUtc { get; set; }
 
     /// <summary>

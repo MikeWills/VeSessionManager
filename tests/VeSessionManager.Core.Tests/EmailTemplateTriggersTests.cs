@@ -158,10 +158,13 @@ public class EmailTemplateTriggersTests
     /// admin form offers and therefore what somebody can pick.
     /// </summary>
     [Fact]
-    public void PaymentUnpaid_CanAddressTheTeamsOwnInbox()
+    public void PaymentUnpaidBeforeSession_CanAddressTheTeamsOwnInbox()
     {
+        // Retargeted 2026-08-25 — MessageTrigger.PaymentUnpaid (the trigger this originally pinned)
+        // was removed; PaymentUnpaidBeforeSession replaced its real use and carries the same
+        // TeamAdminAddress-is-legal shape.
         Assert.Contains(MessageRecipient.TeamAdminAddress,
-            MessageTriggerDefinitions.For(MessageTrigger.PaymentUnpaid).LegalRecipients);
+            MessageTriggerDefinitions.For(MessageTrigger.PaymentUnpaidBeforeSession).LegalRecipients);
     }
 
     /// <summary>

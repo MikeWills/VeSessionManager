@@ -21,6 +21,7 @@ public static class MessageTriggerLabels
         MessageTrigger.BeforeSessionStart => "Before a session starts",
         MessageTrigger.FccFeeOutstanding => "While the FCC is waiting for its fee",
         MessageTrigger.PaymentUnpaid => "While an exam fee is unpaid",
+        MessageTrigger.PaymentUnpaidBeforeSession => "Before a session, if the exam fee is still unpaid",
         MessageTrigger.CandidateTested => "When a candidate has tested",
         MessageTrigger.LicenseGranted => "When the FCC grants a license",
         MessageTrigger.FelonyDisclosureDeclared => "When a felony disclosure is declared",
@@ -42,6 +43,9 @@ public static class MessageTriggerLabels
             + "The clock starts from the date the FCC entered the application, which is often not the day they actually received it. That is why this is yours to set.",
         MessageTrigger.PaymentUnpaid =>
             "Fires once an exam fee has gone unpaid for the set time. The payment link is marked expired on the same clock, so changing this changes both.",
+        MessageTrigger.PaymentUnpaidBeforeSession =>
+            "Fires once per unpaid exam fee, the set number of hours ahead of the session it belongs to — a candidate who has not paid cannot test. "
+            + "Separate from \"While an exam fee is unpaid\": that one's clock runs from the FCC application, which is often not there yet before the session.",
         MessageTrigger.CandidateTested =>
             "Fires once a candidate's graded result arrives from ExamTools — the feed is what says somebody tested, not the session being marked completed. "
             + "Note this says nothing about whether they passed.",
@@ -72,6 +76,7 @@ public static class MessageTriggerLabels
         MessageTrigger.BeforeSessionStart => "Days before the session starts",
         MessageTrigger.FccFeeOutstanding => "Days after the FCC entered the application",
         MessageTrigger.PaymentUnpaid => "Days after the application was entered (or a retest result was marked)",
+        MessageTrigger.PaymentUnpaidBeforeSession => "Days before the session starts",
         _ => "Days"
     };
 

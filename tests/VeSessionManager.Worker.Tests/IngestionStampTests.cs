@@ -169,7 +169,7 @@ public class IngestionStampTests
             services.AddScoped<IMessageTriggerScanner, CandidateRegisteredScanner>();
             services.AddScoped<IMessageTriggerScanner, BeforeSessionStartScanner>();
             services.AddScoped<IMessageTriggerScanner, FccFeeOutstandingScanner>();
-            services.AddScoped<IMessageTriggerScanner, PaymentUnpaidScanner>();
+            services.AddScoped<IMessageTriggerScanner, PaymentUnpaidBeforeSessionScanner>();
             services.AddScoped<MessageDispatchService>();
             services.AddScoped<MessageRuleService>();
             services.AddScoped<JobRunHistoryLogger>();

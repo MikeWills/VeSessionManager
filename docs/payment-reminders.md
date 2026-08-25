@@ -10,6 +10,17 @@
 > outbound emails in one place (full placeholder tables, send pipeline, per-team config). This doc
 > remains the right place for the reminder/expiration *logic* detail below (thresholds, exclusions).
 
+> **The 10-day expiration pass and `Payment.ExpiredUnpaid` are gone entirely (2026-08-25).** Mike:
+> *"the only '10 day rule' is the lifetime of the application at the FCC ... any fees related to a
+> test must be collected prior to the test. No fee, no test."* The team's own exam fee cannot
+> legitimately sit unpaid once an FCC application exists or a result has been marked — payment gates
+> testing, enforced by the VE running the session, not by this app. `PaymentReminderService` now runs
+> exactly one pass, the Unmatched review flag (#3 below); everything in this doc about the expiration
+> pass, `PaymentExpirationNotice`, and the retest branch describes removed behaviour, kept for
+> history. See `PaymentReminderService`'s own doc comment, `docs/trigger-points.md`'s "PaymentUnpaid
+> removed" section, and CLAUDE.md's "No fee, no test" Known Constraint. This also answers the "Still
+> open" question below about what day 10 means — nothing, any more.
+
 What `PaymentReminderService` (`VeSessionManager.Core/Payments/`) does and depends on. No new
 external API — this phase is pure date/status logic over data every earlier phase already
 produces, plus two more `EmailTemplate` rows and one more `EmailSettings` field.

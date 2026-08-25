@@ -339,7 +339,6 @@ public class CandidateDetailModel(
             payment.RefundRequested,
             payment.RefundNotes,
             amountMismatchLine,
-            payment.ExpiredUnpaid,
             payment.SquareOrderCompletedUtc is not null,
             payment.Status == PaymentStatus.Unpaid,
             eligibility.CanRefund,
@@ -443,7 +442,6 @@ public class CandidateDetailModel(
         bool RefundRequested,
         string? RefundNotes,
         string? AmountMismatchLine,
-        bool ExpiredUnpaid,
         bool SquareOrderCompleted,
         bool CanMarkPaid,
         /// <summary>Whether a refund can be issued from here at all (#375). Re-decided server-side by RefundService — this only governs whether the button is offered.</summary>

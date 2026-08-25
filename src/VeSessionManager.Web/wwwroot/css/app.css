@@ -244,19 +244,19 @@ tbody tr.row-highlight, tbody tr.row-highlight:hover { background: var(--amber-d
 .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .table-scroll > table:not(.cards) { min-width: 680px; }
 
-/* Applicant Status "days pending" escalation, in step with PaymentReminderService's 5-day reminder
-   and 10-day expiration passes (see ApplicantStatusModel's threshold constants, which reference
-   that service's own values rather than restating them). Reuses the existing --amber/--brick token pairs
-   rather than introducing new colours, so both are already correct in light and dark themes. The
-   pill shape carries the signal on its own — colour alone would be invisible to a red/green
-   colour-blind viewer, and each cell also gets a title explaining what the state means.
+/* Applicant Status "days pending" escalation — amber once a team's FCC-fee reminder is due, in step
+   with the FccFeeOutstanding rule's own configured hours (see ApplicantStatusModel's threshold
+   lookup, which reads that rule rather than restating it). There used to be a second, red tier tied
+   to the team's own exam fee going unpaid; removed 2026-08-25 along with Payment.ExpiredUnpaid —
+   that condition can't legitimately arise, since payment is required before testing. See CLAUDE.md's
+   "No fee, no test" Known Constraint. Reuses the existing --amber token rather than introducing a new
+   colour, so it is already correct in light and dark themes. The pill shape carries the signal on
+   its own — colour alone would be invisible to a red/green colour-blind viewer, and the cell also
+   gets a title explaining what the state means.
 
    Applied to a <span> inside the cell, never the <td> itself — display:inline-block on a table cell
    pulls it out of the table formatting context and visibly breaks row alignment. */
-.count .days-warning,
-.count .days-critical { display: inline-block; min-width: 22px; padding: 1px 7px; border-radius: 99px; font-weight: 600; text-align: center; line-height: 1.5; }
-.count .days-warning { background: var(--amber-dim); color: var(--ink); }
-.count .days-critical { background: var(--brick); color: #fff; }
+.count .days-warning { display: inline-block; min-width: 22px; padding: 1px 7px; border-radius: 99px; font-weight: 600; text-align: center; line-height: 1.5; background: var(--amber-dim); color: var(--ink); }
 .mono { font-family: "IBM Plex Mono", monospace; font-size: 12.5px; }
 
 .chip { display: inline-flex; align-items: center; gap: 6px; font-family: "IBM Plex Mono", monospace; font-size: 11.5px; font-weight: 500; padding: 4px 9px; border-radius: 99px; }
@@ -675,7 +675,7 @@ footer.roster { margin-top: 28px; background: var(--surface); border: 1px solid 
      *second* child of a cell back to column 1, directly under the label — which is what a two-line
      cell like the Sessions list's title + sub-line actually is, so without this the sub-line renders
      in the label gutter. Text-only cells still auto-place correctly into column 2.
-     justify-self keeps a pill-shaped child (.chip, .days-critical) at its natural width — a grid
+     justify-self keeps a pill-shaped child (.chip, .days-warning) at its natural width — a grid
      item stretches to fill its column by default, which turns every status chip into a full-width
      bar. */
   table.cards td > * { grid-column: 2; min-width: 0; justify-self: start; }
