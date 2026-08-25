@@ -70,8 +70,8 @@ public class PaymentGenerationCollisionSqliteTests
                 Armed = false;
                 await eventData.Context.Database.ExecuteSqlRawAsync(
                     """
-                    INSERT INTO "Payments" ("CandidateId", "Reason", "Amount", "Status", "ExpiredUnpaid", "RefundRequested", "CreatedUtc")
-                    VALUES ({0}, 0, 15, 0, 0, 0, '2026-08-03 12:00:00')
+                    INSERT INTO "Payments" ("CandidateId", "Reason", "Amount", "Status", "RefundRequested", "CreatedUtc")
+                    VALUES ({0}, 0, 15, 0, 0, '2026-08-03 12:00:00')
                     """.Replace("{0}", candidateId.ToString()), cancellationToken);
             }
 

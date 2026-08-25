@@ -12,15 +12,16 @@ namespace VeSessionManager.Core.Messaging.Scanners;
 /// something <i>after</i> the fact — the FCC application, the FCC fee. Nothing warned before the
 /// session, while there was still time to do something about it.</para>
 ///
-/// <para><b>Not <c>PaymentUnpaidScanner</c> repurposed.</b> That scanner's clock is the FCC
+/// <para><b>Not the old <c>PaymentUnpaid</c> trigger repurposed.</b> That trigger's clock was the FCC
 /// application date, which for most candidates does not exist yet before their session — there would
-/// be nothing to anchor on — and its hours also drive the real <c>Payment.ExpiredUnpaid</c> write in
-/// <c>PaymentReminderService</c>, so changing its meaning would move that too. This is the session's
-/// own start time, counting backward, exactly like <see cref="BeforeSessionStartScanner"/> — the only
+/// be nothing to anchor on. It (and the <c>Payment.ExpiredUnpaid</c> bookkeeping write its hours also
+/// drove) is gone entirely as of 2026-08-25 — see <c>PaymentReminderService</c>'s own summary and
+/// CLAUDE.md's "No fee, no test" Known Constraint. This scanner anchors on the session's own start
+/// time instead, counting backward, exactly like <see cref="BeforeSessionStartScanner"/> — the only
 /// difference is the extra "and still unpaid" filter.</para>
 ///
-/// <para><b>No retest branch, unlike <c>PaymentUnpaidScanner</c>.</b> That scanner needs one because
-/// it anchors on the FCC application/result date, which a retest candidate never has in the normal
+/// <para><b>No retest branch, unlike the old trigger.</b> That one needed a special case because it
+/// anchored on the FCC application/result date, which a retest candidate never has in the normal
 /// shape. This scanner anchors on the session itself, and a retest payment belongs to a session like
 /// any other — the ordinary query already covers it.</para>
 ///

@@ -296,11 +296,12 @@ public enum MessageTrigger
     /// has not paid cannot test, so a team may want to chase this before the session rather than
     /// after.
     ///
-    /// <para><b>Not <see cref="PaymentUnpaid"/> repurposed.</b> That trigger's clock starts from the
-    /// FCC application date, which for most candidates does not exist yet before their session —
-    /// there would be nothing to anchor on. Its hours also drive the real
-    /// <c>Payment.ExpiredUnpaid</c> write, so changing what it means would move that too. This is a
-    /// new trigger with its own clock: the session's own start time, counting backward.</para>
+    /// <para><b>Not <see cref="PaymentUnpaid"/> repurposed</b> (that trigger, and the
+    /// <c>Payment.ExpiredUnpaid</c> bookkeeping write its hours also drove, are gone entirely as of
+    /// 2026-08-25 — see CLAUDE.md's "No fee, no test" Known Constraint). Its old clock started from
+    /// the FCC application date, which for most candidates does not exist yet before their session —
+    /// there would be nothing to anchor on. This is a new trigger with its own clock: the session's
+    /// own start time, counting backward.</para>
     /// </summary>
     PaymentUnpaidBeforeSession = 11,
 

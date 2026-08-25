@@ -604,6 +604,26 @@ To pick up updates: `/plugin marketplace update claude-tools`
   lock is an exclusive file beside the **database** — never in the app directory, which the service
   account cannot write and which `rsync --delete` replaces mid-deploy — and it no-ops for
   `:memory:`/`Mode=Memory`, which is what the entire test suite runs on.
+- **"No fee, no test" — this app's own exam fee can never legitimately sit unpaid after the fact, so
+  don't build (or re-build) a "the exam fee has been unpaid for N days" concept.** Mike, 2026-08-25,
+  after two rounds of me getting this wrong: *"the only '10 day rule' is the lifetime of the
+  application at the FCC. If the application fee isn't paid to the FCC, then the application expires.
+  Any fees related to a test must be collected prior to the test. No fee, no test."* There is exactly
+  **one** 10-day rule in this domain, and it belongs to the FCC's own CORES fee
+  (`Candidate.FccPaymentStatus`, the `FccFeeOutstanding` trigger) — never to `Payment` (this team's
+  own Square exam/retest fee). An "exam fee unpaid" condition anchored on a *later* FCC-side date
+  (application entered, result marked) reads as plausible and is not: payment gates testing, so that
+  combination can't arise for a real candidate. **This is a human process rule, not a system
+  invariant** — the VE running the session enforces it at the door, and nothing in the code checks or
+  could check it (Mike: "this cannot be enforced by code"). The point isn't that the app guarantees
+  the combination is impossible; it's that the app must not build a feature whose premise assumes it
+  happens anyway. This was tried **twice** — the original Phase 6 `PaymentExpirationNotice`/
+  `PaymentUnpaid` trigger, and its retest branch, which I defended as "the one real case" until asked
+  to check: **zero retest payments exist in this deployment's history, ever.** Both were removed
+  2026-08-25 (`Payment.ExpiredUnpaid` and the write that set it) rather than kept as inert bookkeeping.
+  If a future request sounds like "notify/flag when our own fee has been unpaid for a while," it is
+  almost certainly describing the FCC's fee and should be built against `FccFeeOutstanding`, not a new
+  `Payment`-side trigger.
 - (Environment-specific quirks and gotchas go here as they're discovered — e.g. API quirks, IIS behavior, network/DMZ restrictions, auth issues)
 
 ## Definition of Done

@@ -892,15 +892,18 @@ someone who never paid to test. Removed from `MessageTriggerDefinitions.All` (no
 `MessageRuleRun` history still names it, and `Label()`/`Blurb()` still describe it for that history)
 and its two rows deleted from every team's `MessageRules` by `RemovePaymentUnpaidMessages`.
 
-⚠️ **Not a clean deletion.** `PaymentUnpaid`'s hours also drove a real bookkeeping write —
-`Payment.ExpiredUnpaid`, set by `PaymentReminderService.ProcessExpirationsAsync` — which has nothing
-to do with the notice and is shown on the candidate detail and Applicant Status pages. That write
-stays; it is back to a plain 240-hour constant (`PaymentReminderService.ExpiryHours`), exactly the
-shape it had before #401 PR2 made it configurable. `ApplicantStatus`'s "days pending" red-critical
-colouring, which also read this trigger's configured hours, degrades quietly rather than breaking —
-`MessageThresholdService.ConfiguredHoursByTeamAsync` simply finds no rule and returns nothing for it,
-so that column of the escalation never lights up any more. Left as-is rather than reworked, since the
-underlying condition it was colouring for is the same one Mike just called impossible.
+⚠️ **First pass here was not a clean deletion, and the second pass fixed that.** `PaymentUnpaid`'s
+hours also drove a real bookkeeping write — `Payment.ExpiredUnpaid`, set by
+`PaymentReminderService.ProcessExpirationsAsync` — which had nothing to do with the notice and was
+shown on the candidate detail and Applicant Status pages. The first version of this change kept that
+write, back to a plain 240-hour constant, defended on the grounds that an unpaid *retest* fee was
+still a real case it caught. Asked to check ("the candidate can't retest if they didn't pay"): zero
+retest payments have ever existed in this deployment's history. **`Payment.ExpiredUnpaid` and the
+write that set it are gone entirely (2026-08-25)** — see `PaymentReminderService`'s own doc comment
+and CLAUDE.md's "No fee, no test" Known Constraint. There is exactly one legitimate "N days unpaid"
+condition in this domain and it belongs to the FCC's own fee (`FccFeeOutstanding`), never to this
+team's own `Payment`. `ApplicantStatus`'s "days pending" red-critical colouring, which read this
+trigger's hours, is removed along with it — the amber tier (`FccFeeOutstanding`-based) is unaffected.
 
 **`PaymentUnpaidBeforeSession` replaces the real need.** Fires N hours before the session while an
 exam fee is still unpaid — anchored on the session's own start time, exactly like
