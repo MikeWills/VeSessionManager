@@ -20,12 +20,17 @@ namespace VeSessionManager.Core.ExamResults;
 /// passed, checks every non-terminal, not-yet-Tested candidate's exams[]. A candidate with any
 /// candidate who passed NO graded element is flipped straight to ApplicationStatus=Failed (same
 /// fields CandidateActionService.MarkFailedAsync sets, but ResultMarkedByUserId stays null — nobody manually
-/// clicked anything, so there's no user to attribute it to) — this also makes PaymentReminderService's
-/// existing Reason=Retest reminder logic (which is gated on ResultMarkedUtc) fire automatically for
-/// these candidates for the first time, closing a second latent gap along with the first. A candidate
-/// whose graded exam(s) all passed just gets Tested=true, leaving ApplicationStatus alone exactly like
-/// the manual "mark session completed" bulk-flip does (a pass still waits on the FCC watcher for the
-/// eventual Granted transition).
+/// clicked anything, so there's no user to attribute it to). A candidate whose graded exam(s) all
+/// passed just gets Tested=true, leaving ApplicationStatus alone exactly like the manual "mark
+/// session completed" bulk-flip does (a pass still waits on the FCC watcher for the eventual
+/// Granted transition).
+///
+/// ⚠️ This doc comment used to also claim setting Failed here made PaymentReminderService's
+/// Reason=Retest reminder logic — gated on ResultMarkedUtc — fire automatically. That whole pass
+/// (Payment.ExpiredUnpaid and the write that set it) is gone as of 2026-08-25: this app's own exam
+/// fee can never legitimately be unpaid once a result exists, since payment gates testing. See
+/// CLAUDE.md's "No fee, no test" Known Constraint. ResultMarkedUtc itself is unaffected — it still
+/// feeds candidate detail's display and nothing money-related reads it any more.
 ///
 /// Once Tested is true (either from here or the manual bulk-flip) or ApplicationStatus is terminal, a
 /// candidate is never checked again — bounds this to a handful of API calls per tick, not the whole

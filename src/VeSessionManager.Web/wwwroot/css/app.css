@@ -244,12 +244,15 @@ tbody tr.row-highlight, tbody tr.row-highlight:hover { background: var(--amber-d
 .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .table-scroll > table:not(.cards) { min-width: 680px; }
 
-/* Applicant Status "days pending" escalation, in step with PaymentReminderService's 5-day reminder
-   and 10-day expiration passes (see ApplicantStatusModel's threshold constants, which reference
-   that service's own values rather than restating them). Reuses the existing --amber/--brick token pairs
-   rather than introducing new colours, so both are already correct in light and dark themes. The
-   pill shape carries the signal on its own — colour alone would be invisible to a red/green
-   colour-blind viewer, and each cell also gets a title explaining what the state means.
+/* Applicant Status "days pending" escalation — amber once a team's FCC-fee reminder is due, in step
+   with the FccFeeOutstanding rule's own configured hours (see ApplicantStatusModel's threshold
+   lookup, which reads that rule rather than restating it). There used to be a second, red tier tied
+   to the team's own exam fee going unpaid; removed 2026-08-25 along with Payment.ExpiredUnpaid —
+   that condition can't legitimately arise, since payment is required before testing. See CLAUDE.md's
+   "No fee, no test" Known Constraint. Reuses the existing --amber token rather than introducing a new
+   colour, so it is already correct in light and dark themes. The pill shape carries the signal on
+   its own — colour alone would be invisible to a red/green colour-blind viewer, and the cell also
+   gets a title explaining what the state means.
 
    Applied to a <span> inside the cell, never the <td> itself — display:inline-block on a table cell
    pulls it out of the table formatting context and visibly breaks row alignment. */

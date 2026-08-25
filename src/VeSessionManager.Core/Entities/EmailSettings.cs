@@ -23,7 +23,7 @@ public class EmailSettings
     public required string ReplyToAddress { get; set; }
     public required string PrivacyPolicyUrl { get; set; }
 
-    /// <summary>Not in the original shared data model — added in Phase 6. Where the PaymentExpirationNotice template goes ("to Mike," per the spec, not to the candidate) — the Session Manager's own inbox, not a candidate-facing address. Same hand-edit-in-the-DB pattern as the other fields on this row.</summary>
+    /// <summary>Not in the original shared data model — added in Phase 6, originally as where the now-removed PaymentExpirationNotice template went ("to Mike," per the spec, not to the candidate). Still live: any MessageRule with Recipient = TeamAdminAddress resolves here (MessageDispatchService) — the Session Manager's own inbox, not a candidate-facing address. Same hand-edit-in-the-DB pattern as the other fields on this row.</summary>
     public required string AdminNotificationEmail { get; set; }
 
     /// <summary>
