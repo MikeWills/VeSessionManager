@@ -204,7 +204,10 @@ public class MessageRuleAdminServiceTests
 
     /// <summary>
     /// Switching off is the only way to stop a rule, and it leaves no marker — so switching it back on
-    /// picks up whoever is eligible at that moment rather than chasing everybody missed in between.
+    /// used to pick up whoever became eligible while it was off. Fixed 2026-08-25: it now stamps
+    /// <see cref="MessageRule.EnabledSinceUtc"/> on the transition, which every scanner reads through
+    /// <see cref="MessageRuleEligibility.FloorUtc"/> — see <c>MessageRuleEngineTests</c> for the
+    /// end-to-end proof that a stale-eligible subject is actually excluded, not just this field set.
     /// </summary>
     [Fact]
     public async Task SetEnabled_TogglesAndAudits_AndWritesNoMarkers()
@@ -213,17 +216,37 @@ public class MessageRuleAdminServiceTests
         var (team, userId) = await SeedAsync(dbContext);
         await CreateReminderAsync(dbContext, team, userId);
         var rule = await dbContext.MessageRules.SingleAsync();
+        Assert.Null(rule.EnabledSinceUtc);
 
         Assert.Equal(MessageRuleActionResult.Success,
             await CreateService(dbContext).SetEnabledAsync(rule.Id, false, userId, CancellationToken.None));
         Assert.False((await dbContext.MessageRules.SingleAsync()).IsEnabled);
         Assert.Empty(dbContext.MessageRuleRuns);
         Assert.Contains(dbContext.AuditLogs, a => a.Action == "MessageRuleDisabled");
+        // Disabling itself is not the transition this field cares about.
+        Assert.Null((await dbContext.MessageRules.SingleAsync()).EnabledSinceUtc);
 
         Assert.Equal(MessageRuleActionResult.Success,
             await CreateService(dbContext).SetEnabledAsync(rule.Id, true, userId, CancellationToken.None));
         Assert.True((await dbContext.MessageRules.SingleAsync()).IsEnabled);
         Assert.Contains(dbContext.AuditLogs, a => a.Action == "MessageRuleEnabled");
+        Assert.Equal(Now, (await dbContext.MessageRules.SingleAsync()).EnabledSinceUtc);
+    }
+
+    /// <summary>A redundant "enable" on an already-enabled rule must not move the floor forward — that would silently start hiding people who'd been legitimately waiting since the real enable moment.</summary>
+    [Fact]
+    public async Task SetEnabled_RedundantEnableOnAnAlreadyEnabledRule_DoesNotRestampEnabledSinceUtc()
+    {
+        await using var dbContext = CreateContext();
+        var (team, userId) = await SeedAsync(dbContext);
+        await CreateReminderAsync(dbContext, team, userId);
+        var rule = await dbContext.MessageRules.SingleAsync();
+        rule.EnabledSinceUtc = Now.AddDays(-10);
+        await dbContext.SaveChangesAsync();
+
+        await CreateService(dbContext).SetEnabledAsync(rule.Id, true, userId, CancellationToken.None);
+
+        Assert.Equal(Now.AddDays(-10), (await dbContext.MessageRules.SingleAsync()).EnabledSinceUtc);
     }
 
     /// <summary>

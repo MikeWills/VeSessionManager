@@ -24,6 +24,7 @@ public class CandidateRegisteredScanner(
         Team team, MessageRule rule, EmailSettings emailSettings, DateTime nowUtc, int? onlySessionId, CancellationToken cancellationToken)
     {
         var recentSessionCutoff = nowUtc.AddDays(-1);
+        var floorUtc = MessageRuleEligibility.FloorUtc(team, rule);
 
         var settled = dbContext.MessageRuleRuns
             .Where(r => r.MessageRuleId == rule.Id && MessageRuleOutcomes.Terminal.Contains(r.Outcome))
@@ -36,10 +37,11 @@ public class CandidateRegisteredScanner(
             .Where(c => c.PiiPurgedUtc == null
                         && c.Email != null
                         && !settled.Contains(c.Id)
-                        // The moment this trigger is about. Bounded by the rule's own creation, so a
-                        // rule added today never fires for somebody who registered last week — see
-                        // MessageRule.CreatedUtc.
-                        && c.DateRegisteredUtc >= rule.CreatedUtc
+                        // The moment this trigger is about. Bounded by the real floor — not just the
+                        // rule's own creation, but also a re-enable or the team's email first being
+                        // configured — so a rule added today, or just turned back on, never fires for
+                        // somebody who became eligible before that. See MessageRuleEligibility.
+                        && c.DateRegisteredUtc >= floorUtc
                         && c.Session.TeamId == team.Id
                         && c.Session.Status == SessionStatus.Active
                         // Query-side coarse bound so a year of backfilled sessions doesn't get

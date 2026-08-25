@@ -2,6 +2,7 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using VeSessionManager.Core;
+using VeSessionManager.Core.Admin;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Email;
 using VeSessionManager.Core.Entities;
@@ -844,6 +845,87 @@ public class MessageRuleEngineTests
         await SeedRuleAsync(dbContext, team, MessageTrigger.BeforeSessionStart, "DayBeforeReminder", 168, createdUtc: Now.AddDays(-30));
 
         Assert.Equal(1, (await RunRulesAsync(dbContext, sender, team, MessageTrigger.BeforeSessionStart)).Sent);
+    }
+
+    // ---- MessageRuleEligibility.FloorUtc: no backlog on enable, beyond just CreatedUtc ----
+
+    /// <summary>
+    /// Mike, 2026-08-25, after a beta candidate who registered before a team's email was ever
+    /// configured got a confirmation the moment it was: "it's not supposed to send any backlog of
+    /// email." <c>Team.EmailConfiguredUtc</c> is the second input to
+    /// <see cref="MessageRuleEligibility"/>'s floor, alongside <c>MessageRule.CreatedUtc</c>.
+    /// </summary>
+    [Fact]
+    public async Task EmailConfiguredForTheFirstTime_DoesNotSendBacklogToACandidateWhoRegisteredBeforeThat()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        await SeedEmailSettingsAndTemplatesAsync(dbContext, team);
+        var session = await SeedSessionAsync(dbContext, team, Now.AddDays(4));
+        var candidate = NewCandidate(session);
+        candidate.DateRegisteredUtc = Now.AddDays(-2);
+        dbContext.Candidates.Add(candidate);
+        // Configured an hour ago — after the registration two days ago.
+        team.EmailConfiguredUtc = Now.AddHours(-1);
+        await dbContext.SaveChangesAsync();
+
+        var sender = new FakeEmailSender();
+        var result = await RunRulesAsync(dbContext, sender, team, MessageTrigger.CandidateRegistered);
+
+        Assert.Equal(0, result.Sent);
+        Assert.Empty(sender.SentMessages);
+    }
+
+    /// <summary>The mechanism only excludes what came before — a candidate registering after email was configured still gets the real send.</summary>
+    [Fact]
+    public async Task EmailConfiguredForTheFirstTime_StillSendsForACandidateWhoRegisteredAfterThat()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        await SeedEmailSettingsAndTemplatesAsync(dbContext, team);
+        var session = await SeedSessionAsync(dbContext, team, Now.AddDays(4));
+        var candidate = NewCandidate(session);
+        candidate.DateRegisteredUtc = Now.AddHours(-1);
+        dbContext.Candidates.Add(candidate);
+        // Configured two days ago — before the registration an hour ago.
+        team.EmailConfiguredUtc = Now.AddDays(-2);
+        await dbContext.SaveChangesAsync();
+
+        var result = await RunRulesAsync(dbContext, new FakeEmailSender(), team, MessageTrigger.CandidateRegistered);
+
+        Assert.Equal(1, result.Sent);
+    }
+
+    /// <summary>
+    /// Mike, 2026-08-25: "if a message is off then I turn on, it's not supposed to send backlog
+    /// either." Disabling a rule used to leave only <c>CreatedUtc</c> as the bound, so re-enabling it
+    /// chased anyone who became eligible while it sat off — <c>MessageRule.EnabledSinceUtc</c>,
+    /// stamped by <c>MessageRuleAdminService.SetEnabledAsync</c>, is what closes that.
+    /// </summary>
+    [Fact]
+    public async Task ARuleReEnabledAfterBeingDisabled_DoesNotSendBacklogToWhoeverBecameEligibleWhileItWasOff()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        await SeedEmailSettingsAndTemplatesAsync(dbContext, team);
+        var session = await SeedSessionAsync(dbContext, team, Now.AddDays(4));
+        var candidate = NewCandidate(session);
+        candidate.DateRegisteredUtc = Now.AddHours(-2);
+        dbContext.Candidates.Add(candidate);
+        await dbContext.SaveChangesAsync();
+
+        var rule = await dbContext.MessageRules.SingleAsync(r => r.Trigger == MessageTrigger.CandidateRegistered);
+        await new MessageRuleAdminService(dbContext, new FixedTimeProvider(Now)).SetEnabledAsync(
+            rule.Id, false, userId: 1, CancellationToken.None);
+        // Re-enabled "now" — after the candidate registered two hours ago.
+        await new MessageRuleAdminService(dbContext, new FixedTimeProvider(Now)).SetEnabledAsync(
+            rule.Id, true, userId: 1, CancellationToken.None);
+
+        var sender = new FakeEmailSender();
+        var result = await RunRulesAsync(dbContext, sender, team, MessageTrigger.CandidateRegistered);
+
+        Assert.Equal(0, result.Sent);
+        Assert.Empty(sender.SentMessages);
     }
 
     // ---- Outcomes: what the marker records, and which ones settle ----

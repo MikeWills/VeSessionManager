@@ -31,10 +31,12 @@ public class BeforeSessionStartScanner(AppDbContext dbContext) : IMessageTrigger
         var windowEndUtc = nowUtc.AddHours(parameterHours);
 
         // The moment this trigger is about is (start - ParameterHours), so requiring that moment to
-        // fall at or after the rule's creation means requiring the start itself to be at least that
-        // far past it. This is the guarantee Mike asked for in the issue: add a 7-day rule today and
-        // nobody already inside seven days of their session hears from it.
-        var earliestStartUtc = rule.CreatedUtc.AddHours(parameterHours);
+        // fall at or after the real floor means requiring the start itself to be at least that far
+        // past it. This is the guarantee Mike asked for in the issue: add a 7-day rule today and
+        // nobody already inside seven days of their session hears from it — and, since 2026-08-25,
+        // the same guarantee on re-enabling a disabled rule or configuring email for the first time.
+        // See MessageRuleEligibility.
+        var earliestStartUtc = MessageRuleEligibility.FloorUtc(team, rule).AddHours(parameterHours);
 
         var settled = dbContext.MessageRuleRuns
             .Where(r => r.MessageRuleId == rule.Id && MessageRuleOutcomes.Terminal.Contains(r.Outcome))

@@ -94,8 +94,9 @@ public sealed record MessageSessionContext(
 /// <item>excluding subjects that already have a <b>terminal</b>
 /// <see cref="MessageRuleRun"/> for this rule (see <see cref="MessageRuleOutcome"/> — a failed
 /// attempt is deliberately not terminal, so it is returned again);</item>
-/// <item>bounding by <see cref="MessageRule.CreatedUtc"/>, so a rule never fires for a subject whose
-/// moment passed before the rule existed.</item>
+/// <item>bounding by <see cref="MessageRuleEligibility.FloorUtc"/> (not <see cref="MessageRule.CreatedUtc"/>
+/// alone), so a rule never fires for a subject whose moment passed before the rule existed, was last
+/// switched back on, or — for an email rule — before the team's email was configured.</item>
 /// </list>
 /// </summary>
 public interface IMessageTriggerScanner

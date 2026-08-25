@@ -40,9 +40,10 @@ public class PaymentUnpaidBeforeSessionScanner(AppDbContext dbContext) : IMessag
         var parameterHours = MessageTriggerDefinitions.ParameterHoursOrDefault(rule);
         var windowEndUtc = nowUtc.AddHours(parameterHours);
 
-        // Same guarantee as BeforeSessionStartScanner: a rule added today never fires for someone
-        // already inside its own window at the moment it was created.
-        var earliestStartUtc = rule.CreatedUtc.AddHours(parameterHours);
+        // Same guarantee as BeforeSessionStartScanner: a rule added today — or re-enabled, or a
+        // team's email just configured — never fires for someone already inside its own window at
+        // that moment. See MessageRuleEligibility.
+        var earliestStartUtc = MessageRuleEligibility.FloorUtc(team, rule).AddHours(parameterHours);
 
         var settled = dbContext.MessageRuleRuns
             .Where(r => r.MessageRuleId == rule.Id && MessageRuleOutcomes.Terminal.Contains(r.Outcome))

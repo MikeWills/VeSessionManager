@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using VeSessionManager.Core.Data;
 
@@ -10,9 +11,11 @@ using VeSessionManager.Core.Data;
 namespace VeSessionManager.Core.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    partial class AppDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260825203552_MessageEligibilityFloor")]
+    partial class MessageEligibilityFloor
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.10");
@@ -238,9 +241,6 @@ namespace VeSessionManager.Core.Migrations
                     b.Property<string>("CallSign")
                         .HasColumnType("TEXT");
 
-                    b.Property<string>("City")
-                        .HasColumnType("TEXT");
-
                     b.Property<DateTime>("DateRegisteredUtc")
                         .HasColumnType("TEXT");
 
@@ -310,9 +310,6 @@ namespace VeSessionManager.Core.Migrations
 
                     b.Property<int>("SessionId")
                         .HasColumnType("INTEGER");
-
-                    b.Property<string>("State")
-                        .HasColumnType("TEXT");
 
                     b.Property<bool>("Tested")
                         .HasColumnType("INTEGER");
