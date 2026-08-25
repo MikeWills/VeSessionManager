@@ -129,10 +129,14 @@ main.vesm-main.wide { max-width: 1280px; padding: 20px 16px 56px; }
 .page-head { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 24px; flex-wrap: wrap; gap: 12px; }
 h1 { font-size: 24px; margin: 0 0 4px; letter-spacing: -.01em; }
 .eyebrow { font-family: "IBM Plex Mono", monospace; font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--ink-soft); margin: 0; }
-/* Breadcrumb back to a page's parent list. Two classes deliberately: `.vesm a { color: inherit }` is
-   class-plus-element (0,1,1) and would beat a bare `.crumb`. */
-.vesm .crumb { display: inline-flex; align-items: center; gap: 3px; color: var(--ink-soft); text-decoration: none; }
-.vesm .crumb:hover { color: var(--ink); text-decoration: underline; }
+/* Breadcrumb back to a page's parent list — here `.crumb` IS the <a> (_ParentCrumb.cshtml), unlike
+   the multi-segment `<div class="crumb">` below, so scoping to `a.crumb` is deliberate, not just
+   belt-and-braces: two classes beat `.vesm a { color: inherit }` (class-plus-element, 0,1,1) either
+   way, but `a.crumb` also protects against ever being applied to a container again (issue #465 —
+   `:hover` on a container underlines while the mouse is over any of its children, non-link text
+   included, not just while hovering the link itself). */
+.vesm a.crumb { display: inline-flex; align-items: center; gap: 3px; color: var(--ink-soft); text-decoration: none; }
+.vesm a.crumb:hover { color: var(--ink); text-decoration: underline; }
 .vesm .crumb .bi { font-size: 12px; }
 .filters { display: flex; gap: 8px; flex-wrap: wrap; }
 /* Search box in a filters bar (issue #135). Two classes on the input because `.vesm input` is
@@ -319,9 +323,14 @@ tbody tr.row-highlight, tbody tr.row-highlight:hover { background: var(--amber-d
 .vesm a.btn-secondary { color: var(--ink); }
 .vesm a.btn-danger { color: var(--brick); }
 
-/* Crumb */
+/* Crumb — a <div> wrapping a link plus plain trailing text ("Sessions / Session Title"), unlike the
+   single-<a> crumb above. The div itself must never carry :hover styling: :hover applies to an
+   element for as long as the pointer is anywhere inside its box, children included, so a rule on the
+   container underlines the plain text too the moment the pointer crosses it — which is exactly what
+   made the whole line look clickable (issue #465). Only the <a> gets the hover treatment. */
 .crumb { font-family: "IBM Plex Mono", monospace; font-size: 11.5px; color: var(--ink-soft); margin-bottom: 14px; }
 .crumb a { color: var(--focus); text-decoration: none; }
+.crumb a:hover { text-decoration: underline; }
 
 /* Session header panel */
 .session-panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 18px 16px; display: flex; justify-content: space-between; gap: 20px; flex-wrap: wrap; margin-bottom: 22px; }
