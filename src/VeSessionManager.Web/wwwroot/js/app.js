@@ -185,6 +185,8 @@
         var backdrop = modalCloser.closest(".modal-backdrop");
         if (backdrop) backdrop.classList.remove("open");
       }
+
+      handleClickableRow(event);
     });
 
     // A menu positioned against the viewport does not travel with the row it belongs to, so any
@@ -212,6 +214,24 @@
     document.querySelectorAll("table[data-sortable]").forEach(initSortableTable);
     initInvitePicker();
   });
+
+  // ---- Clickable rows -----------------------------------------------------------------------------
+  // Opt-in via <tr data-clickable-row> (Sessions list, requested 2026-08-25 — "let me tap anywhere
+  // in the row it loads the view action"). Follows that row's own .view-link href rather than
+  // computing a second URL here, so there is exactly one destination to keep in sync. Ignores clicks
+  // on anything interactive inside the row: the kebab handler above already returns before this
+  // runs for a kebab click, but a click landing directly on the View link, or on a menu item's own
+  // form control, must still behave like clicking that control, not like clicking the row.
+  function handleClickableRow(event) {
+    var row = event.target.closest("tr[data-clickable-row]");
+    if (!row) return;
+    if (event.target.closest("a, button, input, select, textarea, label, .menu, .row-actions")) return;
+    // A drag-select of the row's text should not also navigate away from it.
+    if (window.getSelection && String(window.getSelection()) !== "") return;
+
+    var link = row.querySelector(".view-link");
+    if (link) window.location = link.href;
+  }
 
   // ---- Row menus inside a scrolling table ------------------------------------------------------
   // `.table-scroll` exists to let a wide table scroll sideways, but `overflow-x: auto` makes the
