@@ -23,6 +23,8 @@ public static class CandidatePiiFields
         // that every PII-classed property is cleared here, so the next field added cannot repeat it.
         candidate.FirstName = null;
         candidate.Email = null;
+        candidate.City = null;
+        candidate.State = null;
         candidate.HasFelonyDisclosure = null;
         candidate.PiiPurgedUtc = purgedUtc;
 

@@ -913,3 +913,53 @@ every trigger added since PR3 — a team opts in.
 No retest branch, unlike the scanner it replaces: that one needed one to anchor on the FCC
 application/result date, which a retest candidate never has in the normal shape. This anchors on the
 session itself, and a retest payment belongs to a session like any other.
+
+## MessageRuleEligibility: no backlog on enable, for messaging specifically (2026-08-25)
+
+Every scanner bounded eligibility by `MessageRule.CreatedUtc` alone — "a subject whose trigger moment
+fell before the rule existed is never returned," the guarantee Mike asked for in #401 ("nothing worse
+than sending out 3000 emails because you added a new rule"). That was always right for a rule just
+created. It missed two other off-to-on transitions that deserve the identical treatment, found live on
+the beta server:
+
+1. **A team's email configured for the first time.** A candidate who registered before a team ever
+   set up SMTP sat there matching every scanner's predicate, waiting — the moment `IsEmailConfigured`
+   went true, the next tick sent their confirmation, days late. Mike: *"it must have sent the email
+   when I turned it on ... it's not supposed to send any backlog of email."*
+2. **A rule switched back on.** `MessageRuleAdminService.SetEnabledAsync`'s own doc comment used to
+   claim disabling and re-enabling "picks up whoever is eligible at that moment... not chased
+   retroactively" — which was never true. Disabling writes no marker, and re-enabling was bounded only
+   by `CreatedUtc`, so anyone who became eligible while the rule sat off got swept up the instant it
+   came back on. Mike: *"if a message is off then I turn on, it's not supposed to send backlog
+   either."*
+
+**`MessageRuleEligibility.FloorUtc(team, rule)`** replaces every scanner's direct read of
+`rule.CreatedUtc`, folding in two more inputs when they're later than `CreatedUtc`:
+
+- `MessageRule.EnabledSinceUtc` — stamped by `SetEnabledAsync`, but **only on an actual
+  disabled→enabled transition** (`enabled && !rule.IsEnabled`, checked before the assignment). A
+  redundant "enable" call on an already-enabled rule must not restamp it — that would silently push
+  the floor forward and start hiding people who'd been legitimately waiting since the real enable
+  moment.
+- `Team.EmailConfiguredUtc` (email-channel rules only — a Discord post doesn't care about SMTP) —
+  stamped by `TeamSettingsService.UpdateSmtpAsync`, same guard: only on an actual
+  unconfigured→configured transition (`!wasConfigured && team.IsEmailConfigured`, `wasConfigured` read
+  *before* the new host/username are assigned). Clearing credentials back to null and later
+  re-entering them counts as a fresh transition and restamps — matching "off then on" literally, not
+  just "configured once, ever."
+
+**Both columns are nullable and deliberately never backfilled.** An already-configured team or an
+already-enabled rule has had no off-to-on transition for a migration to invent — stamping migration
+time would fabricate one, wrongly hiding candidates already mid-cycle who registered days ago with
+nothing having actually turned off and back on. Null reads as "no extra floor from this," which is
+exactly right for every pre-existing row. `MessageEligibilityFloor`'s own migration comment says the
+same thing; it's worth saying twice because it's the one detail a future "let's just default this to
+now for consistency" edit would get wrong.
+
+**Deliberately narrower than "no backlog on enable" applied everywhere.** Zoom, Discord and Square are
+untouched — they still backfill the moment they're configured, and that's correct: those create a
+resource that has to exist regardless of when config caught up, the same Optional-integration pattern
+every other client in this app follows (see CLAUDE.md). Messaging is the deliberate exception, because
+what's being protected is a person's inbox, not a resource's existence — telling someone about
+something old the instant notifications get switched on is the failure being avoided, and that failure
+has no equivalent on the Zoom/Discord/Square side.

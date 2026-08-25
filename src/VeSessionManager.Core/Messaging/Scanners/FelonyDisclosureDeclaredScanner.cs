@@ -31,6 +31,7 @@ public class FelonyDisclosureDeclaredScanner(AppDbContext dbContext, ILogger<Fel
         Team team, MessageRule rule, EmailSettings emailSettings, DateTime nowUtc, int? onlySessionId, CancellationToken cancellationToken)
     {
         var recentSessionCutoff = nowUtc.AddDays(-1);
+        var floorUtc = MessageRuleEligibility.FloorUtc(team, rule);
 
         var settled = dbContext.MessageRuleRuns
             .Where(r => r.MessageRuleId == rule.Id && MessageRuleOutcomes.Terminal.Contains(r.Outcome))
@@ -46,7 +47,7 @@ public class FelonyDisclosureDeclaredScanner(AppDbContext dbContext, ILogger<Fel
                         // needs FCC paperwork is the mistake this guards, exactly as the button's own
                         // handler does.
                         && c.HasFelonyDisclosure == true
-                        && c.DateRegisteredUtc >= rule.CreatedUtc
+                        && c.DateRegisteredUtc >= floorUtc
                         && c.Session.TeamId == team.Id
                         && c.Session.Status == SessionStatus.Active
                         // Same recent-session bound as the registration confirmation, and for the same

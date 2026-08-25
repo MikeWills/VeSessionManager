@@ -8,6 +8,26 @@ that window, or immediately if it's phase-numbered work already summarized in "C
 design rationale for any entry still lives in its linked `/docs/*.md` file, not here or in
 CLAUDE.md — this file, like CLAUDE.md's Change Log, is pointers only.
 
+- **Candidates can be emailed by hand from a session now, from templates a team writes itself (2026-08-16).** Issue #144, both PRs.
+  See `docs/candidate-email.md`. Pick candidates, start from a template, **edit the message**, send —
+  which is a shape this app did not have: every other candidate email is composed by code. The issue
+  asked for one "getting started locally" email one candidate at a time; Mike widened it twice while
+  it was being scoped (several at once, and a picker over which template to start from), so what
+  shipped is the mechanism and that email is the first template on it. Four things worth carrying
+  forward: **`EmailTemplateRenderer` gained `RenderTextAsync` rather than this growing its own
+  `Replace` chain** — that is precisely what `VeSessionInvitationService` did, and it shipped without
+  HTML-encoding (#260), with candidate names coming from the same registration intake; **the posted
+  candidate ids are re-scoped to the session inside the service**, because unscoped this sends
+  attacker-authored text from the team's own SMTP and the mail is indistinguishable from genuine (#238
+  again); **history is a `CandidateEmailSend` table, not another `...SentUtc` column**, since a team
+  will be writing its own templates in PR 2 and a column cannot be added at runtime — recorded only on
+  a delivery that succeeded, because the list is what a second pass over a session skips; and **a
+  muted team is an error here, not a quiet success**, unlike `TrySendAsync`'s deliberate
+  settle-without-doing rule, which is right for a job and wrong for someone waiting at a button. Three
+  bugs were caught by guards that already existed rather than by review, including a hidden field
+  whose name did not match its bind name — **which no send test can catch**, since a hand-built POST
+  body never reads the markup.
+
 - **VEs can be emailed, and can tell you to stop (2026-08-16).** Issue #191. See `docs/ve-email.md`.
   A message screen off the VE Directory (one team sends, over its own SMTP), contact **presence**
   icons rather than the values on the directory rows, a CAN-SPAM unsubscribe, and an opt-in
@@ -48,39 +68,39 @@ CLAUDE.md — this file, like CLAUDE.md's Change Log, is pointers only.
   costs nothing (nothing is looked up by it); and **the bell renders for every role, empty state and
   all** — a control that appears and disappears by role is one nobody learns to look at.
 
-- **A TeamAdmin could not see anything the background jobs did (2026-08-15).** Issue #86, part 3 and
-  the last of it. See `docs/audit-log.md`. `AuditLog.UserId` is null whenever a job wrote the row, and
-  `ScopeAuditLog` narrowed a TeamAdmin to "actions taken by users on my team" — so every automated
-  entry (candidates withdrawn from the feed, PII purged, Zoom/Discord cancellations, results
-  auto-marked) matched nothing and was **invisible, with nothing on the page to say so**. Not filtered
-  out as a decision: unreachable, because the row carried nothing to filter on. New nullable
-  `AuditLog.TeamId`, set at the background call sites only — a user-attributed row already scopes
-  through the person who acted, and filling both would make one question answerable two ways. Three
-  things worth carrying forward: **null means "not attributable", not "no team"** — anything acting on
-  a `VolunteerExaminer` stays null on purpose, since a VE is global here and belongs to no single
-  team; **the backfill is the difference between fixing this and fixing it going forward**, because
-  the entries anyone wants to review are already written, so the migration resolves a team for old
-  Session/Candidate/Payment rows in SQL; and **that SQL is invisible to both the compiler and EF
-  InMemory** — a backfill that resolves nothing looks exactly like one with nothing to do, which is
-  why it is driven against real SQLite. Parts 1 and 2 (the 200-row window, retention) landed in #367.
+- **A TeamAdmin could not see anything the background jobs did (2026-08-15).** Issue #86, part 3 and
+  the last of it. See `docs/audit-log.md`. `AuditLog.UserId` is null whenever a job wrote the row, and
+  `ScopeAuditLog` narrowed a TeamAdmin to "actions taken by users on my team" — so every automated
+  entry (candidates withdrawn from the feed, PII purged, Zoom/Discord cancellations, results
+  auto-marked) matched nothing and was **invisible, with nothing on the page to say so**. Not filtered
+  out as a decision: unreachable, because the row carried nothing to filter on. New nullable
+  `AuditLog.TeamId`, set at the background call sites only — a user-attributed row already scopes
+  through the person who acted, and filling both would make one question answerable two ways. Three
+  things worth carrying forward: **null means "not attributable", not "no team"** — anything acting on
+  a `VolunteerExaminer` stays null on purpose, since a VE is global here and belongs to no single
+  team; **the backfill is the difference between fixing this and fixing it going forward**, because
+  the entries anyone wants to review are already written, so the migration resolves a team for old
+  Session/Candidate/Payment rows in SQL; and **that SQL is invisible to both the compiler and EF
+  InMemory** — a backfill that resolves nothing looks exactly like one with nothing to do, which is
+  why it is driven against real SQLite. Parts 1 and 2 (the 200-row window, retention) landed in #367.
 
-- **Refunds are issued from the app now, not the Square dashboard (2026-08-15).** Issue #375. See
-  `docs/square-refunds.md`. Full or partial, from a candidate's payment and from Unmatched Payments —
-  where the dismiss modal's bold "this does not refund the payment" finally has an alternative to
-  point at. **The blocker turned out to be half a blocker**: `RefundPayment` is keyed by Square's
-  *payment* id and only the order id was stored, but `SquareWebhookHandler` had been parsing the
-  payment id all along and discarding it on the matched branch — one assignment plus a nullable
-  column. It still only helps going forward; nothing backfills the old rows, and the UI says so.
-  **The thing most likely to be carried in by accident: a refund is not finished when the call
-  returns.** Square answers `PENDING` and takes up to 14 days for a card, and can still end
-  `REJECTED` — so there is an hourly `RefundStatusJob`, success says "submitted" rather than
-  "refunded", and a transport failure deliberately does *not* settle the row (settling is what makes
-  the job stop looking, which would strand a refund Square had accepted). Three more worth carrying:
-  refunding **must not** move a Payment off `Paid` (the "Unpaid and no link" scan would issue the
-  candidate a fresh checkout link), in-flight refunds count against the refundable balance even
-  though Square's own rule counts only completed ones, and the ceiling is `SquareAmountPaidUsd`, not
-  `Amount` — a $5 youth payment against a $15 row is routine here. Still unverified: whether each
-  team's existing token carries `PAYMENTS_WRITE`, which only a live Sandbox call settles.
+- **Refunds are issued from the app now, not the Square dashboard (2026-08-15).** Issue #375. See
+  `docs/square-refunds.md`. Full or partial, from a candidate's payment and from Unmatched Payments —
+  where the dismiss modal's bold "this does not refund the payment" finally has an alternative to
+  point at. **The blocker turned out to be half a blocker**: `RefundPayment` is keyed by Square's
+  *payment* id and only the order id was stored, but `SquareWebhookHandler` had been parsing the
+  payment id all along and discarding it on the matched branch — one assignment plus a nullable
+  column. It still only helps going forward; nothing backfills the old rows, and the UI says so.
+  **The thing most likely to be carried in by accident: a refund is not finished when the call
+  returns.** Square answers `PENDING` and takes up to 14 days for a card, and can still end
+  `REJECTED` — so there is an hourly `RefundStatusJob`, success says "submitted" rather than
+  "refunded", and a transport failure deliberately does *not* settle the row (settling is what makes
+  the job stop looking, which would strand a refund Square had accepted). Three more worth carrying:
+  refunding **must not** move a Payment off `Paid` (the "Unpaid and no link" scan would issue the
+  candidate a fresh checkout link), in-flight refunds count against the refundable balance even
+  though Square's own rule counts only completed ones, and the ceiling is `SquareAmountPaidUsd`, not
+  `Amount` — a $5 youth payment against a $15 row is routine here. Still unverified: whether each
+  team's existing token carries `PAYMENTS_WRITE`, which only a live Sandbox call settles.
 
 - **Two-factor authentication, opt-in and un-enforced on purpose (2026-08-14).** Issue #356. See
   `docs/two-factor.md`. TOTP with QR enrolment, recovery codes and an admin escape hatch. **Enforcement

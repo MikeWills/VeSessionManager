@@ -30,6 +30,18 @@ public class Candidate
     public string? FirstName { get; set; }
     public string? Email { get; set; }
 
+    /// <summary>
+    /// Issue #463 — "who's local," shown as a single "City, ST" column on the session candidate list.
+    /// Sourced from ExamTools' <c>city</c>/<c>state</c> registration fields (confirmed present on
+    /// <c>export/basic.json</c>'s applicant rows, alongside <c>addr</c>/<c>zip</c>, neither of which
+    /// is mapped — nothing needs a street address, and the issue asked for city/state only). PII,
+    /// cleared by <see cref="CandidatePiiFields.Clear"/> alongside Name/Email.
+    /// </summary>
+    public string? City { get; set; }
+
+    /// <inheritdoc cref="City"/>
+    public string? State { get; set; }
+
     /// <summary>Normally required before testing, but VECs have allowed testing without one during exceptional circumstances (e.g. federal shutdowns).</summary>
     public string? Frn { get; set; }
 
