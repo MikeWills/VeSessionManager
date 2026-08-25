@@ -286,6 +286,11 @@ tbody tr.row-highlight, tbody tr.row-highlight:hover { background: var(--amber-d
 .view-link { font-family: "IBM Plex Mono", monospace; font-size: 12px; font-weight: 600; color: var(--focus); text-decoration: none; }
 .view-link:hover { text-decoration: underline; }
 
+/* Whole-row affordance for tr[data-clickable-row] (app.js). The row-actions cell keeps the default
+   cursor rather than inheriting pointer, since tapping it opens the kebab menu, not the row. */
+tr[data-clickable-row] { cursor: pointer; }
+tr[data-clickable-row] .row-actions { cursor: default; }
+
 /* Buttons */
 /* The variant classes are listed here, not just `.btn`, because every anchor-button in this app is
    written `<a class="btn-secondary btn-sm">` — 24 of them, none carrying `.btn`. Without this they

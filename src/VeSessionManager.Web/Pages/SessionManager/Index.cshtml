@@ -113,7 +113,10 @@
         }
         @foreach (var session in Model.Sessions)
         {
-            <tr class="@(session.IsPast ? "row-past" : "")">
+            @* Tap/click anywhere in the row to open it (requested 2026-08-25) — app.js's
+               handleClickableRow follows the row's own .view-link href, ignoring the kebab menu and
+               anything inside it. *@
+            <tr class="@(session.IsPast ? "row-past" : "")" data-clickable-row>
                 <td>
                     <div class="session-title">
                         @session.TitleLine
