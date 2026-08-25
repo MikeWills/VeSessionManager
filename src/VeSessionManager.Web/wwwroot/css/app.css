@@ -430,6 +430,14 @@ tr[data-clickable-row] .row-actions { cursor: default; }
 .section-head { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin: 8px 0 12px; }
 .section-head h2 { font-size: 15px; margin: 0; font-weight: 600; }
 
+/* A row of buttons beside a section heading (Detail's "Email candidates"/"Refresh candidates",
+   VeDirectory's "Email VEs"/"Export CSV"). Was an inline `display:inline-flex` style with no wrap
+   in both places — .section-head itself wraps, but that only lets the whole action row drop below
+   the title; it does nothing for the row's own buttons overflowing a narrow phone screen, which is
+   exactly what happened (reported on ve.wx0mik.radio, "Refresh candidates" running off the edge).
+   flex-wrap here lets the buttons themselves drop onto a second line instead. */
+.header-actions { display: inline-flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+
 /* Candidate table specifics */
 .cand-name { font-weight: 600; }
 .cand-name .no-show { font-weight: 400; color: var(--ink-soft); font-style: italic; }
