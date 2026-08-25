@@ -201,6 +201,26 @@ public class Team
         !string.IsNullOrWhiteSpace(SmtpHost)
         && !string.IsNullOrWhiteSpace(SmtpUsername);
 
+    /// <summary>
+    /// When <see cref="IsEmailConfigured"/> most recently went from false to true — stamped by
+    /// <c>TeamSettingsService.UpdateSmtpAsync</c>, never by this getter (2026-08-25).
+    ///
+    /// <para><b>The one deliberate exception to this app's "no backlog on enable" rule for every
+    /// other optional integration.</b> Zoom/Discord/Square all intentionally backfill the moment
+    /// they're configured — a session ingested while Zoom was off still gets its meeting created on
+    /// the next poll, no separate step needed. Messaging is different: Mike, 2026-08-25, on getting a
+    /// registration confirmation for a candidate who signed up before email was ever turned on for a
+    /// beta team: <i>"it's not supposed to send any backlog of email."</i> See
+    /// <c>MessageRuleEligibility.FloorUtc</c>, which every trigger scanner's eligibility bound goes
+    /// through now instead of reading <c>MessageRule.CreatedUtc</c> directly.</para>
+    ///
+    /// <para>Null for a team already configured before this field existed — deliberately not
+    /// backfilled to migration time, which would wrongly hide candidates already mid-cycle with
+    /// nothing having actually turned off and back on. Null here means "no extra floor from this",
+    /// not "unknown".</para>
+    /// </summary>
+    public DateTime? EmailConfiguredUtc { get; set; }
+
     // ---- ARRL-VEC submission (#197) ----
     //
     // How this team fills in ARRL's session upload form. **ARRL only, and that is not a

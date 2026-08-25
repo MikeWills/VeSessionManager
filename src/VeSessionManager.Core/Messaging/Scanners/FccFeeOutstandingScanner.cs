@@ -35,9 +35,10 @@ public class FccFeeOutstandingScanner(AppDbContext dbContext) : IMessageTriggerS
         // Due: the anchor is at least ParameterHours old.
         var dueThresholdUtc = nowUtc.AddHours(-parameterHours);
 
-        // Not retroactive: the moment (anchor + ParameterHours) must fall at or after the rule's
-        // creation, which is the same as the anchor falling at or after (CreatedUtc - ParameterHours).
-        var earliestAnchorUtc = rule.CreatedUtc.AddHours(-parameterHours);
+        // Not retroactive: the moment (anchor + ParameterHours) must fall at or after the real floor,
+        // which is the same as the anchor falling at or after (floor - ParameterHours). See
+        // MessageRuleEligibility for what folds into that floor beyond CreatedUtc.
+        var earliestAnchorUtc = MessageRuleEligibility.FloorUtc(team, rule).AddHours(-parameterHours);
 
         var paymentCutoff = PaymentEligibilityWindow.CutoffUtc(nowUtc);
 

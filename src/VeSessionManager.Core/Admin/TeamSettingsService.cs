@@ -229,6 +229,11 @@ public class TeamSettingsService(AppDbContext dbContext, TimeProvider timeProvid
             return TeamActionResult.InvalidSmtpHost;
         }
 
+        // Read before mutation — this is the one thing EmailConfiguredUtc cares about. See its own
+        // doc comment and MessageRuleEligibility: an off-to-on transition here is a floor for every
+        // message rule, not just this save.
+        var wasConfigured = team.IsEmailConfigured;
+
         // Blank normalizes to null, matching ExamToolsBaseUrl above. Storing "" instead of null is
         // the inconsistency #279 is about: every consumer here happens to use IsNullOrWhiteSpace, so
         // it works — but a single `!= ""` comparison anywhere would then behave differently
@@ -239,6 +244,11 @@ public class TeamSettingsService(AppDbContext dbContext, TimeProvider timeProvid
         if (password is not null)
         {
             team.SmtpPassword = password;
+        }
+
+        if (!wasConfigured && team.IsEmailConfigured)
+        {
+            team.EmailConfiguredUtc = timeProvider.GetUtcNow().UtcDateTime;
         }
 
         return await SaveTeamUpdateAsync(team, "TeamSmtpCredentialsUpdated", userId, cancellationToken);

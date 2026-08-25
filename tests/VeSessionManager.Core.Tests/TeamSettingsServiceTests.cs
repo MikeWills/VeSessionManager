@@ -282,6 +282,59 @@ public class TeamSettingsServiceTests
         Assert.Null(updated.SmtpUseStartTls);
     }
 
+    /// <summary>
+    /// The watermark <c>MessageRuleEligibility.FloorUtc</c> reads for every email-channel rule
+    /// (2026-08-25) — stamped only on the actual off-to-on transition, never on a team that was
+    /// already configured, so an already-running team's history is never retroactively bounded.
+    /// </summary>
+    [Fact]
+    public async Task UpdateSmtpAsync_FirstTimeConfigured_StampsEmailConfiguredUtc()
+    {
+        await using var dbContext = CreateContext();
+        var user = await SeedUserAsync(dbContext);
+        var team = await SeedTeamAsync(dbContext);
+        Assert.Null(team.EmailConfiguredUtc);
+
+        await CreateService(dbContext).UpdateSmtpAsync(team.Id, "smtp.mailgun.org", 587, "postmaster@example.org", "secret", user.Id, CancellationToken.None);
+
+        Assert.Equal(Now, (await dbContext.Teams.SingleAsync()).EmailConfiguredUtc);
+    }
+
+    /// <summary>A team already configured has had no off-to-on transition — updating its credentials again must not move the watermark.</summary>
+    [Fact]
+    public async Task UpdateSmtpAsync_AlreadyConfigured_DoesNotRestampEmailConfiguredUtc()
+    {
+        await using var dbContext = CreateContext();
+        var user = await SeedUserAsync(dbContext);
+        var team = await SeedTeamAsync(dbContext);
+        team.SmtpHost = "smtp.mailgun.org";
+        team.SmtpUsername = "postmaster@example.org";
+        team.EmailConfiguredUtc = Now.AddDays(-30);
+        await dbContext.SaveChangesAsync();
+
+        await CreateService(dbContext).UpdateSmtpAsync(team.Id, "smtp.mailgun.org", 587, "postmaster@example.org", "new-secret", user.Id, CancellationToken.None);
+
+        Assert.Equal(Now.AddDays(-30), (await dbContext.Teams.SingleAsync()).EmailConfiguredUtc);
+    }
+
+    /// <summary>Clearing credentials back to unconfigured, then re-entering them, is itself an off-to-on transition and re-stamps.</summary>
+    [Fact]
+    public async Task UpdateSmtpAsync_ReconfiguredAfterBeingCleared_RestampsEmailConfiguredUtc()
+    {
+        await using var dbContext = CreateContext();
+        var user = await SeedUserAsync(dbContext);
+        var team = await SeedTeamAsync(dbContext);
+        team.EmailConfiguredUtc = Now.AddDays(-30);
+        await dbContext.SaveChangesAsync();
+        // Cleared back to unconfigured.
+        await CreateService(dbContext).UpdateSmtpAsync(team.Id, null, null, null, null, user.Id, CancellationToken.None);
+        Assert.False((await dbContext.Teams.SingleAsync()).IsEmailConfigured);
+
+        await CreateService(dbContext).UpdateSmtpAsync(team.Id, "smtp.mailgun.org", 587, "postmaster@example.org", "secret", user.Id, CancellationToken.None);
+
+        Assert.Equal(Now, (await dbContext.Teams.SingleAsync()).EmailConfiguredUtc);
+    }
+
     [Fact]
     public async Task UpdateEmailSettingsAsync_NoExistingRow_CreatesOne()
     {
