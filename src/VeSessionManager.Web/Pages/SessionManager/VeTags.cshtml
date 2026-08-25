@@ -108,6 +108,13 @@ else
             <div class="field">
                 <label for="name">Name</label>
                 <input id="name" name="name" required placeholder="e.g. Team member" />
+                @* .field-row bottom-aligns its columns (issue #466) so the button lines up with the
+                   inputs, not the labels — which only works when every field is the same height.
+                   Order and Color both carry a hint line below their input; Name doesn't need one,
+                   so it renders an invisible one to match, rather than losing the row's own
+                   bottom-alignment for every other field-row on the site. aria-hidden since a blank
+                   line has nothing to announce. *@
+                <span class="session-sub" aria-hidden="true">&nbsp;</span>
             </div>
             <div class="field">
                 <label for="sortOrder">Order</label>
