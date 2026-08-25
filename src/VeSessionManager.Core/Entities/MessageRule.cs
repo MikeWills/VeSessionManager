@@ -96,10 +96,16 @@ public class MessageRule
     /// that is the right default.
     ///
     /// <para><b>Cc discloses.</b> Everyone on a fan-out sees this address, and the person at it sees
-    /// every recipient's name in the To line if a client shows it. Worse, they cannot unsubscribe —
-    /// the footer's link belongs to the To recipient — so a Cc on candidate-facing mail is a
-    /// standing copy nobody can stop. Deliberately not offered on the admin form for a
-    /// candidate-facing rule.</para>
+    /// every recipient's name in the To line if a client shows it. They also cannot unsubscribe —
+    /// the footer's link belongs to the To recipient — so a Cc on candidate-facing mail is a standing
+    /// copy nobody can stop.</para>
+    ///
+    /// <para><b>Allowed on candidate-facing rules (reversed 2026-08-25).</b> Originally refused
+    /// outright by <c>MessageRuleAdminService</c> on the reasoning above. Mike: <i>"I don't care, I
+    /// want to CC my email in this case so they can see that I know."</i> The visibility some teams
+    /// want is exactly what the guard was refusing — a candidate seeing the team is watching is the
+    /// point, not an accident. The admin form still hints at the unsubscribe/disclosure tradeoff; it
+    /// no longer blocks it.</para>
     /// </summary>
     public string? CcAddress { get; set; }
 

@@ -129,7 +129,8 @@ public class SmtpEmailSender(SystemSettingsService systemSettingsService, ILogge
         }
 
         // Cc is visible, and only a message rule that explicitly asked for one ever sets it (#401
-        // PR4) — see EmailMessage.CcAddress for why that is deliberately hard to switch on.
+        // PR4) — see EmailMessage.CcAddress for the disclosure/unsubscribe tradeoff a team accepts
+        // by setting one.
         if (!string.IsNullOrWhiteSpace(effectiveMessage.CcAddress))
         {
             mimeMessage.Cc.Add(MailboxAddress.Parse(effectiveMessage.CcAddress));

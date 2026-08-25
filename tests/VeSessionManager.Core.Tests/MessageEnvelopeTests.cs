@@ -11,11 +11,13 @@ namespace VeSessionManager.Core.Tests;
 /// <summary>
 /// Per-rule Reply-To, Cc and Bcc (#401 PR4).
 ///
-/// <para>Three constraints are designed in rather than left to whoever fills the form: <b>there is no
+/// <para>Two constraints are designed in rather than left to whoever fills the form: <b>there is no
 /// From</b> (SPF/DKIM/DMARC on a domain this app does not control, and getting it wrong sends mail to
-/// spam silently), <b>a Cc cannot go on candidate mail</b> (the person copied cannot unsubscribe, and
-/// every candidate sees the address), and <b>copies go once per run</b> rather than once per
-/// recipient.</para>
+/// spam silently), and <b>copies go once per run</b> rather than once per recipient. A third — <b>a
+/// Cc cannot go on candidate mail</b> (the person copied cannot unsubscribe, and every candidate sees
+/// the address) — was removed 2026-08-25: Mike wants exactly that visibility on some rules, so it is
+/// now a tradeoff the team accepts rather than a blocked configuration. See
+/// <see cref="ACcOnCandidateMail_IsAllowed"/>.</para>
 /// </summary>
 public class MessageEnvelopeTests
 {
@@ -289,9 +291,14 @@ public class MessageEnvelopeTests
             team.Id, MessageTrigger.CandidateRegistered, "A rule", "Subject", "Confirm", null, recipient, userId, CancellationToken.None,
             channel, channel == MessageChannel.Discord ? 42UL : null, MessageFanOut.PerRecipient, envelope);
 
-    /// <summary>A Cc'd person cannot unsubscribe, and every candidate sees the address.</summary>
+    /// <summary>
+    /// Used to be refused outright — a Cc'd person cannot unsubscribe, and every candidate sees the
+    /// address. Reversed 2026-08-25: Mike wants exactly that visibility on some rules ("I want to CC
+    /// my email in this case so they can see that I know"), so the tradeoff is now the team's call,
+    /// not a blocked configuration.
+    /// </summary>
     [Fact]
-    public async Task ACcOnCandidateMail_IsRefused()
+    public async Task ACcOnCandidateMail_IsAllowed()
     {
         await using var dbContext = CreateContext();
         var team = await SeedTeamAsync(dbContext);
@@ -300,7 +307,7 @@ public class MessageEnvelopeTests
         var result = await CreateWithEnvelopeAsync(dbContext, team, userId,
             MessageEnvelope.Default with { CcAddress = "vec@example.org" });
 
-        Assert.Equal(MessageRuleActionResult.CcNotAllowedOnCandidateMail, result);
+        Assert.Equal(MessageRuleActionResult.Success, result);
     }
 
     /// <summary>But it is fine on a rule that writes to the team's own inbox — nobody is being disclosed to a candidate there.</summary>

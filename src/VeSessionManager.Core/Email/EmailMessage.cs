@@ -28,7 +28,8 @@ public record EmailMessage(
     ///
     /// <para>Distinct from <see cref="BccAddress"/> in the way that matters: everyone on the message
     /// sees this address, and the person at it cannot unsubscribe, because the footer's link belongs
-    /// to the To recipient. That is why the admin form does not offer it on candidate-facing rules,
-    /// and why it is null everywhere else in the app.</para>
+    /// to the To recipient. Allowed on candidate-facing rules too since 2026-08-25 — see
+    /// <c>MessageRule.CcAddress</c> — so this is null everywhere except a rule that deliberately set
+    /// one.</para>
     /// </summary>
     string? CcAddress = null);

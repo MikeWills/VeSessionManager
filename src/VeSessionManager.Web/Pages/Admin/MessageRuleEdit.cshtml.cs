@@ -172,8 +172,6 @@ public class MessageRuleEditModel(
             MessageRuleActionResult.EnvelopeNeedsEmail =>
                 "Reply-To, Cc and Bcc only apply to email — nobody is addressed on a Discord post.",
             MessageRuleActionResult.ReplyToRequired => "Pick an address for replies, or choose one of the other two options.",
-            MessageRuleActionResult.CcNotAllowedOnCandidateMail =>
-                "A Cc on candidate mail cannot unsubscribe and is visible to everyone who gets it. Use Bcc instead.",
             _ => "Rule not found."
         };
         return RedirectToPage(new { id = Id });
