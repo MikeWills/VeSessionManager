@@ -297,10 +297,13 @@ public class MessageRuleAdminService(AppDbContext dbContext, TimeProvider timePr
     /// Switches a rule on or off, keeping it on the screen — "not right now", where
     /// <see cref="DeleteAsync"/> is "we do not do this".
     ///
-    /// <para>Disabling settles nothing: no markers are written, so re-enabling picks up whoever is
-    /// eligible <i>at that moment</i>, bounded as always by <c>CreatedUtc</c>. Somebody whose moment
-    /// passed while it was off is not chased retroactively, which is the same promise the rule made
-    /// when it was created.</para>
+    /// <para>Disabling settles nothing: no markers are written. Re-enabling used to pick up whoever
+    /// was eligible <i>at that moment</i>, bounded only by <c>CreatedUtc</c> — which meant somebody
+    /// who became eligible while it was off <i>was</i> chased retroactively, despite this doc comment
+    /// once claiming otherwise. Fixed 2026-08-25 (Mike: "if a message is off then I turn on, it's not
+    /// supposed to send backlog either") by stamping <see cref="MessageRule.EnabledSinceUtc"/> on an
+    /// actual off-to-on transition — every scanner reads it through
+    /// <see cref="Messaging.MessageRuleEligibility.FloorUtc"/> now, not <c>CreatedUtc</c> alone.</para>
     /// </summary>
     public async Task<MessageRuleActionResult> SetEnabledAsync(int messageRuleId, bool enabled, int userId, CancellationToken cancellationToken)
     {
@@ -310,9 +313,18 @@ public class MessageRuleAdminService(AppDbContext dbContext, TimeProvider timePr
             return MessageRuleActionResult.NotFound;
         }
 
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+
+        // Only an actual off-to-on transition moves the floor. Stamping it on every call — including
+        // a redundant "enable" on an already-enabled rule — would push the floor forward each time
+        // and start silently hiding candidates who'd been legitimately waiting since the real
+        // enable moment.
+        if (enabled && !rule.IsEnabled)
+        {
+            rule.EnabledSinceUtc = now;
+        }
         rule.IsEnabled = enabled;
 
-        var now = timeProvider.GetUtcNow().UtcDateTime;
         dbContext.AddAuditLog(userId, enabled ? "MessageRuleEnabled" : "MessageRuleDisabled", nameof(MessageRule), rule.Id,
             $"Team {rule.TeamId} rule '{rule.Name}' on {rule.Trigger} {(enabled ? "enabled" : "disabled")}.", now);
         await dbContext.SaveChangesAsync(cancellationToken);

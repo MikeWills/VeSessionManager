@@ -135,6 +135,19 @@ public class MessageRule
     public bool IsEnabled { get; set; } = true;
 
     /// <summary>
+    /// When this rule most recently switched from disabled to enabled — null if it has been enabled
+    /// since it was created, in which case <see cref="CreatedUtc"/> alone is the floor. Stamped by
+    /// <c>MessageRuleAdminService.SetEnabledAsync</c>, only on an actual off-to-on transition.
+    ///
+    /// <para>Added 2026-08-25 to close a real gap: switching a rule back on used to bound eligibility
+    /// by <see cref="CreatedUtc"/> alone, so anyone who became eligible while it sat disabled got
+    /// swept up the moment it was re-enabled — exactly the backlog-on-enable this field, together
+    /// with <see cref="Team.EmailConfiguredUtc"/>, now closes. See
+    /// <see cref="Messaging.MessageRuleEligibility"/>.</para>
+    /// </summary>
+    public DateTime? EnabledSinceUtc { get; set; }
+
+    /// <summary>
     /// <b>Load-bearing, not bookkeeping.</b> Every trigger scan is bounded by this: a subject whose
     /// trigger moment fell before the rule existed is never returned. That is what makes "adding a
     /// rule never fires it for anyone already past the moment" true by construction rather than by
@@ -143,6 +156,12 @@ public class MessageRule
     ///
     /// <para>How it bounds depends on the mechanism: a state trigger compares the stored moment
     /// directly, a time-relative trigger compares <c>anchor ± ParameterHours</c>. See the scanners.</para>
+    ///
+    /// <para><b>Not the whole floor any more (2026-08-25).</b> A scanner should read
+    /// <see cref="Messaging.MessageRuleEligibility.FloorUtc"/> rather than this field directly — it
+    /// folds in <see cref="EnabledSinceUtc"/> and, for an email rule, <see cref="Team.EmailConfiguredUtc"/>
+    /// too, so a rule switched back on (or a team's email configured for the first time) doesn't
+    /// retroactively chase whoever became eligible while it was off.</para>
     /// </summary>
     public DateTime CreatedUtc { get; set; }
 

@@ -35,6 +35,7 @@ public class LicenseGrantedScanner(AppDbContext dbContext, ILogger<LicenseGrante
             .Where(r => r.MessageRuleId == rule.Id && MessageRuleOutcomes.Terminal.Contains(r.Outcome))
             .Select(r => r.SubjectId);
 
+        var floorUtc = MessageRuleEligibility.FloorUtc(team, rule);
         var granted = await dbContext.Candidates
             .Include(c => c.Session)
             .Where(c => c.PiiPurgedUtc == null
@@ -45,7 +46,7 @@ public class LicenseGrantedScanner(AppDbContext dbContext, ILogger<LicenseGrante
                         // status says — and {{CallSign}} is the whole point of this trigger.
                         && c.CallSign != null
                         && c.LicenseGrantDateUtc != null
-                        && c.LicenseGrantDateUtc >= rule.CreatedUtc
+                        && c.LicenseGrantDateUtc >= floorUtc
                         && c.Session.TeamId == team.Id
                         && c.Session.Status == SessionStatus.Active
                         && (onlySessionId == null || c.SessionId == onlySessionId))

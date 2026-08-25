@@ -57,6 +57,9 @@ which is "here's what was built and why, mostly historical.")
   in Known Constraints) — always in the method that needs them, or a lazily-evaluated `IsConfigured`
   getter. A client's `IsConfigured` must reflect "an admin actually did something," not just "a
   shipped appsettings default happens to be non-empty" (see the SmtpUsername gotcha below).
+  **Messaging is the one deliberate exception (2026-08-25):** a person's inbox, not a resource that
+  has to exist, so a `MessageRule` does *not* backfill the moment email gets configured or a rule is
+  re-enabled — see `MessageRuleEligibility.FloorUtc` and `docs/trigger-points.md`'s own section on it.
 - **Domain hierarchy: VEC ⇒ Team ⇒ VE, not the reverse.** `Team` (the group of VEs operating a
   deployment, holding all integration credentials) and `Vec` (the FCC-recognized coordinating org, a
   shared/global reference table — one real-world "ARRL" row, not one per team) are siblings, not
@@ -125,6 +128,21 @@ all — it's already one-line-summarized in "Current State" above, so a separate
 would be pure duplication — and goes straight to `CHANGELOG.md` instead. Non-phase entries (fixes,
 redesigns, hardening passes) start here and move to `CHANGELOG.md` once the section is at/over the
 cap and a newer entry needs to be added; oldest goes first.
+
+- **No backlog on enable, for messaging specifically (2026-08-25).** See `docs/trigger-points.md`'s
+  "MessageRuleEligibility" section. Every scanner used to bound eligibility by `MessageRule.CreatedUtc`
+  alone — right for "a new rule shouldn't fire for people already past the moment," but it missed two
+  other off-to-on transitions: a rule switched back on, and a team's email configured for the first
+  time. Mike, after a beta candidate got a registration confirmation the moment SMTP was turned on:
+  *"it's not supposed to send any backlog of email"* / *"if a message is off then I turn on, it's not
+  supposed to send backlog either."* `MessageRuleEligibility.FloorUtc` now folds in
+  `MessageRule.EnabledSinceUtc` (stamped only on an actual disabled→enabled transition) and, for an
+  email rule, `Team.EmailConfiguredUtc` (stamped only on an actual unconfigured→configured transition)
+  — both null-by-default and never backfilled, so an already-running team or already-enabled rule sees
+  no behavior change. **Deliberately narrower than "no backlog" everywhere**: Zoom/Discord/Square still
+  backfill the moment they're configured, and that stays right — those create a resource that has to
+  exist regardless of when config caught up, where messaging is telling a person about something old
+  the moment notifications get switched on.
 
 - **A team can be deactivated, or deleted outright (2026-08-21).** See `docs/team-lifecycle.md`.
   Deactivate stops the app polling and sending and is one click back; delete removes the team and
@@ -251,26 +269,6 @@ cap and a newer entry needs to be added; oldest goes first.
   would silently stop the notice with nothing looking wrong; and **only `Sent`/`Suppressed` are
   terminal**, so a failed send is logged *and* retried, with the retry updating the row rather than
   inserting past the unique index.
-
-- **Candidates can be emailed by hand from a session now, from templates a team writes itself (2026-08-16).** Issue #144, both PRs.
-  See `docs/candidate-email.md`. Pick candidates, start from a template, **edit the message**, send —
-  which is a shape this app did not have: every other candidate email is composed by code. The issue
-  asked for one "getting started locally" email one candidate at a time; Mike widened it twice while
-  it was being scoped (several at once, and a picker over which template to start from), so what
-  shipped is the mechanism and that email is the first template on it. Four things worth carrying
-  forward: **`EmailTemplateRenderer` gained `RenderTextAsync` rather than this growing its own
-  `Replace` chain** — that is precisely what `VeSessionInvitationService` did, and it shipped without
-  HTML-encoding (#260), with candidate names coming from the same registration intake; **the posted
-  candidate ids are re-scoped to the session inside the service**, because unscoped this sends
-  attacker-authored text from the team's own SMTP and the mail is indistinguishable from genuine (#238
-  again); **history is a `CandidateEmailSend` table, not another `...SentUtc` column**, since a team
-  will be writing its own templates in PR 2 and a column cannot be added at runtime — recorded only on
-  a delivery that succeeded, because the list is what a second pass over a session skips; and **a
-  muted team is an error here, not a quiet success**, unlike `TrySendAsync`'s deliberate
-  settle-without-doing rule, which is right for a job and wrong for someone waiting at a button. Three
-  bugs were caught by guards that already existed rather than by review, including a hidden field
-  whose name did not match its bind name — **which no send test can catch**, since a hand-built POST
-  body never reads the markup.
 
 Everything through Phase 0-10's initial build (ExamTools ingestion, Zoom/Discord, Square, email
 notifications, FCC ULS watcher, payment reminders, VE tracking, VEC submission tracker, admin
