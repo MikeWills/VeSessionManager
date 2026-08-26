@@ -369,15 +369,7 @@ public class CandidateDetailModel(
 
     private static RefundRow ToRefundRow(Refund refund)
     {
-        var (chipClass, chipLabel) = refund.Status switch
-        {
-            RefundStatus.Completed => ("chip-green", "Refunded"),
-            RefundStatus.Rejected => ("chip-red", "Rejected by Square"),
-            RefundStatus.Failed => ("chip-red", "Failed"),
-            // Submitting and Pending read the same to a user — both mean "Square has it, wait" — and
-            // the difference between them (whether our call got an answer) is ours, not theirs.
-            _ => ("chip-amber", "Pending at Square")
-        };
+        var (chipClass, chipLabel) = SessionChips.Refund(refund.Status)!.Value;
 
         return new RefundRow(
             refund.Id,

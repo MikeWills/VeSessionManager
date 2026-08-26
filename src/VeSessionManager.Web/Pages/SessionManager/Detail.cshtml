@@ -217,6 +217,13 @@
                 </td>
                 <td data-sort-value="@candidate.PaymentChipLabel">
                     <span class="chip @candidate.PaymentChipClass">@candidate.PaymentChipLabel</span>
+                    @* Payment.Status stays "Paid" forever once refunded — see SessionChips.Refund's
+                       own doc comment — so without this a refunded candidate read identically to one
+                       who was never refunded. *@
+                    @if (candidate.RefundChipLabel is not null)
+                    {
+                        <span class="chip @candidate.RefundChipClass">@candidate.RefundChipLabel</span>
+                    }
                     @if (candidate.RefundRequested)
                     {
                         <span class="refund-tag">Refund requested</span>

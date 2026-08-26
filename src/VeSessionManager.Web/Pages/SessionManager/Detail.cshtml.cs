@@ -476,6 +476,8 @@ public class DetailModel(
             ?? candidate.Payments.OrderByDescending(p => p.CreatedUtc).FirstOrDefault();
 
         var (paymentClass, paymentLabel) = SessionChips.Payment(primaryPayment?.Status);
+        var latestRefund = primaryPayment?.Refunds.OrderByDescending(r => r.RequestedUtc).FirstOrDefault();
+        var refundChip = SessionChips.Refund(latestRefund?.Status);
 
         var meterSegments = candidate.ApplicationStatus switch
         {
@@ -520,6 +522,8 @@ public class DetailModel(
             statusLabel,
             paymentClass,
             paymentLabel,
+            refundChip?.Class,
+            refundChip?.Label,
             primaryPayment?.RefundRequested ?? false,
             amountMismatchLine,
             candidate.Tested,
@@ -578,6 +582,14 @@ public class DetailModel(
         string StatusLabel,
         string PaymentChipClass,
         string PaymentChipLabel,
+        /// <summary>
+        /// The primary payment's most recent <c>Refund</c> row, rendered beside the Payment chip —
+        /// null when there is no refund at all, which is most rows. Payment.Status stays "Paid"
+        /// forever once refunded (deliberately — see SessionChips.Refund's own doc comment), so
+        /// without this a refunded candidate read identically to one who was never refunded.
+        /// </summary>
+        string? RefundChipClass,
+        string? RefundChipLabel,
         bool RefundRequested,
         string? AmountMismatchLine,
         bool Tested,
