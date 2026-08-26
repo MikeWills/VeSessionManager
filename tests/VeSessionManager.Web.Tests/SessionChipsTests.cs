@@ -190,4 +190,24 @@ public class SessionChipsTests
         Assert.Equal("Submitted",
             SessionChips.VecSubmission(SessionStatus.Active, VecSubmissionStatus.Submitted, hasStarted: false).Label);
     }
+
+    /// <summary>
+    /// The refund chip (2026-08-26) — added to the session roster, which showed nothing at all for a
+    /// refunded candidate because Payment.Status deliberately never leaves Paid. Null means no refund
+    /// exists, and is the only case that renders nothing; every real RefundStatus renders something.
+    /// </summary>
+    [Fact]
+    public void TheRefundChipCoversEveryStatusAndTheNoRefundCase()
+    {
+        Assert.Null(SessionChips.Refund(null));
+
+        Assert.Equal("Refunded", SessionChips.Refund(RefundStatus.Completed)!.Value.Label);
+        Assert.Equal("Rejected by Square", SessionChips.Refund(RefundStatus.Rejected)!.Value.Label);
+        Assert.Equal("Failed", SessionChips.Refund(RefundStatus.Failed)!.Value.Label);
+
+        // Submitting and Pending read identically — the difference between them is whether our own
+        // call to Square got an answer back, not something a Session Manager needs to act on.
+        Assert.Equal("Pending at Square", SessionChips.Refund(RefundStatus.Submitting)!.Value.Label);
+        Assert.Equal("Pending at Square", SessionChips.Refund(RefundStatus.Pending)!.Value.Label);
+    }
 }

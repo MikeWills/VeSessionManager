@@ -102,6 +102,28 @@ public static class SessionChips
         _ => ("chip-neutral", "Not applicable")
     };
 
+    /// <summary>
+    /// A refund's state — deliberately about a single <c>Refund</c> row, not the <c>Payment</c> it
+    /// came off. There is no <c>PaymentStatus.Refunded</c> and there should not be: refunding never
+    /// moves a Payment off <c>Paid</c> (see docs/square-refunds.md — the app would otherwise generate
+    /// a fresh checkout link for the person just refunded), so refunded-ness is only ever visible
+    /// through these rows. Null in, null out — the common case, no refund at all — so a caller with
+    /// nothing to show can skip the chip entirely rather than rendering an empty one.
+    ///
+    /// <para>Written out once on Candidate Detail before 2026-08-26; the session roster never showed
+    /// it at all, which read as "Paid" even against a candidate who had already been refunded.</para>
+    /// </summary>
+    public static (string Class, string Label)? Refund(RefundStatus? status) => status switch
+    {
+        null => null,
+        RefundStatus.Completed => ("chip-green", "Refunded"),
+        RefundStatus.Rejected => ("chip-red", "Rejected by Square"),
+        RefundStatus.Failed => ("chip-red", "Failed"),
+        // Submitting and Pending read the same to a user — both mean "Square has it, wait" — and the
+        // difference between them (whether our own call got an answer back) is ours, not theirs.
+        _ => ("chip-amber", "Pending at Square")
+    };
+
     // ---- Sort keys ---------------------------------------------------------------------------
 
     /// <summary>
