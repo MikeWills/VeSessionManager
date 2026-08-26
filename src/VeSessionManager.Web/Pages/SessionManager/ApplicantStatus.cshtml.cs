@@ -190,7 +190,6 @@ public class ApplicantStatusModel(
             c.Session.ScheduledStartUtc.ToString("o", CultureInfo.InvariantCulture),
             LicenseClassFormatter.FormatTransition(c.InitialLicenseClass, c.NewLicenseClass) ?? "—",
             FccStatusLabel(c),
-            FccFeeLabel(c),
             // Formatted raw, NOT through EasternTimeFormatter like the session date above — and the
             // difference is not stylistic. Every FCC date arrives date-only and is stamped at UTC
             // midnight by ExamToolsUlsLookupClient.AsUtcDate, so it already *is* a wall-clock date;
@@ -259,17 +258,6 @@ public class ApplicantStatusModel(
                 _ => "Application Received/Processing"
             };
 
-    /// <summary>Separate from FccStatusLabel — FccPaymentStatus (also from HS.dat) answers the fee question specifically, since a candidate can be Application Received/Processing with the fee either confirmed or still unverified.</summary>
-    private static string FccFeeLabel(Candidate c) =>
-        c.ApplicationStatus == CandidateApplicationStatus.Unmatched
-            ? "—"
-            : c.FccPaymentStatus switch
-            {
-                FccApplicationPaymentStatus.Paid => "Paid",
-                FccApplicationPaymentStatus.PendingVerification => "Pending",
-                _ => "—"
-            };
-
     private RecentlyIssuedRow ToRecentlyIssuedRow(Candidate c) =>
         new(
             c.Id,
@@ -291,7 +279,7 @@ public class ApplicantStatusModel(
     // click-to-sort headers (see app.js). "MMM d, yyyy" sorts alphabetically as text — Apr before
     // Mar — so a date column has to sort on something round-trippable instead of what it displays.
     /// <param name="ApplicationReceivedLine">The date FCC entered the application — what "days pending" counts from, so the reader can see the anchor and not just the elapsed number. "—" while still Unmatched, because FCC has nothing on file yet.</param>
-    public record PendingRow(int CandidateId, int SessionId, string TeamName, string Name, string Frn, string SessionDateLine, string SessionDateSortValue, string LicenseClassLine, string StatusLabel, string FeeLabel, string ApplicationReceivedLine, string ApplicationReceivedSortValue, int? DaysPending, string DaysPendingCssClass, string? LicenseUrl);
+    public record PendingRow(int CandidateId, int SessionId, string TeamName, string Name, string Frn, string SessionDateLine, string SessionDateSortValue, string LicenseClassLine, string StatusLabel, string ApplicationReceivedLine, string ApplicationReceivedSortValue, int? DaysPending, string DaysPendingCssClass, string? LicenseUrl);
 
     public record RecentlyIssuedRow(int CandidateId, int SessionId, string TeamName, string Name, string SessionDateLine, string SessionDateSortValue, string CallSign, string LicenseClassLine, string GrantDateLine, string GrantDateSortValue, string? LicenseUrl);
 }
