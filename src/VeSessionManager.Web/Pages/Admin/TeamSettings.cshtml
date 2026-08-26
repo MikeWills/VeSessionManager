@@ -55,9 +55,12 @@ else
         <div class="section-head"><h2>Integrations</h2></div>
         <form method="post" asp-page-handler="UpdateIntegrationSwitches">
             <input type="hidden" name="TeamId" value="@Model.TeamId" />
-            <div class="field" style="flex-direction:row; align-items:center; gap:8px; max-width:520px;">
-                <input id="integrationOverridesEnabled" name="integrationOverridesEnabled" type="checkbox" value="true"
-                       checked="@Model.Team.IntegrationOverridesEnabled" style="width:auto;" data-toggle-panel="integrationSwitches" />
+            <div class="field" style="flex-direction:row; align-items:center; gap:12px; max-width:520px;">
+                <span class="switch">
+                    <input id="integrationOverridesEnabled" name="integrationOverridesEnabled" type="checkbox" value="true"
+                           checked="@Model.Team.IntegrationOverridesEnabled" data-toggle-panel="integrationSwitches" />
+                    <span class="slider" aria-hidden="true"></span>
+                </span>
                 <label for="integrationOverridesEnabled" style="margin:0;">Mute some integrations for this team</label>
             </div>
             <p class="session-sub">
@@ -67,20 +70,32 @@ else
 
             <div id="integrationSwitches" style="@(Model.Team.IntegrationOverridesEnabled ? "" : "display:none;")">
                 <div class="meta-grid" style="margin-top:12px;">
-                    <div class="field" style="flex-direction:row; align-items:center; gap:8px; max-width:200px;">
-                        <input id="zoomEnabled" name="zoomEnabled" type="checkbox" value="true" checked="@Model.Team.ZoomEnabled" style="width:auto;" />
+                    <div class="field" style="flex-direction:row; align-items:center; gap:12px; max-width:200px;">
+                        <span class="switch">
+                            <input id="zoomEnabled" name="zoomEnabled" type="checkbox" value="true" checked="@Model.Team.ZoomEnabled" />
+                            <span class="slider" aria-hidden="true"></span>
+                        </span>
                         <label for="zoomEnabled" style="margin:0;">Zoom</label>
                     </div>
-                    <div class="field" style="flex-direction:row; align-items:center; gap:8px; max-width:200px;">
-                        <input id="discordEnabled" name="discordEnabled" type="checkbox" value="true" checked="@Model.Team.DiscordEnabled" style="width:auto;" />
+                    <div class="field" style="flex-direction:row; align-items:center; gap:12px; max-width:200px;">
+                        <span class="switch">
+                            <input id="discordEnabled" name="discordEnabled" type="checkbox" value="true" checked="@Model.Team.DiscordEnabled" />
+                            <span class="slider" aria-hidden="true"></span>
+                        </span>
                         <label for="discordEnabled" style="margin:0;">Discord</label>
                     </div>
-                    <div class="field" style="flex-direction:row; align-items:center; gap:8px; max-width:200px;">
-                        <input id="squareEnabled" name="squareEnabled" type="checkbox" value="true" checked="@Model.Team.SquareEnabled" style="width:auto;" />
+                    <div class="field" style="flex-direction:row; align-items:center; gap:12px; max-width:200px;">
+                        <span class="switch">
+                            <input id="squareEnabled" name="squareEnabled" type="checkbox" value="true" checked="@Model.Team.SquareEnabled" />
+                            <span class="slider" aria-hidden="true"></span>
+                        </span>
                         <label for="squareEnabled" style="margin:0;">Square</label>
                     </div>
-                    <div class="field" style="flex-direction:row; align-items:center; gap:8px; max-width:200px;">
-                        <input id="emailEnabled" name="emailEnabled" type="checkbox" value="true" checked="@Model.Team.EmailEnabled" style="width:auto;" />
+                    <div class="field" style="flex-direction:row; align-items:center; gap:12px; max-width:200px;">
+                        <span class="switch">
+                            <input id="emailEnabled" name="emailEnabled" type="checkbox" value="true" checked="@Model.Team.EmailEnabled" />
+                            <span class="slider" aria-hidden="true"></span>
+                        </span>
                         <label for="emailEnabled" style="margin:0;">Email</label>
                     </div>
                 </div>
@@ -105,8 +120,11 @@ else
         <form method="post" asp-page-handler="UpdateVeEmail">
             <input type="hidden" name="TeamId" value="@Model.TeamId" />
             <label class="switch-row">
-                <input id="veEmailSubscriptions" name="veEmailSubscriptionsEnabled" type="checkbox" value="true"
-                       checked="@Model.Team.VeEmailSubscriptionsEnabled" style="width:auto;" />
+                <span class="switch">
+                    <input id="veEmailSubscriptions" name="veEmailSubscriptionsEnabled" type="checkbox" value="true"
+                           checked="@Model.Team.VeEmailSubscriptionsEnabled" />
+                    <span class="slider" aria-hidden="true"></span>
+                </span>
                 <span>Let VEs subscribe to email about this team's sessions</span>
             </label>
             @* The reason this is a switch rather than always-on: a team that does not email every VE

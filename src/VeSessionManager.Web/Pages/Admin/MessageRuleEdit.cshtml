@@ -228,9 +228,12 @@
             @* Without this, a forty-candidate session puts forty identical copies in one inbox, which
                is the point somebody filters the folder and stops looking. *@
             <div class="field">
-                <label style="font-weight:400;">
-                    <input asp-for="MonitoringCopyOncePerRun" type="checkbox" />
-                    Only send one copy, even when the message goes to many people
+                <label class="switch-row" style="font-weight:400;">
+                    <span class="switch">
+                        <input asp-for="MonitoringCopyOncePerRun" type="checkbox" />
+                        <span class="slider" aria-hidden="true"></span>
+                    </span>
+                    <span>Only send one copy, even when the message goes to many people</span>
                 </label>
                 <span class="session-sub">Recommended.</span>
             </div>

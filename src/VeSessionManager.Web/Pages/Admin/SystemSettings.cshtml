@@ -81,8 +81,11 @@
         <p class="session-sub">How often each team's ExamTools poll (+ Zoom/Discord/Square/email follow-up) runs. This is the cadence for every team, flat — the job itself wakes more often than this, but only polls a team once this interval has elapsed since that team's last run. To pull in a last-minute registrant right now, use <strong>Refresh candidates</strong> on the session, which does not wait for the schedule.</p>
 
         <div class="section-head" style="margin-top:24px;"><h2>Test Mode</h2></div>
-        <div class="field" style="max-width:400px; flex-direction:row; align-items:center; gap:8px;">
-            <input id="testModeEnabled" name="testModeEnabled" type="checkbox" value="true" checked="@Model.TestModeEnabled" style="width:auto;" />
+        <div class="field" style="max-width:400px; flex-direction:row; align-items:center; gap:12px;">
+            <span class="switch">
+                <input id="testModeEnabled" name="testModeEnabled" type="checkbox" value="true" checked="@Model.TestModeEnabled" />
+                <span class="slider" aria-hidden="true"></span>
+            </span>
             <input name="testModeEnabled" type="hidden" value="false" />
             <label for="testModeEnabled" style="margin:0;">Test mode is on — redirect every outgoing email</label>
         </div>
