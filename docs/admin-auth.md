@@ -133,6 +133,21 @@ pattern as every other external credential in this app (Zoom/Discord/Square/Emai
 `Authentication:Google:ClientId`/`Authentication:Microsoft:ClientId` yet just means that sign-in
 button doesn't render on the login page, never a startup failure.
 
+**Where to create the OAuth client** — neither handler sets a custom `CallbackPath`, so both use
+their library defaults; that path is what you register as the redirect URI:
+
+- **Google**: [Google Cloud Console](https://console.cloud.google.com) → APIs & Services →
+  Credentials → Create Credentials → OAuth client ID → Application type "Web application".
+  Authorized redirect URI: `https://ve.wx0mik.radio/signin-google` in production,
+  `https://localhost:<port>/signin-google` for local dev.
+- **Microsoft**: [Entra admin center](https://entra.microsoft.com) → App registrations → New
+  registration. Redirect URI (platform "Web"): `https://ve.wx0mik.radio/signin-microsoft` in
+  production, `https://localhost:<port>/signin-microsoft` for local dev.
+
+Client id/secret never go in `appsettings.*.json` — same rule as every other integration credential
+in this app (see CLAUDE.md's Security & Data Handling section): user-secrets locally, environment
+variables on the systemd unit in production.
+
 ```bash
 dotnet user-secrets set "Authentication:Google:ClientId" "<Google OAuth client id>" --project src/VeSessionManager.Web
 dotnet user-secrets set "Authentication:Google:ClientSecret" "<Google OAuth client secret>" --project src/VeSessionManager.Web
