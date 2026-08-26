@@ -267,6 +267,10 @@ public class SubmitToVecModel(
                 TempData["ErrorMessage"] = "This deployment has no ARRL upload address configured, so nothing was sent.";
                 return RedirectToPage(new { id = Id });
 
+            case ArrlSubmitResult.TeamOnTestExamTools:
+                TempData["ErrorMessage"] = "This team is set up against ExamTools' test site, not production, so nothing was sent to ARRL.";
+                return RedirectToPage(new { id = Id });
+
             default:
                 TempData["ErrorMessage"] = "That session could not be found.";
                 return RedirectToPage(new { id = Id });

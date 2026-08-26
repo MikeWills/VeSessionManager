@@ -1,7 +1,9 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Entities;
+using VeSessionManager.Core.ExamTools;
 
 namespace VeSessionManager.Core.VecSubmissions;
 
@@ -22,6 +24,7 @@ public class ArrlSubmissionService(
     AppDbContext dbContext,
     ArrlSubmissionClient client,
     ArrlSubmissionArchiveStore archiveStore,
+    IOptions<ExamToolsOptions> examToolsOptions,
     TimeProvider timeProvider,
     ILogger<ArrlSubmissionService> logger)
 {
@@ -64,6 +67,15 @@ public class ArrlSubmissionService(
         if (!client.IsConfigured)
         {
             return ArrlSubmitResult.NotConfigured;
+        }
+
+        // Defense in depth against ArrlSubmissionPreviewService's own gate: this is the one place a
+        // submission actually happens, and the preview screen is not the only way a caller could reach
+        // it. A team practicing against ExamTools' test site must never be able to file a real session
+        // with a real VEC, regardless of what led here.
+        if (ExamToolsCredentials.For(session.Team, examToolsOptions.Value.BaseUrl).IsTestEnvironment)
+        {
+            return ArrlSubmitResult.TeamOnTestExamTools;
         }
 
         var now = timeProvider.GetUtcNow().UtcDateTime;
@@ -223,5 +235,8 @@ public enum ArrlSubmitResult
     AlreadyAttempted,
 
     /// <summary>No upload URL on this deployment. Loud rather than quiet: a silent no-op would leave somebody believing they had filed.</summary>
-    NotConfigured
+    NotConfigured,
+
+    /// <summary>This team's effective ExamTools host is the test site, not production. A team practicing against test data must never file a real session with ARRL.</summary>
+    TeamOnTestExamTools
 }

@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Entities;
+using VeSessionManager.Core.ExamTools;
 using VeSessionManager.Core.VecSubmissions;
 using Xunit;
 
@@ -73,12 +74,17 @@ public class ArrlSubmissionServiceTests : IDisposable
         public required User User { get; init; }
     }
 
-    private World Build(string? uploadUrl = "https://example.invalid/upload", Action<Session>? configureSession = null)
+    private World Build(
+        string? uploadUrl = "https://example.invalid/upload",
+        Action<Session>? configureSession = null,
+        Action<Team>? configureTeam = null,
+        string globalExamToolsBaseUrl = "https://exam.tools")
     {
         var db = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
 
         var team = new Team { Name = "MARC", CreatedUtc = Now, ExamToolsTeamCode = "MARC" };
+        configureTeam?.Invoke(team);
         var vec = new Vec { Name = "ARRL" };
         var user = new User { Name = "Session Manager", Role = UserRole.SessionManager };
         var fee = new FeeConfiguration
@@ -100,10 +106,12 @@ public class ArrlSubmissionServiceTests : IDisposable
         var client = new ArrlSubmissionClient(new HttpClient(handler), options, NullLogger<ArrlSubmissionClient>.Instance);
         var store = new ArrlSubmissionArchiveStore(options, NullLogger<ArrlSubmissionArchiveStore>.Instance);
 
+        var examToolsOptions = Options.Create(new ExamToolsOptions { BaseUrl = globalExamToolsBaseUrl });
+
         return new World
         {
             Db = db, Handler = handler, Session = session, User = user,
-            Service = new ArrlSubmissionService(db, client, store, new FixedTimeProvider(Now), NullLogger<ArrlSubmissionService>.Instance)
+            Service = new ArrlSubmissionService(db, client, store, examToolsOptions, new FixedTimeProvider(Now), NullLogger<ArrlSubmissionService>.Instance)
         };
     }
 
@@ -199,6 +207,34 @@ public class ArrlSubmissionServiceTests : IDisposable
         Assert.Equal(ArrlSubmitResult.Unconfirmed, first);
         Assert.Equal(ArrlSubmitResult.AlreadyAttempted, second);
         Assert.Equal(1, world.Handler.Posts);
+    }
+
+    /// <summary>
+    /// Defense in depth against ArrlSubmissionPreviewService's own gate — this is the one place a
+    /// submission actually happens, so it must refuse on its own even if a caller somehow bypassed the
+    /// preview screen.
+    /// </summary>
+    [Fact]
+    public async Task ATeamOnExamToolsTestSite_IsRefusedWithoutPosting()
+    {
+        var world = Build(globalExamToolsBaseUrl: "https://examtools.dev");
+
+        var result = await SubmitAsync(world);
+
+        Assert.Equal(ArrlSubmitResult.TeamOnTestExamTools, result);
+        Assert.Equal(0, world.Handler.Posts);
+        Assert.Empty(world.Db.ArrlVecSubmissions);
+    }
+
+    [Fact]
+    public async Task ATeamsOwnOverrideToTheTestSite_IsAlsoRefused()
+    {
+        var world = Build(configureTeam: t => t.ExamToolsBaseUrl = "https://examtools.dev");
+
+        var result = await SubmitAsync(world);
+
+        Assert.Equal(ArrlSubmitResult.TeamOnTestExamTools, result);
+        Assert.Equal(0, world.Handler.Posts);
     }
 
     [Fact]

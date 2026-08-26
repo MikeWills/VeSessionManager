@@ -116,6 +116,14 @@ else if (preview.Status == ArrlSubmissionPreviewStatus.TeamNotConfigured)
         Set them under <a asp-page="/Admin/TeamSettings">Team settings &rarr; ARRL submissions</a>.
     </p>
 }
+else if (preview.Status == ArrlSubmissionPreviewStatus.TeamOnTestExamTools)
+{
+    <p><strong>@preview.TeamName is set up against ExamTools' test site, not production.</strong></p>
+    <p class="session-sub">
+        This looks like a team practicing with test data, so filing with ARRL is disabled &mdash; there
+        is no way to withdraw a real submission, and test data has no business reaching a real VEC.
+    </p>
+}
 else
 {
     <div class="section-head"><h2>@preview.SessionTitle</h2></div>

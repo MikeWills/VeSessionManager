@@ -9,4 +9,13 @@ public sealed record ExamToolsCredentials(int TeamId, string TeamCode, string Us
     public static ExamToolsCredentials For(Team team, string globalDefaultBaseUrl) =>
         new(team.Id, team.ExamToolsTeamCode!, team.ExamToolsUsername!, team.ExamToolsPassword!,
             string.IsNullOrWhiteSpace(team.ExamToolsBaseUrl) ? globalDefaultBaseUrl : team.ExamToolsBaseUrl);
+
+    /// <summary>
+    /// True when this team's <em>effective</em> host (its own override, or the deployment default) is
+    /// ExamTools' test site rather than a production one. Checked before anything is ever filed with a
+    /// real VEC (see <see cref="VecSubmissions.ArrlSubmissionPreviewService"/> and
+    /// <see cref="VecSubmissions.ArrlSubmissionService"/>) — a team practicing against test data has no
+    /// business posting a real archive to ARRL, whatever this deployment's environment is.
+    /// </summary>
+    public bool IsTestEnvironment => BaseUrl.Contains("examtools.dev", StringComparison.OrdinalIgnoreCase);
 }

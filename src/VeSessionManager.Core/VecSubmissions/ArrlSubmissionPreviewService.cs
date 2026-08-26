@@ -67,6 +67,15 @@ public class ArrlSubmissionPreviewService(
             return basics with { Status = ArrlSubmissionPreviewStatus.TeamNotConfigured };
         }
 
+        // A team running against ExamTools' test site has no business filing a real session with a
+        // real VEC — checked before anything is fetched, same as the two guards above. Whether *this
+        // deployment* is Production or not is irrelevant here: ArrlSubmissionOptions already gates that
+        // globally, and this is a second, per-team question — "is the data behind this session real."
+        if (ExamToolsCredentials.For(team, examToolsOptions.Value.BaseUrl).IsTestEnvironment)
+        {
+            return basics with { Status = ArrlSubmissionPreviewStatus.TeamOnTestExamTools };
+        }
+
         var lead = await ResolveLeadAsync(session, cancellationToken);
         var fees = session.GetFeeSummary();
 
