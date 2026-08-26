@@ -4,6 +4,13 @@
     <ProjectReference Include="..\VeSessionManager.Core\VeSessionManager.Core.csproj" />
   </ItemGroup>
 
+  <!-- Same pattern as VeSessionManager.Core's own InternalsVisibleTo — lets a page's internal-static
+       calculation logic (e.g. TransactionsReportModel.BuildRows) be tested directly, without a
+       database or a signed-in user, instead of only through the full page-rendering smoke test. -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="VeSessionManager.Web.Tests" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.Authentication.Google" Version="10.0.10" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.MicrosoftAccount" Version="10.0.10" />

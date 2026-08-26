@@ -1,0 +1,91 @@
+@page
+@model VeSessionManager.Web.Pages.SessionManager.TransactionsReportModel
+@{
+    ViewData["Title"] = "Transactions Report";
+    ViewData["ActiveNav"] = "TransactionsReport";
+    Layout = "_AppLayout";
+}
+
+<div class="page-head">
+    <div>
+        <p class="eyebrow">Reports</p>
+        <h1>Transactions Report</h1>
+    </div>
+    <a class="btn-secondary btn-sm" asp-page-handler="Export" asp-route-teamId="@Model.TeamId"
+       asp-route-dateFrom="@Model.DateFrom?.ToString("yyyy-MM-dd")" asp-route-dateTo="@Model.DateTo?.ToString("yyyy-MM-dd")">Export CSV</a>
+</div>
+
+<p class="hint" style="margin-bottom:16px;">
+    Every payment actually taken, and every refund attempted against it, tied to the candidate it was
+    for. Candidate names here are captured at payment time and survive that candidate's record being
+    cleared later — see <code>Payment.CandidateNameSnapshot</code>.
+</p>
+
+<form method="get" class="filters" style="margin-bottom:20px; align-items:flex-end;">
+    @if (Model.AvailableTeams.Count > 1)
+    {
+        <partial name="_TeamPicker" model="new VeSessionManager.Web.TeamPicker(Model.TeamId, Model.AvailableTeams, Model.TeamSummaryLabel)" />
+    }
+    <label class="item" style="display:block; padding:0;">
+        <span class="session-sub" style="display:block; margin-bottom:4px;">From</span>
+        <input type="date" name="dateFrom" value="@Model.DateFrom?.ToString("yyyy-MM-dd")" class="menu-input" />
+    </label>
+    <label class="item" style="display:block; padding:0;">
+        <span class="session-sub" style="display:block; margin-bottom:4px;">To</span>
+        <input type="date" name="dateTo" value="@Model.DateTo?.ToString("yyyy-MM-dd")" class="menu-input" />
+    </label>
+    <button type="submit" class="btn-secondary btn-sm">Apply</button>
+</form>
+
+<div class="table-scroll">
+    <table class="cards" data-sortable="transactions-report">
+        <thead>
+            <tr>
+                <th>Date</th>
+                <th>Type</th>
+                <th>Candidate</th>
+                <th>Session</th>
+                @if (Model.AvailableTeams.Count > 1)
+                {
+                    <th>Team</th>
+                }
+                <th>Amount</th>
+                <th>Status</th>
+            </tr>
+        </thead>
+        <tbody>
+            @if (Model.Rows.Count == 0)
+            {
+                <tr><td colspan="@(Model.AvailableTeams.Count > 1 ? 7 : 6)">No payments or refunds in this range.</td></tr>
+            }
+            @foreach (var row in Model.Rows)
+            {
+                <tr>
+                    <td data-sort-value="@row.DateSortValue">@row.DateLine</td>
+                    <td>@row.TypeLabel</td>
+                    <td><a asp-page="./CandidateDetail" asp-route-id="@row.CandidateId">@row.CandidateName</a></td>
+                    <td><a asp-page="./Detail" asp-route-id="@row.SessionId">@row.SessionTitle</a><div class="session-sub">@row.SessionDateLine</div></td>
+                    @if (Model.AvailableTeams.Count > 1)
+                    {
+                        <td>@row.TeamName</td>
+                    }
+                    <td class="mono" data-sort-value="@row.SignedAmountUsd.ToString("F2")">@row.AmountLine</td>
+                    <td><span class="chip @row.StatusChipClass">@row.StatusLabel</span></td>
+                </tr>
+            }
+        </tbody>
+    </table>
+</div>
+
+@if (Model.Rows.Count > 0)
+{
+    <div class="ve-panel" style="margin-top:16px; max-width:320px;">
+        <div class="meta-item"><span class="k">Total paid</span><span class="v mono">@Model.TotalPaidLine</span></div>
+        <div class="meta-item"><span class="k">Total refunded</span><span class="v mono">@Model.TotalRefundedLine</span></div>
+        <div class="meta-item"><span class="k">Net</span><span class="v mono">@Model.NetLine</span></div>
+    </div>
+    <p class="hint" style="margin-top:8px;">
+        "Total refunded" counts only refunds Square has actually completed — a Pending or Rejected one
+        has not moved money yet, so it shows on the table above but not in this total.
+    </p>
+}

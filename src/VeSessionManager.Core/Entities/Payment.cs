@@ -7,6 +7,24 @@ public class Payment
     public int CandidateId { get; set; }
     public Candidate Candidate { get; set; } = null!;
 
+    /// <summary>
+    /// The candidate's name as of the moment this Payment was created — captured once, here, because
+    /// <see cref="Candidate.Name"/> does not survive: PII purge nulls it (scheduled retention, or
+    /// immediately on a no-show/withdrawal), and a financial-transactions report tying money back to
+    /// a person breaks the moment that happens, which for a withdrawn/moved candidate can be within
+    /// days of the payment itself. Mike, 2026-08-26, on wanting a refund/payment report: "I think we
+    /// might need to keep the candidate's name potentially longer... I am comfortable with" — this is
+    /// the narrower way to get there without reopening the PII purge policy: a snapshot survives on
+    /// its own, on the one row that actually needs it, the same pattern <c>MessageRuleRun</c> already
+    /// uses to snapshot a rule's name so its history survives the rule being deleted.
+    ///
+    /// <para>Never updated after creation, and never read back into anything PII-purge cares about —
+    /// it is not <see cref="Candidate.Name"/>, just a fact about what this Payment was for. Null for
+    /// rows that predate this column; nothing backfills those beyond what the migration itself could
+    /// read from a not-yet-purged <c>Candidate.Name</c> at the time it ran.</para>
+    /// </summary>
+    public string? CandidateNameSnapshot { get; set; }
+
     /// <summary>A candidate can retest within the same session without re-registering, but owes a second fee — this is why payments are their own table instead of flat fields on Candidate.</summary>
     public PaymentReason Reason { get; set; }
 

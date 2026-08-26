@@ -121,6 +121,21 @@ which is "here's what was built and why, mostly historical.")
 One-line-or-two pointer per feature, newest first — full design rationale lives in the linked
 `/docs/*.md` file, not here. See "Documentation Structure" below for the policy this follows.
 
+- **Refunds and payments show, tie to a candidate, and report (2026-08-26).** Issue #431 (live
+  verification) and a same-day follow-on ask. See `docs/transactions-report.md`. Live-verified
+  end to end on WX0MIK: a real Square payment taken and refunded from inside the app, refund
+  accepted and settling `Pending` — recorded on #384/#431 rather than closed, since partial
+  refunds and `RefundStatusJob` settling to `Completed` are still unobserved. Two things worth
+  carrying forward: **`Payment.CandidateNameSnapshot`** exists because `Candidate.Name` does not
+  survive PII purge and a withdrawal (the report's reason to exist) is exactly what triggers that
+  purge — captured once at Payment creation, same snapshot-on-the-record pattern as
+  `MessageRuleRun`, so the Transactions Report has a name to show without reopening PII purge
+  policy; and **only a `Completed` refund subtracts from the report's totals** — `Pending`/
+  `Rejected`/`Failed` still show as rows (a record of what was attempted) but contribute zero,
+  since counting them would understate money the team actually has. ⚠️ Flagged the same day, not
+  yet built: a Square payment still `APPROVED` (not yet `COMPLETED`) can't be refunded at all — it
+  needs `CancelPayment` (void) instead, which `RefundService` has no branch for today.
+
 **Kept here vs. `CHANGELOG.md`:** this section is a bounded, recent-only window (rule of thumb: cap
 around 10 entries), since CLAUDE.md is read in full on every conversation turn and this is the one
 section that would otherwise grow forever. Phase-numbered work (Phase 0-10) is never listed here at
