@@ -167,9 +167,13 @@ h1 { font-size: 24px; margin: 0 0 4px; letter-spacing: -.01em; }
    and screen-reader behaviour come for free, and the visible slider is decoration on top of it. */
 .switch { position: relative; display: inline-block; width: 40px; height: 22px; flex-shrink: 0; vertical-align: middle; }
 .switch input { position: absolute; opacity: 0; width: 100%; height: 100%; margin: 0; cursor: pointer; }
-.switch .slider { position: absolute; inset: 0; background: var(--line-strong); border-radius: 99px; transition: background .15s ease; pointer-events: none; }
-.switch .slider::before { content: ""; position: absolute; height: 16px; width: 16px; left: 3px; top: 3px; background: var(--surface); border-radius: 50%; transition: transform .15s ease; }
-.switch input:checked + .slider { background: var(--panel); }
+/* --line-strong/--surface/--panel are panel-background tokens, near-black in dark mode — using them
+   here made the whole switch nearly invisible against a dark panel (reported 2026-08-26). The knob is
+   a fixed white in both themes, like every native switch; the track uses --ink-soft/--green, which
+   are tuned to read against panel backgrounds in both themes rather than blend into them. */
+.switch .slider { position: absolute; inset: 0; background: var(--ink-soft); border-radius: 99px; transition: background .15s ease; pointer-events: none; }
+.switch .slider::before { content: ""; position: absolute; height: 16px; width: 16px; left: 3px; top: 3px; background: #FFFFFF; border-radius: 50%; box-shadow: 0 1px 2px rgba(0,0,0,.35); transition: transform .15s ease; }
+.switch input:checked + .slider { background: var(--green); }
 .switch input:checked + .slider::before { transform: translateX(18px); }
 .switch input:focus-visible + .slider { outline: 2px solid var(--focus); outline-offset: 2px; }
 
