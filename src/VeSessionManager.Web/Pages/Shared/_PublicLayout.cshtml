@@ -6,7 +6,7 @@
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>@ViewData["Title"] - VeSessionManager</title>
+    <title>@ViewData["Title"] - VE Ops</title>
     @* Mirrors _AppLayout — render-blocking, before first paint. No server-rendered data-theme here:
        these pages have no signed-in user, so theme.js falls through to localStorage (this browser's
        last choice, including one made while signed in) and then the OS setting. *@
@@ -20,7 +20,7 @@
 </head>
 <body class="vesm">
     <header class="chassis">
-        <span class="brand"><span class="dot"></span>VESESSIONMGR</span>
+        <span class="brand"><span class="dot"></span>VE OPS</span>
         <div style="flex:1"></div>
         <button id="themeToggle" class="theme-toggle" type="button"></button>
     </header>
@@ -45,7 +45,7 @@
     </main>
 
     <footer class="vesm-footer" style="max-width:760px;">
-        <span>VE Session Manager @VeSessionManager.Core.AppVersion.Display</span>
+        <span>VE Ops @VeSessionManager.Core.AppVersion.Display</span>
         <a asp-page="/Privacy">Privacy</a>
     </footer>
 

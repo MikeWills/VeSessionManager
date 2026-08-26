@@ -121,6 +121,12 @@ which is "here's what was built and why, mostly historical.")
 One-line-or-two pointer per feature, newest first — full design rationale lives in the linked
 `/docs/*.md` file, not here. See "Documentation Structure" below for the policy this follows.
 
+- **The product's display name is "VE Ops" (2026-08-25).** Nav brand, page `<title>`, footer,
+  login page, the 2FA issuer string, and the default email `FromDisplayName`/subject lines
+  (password reset, VE self-service/email-change) all changed from "VE Session Manager"/
+  "VESESSIONMGR" to "VE Ops". **The repo, namespaces, classes, and every doc path stay
+  `VeSessionManager`** — this was a display-string-only rename, not a rebrand of the codebase.
+
 - **Refunds and payments show, tie to a candidate, and report (2026-08-26).** Issue #431 (live
   verification) and a same-day follow-on ask. See `docs/transactions-report.md`. Live-verified
   end to end on WX0MIK: a real Square payment taken and refunded from inside the app, refund

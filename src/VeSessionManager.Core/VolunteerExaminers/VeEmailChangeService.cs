@@ -133,7 +133,7 @@ public class VeEmailChangeService(
             new EmailMessage(
                 ToAddress: person.Email!,
                 FromAddress: settings.SystemSmtpFromAddress ?? settings.SystemSmtpUsername!,
-                FromDisplayName: settings.SystemSmtpFromDisplayName ?? "VE Session Manager",
+                FromDisplayName: settings.SystemSmtpFromDisplayName ?? "VE Ops",
                 ReplyToAddress: settings.SystemSmtpFromAddress ?? settings.SystemSmtpUsername!,
                 Subject: "Confirm your new email address",
                 HtmlBody: body),

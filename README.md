@@ -1,6 +1,8 @@
-# VE Session Manager
+# VE Ops
 
 Automation for the mundane half of running an amateur radio exam session.
+
+*(The repo and codebase are still named VeSessionManager — VE Ops is the product's display name.)*
 
 If you are a **Volunteer Examiner Session Manager**, you already know the routine around a session:
 create the Zoom meeting, post the Discord event, chase payments, send the confirmation email, send

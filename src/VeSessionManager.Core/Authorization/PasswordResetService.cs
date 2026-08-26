@@ -94,10 +94,10 @@ public class PasswordResetService(
 
         var message = new EmailMessage(
             ToAddress: user.Email!,
-            Subject: "Reset your VE Session Manager password",
+            Subject: "Reset your VE Ops password",
             HtmlBody: BuildBody(user, resetUrl),
             FromAddress: settings.SystemSmtpFromAddress ?? settings.SystemSmtpUsername!,
-            FromDisplayName: settings.SystemSmtpFromDisplayName ?? "VE Session Manager",
+            FromDisplayName: settings.SystemSmtpFromDisplayName ?? "VE Ops",
             ReplyToAddress: settings.SystemSmtpFromAddress ?? settings.SystemSmtpUsername!);
 
         // Stamped BEFORE the send, not after: if SMTP is slow or throws, a retry loop must still be
@@ -161,7 +161,7 @@ public class PasswordResetService(
     private static string BuildBody(User user, string resetUrl) =>
         $"""
          <p>Hello {System.Net.WebUtility.HtmlEncode(user.Name)},</p>
-         <p>Someone asked to reset the password for your VE Session Manager account. Use the link
+         <p>Someone asked to reset the password for your VE Ops account. Use the link
          below to choose a new one:</p>
          <p><a href="{resetUrl}">Reset your password</a></p>
          <p>If you didn't ask for this, you can ignore this email — your password won't change until
