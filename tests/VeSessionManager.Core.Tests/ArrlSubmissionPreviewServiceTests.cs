@@ -59,9 +59,10 @@ public class ArrlSubmissionPreviewServiceTests
         public required FakeArchiveClient Client { get; init; }
         public required Session Session { get; init; }
         public required Team Team { get; init; }
+        public string GlobalBaseUrl { get; init; } = "https://exam.tools";
 
         public ArrlSubmissionPreviewService Service => new(
-            Db, Client, Options.Create(new ExamToolsOptions { BaseUrl = "https://exam.tools" }),
+            Db, Client, Options.Create(new ExamToolsOptions { BaseUrl = GlobalBaseUrl }),
             NullLogger<ArrlSubmissionPreviewService>.Instance);
 
         public Task<ArrlSubmissionPreview> BuildAsync() =>
@@ -71,7 +72,8 @@ public class ArrlSubmissionPreviewServiceTests
     private static async Task<World> SeedAsync(
         string vecName = "ARRL",
         Action<Team>? configureTeam = null,
-        Action<Session>? configureSession = null)
+        Action<Session>? configureSession = null,
+        string globalBaseUrl = "https://exam.tools")
     {
         var db = new AppDbContext(new DbContextOptionsBuilder<AppDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString()).Options);
@@ -120,7 +122,7 @@ public class ArrlSubmissionPreviewServiceTests
         db.AddRange(team, vec, fee, lead, session);
         await db.SaveChangesAsync();
 
-        return new World { Db = db, Client = new FakeArchiveClient(), Session = session, Team = team };
+        return new World { Db = db, Client = new FakeArchiveClient(), Session = session, Team = team, GlobalBaseUrl = globalBaseUrl };
     }
 
     private static void AddPaidCandidate(World world, decimal amount, Action<Payment>? configure = null)
@@ -351,6 +353,30 @@ public class ArrlSubmissionPreviewServiceTests
 
         Assert.Equal(ArrlSubmissionPreviewStatus.TeamNotConfigured, preview.Status);
         Assert.Equal(0, world.Client.Calls);
+    }
+
+    /// <summary>A team on ExamTools' test site is practicing with test data — it must never be able to file with ARRL, whatever this deployment's own environment is.</summary>
+    [Fact]
+    public async Task ATeamOnExamToolsTestSite_IsRefusedBeforeAnythingIsFetched()
+    {
+        var world = await SeedAsync(globalBaseUrl: "https://examtools.dev");
+
+        var preview = await world.BuildAsync();
+
+        Assert.Equal(ArrlSubmissionPreviewStatus.TeamOnTestExamTools, preview.Status);
+        Assert.False(preview.CanSubmit);
+        Assert.Equal(0, world.Client.Calls);
+    }
+
+    /// <summary>A team's own per-team override to the test site is caught the same way as the deployment default being test.</summary>
+    [Fact]
+    public async Task ATeamsOwnOverrideToTheTestSite_IsAlsoRefused()
+    {
+        var world = await SeedAsync(configureTeam: t => t.ExamToolsBaseUrl = "https://examtools.dev");
+
+        var preview = await world.BuildAsync();
+
+        Assert.Equal(ArrlSubmissionPreviewStatus.TeamOnTestExamTools, preview.Status);
     }
 
     [Fact]

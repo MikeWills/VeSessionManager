@@ -274,6 +274,17 @@ path.
   had filed when nothing was sent, and they would find out from the VEC.
 - **The Worker gets the archive store but never the submitting client**, and its configuration carries
   no `UploadUrl`. No background job may be able to reach ARRL.
+- **A team on ExamTools' test site cannot file at all, regardless of this deployment's own
+  environment (2026-08-26).** Everything above gates on whether *this app* is Production; nothing
+  gated on whether *this team* is real. That gap matters because a live deployment can carry a
+  genuinely test team alongside real ones — the fake team this project itself uses for destructive
+  testing is one — and once the app is in Production, `ArrlSubmissionOptions.IsConfigured` is true
+  for every team on it. `ExamToolsCredentials.IsTestEnvironment` checks the team's *effective*
+  ExamTools host (its own `Team.ExamToolsBaseUrl` override, or the deployment default) for
+  `examtools.dev`; `ArrlSubmissionPreviewService.BuildAsync` refuses before fetching anything, and
+  `ArrlSubmissionService.SubmitAsync` refuses again on its own — the preview screen is documented as
+  the only route to the POST, but the service does not *trust* that, the same way the VEC-match and
+  permission checks are re-verified server-side rather than assumed from what the GET rendered.
 
 A useful consequence: on a dev machine, pressing "Send to ARRL-VEC" is safe. It refuses before any
 request and without creating a submission row, so the whole flow is exercisable except the POST.

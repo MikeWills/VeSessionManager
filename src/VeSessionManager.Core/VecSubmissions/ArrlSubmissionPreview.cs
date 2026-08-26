@@ -95,5 +95,11 @@ public enum ArrlSubmissionPreviewStatus
     NotAnArrlSession = 2,
 
     /// <summary>The team has not filled in its ARRL submission settings, so no complete form can be built.</summary>
-    TeamNotConfigured = 3
+    TeamNotConfigured = 3,
+
+    /// <summary>
+    /// This team's effective ExamTools host is the test site (<c>examtools.dev</c>), not a production
+    /// one — a team practicing against test data must not be able to file a real session with ARRL.
+    /// </summary>
+    TeamOnTestExamTools = 4
 }
