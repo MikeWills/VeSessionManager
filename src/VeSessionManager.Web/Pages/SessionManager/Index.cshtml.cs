@@ -96,6 +96,13 @@ namespace VeSessionManager.Web.Pages.SessionManager;
 /// default ordering). Sorting resets to page 1, since the row that was on page 3 is somewhere else
 /// entirely once the order changes. The choice rides along in the existing filter cookie, so it
 /// survives a bare navigation back to this page exactly like Status/TeamId/PageSize already do.
+///
+/// Cross-page team persistence (2026-08-26): TeamId itself is now also read from/written to
+/// <see cref="SharedTeamFilterCookie"/>, the same one every other team-filtered page uses — a team
+/// picked on, say, Applicant Status now carries here too, and vice versa. This page keeps its own
+/// FilterCookieName cookie for everything else (Status/DateRange/PageSize/Sort); only Team is synced
+/// cross-page, since that is the one filter a multi-team user expects to mean "the team I'm looking
+/// at right now" everywhere, not "what I last set on this particular list."
 /// </summary>
 [Authorize(Roles = RoleGroups.AllRoles)]
 public class IndexModel(
@@ -256,6 +263,10 @@ public class IndexModel(
             Sort = SortableColumns.Contains(Sort) ? Sort : "";
             SortDirection = SortDirection == "desc" ? "desc" : "asc";
             SaveFilterCookie(Status, TeamId, PageSize, DateRange, Sort, SortDirection);
+            // Same cross-page team cookie every other RemembersFilters page reads/writes (#480) —
+            // this page predates that mechanism and keeps its own bespoke cookie for everything else,
+            // but Team specifically has to stay in sync with the rest of the app.
+            SharedTeamFilterCookie.RememberIfPresent(HttpContext);
         }
         else
         {
@@ -267,6 +278,15 @@ public class IndexModel(
             Sort = cookie.Sort ?? "";
             SortDirection = cookie.SortDirection ?? "asc";
             PageNumber = 1;
+
+            // The shared team cookie wins over this page's own remembered team, exactly like every
+            // other team-filtered page — a team picked elsewhere should not need a fresh visit here
+            // to catch up.
+            var sharedTeam = SharedTeamFilterCookie.Read(HttpContext);
+            if (sharedTeam is not null)
+            {
+                TeamId = SharedTeamFilterCookie.ReadTeamId(HttpContext);
+            }
         }
 
         Status = Status.Where(s => KnownStatuses.Contains(s)).Distinct().ToList();

@@ -46,9 +46,10 @@ public class PrivacyCookieDisclosureTests
                 .Select(_ => Path.GetFileName(f)))
             .ToList();
 
-        // Two today: the sessions list's own filter cookie and the general one. If this number moves,
-        // the privacy page's "four cookies" sentence has to move with it.
-        Assert.Equal(2, writers.Count);
+        // Three today: the sessions list's own filter cookie, the general per-page one, and the
+        // cross-page team cookie. If this number moves, the privacy page's "five cookies" sentence
+        // has to move with it.
+        Assert.Equal(3, writers.Count);
     }
 
     [Fact]
@@ -57,7 +58,7 @@ public class PrivacyCookieDisclosureTests
         var page = File.ReadAllText(Path.Combine(WebProjectRoot(), "Pages", "Privacy.cshtml"));
 
         Assert.Contains("<h2>Cookies</h2>", page);
-        Assert.Contains("four cookies", page);
+        Assert.Contains("five cookies", page);
 
         // The sentence a reader actually wants, and the one that must stay true.
         Assert.Contains("advertising", page);

@@ -121,6 +121,16 @@ which is "here's what was built and why, mostly historical.")
 One-line-or-two pointer per feature, newest first — full design rationale lives in the linked
 `/docs/*.md` file, not here. See "Documentation Structure" below for the policy this follows.
 
+- **A picked team now carries across every team-filtered page (2026-08-26).** Mike: a TeamAdmin/
+  SessionManager/TeamLead can sit on several teams too, not just SystemAdmin, so this isn't a niche
+  case. New `SharedTeamFilterCookie` (design rationale in its own doc comment and
+  `RememberFiltersPageFilter`'s) is a single cross-page value layered on top of the existing #459
+  per-page filter memory — every `[RemembersFilters]` page with a `TeamId` property reads/writes it,
+  and the sessions list (which predates that mechanism and keeps its own bespoke cookie) was wired in
+  separately for just the Team field. Stored as `"0"` rather than an empty string for "All teams" —
+  an empty cookie value didn't reliably round-trip in testing. Privacy page's cookie count moved from
+  four to five.
+
 - **The product's display name is "VE Ops" (2026-08-25).** Nav brand, page `<title>`, footer,
   login page, the 2FA issuer string, and the default email `FromDisplayName`/subject lines
   (password reset, VE self-service/email-change) all changed from "VE Session Manager"/
@@ -254,42 +264,6 @@ cap and a newer entry needs to be added; oldest goes first.
   session lead, via `CallSign.Normalize` so ExamTools' `<UNKNOWN>` is never looked up) is the field
   that answers what people actually ask for. A Cc is refused on candidate mail: the person copied
   cannot unsubscribe.
-
-- **Three new trigger points, none of them seeded (2026-08-17).** Issue #401, PR3 — see
-  `docs/trigger-points.md`. `CandidateTested`, `LicenseGranted` and `FelonyDisclosureDeclared`, all
-  opt-in, so no existing team's mail changes. The one to carry forward: **a state trigger is only
-  implementable if something records *when* the state changed**, and `Candidate.Tested` was a bool
-  written from four places — so `Candidate.TestedUtc` exists, set through the one `MarkTested(now)`
-  helper, guarded by a source scan, and deliberately not backfilled (null means "tested before this
-  existed", which excludes imported history for free). `LicenseGranted` could reuse FCC's own grant
-  date, and skips an upgrader whose license predates the session, who earned no call sign here.
-
-- **Teams set their own message rules now, from a screen (2026-08-17).** Issue #401, PR2 — see
-  `docs/trigger-points.md`. `Admin/MessageRules` lists every trigger point with its rules, and
-  `ParameterHours` is editable. Two things worth carrying forward: **a rule can be switched off *or*
-  deleted, and making delete real took two changes rather than one** — the seeder now seeds once per
-  team and records it (`Team.MessageRulesSeededUtc`), because a per-trigger check re-added a deleted
-  rule on the next Worker start, and `MessageRuleRun.MessageRuleId` became nullable with `SetNull` so
-  the record of what was sent outlives the rule that sent it (which is what its `RuleName`/`Trigger`
-  snapshots were always for); and **the two `PaymentReminderService` threshold constants
-  are gone**, because the Applicant Status colours and the payment-expiry write both have to agree
-  with what a team actually configured. They read `MessageThresholdService`, whose two methods differ
-  in one deliberate way: bookkeeping gets a number regardless, a page gets null and shows no boundary
-  at all.
-
-- **When each automatic email goes out is a per-team row now, not a constant (2026-08-16).** Issue
-  #401, PR1 — the engine, with behaviour frozen. See `docs/trigger-points.md`. The four hardcoded sends are
-  `MessageRule`s against four trigger points, their thresholds expressed in **hours** so no calendar
-  date exists to get wrong (#220 made structural), and `MessageRuleRun` replaces the
-  `Candidate.*SentUtc` columns as both marker and log — which is what closes #396, since a muted send
-  can now record `Suppressed` instead of a timestamp claiming it was sent. Three things worth carrying
-  forward: **`MessageRule.CreatedUtc` bounds every scan**, which is the only thing standing between
-  adding a rule and mailing everyone already past its moment, and is why the seeded rules are stamped
-  at deploy time; **`PaymentUnpaidScanner` must not filter on `ExpiredUnpaid`** — that write stayed in
-  `PaymentReminderService` and is normally already true by the time the rule scans, so filtering on it
-  would silently stop the notice with nothing looking wrong; and **only `Sent`/`Suppressed` are
-  terminal**, so a failed send is logged *and* retried, with the retry updating the row rather than
-  inserting past the unique index.
 
 Everything through Phase 0-10's initial build (ExamTools ingestion, Zoom/Discord, Square, email
 notifications, FCC ULS watcher, payment reminders, VE tracking, VEC submission tracker, admin

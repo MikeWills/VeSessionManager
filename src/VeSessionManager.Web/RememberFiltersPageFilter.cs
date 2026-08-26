@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
+using Microsoft.AspNetCore.WebUtilities;
 
 namespace VeSessionManager.Web;
 
@@ -78,7 +79,8 @@ public sealed class RememberFiltersPageFilter(ILogger<RememberFiltersPageFilter>
     public async Task OnPageHandlerExecutionAsync(PageHandlerExecutingContext context, PageHandlerExecutionDelegate next)
     {
         var http = context.HttpContext;
-        var remembers = context.HandlerInstance?.GetType().IsDefined(typeof(RemembersFiltersAttribute), inherit: true) == true;
+        var handlerType = context.HandlerInstance?.GetType();
+        var remembers = handlerType?.IsDefined(typeof(RemembersFiltersAttribute), inherit: true) == true;
 
         // Only a plain GET of the page itself. A named handler (?handler=Something) is an action, not
         // a view of the list, and must never be redirected out from under itself.
@@ -92,22 +94,64 @@ public sealed class RememberFiltersPageFilter(ILogger<RememberFiltersPageFilter>
 
         var path = PageKey(http);
 
+        // Not every RemembersFilters page has a team picker (e.g. Audit Log, Job Run History) — only
+        // those pages should read or write the cross-page team cookie, or a page with no such filter
+        // would pick up a stray, permanently-ignored "teamId" in its own remembered query string.
+        var hasTeamFilter = handlerType?.GetProperty("TeamId") is not null;
+
         if (http.Request.Query.Count > 0)
         {
             Remember(http, path);
+            if (hasTeamFilter)
+            {
+                SharedTeamFilterCookie.RememberIfPresent(http);
+            }
+
             await next();
             return;
         }
 
         var remembered = ReadAll(http).TryGetValue(path, out var query) ? query : null;
+
+        // The one cross-page value: a team picked on any team-filtered page wins over this page's
+        // own last-remembered team, so it does not take a fresh visit here to catch up. Other
+        // filters (search, status, ...) stay exactly what this page remembered for itself.
+        var sharedTeam = hasTeamFilter ? SharedTeamFilterCookie.Read(http) : null;
+
         if (!string.IsNullOrWhiteSpace(remembered))
         {
+            if (sharedTeam is not null)
+            {
+                remembered = WithTeamId(remembered, sharedTeam);
+            }
+
             logger.LogDebug("Restoring remembered filters for {Path}", path);
             context.Result = new RedirectResult(http.Request.Path + remembered);
             return;
         }
 
+        // Nothing of this page's own to restore. An empty shared value ("All teams") matches this
+        // page's untouched default already, so only a real team id is worth a redirect.
+        if (!string.IsNullOrEmpty(sharedTeam))
+        {
+            context.Result = new RedirectResult(http.Request.Path + WithTeamId("", sharedTeam));
+            return;
+        }
+
         await next();
+    }
+
+    /// <summary>Replaces (or adds) the <c>teamId</c> key in a query string, preserving every other
+    /// key exactly as remembered.</summary>
+    private static string WithTeamId(string query, string teamId)
+    {
+        var pairs = QueryHelpers.ParseQuery(query)
+            .Where(kv => kv.Key != SharedTeamFilterCookie.QueryKey)
+            .SelectMany(kv => kv.Value, (kv, value) => KeyValuePair.Create<string, string?>(kv.Key, value))
+            .Append(KeyValuePair.Create<string, string?>(SharedTeamFilterCookie.QueryKey, teamId))
+            .ToList();
+
+        return QueryString.Create(pairs).Value ?? "";
     }
 
     private void Remember(HttpContext http, string path)
