@@ -963,3 +963,42 @@ every other client in this app follows (see CLAUDE.md). Messaging is the deliber
 what's being protected is a person's inbox, not a resource's existence — telling someone about
 something old the instant notifications get switched on is the failure being avoided, and that failure
 has no equivalent on the Zoom/Discord/Square side.
+
+## FCC-wide-issue suppression (2026-08-26)
+
+A different, related problem from everything above: the FCC itself — or the VEC's own submission to
+it — can stall for weeks or months (a shutdown, a payment-system outage), and `FccFeeOutstandingScanner`
+has no way to tell "FCC is backlogged" from "this one candidate hasn't paid." It just keeps reminding
+on schedule either way, which annoys a candidate for something that is nobody's fault, let alone
+theirs. Mike, watching this happen live: the FCC was processing upgrade grants normally while its
+payment-verification subsystem stalled for new-license candidates specifically — a distinction the app
+had no way to represent at all.
+
+**The fix is a manual switch, not automatic detection.** `Admin/FccStatus` (`RoleGroups.Admins` —
+reachable by TeamAdmin as well as SystemAdmin, unlike the rest of `SystemSettings`) sets four booleans
+on the `SystemSettings` singleton: a master `FccIssueActive`, and one sub-switch per candidate
+population (`SuppressNewLicenseReminders`, `SuppressUpgradeReminders`, `SuppressRenewalReminders`).
+Checking the master switch's box auto-checks all three sub-switches in the UI (the common case during
+a real outage is "suppress everything"), but each can still be unchecked by hand — the master alone
+decides whether the sub-switches are consulted at all; unchecked sub-switches under a checked master
+suppress nothing.
+
+**Only two of the three switches do anything.** `FccFeeOutstandingScanner` tags each subject with an
+`FccCandidatePopulation` (`NewLicense` when `Candidate.InitialLicenseClass` is null/None, `Upgrade`
+otherwise) — the same population split behind the live incident above. `MessageDispatchService`'s new
+`SuppressByFccIssueAsync` reads it before anything else in `DispatchAsync`, since it applies regardless
+of channel. **`SuppressRenewalReminders` is stored and shown, never read** — this app has no
+renewal-candidate concept at all (every `Candidate` is tied to a testing session, and a renewal
+involves neither), so there is no population that switch could ever apply to. It exists only so the
+control is already there the day renewal tracking might be.
+
+**Suppressed is terminal, exactly like a muted team's Zoom/Discord/Email** (see `MessageDispatchService`'s
+own remarks) **— never a silent exclude.** A silent skip would let a suppressed candidate re-enter
+`ScanAsync`'s eligible set the instant the switch flips back off, and every candidate suppressed during
+the outage would fire in the same batch the day it's "fixed" — precisely the backlog-on-re-enable
+failure `MessageRuleEligibility.FloorUtc` above already exists to prevent, for a different kind of
+"off." Marking the subject `Suppressed` means flipping the master back off changes nothing for anyone
+already marked; only a candidate whose own reminder becomes newly due afterward ever gets one. The
+tradeoff, deliberately accepted: a candidate suppressed during a real outage never separately hears
+"that thing that looked stuck wasn't your fault" — if a team wants to tell them, that's a manual,
+hand-composed message, not this switch.

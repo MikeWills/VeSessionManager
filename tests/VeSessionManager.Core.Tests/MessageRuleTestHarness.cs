@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using VeSessionManager.Core.Admin;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Discord;
 using VeSessionManager.Core.Email;
@@ -79,6 +80,7 @@ public static class MessageRuleTestHarness
             emailSender,
             discordClient ?? new FakeDiscordChannelClient(),
             new TeamIntegrationState(NullLogger<TeamIntegrationState>.Instance),
+            new SystemSettingsService(dbContext, timeProvider),
             timeProvider,
             NullLogger<MessageDispatchService>.Instance);
 

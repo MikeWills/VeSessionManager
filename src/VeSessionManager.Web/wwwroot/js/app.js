@@ -638,6 +638,25 @@
   });
 
 
+  // A checkbox that, only when switched ON, checks a fixed list of other checkboxes by id (2026-08-26,
+  // the FCC-issue master switch: the common case is "suppress every population", so this saves the
+  // three separate clicks). Never unchecks anything when switched off — a checkbox this drives can
+  // still be unchecked by hand afterward, and what matters when the master is off is that nothing is
+  // consulted at all, not what value each one holds.
+  //
+  // Progressive enhancement only, same as the panel toggle above: with JavaScript unavailable, each
+  // checkbox just keeps whatever was last saved and has to be set by hand.
+  document.querySelectorAll("[data-check-with]").forEach(function (master) {
+    master.addEventListener("change", function () {
+      if (!master.checked) return;
+      master.getAttribute("data-check-with").split(",").forEach(function (id) {
+        var target = document.getElementById(id);
+        if (target) target.checked = true;
+      });
+    });
+  });
+
+
   // ---- Alert highlight -------------------------------------------------------------------------
   // The row an alert-bell link navigated to (#339). The server renders the marker itself, so with
   // JavaScript unavailable the row is still visibly picked out — all this adds is bringing it into

@@ -1,6 +1,7 @@
 using VeSessionManager.Core.Notifications;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using VeSessionManager.Core.Admin;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Discord;
 using VeSessionManager.Core.Email;
@@ -24,7 +25,10 @@ namespace VeSessionManager.Core.Messaging;
 /// row and unconfigured SMTP both leave <i>no marker at all</i>, so the very next tick tries again
 /// once an admin finishes setting up — the optional-integration pattern. A muted team writes
 /// <see cref="MessageRuleOutcome.Suppressed"/> markers and settles, because a switch turned off on
-/// purpose is indefinite and a backlog flushed on re-enable is the failure mode, not the feature.</para>
+/// purpose is indefinite and a backlog flushed on re-enable is the failure mode, not the feature.
+/// <see cref="SuppressByFccIssueAsync"/> (2026-08-26) is the same shape again, one level up: a global
+/// "FCC has a known issue" switch rather than a per-team one, checked before the channel split since
+/// it applies regardless of Email/Discord.</para>
 /// </summary>
 public class MessageDispatchService(
     AppDbContext dbContext,
@@ -32,6 +36,7 @@ public class MessageDispatchService(
     IEmailSender emailSender,
     IDiscordChannelMessageClient discordClient,
     TeamIntegrationState integrationState,
+    SystemSettingsService systemSettingsService,
     TimeProvider timeProvider,
     ILogger<MessageDispatchService> logger)
 {
@@ -39,6 +44,12 @@ public class MessageDispatchService(
         Team team, MessageRule rule, EmailSettings emailSettings, IReadOnlyList<MessageSubject> subjects, CancellationToken cancellationToken)
     {
         var result = new MessageRuleResult();
+        if (subjects.Count == 0)
+        {
+            return result;
+        }
+
+        subjects = await SuppressByFccIssueAsync(team, rule, subjects, result, cancellationToken);
         if (subjects.Count == 0)
         {
             return result;
@@ -146,6 +157,58 @@ public class MessageDispatchService(
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// A global "FCC has a known issue" switch (2026-08-26), checked before anything else in
+    /// <see cref="DispatchAsync"/> because it applies regardless of channel. Only subjects carrying a
+    /// non-null <see cref="MessageSubject.FccPopulation"/> — today, only <see cref="MessageTrigger.FccFeeOutstanding"/> —
+    /// are ever affected; every other trigger's subjects pass through untouched, most runs skipping
+    /// the settings lookup entirely.
+    ///
+    /// <para>Suppressed the same way a muted team's integration is: a terminal
+    /// <see cref="MessageRuleOutcome.Suppressed"/> row, not a silent skip. A silent skip would let the
+    /// candidate re-enter <c>ScanAsync</c>'s eligible set the moment the switch flips off, and every
+    /// suppressed candidate would fire in the same batch — the exact backlog-on-re-enable failure
+    /// <see cref="MessageRuleEligibility"/> already exists to prevent for a different kind of "off."
+    /// Marking them Suppressed means the switch flipping back off changes nothing for them; only a
+    /// candidate whose own reminder becomes newly due afterward ever gets one.</para>
+    /// </summary>
+    private async Task<IReadOnlyList<MessageSubject>> SuppressByFccIssueAsync(
+        Team team, MessageRule rule, IReadOnlyList<MessageSubject> subjects, MessageRuleResult result, CancellationToken cancellationToken)
+    {
+        if (!subjects.Any(s => s.FccPopulation is not null))
+        {
+            return subjects;
+        }
+
+        var settings = await systemSettingsService.GetAsync(cancellationToken);
+        if (!settings.FccIssueActive)
+        {
+            return subjects;
+        }
+
+        var suppressed = new List<MessageSubject>();
+        var proceeding = new List<MessageSubject>();
+        foreach (var subject in subjects)
+        {
+            var suppress = subject.FccPopulation switch
+            {
+                FccCandidatePopulation.NewLicense => settings.FccIssueSuppressNewLicenseReminders,
+                FccCandidatePopulation.Upgrade => settings.FccIssueSuppressUpgradeReminders,
+                _ => false
+            };
+
+            (suppress ? suppressed : proceeding).Add(subject);
+        }
+
+        if (suppressed.Count > 0)
+        {
+            await RecordAllAsync(team, rule, suppressed, MessageRuleOutcome.Suppressed,
+                "Suppressed: a known FCC-wide processing issue is flagged for this candidate population", result, cancellationToken);
+        }
+
+        return proceeding;
     }
 
     /// <summary>

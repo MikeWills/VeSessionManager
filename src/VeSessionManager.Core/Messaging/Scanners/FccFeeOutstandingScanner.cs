@@ -84,6 +84,13 @@ public class FccFeeOutstandingScanner(AppDbContext dbContext) : IMessageTriggerS
                 ["FccApplicationFileNumber"] = candidate.UlsApplicationFileNumber ?? ""
             },
             sentUtc => candidate.FccFeeReminderSentUtc = sentUtc)
-            { SessionLeadCallSign = candidate.Session.TeamLeadCallSign })];
+            {
+                SessionLeadCallSign = candidate.Session.TeamLeadCallSign,
+                // No prior license = a first-time applicant; anything else is an upgrade. See
+                // FccCandidatePopulation and the FCC-issue switches on SystemSettings.
+                FccPopulation = candidate.InitialLicenseClass is null or LicenseClass.None
+                    ? FccCandidatePopulation.NewLicense
+                    : FccCandidatePopulation.Upgrade
+            })];
     }
 }

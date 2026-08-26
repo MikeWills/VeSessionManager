@@ -131,6 +131,47 @@ public class SystemSettings
     public bool IsSystemEmailConfigured =>
         !string.IsNullOrWhiteSpace(SystemSmtpHost) && !string.IsNullOrWhiteSpace(SystemSmtpUsername);
 
+    // ---- FCC-wide issue suppression, added 2026-08-26 ----
+    // FCC's own processing (or the VEC's submission to FCC) can stall for weeks or months at a time
+    // — a shutdown, a payment-system outage — and none of it is this app's fault or the candidate's.
+    // FccFeeOutstandingScanner has no way to tell "FCC is backlogged" from "this one candidate hasn't
+    // paid," so it just keeps reminding on schedule either way. These fields are a manual escape
+    // hatch: a SystemAdmin or TeamAdmin who knows there's a known issue flips FccIssueActive, and the
+    // sub-switches below say which candidate population to go quiet for.
+    //
+    // Deliberately global, not per-Team like every other integration switch (Zoom/Discord/Square) —
+    // an FCC-wide problem is the same fact for every team on this deployment, so a per-team copy
+    // would just be the same value entered N times.
+    //
+    // Suppression is permanent per candidate, not deferred: MessageDispatchService marks a suppressed
+    // subject's MessageRuleRun Suppressed (terminal), the same as a muted team's Zoom/Discord/Email —
+    // see that class's own remarks. Silently excluding candidates instead, and only bringing the
+    // exclusion back once the flag flips off, would recreate exactly the backlog-on-re-enable problem
+    // MessageRuleEligibility.FloorUtc already exists to prevent, just for a different kind of "off."
+
+    /// <summary>Master switch. Off means "no known issue" — the three switches below are only
+    /// consulted, and only shown in the UI, while this is on.</summary>
+    public bool FccIssueActive { get; set; }
+
+    /// <summary>Suppresses FccFeeOutstanding for candidates with no prior license (InitialLicenseClass
+    /// null/None) — the live case as of 2026-08-26: FCC's payment-verification subsystem stalling
+    /// while grants for existing licensees (upgrades) keep flowing.</summary>
+    public bool FccIssueSuppressNewLicenseReminders { get; set; }
+
+    /// <summary>Same, for candidates upgrading an existing license. Dormant today — upgrades do not
+    /// currently carry an FCC fee, so ResolvePaymentStatus never puts one in PendingVerification —
+    /// but wired identically in case that changes.</summary>
+    public bool FccIssueSuppressUpgradeReminders { get; set; }
+
+    /// <summary>
+    /// Provisioned, not wired: this app has no renewal-candidate concept at all today (every
+    /// <see cref="Candidate"/> is tied to a VE-administered testing session, and a renewal involves
+    /// neither), so nothing ever reads this field for suppression — there is no population it could
+    /// apply to. Stored and shown on the settings screen anyway, marked "(future feature)", purely so
+    /// the switch exists the day renewal tracking might.
+    /// </summary>
+    public bool FccIssueSuppressRenewalReminders { get; set; }
+
     public int? UpdatedByUserId { get; set; }
     public User? UpdatedByUser { get; set; }
     public DateTime? UpdatedUtc { get; set; }

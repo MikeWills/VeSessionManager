@@ -49,6 +49,14 @@ public sealed record MessageSubject(
     public string? SessionLeadCallSign { get; init; }
 
     /// <summary>
+    /// Which candidate population this subject belongs to, for the FCC-wide-issue suppression gate
+    /// (2026-08-26) — null for anything but <see cref="Scanners.FccFeeOutstandingScanner"/>, which is
+    /// the only scanner a global "FCC is having a known issue" switch applies to today. See
+    /// <see cref="MessageDispatchService"/> and <see cref="FccCandidatePopulation"/>.
+    /// </summary>
+    public FccCandidatePopulation? FccPopulation { get; init; }
+
+    /// <summary>
     /// The session this subject belongs to, for <see cref="MessageFanOut.PerSession"/> grouping and
     /// the session tokens that come with it. Null when the scanner loaded no session — a
     /// payment-subject rule, say.
