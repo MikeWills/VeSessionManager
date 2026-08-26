@@ -32,6 +32,7 @@ credentials/session data live there, verified directly against the API) — this
 | `GET /api/veUser/sessions/{id}/export/basic.json` | `{ session: {date, state}, applicants: [...] }` — the candidate registration feed. Applicant fields used: `id`, `firstname`/`middle`/`lastname`/`suffix`, `email`, `frn`, `has_felony`, `created`, `city`, `state` (#463 — "who's local," a `Candidate.City`/`State` column on the session roster). Also available, still unmapped: `pin`, `phone`, `callsign`, `licenseClass`, `addr`, `zip`, `finalized`. |
 | `GET /api/veUser/sessions/{id}/applicant/{applicantId}` | Per-applicant detail: everything above plus `status`, `exams[]`, `hasSigned`, `sentEmails{}`. Used by `ExamResultSyncService` for `exams[]` — see "Applicant exam results" below. |
 | `GET /api/veUser/sessions/{id}/export/full.json` | `{ DEVDOC: { ..., VEs: [{call, name, number?}], applicants: [...] } }` — used by Phase 7 (`VolunteerExaminerSyncService`) purely for `DEVDOC.VEs`, the only endpoint that pairs a VE's callsign with a real display name (`sessionVes` above has callsign only). `number` (when present) is a VEC-issued VE accreditation number, **not** an FCC FRN — deliberately not mapped onto `VolunteerExaminer.Frn`. The `applicants[]` in this payload are ignored (ingestion already gets candidates from `export/basic.json`); `DEVDOC.applicants[].signingVes` also carries per-candidate VE names, unused for now — Phase 7 only needs the session-level roster, not who-signed-whom. Wrapper key may differ on prod, per the note below. |
+| `GET /api/veUser/sessions/{id}/vecDownload/ExamSession_{vecCode}_archive.zip` | **The VEC archive** — the file ARRL's upload page asks for (issue #197). `{vecCode}` is `Vec.MatchCode` lower-cased (`arrl`). Verified live 2026-08-18 against a closed MARC session: returns `application/octet-stream` with the real filename in **`Content-Disposition`** (the URL's own filename is generic and identical for every session); an incomplete session answers a genuine **403**. Full detail in `docs/arrl-vec-submission.md`. |
 
 ## Semantics worth knowing
 
@@ -112,8 +113,9 @@ credentials/session data live there, verified directly against the API) — this
   (`[{call, name}]`). This silently meant `VolunteerExaminerSyncService` found zero VEs for every
   real HRCC session (issue #38) — `ExamToolsFullExport.ResolveVes()` now checks both shapes.
 - Other discovered-but-untested paths (from the site's JS bundles): `.../applicant/{id}/email`,
-  `export/basic` (non-JSON), `vecDownload/*.zip`, `form605.pdf`, `laurel_export.csv`,
-  `w5yi_export.csv`.
+  `export/basic` (non-JSON), `form605.pdf`, `laurel_export.csv`, `w5yi_export.csv`.
+  (`vecDownload/*.zip` was on this list until 2026-08-18; it is verified now — see the table above
+  and `docs/arrl-vec-submission.md`.)
 
 ## Applicant exam results (2026-07-28)
 
