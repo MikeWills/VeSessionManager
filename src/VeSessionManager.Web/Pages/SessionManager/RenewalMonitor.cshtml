@@ -19,14 +19,9 @@
 
 @if (Model.AvailableTeams.Count > 1)
 {
-    <div class="filters" style="margin-bottom:16px;">
-        <a class="filter-pill @(Model.TeamId is null ? "active" : "")" asp-page="./RenewalMonitor">All teams</a>
-        @foreach (var team in Model.AvailableTeams)
-        {
-            <a class="filter-pill @(team.Id == Model.TeamId ? "active" : "")"
-               asp-page="./RenewalMonitor" asp-route-teamId="@team.Id">@team.Name</a>
-        }
-    </div>
+    <form method="get" class="filters" style="margin-bottom:16px;">
+        <partial name="_TeamPicker" model="new VeSessionManager.Web.TeamPicker(Model.TeamId, Model.AvailableTeams, Model.TeamSummaryLabel)" />
+    </form>
 }
 
 @if (!Model.HasTeamContext)
