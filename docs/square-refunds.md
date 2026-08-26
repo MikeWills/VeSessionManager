@@ -165,3 +165,17 @@ dropping the webhook's payment-id assignment.
 - **No live verification.** Everything here is verified by build and test only. The first real refund
   should be a Sandbox one on WX0MIK, which is also what will confirm the `PAYMENTS_WRITE` question
   above.
+- **No void/cancel path for a still-`APPROVED` payment — investigated 2026-08-26, not needed.** Mike
+  flagged Square's own advice that a card payment sitting `APPROVED` (authorized, not yet settled)
+  must be voided via `CancelPayment` rather than refunded, since `RefundPayment` rejects it with
+  `REFUND_ERROR_PAYMENT_NEEDS_COMPLETION`. That case cannot happen here: `SquareWebhookHandler`
+  (`payment.updated`) discards every event whose status isn't already `COMPLETED`
+  (`if (payment.Status != CompletedStatus) return Ignored;`), so a `Payment` never reaches
+  `PaymentStatus.Paid`, and an `UnmatchedSquarePayment` row is never created, until Square has already
+  told this app the payment settled. Every payment id `RefundService` can ever be asked to refund is
+  therefore already `COMPLETED` at Square by construction — there is no code path into this app's own
+  data that could hand `RefundPaymentAsync` a still-`APPROVED` id. (The `APPROVED`-then-void concern
+  is real for card-present/Terminal or delayed-capture flows; this app only ever takes payment through
+  Square-hosted Payment Links, which auto-complete.) Confirmed the error code's wire value against the
+  Square SDK (`Square.ErrorCode.RefundErrorPaymentNeedsCompletion` = `"REFUND_ERROR_PAYMENT_NEEDS_COMPLETION"`)
+  before concluding this, rather than reasoning from the general advice alone.
