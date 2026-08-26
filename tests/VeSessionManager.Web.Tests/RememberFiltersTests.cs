@@ -167,4 +167,100 @@ public class RememberFiltersTests
 
         Assert.False(sessions.IsDefined(typeof(RemembersFiltersAttribute), inherit: true));
     }
+
+    /// <summary>
+    /// Cross-page team persistence (2026-08-26): a team picked on one team-filtered page carries to
+    /// another, unlike every other filter (which stays scoped per page — see
+    /// <see cref="FiltersAreRememberedPerPage"/>). Both pages here already have their own per-page
+    /// cookie from <see cref="RememberFiltersPageFilter"/>; this pins the one value (team) that is
+    /// meant to leak across that boundary.
+    /// </summary>
+    [Fact]
+    public async Task APickedTeam_CarriesToAnotherTeamFilteredPage()
+    {
+        using var factory = new WebAppFactory();
+        var client = RawClient(factory);
+        var teamId = factory.Seeded.TeamId;
+
+        await client.GetAsync($"{Directory}?teamId={teamId}");
+        var otherPage = await client.GetAsync("/SessionManager/UnmatchedPayments");
+
+        Assert.Equal(HttpStatusCode.Redirect, otherPage.StatusCode);
+        Assert.Contains($"teamId={teamId}", otherPage.Headers.Location!.ToString());
+    }
+
+    /// <summary>
+    /// A page with no team filter at all (Audit Log has none) must not pick up a stray, permanently
+    /// ignored <c>teamId</c> — see <see cref="RememberFiltersPageFilter"/>'s <c>hasTeamFilter</c> guard.
+    /// </summary>
+    [Fact]
+    public async Task APickedTeam_DoesNotReachAPageWithNoTeamFilter()
+    {
+        using var factory = new WebAppFactory();
+        var client = RawClient(factory);
+        var teamId = factory.Seeded.TeamId;
+
+        await client.GetAsync($"{Directory}?teamId={teamId}");
+        var auditLog = await client.GetAsync("/Admin/AuditLog");
+
+        Assert.Equal(HttpStatusCode.OK, auditLog.StatusCode);
+    }
+
+    /// <summary>
+    /// Explicitly picking "All teams" is itself a remembered choice (empty string, not "nothing
+    /// picked") and overrides a more specific team remembered earlier on another page.
+    /// </summary>
+    [Fact]
+    public async Task PickingAllTeams_OverridesAPreviouslyPickedTeamOnAnotherPage()
+    {
+        using var factory = new WebAppFactory();
+        var client = RawClient(factory);
+        var teamId = factory.Seeded.TeamId;
+
+        await client.GetAsync($"{Directory}?teamId={teamId}");
+        await client.GetAsync("/SessionManager/UnmatchedPayments?teamId=");
+
+        var backToDirectory = await client.GetAsync(Directory);
+
+        Assert.Equal(HttpStatusCode.Redirect, backToDirectory.StatusCode);
+        Assert.DoesNotContain($"teamId={teamId}", backToDirectory.Headers.Location!.ToString());
+    }
+
+    /// <summary>
+    /// The sessions list keeps its own bespoke cookie (<see cref="TheSessionsListDoesNotOptIn"/>) but
+    /// still participates in the shared team cookie — a team applied there must carry to a page using
+    /// the general mechanism, the same as between any two of those pages.
+    /// </summary>
+    [Fact]
+    public async Task ATeamAppliedOnTheSessionsList_CarriesToAnotherTeamFilteredPage()
+    {
+        using var factory = new WebAppFactory();
+        var client = RawClient(factory);
+        var teamId = factory.Seeded.TeamId;
+
+        await client.GetAsync($"/SessionManager?applied=true&teamId={teamId}");
+        var otherPage = await client.GetAsync("/SessionManager/UnmatchedPayments");
+
+        Assert.Equal(HttpStatusCode.Redirect, otherPage.StatusCode);
+        Assert.Contains($"teamId={teamId}", otherPage.Headers.Location!.ToString());
+    }
+
+    /// <summary>
+    /// The reverse direction: a team picked on a general page reaches the sessions list too, via the
+    /// same shared cookie. The sessions list never redirects a bare visit (it restores from its own
+    /// cookie in place), so this only proves the read path does not throw — the propagation itself is
+    /// exercised more directly by the write-side tests above, which share the same helper.
+    /// </summary>
+    [Fact]
+    public async Task ATeamPickedElsewhere_IsAcceptedByABareVisitToTheSessionsList()
+    {
+        using var factory = new WebAppFactory();
+        var client = RawClient(factory);
+        var teamId = factory.Seeded.TeamId;
+
+        await client.GetAsync($"{Directory}?teamId={teamId}");
+        var sessions = await client.GetAsync("/SessionManager");
+
+        Assert.Equal(HttpStatusCode.OK, sessions.StatusCode);
+    }
 }
