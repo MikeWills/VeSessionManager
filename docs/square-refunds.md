@@ -77,8 +77,11 @@ Read from the shipped `Square.xml` for SDK 45.0.1 and from Square's docs, not fr
 - The payment must be `COMPLETED` — an `APPROVED` card payment cannot be refunded.
 - The amount may not exceed the payment total minus refunds already completed.
 - `PAYMENTS_WRITE` is the required permission. Teams here paste a per-team access token rather than
-  using an OAuth grant, so this is very likely already present — but **it fails live, per team**, and
-  has not been confirmed against a real merchant account. Test on WX0MIK in Sandbox first.
+  using an OAuth grant, so this is very likely already present — but **it fails live, per team**.
+  **Confirmed live on WX0MIK, 2026-08-25** (issue #431): a real $15 card-not-present payment was
+  taken and refunded from inside the app; Square accepted the refund call and returned `PENDING`
+  rather than an auth failure. Still worth checking per-team the first time a new team's token is
+  used for a refund, since this only proves WX0MIK's own token carries the scope.
 
 Both limits are checked locally before the call, so the user gets a sentence rather than Square's
 error code.

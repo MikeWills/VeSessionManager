@@ -209,6 +209,9 @@ public class PaymentGenerationServiceTests
         Assert.Equal(1, result.LinksGenerated);
         var payment = dbContext.Payments.Single();
         Assert.Equal(candidate.Id, payment.CandidateId);
+        // #463-adjacent: the one fact a financial-transactions report needs to survive this
+        // candidate's PII being purged later. Captured once, here, from the still-live Candidate.
+        Assert.Equal("Roana Glory", payment.CandidateNameSnapshot);
         Assert.Equal(PaymentReason.InitialExam, payment.Reason);
         Assert.Equal(15m, payment.Amount);
         Assert.Equal(PaymentStatus.Unpaid, payment.Status);
@@ -422,6 +425,7 @@ public class PaymentGenerationServiceTests
         Assert.Equal(PaymentStatus.Unpaid, payments[1].Status);
         Assert.NotNull(payments[1].PaymentLinkUrl);
         Assert.Equal(retest.Id, payments[1].Id);
+        Assert.Equal("Roana Glory", payments[1].CandidateNameSnapshot);
 
         // Each payment got its own distinct Square order/link — not the initial payment's reused.
         Assert.Equal(2, square.Calls.Count);

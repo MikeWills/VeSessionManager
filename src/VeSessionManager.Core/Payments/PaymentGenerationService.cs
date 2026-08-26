@@ -66,6 +66,7 @@ public class PaymentGenerationService(
             var payment = new Payment
             {
                 CandidateId = candidate.Id,
+                CandidateNameSnapshot = candidate.Name,
                 Reason = PaymentReason.InitialExam,
                 Amount = feeConfiguration.FeeCollectionEnabled ? feeConfiguration.ExamFeeAmount!.Value : 0m,
                 Status = feeConfiguration.FeeCollectionEnabled ? PaymentStatus.Unpaid : PaymentStatus.NotApplicable,
@@ -204,6 +205,7 @@ public class PaymentGenerationService(
         var payment = new Payment
         {
             CandidateId = candidate.Id,
+            CandidateNameSnapshot = candidate.Name,
             Reason = PaymentReason.Retest,
             Amount = feeConfiguration.FeeCollectionEnabled ? feeConfiguration.ExamFeeAmount!.Value : 0m,
             Status = feeConfiguration.FeeCollectionEnabled ? PaymentStatus.Unpaid : PaymentStatus.NotApplicable,

@@ -83,7 +83,7 @@
        what is left under VEs is roster maintenance. Keep each list in step with the group's own
        [Authorize] — all six pages are Admins-only, which is why one gate wraps both groups. *@
     var vesGroupActive = activeNav is "VeDirectory" or "VeTags" or "VeImport";
-    var reportsGroupActive = activeNav is "Stats" or "VeRoster" or "AuditioningReport";
+    var reportsGroupActive = activeNav is "Stats" or "VeRoster" or "AuditioningReport" or "TransactionsReport";
     var settingsGroupActive = activeNav is "AdminTeams" or "AdminTeamSettings" or "AdminUsers" or "AdminMessageRules"
         or "AdminFees" or "AdminVecs" or "AdminAuditLog" or "AdminJobHistory" or "AdminJobSchedule" or "Reconciliation" or "AdminSystemSettings";
 }
@@ -191,6 +191,7 @@
                         <a class="item @(activeNav == "Stats" ? "active" : "")" asp-page="/SessionManager/Stats">Stats</a>
                         <a class="item @(activeNav == "VeRoster" ? "active" : "")" asp-page="/SessionManager/VeRoster">VE Session Counts</a>
                         <a class="item @(activeNav == "AuditioningReport" ? "active" : "")" asp-page="/SessionManager/AuditioningReport">Auditioning Report</a>
+                        <a class="item @(activeNav == "TransactionsReport" ? "active" : "")" asp-page="/SessionManager/TransactionsReport">Transactions Report</a>
                     </div>
                 </div>
             }
