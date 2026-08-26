@@ -133,7 +133,7 @@ public class VeSelfServiceLinkService(
             new EmailMessage(
                 ToAddress: volunteerExaminer.Email!,
                 FromAddress: settings.SystemSmtpFromAddress ?? settings.SystemSmtpUsername!,
-                FromDisplayName: settings.SystemSmtpFromDisplayName ?? "VE Session Manager",
+                FromDisplayName: settings.SystemSmtpFromDisplayName ?? "VE Ops",
                 ReplyToAddress: settings.SystemSmtpFromAddress ?? settings.SystemSmtpUsername!,
                 Subject: "Update your volunteer examiner details",
                 HtmlBody: body),

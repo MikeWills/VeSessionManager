@@ -44,7 +44,7 @@ public static class EmailDefaultsSeeder
             {
                 TeamId = team.Id,
                 FromAddress = "noreply@example.org",
-                FromDisplayName = "VE Session Manager",
+                FromDisplayName = "VE Ops",
                 ReplyToAddress = "noreply@example.org",
                 PrivacyPolicyUrl = "https://example.org/privacy",
                 AdminNotificationEmail = "admin@example.org",

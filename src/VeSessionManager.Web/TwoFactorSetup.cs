@@ -20,9 +20,9 @@ public static class TwoFactorSetup
     /// <summary>
     /// The label an authenticator app shows. Deployment host plus the account, so someone
     /// administering two VE deployments can tell the entries apart — an authenticator listing two
-    /// identical "VeSessionManager" rows is a support call waiting to happen.
+    /// identical "VE Ops" rows is a support call waiting to happen.
     /// </summary>
-    public const string Issuer = "VE Session Manager";
+    public const string Issuer = "VE Ops";
 
     /// <summary>Ten, shown once, never again. Identity hashes them; only redemption can check one.</summary>
     public const int RecoveryCodeCount = 10;

@@ -92,7 +92,7 @@
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>@ViewData["Title"] - VeSessionManager</title>
+    <title>@ViewData["Title"] - VE Ops</title>
     @* Render-blocking and first in <head> on purpose: it stamps data-theme before anything paints,
        which is what stops a dark-mode user seeing a white flash on every navigation. See theme.js. *@
     <script src="~/js/theme.js" asp-append-version="true"></script>
@@ -108,7 +108,7 @@
 </head>
 <body class="vesm">
     <header class="chassis">
-        <a class="brand" asp-page="/SessionManager/Index"><span class="dot"></span>VESESSIONMGR</a>
+        <a class="brand" asp-page="/SessionManager/Index"><span class="dot"></span>VE OPS</a>
         @* Mobile-only nav toggle (hidden from 768px up by app.css). It reveals both the nav links
            and the .who cluster, which are one collapsed panel below the breakpoint — see the
            "Chassis nav" comment in app.css. app.js keeps aria-expanded in step. *@
@@ -339,7 +339,7 @@
     </main>
 
     <footer class="vesm-footer">
-        <span>VE Session Manager @VeSessionManager.Core.AppVersion.Display</span>
+        <span>VE Ops @VeSessionManager.Core.AppVersion.Display</span>
         <a asp-page="/Privacy">Privacy</a>
     </footer>
 
