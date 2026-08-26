@@ -1,5 +1,8 @@
 # VE Ops
 
+[![CI](https://img.shields.io/github/actions/workflow/status/MikeWills/VeSessionManager/ci.yml?branch=main&label=build)](https://github.com/MikeWills/VeSessionManager/actions/workflows/ci.yml)
+[![License](https://img.shields.io/github/license/MikeWills/VeSessionManager)](LICENSE)
+
 Automation for the mundane half of running an amateur radio exam session.
 
 *(The repo and codebase are still named VeSessionManager — VE Ops is the product's display name.)*
