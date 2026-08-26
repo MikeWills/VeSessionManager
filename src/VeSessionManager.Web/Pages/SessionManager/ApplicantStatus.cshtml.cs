@@ -113,9 +113,8 @@ public class ApplicantStatusModel(
         var pending = await dbContext.Candidates
             .AsNoTracking()
             .Include(c => c.Session)
-            .Where(c => (teamIds == null || teamIds.Contains(c.Session.TeamId))
-                && c.Tested
-                && (c.ApplicationStatus == CandidateApplicationStatus.Unmatched || c.ApplicationStatus == CandidateApplicationStatus.Received))
+            .Where(c => teamIds == null || teamIds.Contains(c.Session.TeamId))
+            .AwaitingFccGrant()
             // Session date, oldest first (Mike, 2026-08-24). This is a working queue: the session
             // waiting longest is the one to chase, so it belongs at the top.
             //

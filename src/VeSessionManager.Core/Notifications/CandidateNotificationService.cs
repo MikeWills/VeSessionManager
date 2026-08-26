@@ -402,6 +402,130 @@ public class CandidateNotificationService(
     }
 
     /// <summary>
+    /// The same hand-composed send as <see cref="SendComposedAsync"/>, scoped by team and the
+    /// "still waiting on an FCC grant" population instead of one session (2026-08-26) — the bulk-email
+    /// screen off Applicant Status, built for exactly the case a real FCC-wide processing stall
+    /// leaves behind: reminders suppressed via <c>SystemSettings.FccIssueActive</c>, and a human who
+    /// still wants to tell some or all of those candidates what's going on.
+    ///
+    /// <para><b>Recipients are re-derived, never trusted from the form</b> — same reasoning as
+    /// <see cref="SendComposedAsync"/> (#238), just scoped by team membership and
+    /// <see cref="CandidateApplicationStatusExtensions.AwaitingFccGrant"/> instead of one
+    /// <c>SessionId</c>. A posted id for a candidate who has since been granted, or who belongs to a
+    /// different team, is silently dropped and counted in <see cref="CandidateEmailBatchResult.NotOnSession"/>
+    /// rather than failing the whole batch.</para>
+    ///
+    /// <para><b>One team only, deliberately.</b> Applicant Status can merge every team a
+    /// SystemAdmin can see, but a message has to go out through <i>some</i> team's own SMTP
+    /// credentials — sending across several teams at once would mean grouping recipients by team
+    /// under the hood regardless, and the caller (the page) already requires a single team to be
+    /// selected before this is reachable at all, which answers the same question the UI would
+    /// otherwise have to ask.</para>
+    /// </summary>
+    public async Task<CandidateEmailBatchResult> SendComposedToPendingCandidatesAsync(
+        int teamId, IReadOnlyList<int> candidateIds, string subject, string body, string templateLabel,
+        int userId, CancellationToken cancellationToken)
+    {
+        var result = new CandidateEmailBatchResult();
+
+        var team = await dbContext.Teams.FirstOrDefaultAsync(t => t.Id == teamId, cancellationToken);
+        if (team is null)
+        {
+            result.Error = "That team no longer exists.";
+            return result;
+        }
+
+        if (string.IsNullOrWhiteSpace(subject) || string.IsNullOrWhiteSpace(body))
+        {
+            result.Error = "An email needs both a subject and a message.";
+            return result;
+        }
+
+        if (!team.IsEmailConfigured)
+        {
+            result.Error = "This team has no SMTP settings, so nothing can be sent. Set them in Team Settings.";
+            return result;
+        }
+
+        var emailSettings = await dbContext.EmailSettings.FirstOrDefaultAsync(e => e.TeamId == team.Id, cancellationToken);
+        if (emailSettings is null)
+        {
+            result.Error = "This team has no email From/Reply-To settings yet, so nothing can be sent.";
+            return result;
+        }
+
+        if (!integrationState.ShouldCall(team, TeamIntegration.Email, "sending a composed candidate email"))
+        {
+            result.Error = "Email is switched off for this team, so nothing was sent. Turn it back on in Team Settings.";
+            return result;
+        }
+
+        var recipients = await dbContext.Candidates
+            .Include(c => c.Session)
+            .Where(c => c.Session.TeamId == teamId && candidateIds.Contains(c.Id))
+            .AwaitingFccGrant()
+            .ToListAsync(cancellationToken);
+
+        result.NotOnSession = candidateIds.Distinct().Count() - recipients.Count;
+        if (result.NotOnSession > 0)
+        {
+            logger.LogWarning(
+                "Composed candidate email for team {TeamId} requested {Requested} recipient(s), {Dropped} of which are no longer pending an FCC grant on this team and were dropped.",
+                teamId, candidateIds.Distinct().Count(), result.NotOnSession);
+        }
+
+        var addressable = new List<Candidate>(recipients.Count);
+        var messages = new List<EmailMessage>(recipients.Count);
+
+        foreach (var candidate in recipients)
+        {
+            if (string.IsNullOrWhiteSpace(candidate.Email))
+            {
+                result.NoEmailAddress++;
+                continue;
+            }
+
+            var rendered = await templateRenderer.RenderTextAsync(
+                team.Id, subject, body, CandidatePlaceholderValues.For(candidate, team.Name), templateLabel, cancellationToken);
+
+            addressable.Add(candidate);
+            messages.Add(new EmailMessage(
+                candidate.Email!, emailSettings.FromAddress, emailSettings.FromDisplayName,
+                emailSettings.ReplyToAddress, rendered.Subject, rendered.Body, rendered.InlineLogo,
+                BccAddress: emailSettings.BccAddress));
+        }
+
+        var outcomes = await emailSender.SendManyAsync(team.ToEmailCredentials(), messages, cancellationToken);
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+
+        for (var i = 0; i < outcomes.Count; i++)
+        {
+            if (!outcomes[i].Sent)
+            {
+                result.Failed++;
+                logger.LogError(outcomes[i].Error, "Failed to send a composed email to candidate {CandidateId}", addressable[i].Id);
+                continue;
+            }
+
+            result.Sent++;
+            dbContext.CandidateEmailSends.Add(new CandidateEmailSend
+            {
+                CandidateId = addressable[i].Id,
+                TemplateLabel = templateLabel,
+                SentUtc = now,
+                SentByUserId = userId
+            });
+        }
+
+        dbContext.AddAuditLog(userId, "CandidateEmailsSent", nameof(Team), team.Id,
+            $"\"{templateLabel}\" to candidates pending an FCC grant on team {team.Name}: {result}", now);
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        logger.LogInformation("Composed candidate email for team {TeamId}: {Result}", team.Id, result);
+        return result;
+    }
+
+    /// <summary>
     /// Refuses a muted team, and says so (#396). Every caller left in this class is somebody standing
     /// at a button, and the answer they need is "nothing was sent" rather than silence.
     ///

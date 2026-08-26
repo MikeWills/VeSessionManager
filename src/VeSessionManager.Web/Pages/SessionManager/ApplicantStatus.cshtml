@@ -39,6 +39,14 @@ else
             <h2 style="font-size:16px;">Pending FCC grant<span class="pill-count @(Model.Pending.Count == 0 ? "zero" : "")">@Model.Pending.Count</span></h2>
             <p class="eyebrow" style="margin-top:0;">Passed but not yet issued — drops off once granted</p>
         </div>
+        @* Requires one specific team, not "All teams" — a message has to go out through some team's
+           own SMTP credentials, and letting the picker answer that question is simpler than a second
+           control here asking it again. Built for a real FCC-wide processing stall (Admin/FccStatus):
+           reminders suppressed, and a human still wants to tell some or all of these people why. *@
+        @if (Model.TeamId is int teamId && Model.Pending.Count > 0)
+        {
+            <a class="btn-secondary btn-sm" asp-page="/SessionManager/ApplicantStatusEmail" asp-route-teamId="@teamId">Email these candidates</a>
+        }
     </div>
     <div class="table-scroll">
     <table class="cards" data-sortable="pending-fcc-grant">

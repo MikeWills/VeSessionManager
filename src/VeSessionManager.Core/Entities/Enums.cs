@@ -77,6 +77,16 @@ public static class CandidateApplicationStatusExtensions
     ];
 
     public static bool IsTerminal(this CandidateApplicationStatus status) => TerminalStatuses.Contains(status);
+
+    /// <summary>
+    /// "Still waiting on an FCC grant" — passed the exam, not yet Granted/Failed/NotTested, still
+    /// Unmatched or Received. The one definition of Applicant Status's "Pending" worklist (2026-08-26),
+    /// shared with the bulk-email screen reached from it so the two can never quietly drift apart on
+    /// who counts as still waiting.
+    /// </summary>
+    public static IQueryable<Candidate> AwaitingFccGrant(this IQueryable<Candidate> candidates) =>
+        candidates.Where(c => c.Tested
+            && (c.ApplicationStatus == CandidateApplicationStatus.Unmatched || c.ApplicationStatus == CandidateApplicationStatus.Received));
 }
 
 /// <summary>

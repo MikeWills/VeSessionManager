@@ -157,6 +157,35 @@ Other decisions:
 - Their placeholder chips are `CandidatePlaceholderValues` plus `{{Logo}}`: there is no send-site
   dictionary to read a token list from, and that is what the compose screen actually resolves.
 
+## A second entry point: bulk email off Applicant Status (2026-08-26)
+
+`SessionManager/ApplicantStatusEmail` is the same mechanism — pick candidates, start from a template,
+edit, send — reached from Applicant Status instead of a session, over "everyone on this team still
+waiting on an FCC grant" instead of one session's roster. Built for a real FCC-wide processing stall:
+`Admin/FccStatus`'s switches suppress the automatic reminder, and this is how a human still tells some
+or all of those candidates what's actually going on.
+
+**Population, not a hand-picked list.** The recipient pool is
+`CandidateApplicationStatusExtensions.AwaitingFccGrant` — the same predicate Applicant Status's own
+"Pending FCC grant" count and table use, and `NavBadgeCountService`'s per-team pill besides, all
+converged onto the one definition here (they had drifted apart in comment-only form before this).
+Whatever's on screen when the compose screen is opened is what can be sent to; a candidate granted
+between opening the page and pressing Send is dropped and counted, not sent to.
+
+**Requires one specific team, not "All teams."** A message has to go out through some team's own SMTP
+credentials — sending across several teams at once would mean grouping recipients by team under the
+hood regardless, so `CandidateNotificationService.SendComposedToPendingCandidatesAsync` takes exactly
+one `teamId`, and Applicant Status only offers the "Email these candidates" button once a specific team
+is selected. A `SystemAdmin` merging every team's worklist has to narrow to one before this is
+reachable — the same question the send would otherwise have to ask a second time.
+
+**Same recipient-scoping discipline as the session-scoped screen (#238):** the posted candidate ids are
+never trusted as identity, only as "did the screen actually offer this one" — re-derived server-side
+by team membership *and* still being in the pending population, not read off the form. A tampered
+team id is refused outright (`Forbid`), the same "not manageable means no" rule
+`AdminAccessScope.TryResolveManageableTeamIdForWrite` already uses elsewhere, just inlined here since
+SessionManager (not just the two admin roles) can reach this screen.
+
 ## Next
 
 Issue [#191](https://github.com/MikeWills/VeSessionManager/issues/191) — the same shape aimed at VEs

@@ -14,9 +14,10 @@ namespace VeSessionManager.Core.Navigation;
 /// "Pending VEC submission" status filter (Index.cshtml.cs), which replaced the standalone VEC
 /// Submission page.
 ///
-/// The two predicates that have both an aggregate and a per-team form live once, as the
-/// <see cref="PendingGrantPredicate"/>/<see cref="UnresolvedPaymentPredicate"/> expressions below,
-/// composed into whichever query needs them rather than retyped — that's the whole reason the
+/// The two predicates that have both an aggregate and a per-team form live once — the pending-grant
+/// one as <see cref="CandidateApplicationStatusExtensions.AwaitingFccGrant"/> (shared further still
+/// with the bulk-email screen off Applicant Status), <see cref="UnresolvedPaymentPredicate"/> below —
+/// composed into whichever query needs them rather than retyped. That's the whole reason the
 /// per-team counts live here instead of on the pages themselves.
 ///
 /// **teamIds semantics matter:** for the aggregate methods, null means "every team" (SystemAdmin —
@@ -27,11 +28,6 @@ namespace VeSessionManager.Core.Navigation;
 /// </summary>
 public class NavBadgeCountService(AppDbContext dbContext, TimeProvider timeProvider)
 {
-    /// <summary>Matches ApplicantStatus.cshtml.cs's own "Pending FCC grant" query — passed, but not yet confirmed Granted.</summary>
-    private static readonly Expression<Func<Candidate, bool>> PendingGrantPredicate =
-        c => c.Tested
-            && (c.ApplicationStatus == CandidateApplicationStatus.Unmatched || c.ApplicationStatus == CandidateApplicationStatus.Received);
-
     /// <summary>Matches UnmatchedPayments.cshtml.cs's own query — arrived from Square, still not attributed to a candidate.</summary>
     private static readonly Expression<Func<UnmatchedSquarePayment, bool>> UnresolvedPaymentPredicate =
         u => u.ResolvedUtc == null;
@@ -39,7 +35,7 @@ public class NavBadgeCountService(AppDbContext dbContext, TimeProvider timeProvi
     public async Task<NavBadgeCounts> GetCountsAsync(IReadOnlyList<int>? teamIds, CancellationToken cancellationToken)
     {
         var applicantsPendingGrant = await dbContext.Candidates
-            .Where(PendingGrantPredicate)
+            .AwaitingFccGrant()
             .Where(c => teamIds == null || teamIds.Contains(c.Session.TeamId))
             .CountAsync(cancellationToken);
 
@@ -114,7 +110,7 @@ public class NavBadgeCountService(AppDbContext dbContext, TimeProvider timeProvi
     public async Task<IReadOnlyDictionary<int, int>> GetApplicantsPendingGrantByTeamAsync(
         IReadOnlyList<int> teamIds, CancellationToken cancellationToken) =>
         await CountByTeamAsync(
-            dbContext.Candidates.Where(PendingGrantPredicate).Select(c => c.Session.TeamId),
+            dbContext.Candidates.AwaitingFccGrant().Select(c => c.Session.TeamId),
             teamIds,
             cancellationToken);
 
