@@ -1002,3 +1002,16 @@ already marked; only a candidate whose own reminder becomes newly due afterward 
 tradeoff, deliberately accepted: a candidate suppressed during a real outage never separately hears
 "that thing that looked stuck wasn't your fault" — if a team wants to tell them, that's a manual,
 hand-composed message, not this switch.
+
+The four checkboxes on `Admin/FccStatus` render as on/off switches (`.switch` in `app.css`) rather
+than plain checkboxes, added generally enough that any future boolean setting in this app can reuse
+it — a plain checkbox reads as "pick this option," and a setting like "the FCC has a known issue" is a
+state, not a choice among several.
+
+**A separate, general-purpose System Banner shipped alongside this**, not tied to the FCC switches at
+all: `SystemSettings.SystemBannerEnabled`/`SystemBannerMessage`, set on `Admin/SystemSettings`
+(SystemAdmin-only — deliberately narrower than the FCC switches themselves, which TeamAdmin can also
+flip), rendered site-wide by `_SystemBanner.cshtml` next to the existing `_TestModeBanner`. It exists
+for anything worth telling every signed-in user right now, an FCC outage among them — an operator types
+the message and turns it on/off by hand; nothing about it reads the FCC switches or derives its text
+automatically.

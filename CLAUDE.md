@@ -143,7 +143,13 @@ One-line-or-two pointer per feature, newest first — full design rationale live
   never a silent exclude** — `MessageDispatchService.SuppressByFccIssueAsync` marks it the same way a
   muted team's Zoom/Discord/Email already is, so flipping the switch back off never sends a backlog of
   everything that was held back, the same failure `MessageRuleEligibility.FloorUtc` already prevents
-  for a different kind of "off."
+  for a different kind of "off." The four checkboxes render as real on/off switches now (`.switch` in
+  `app.css`, generic enough for any future boolean setting to reuse) — a plain checkbox reads as "pick
+  this option," and a state like "the FCC has a known issue" isn't a choice among several. A separate,
+  general-purpose **System Banner** (`SystemSettings.SystemBannerEnabled`/`SystemBannerMessage`,
+  `Admin/SystemSettings`, SystemAdmin-only) shipped alongside it — site-wide, free-text, not tied to
+  the FCC switches at all; an operator types the message and turns it on/off by hand for anything
+  worth telling every signed-in user, an FCC outage being only the first reason to.
 
 - **A picked team now carries across every team-filtered page (2026-08-26).** Mike: a TeamAdmin/
   SessionManager/TeamLead can sit on several teams too, not just SystemAdmin, so this isn't a niche

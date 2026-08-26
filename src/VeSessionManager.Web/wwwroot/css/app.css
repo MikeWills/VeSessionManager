@@ -161,6 +161,18 @@ h1 { font-size: 24px; margin: 0 0 4px; letter-spacing: -.01em; }
 .vesm .toggle-pill input { margin: 0; width: auto; cursor: pointer; accent-color: var(--panel); }
 .toggle-pill.active { background: var(--panel); color: #fff; border-color: var(--panel); }
 
+/* iOS-style on/off switch (2026-08-26), for a plain boolean setting where .toggle-pill (a filter,
+   pressed/not-pressed) reads wrong — a setting like "the FCC has a known issue" is a state, not a
+   choice among several pills. Wraps a real checkbox for the same reason .toggle-pill does: keyboard
+   and screen-reader behaviour come for free, and the visible slider is decoration on top of it. */
+.switch { position: relative; display: inline-block; width: 40px; height: 22px; flex-shrink: 0; vertical-align: middle; }
+.switch input { position: absolute; opacity: 0; width: 100%; height: 100%; margin: 0; cursor: pointer; }
+.switch .slider { position: absolute; inset: 0; background: var(--line-strong); border-radius: 99px; transition: background .15s ease; pointer-events: none; }
+.switch .slider::before { content: ""; position: absolute; height: 16px; width: 16px; left: 3px; top: 3px; background: var(--surface); border-radius: 50%; transition: transform .15s ease; }
+.switch input:checked + .slider { background: var(--panel); }
+.switch input:checked + .slider::before { transform: translateX(18px); }
+.switch input:focus-visible + .slider { outline: 2px solid var(--focus); outline-offset: 2px; }
+
 .filters a.filter-pill { font-family: "IBM Plex Mono", monospace; font-size: 12px; padding: 9px 14px; border-radius: 99px; border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink-soft); cursor: pointer; text-decoration: none; display: inline-block; }
 .filters a.filter-pill.active { background: var(--panel); color: #fff; border-color: var(--panel); }
 

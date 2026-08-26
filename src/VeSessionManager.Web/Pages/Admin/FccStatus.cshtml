@@ -22,11 +22,14 @@
     </p>
 
     <form method="post">
-        <div class="field" style="max-width:480px;">
-            <input id="fccIssueActive" name="fccIssueActive" type="checkbox" value="true"
-                   checked="@Model.FccIssueActive" style="width:auto;"
-                   data-toggle-panel="fccSubTogglesPanel"
-                   data-check-with="suppressNewLicenseReminders,suppressUpgradeReminders,suppressRenewalReminders" />
+        <div style="display:flex; align-items:center; gap:12px; max-width:480px;">
+            <label class="switch">
+                <input id="fccIssueActive" name="fccIssueActive" type="checkbox" value="true"
+                       checked="@Model.FccIssueActive"
+                       data-toggle-panel="fccSubTogglesPanel"
+                       data-check-with="suppressNewLicenseReminders,suppressUpgradeReminders,suppressRenewalReminders" />
+                <span class="slider" aria-hidden="true"></span>
+            </label>
             <input name="fccIssueActive" type="hidden" value="false" />
             <label for="fccIssueActive" style="margin:0;">The FCC has a known issue right now</label>
         </div>
@@ -38,16 +41,22 @@
                 has the same effect immediately, regardless of what is checked here.
             </p>
 
-            <div class="field" style="max-width:480px;">
-                <input id="suppressNewLicenseReminders" name="suppressNewLicenseReminders" type="checkbox" value="true"
-                       checked="@Model.SuppressNewLicenseReminders" style="width:auto;" />
+            <div style="display:flex; align-items:center; gap:12px; max-width:480px;">
+                <label class="switch">
+                    <input id="suppressNewLicenseReminders" name="suppressNewLicenseReminders" type="checkbox" value="true"
+                           checked="@Model.SuppressNewLicenseReminders" />
+                    <span class="slider" aria-hidden="true"></span>
+                </label>
                 <input name="suppressNewLicenseReminders" type="hidden" value="false" />
                 <label for="suppressNewLicenseReminders" style="margin:0;">New license candidates (FCC application fee reminder)</label>
             </div>
 
-            <div class="field" style="max-width:480px; margin-top:8px;">
-                <input id="suppressUpgradeReminders" name="suppressUpgradeReminders" type="checkbox" value="true"
-                       checked="@Model.SuppressUpgradeReminders" style="width:auto;" />
+            <div style="display:flex; align-items:center; gap:12px; max-width:480px; margin-top:8px;">
+                <label class="switch">
+                    <input id="suppressUpgradeReminders" name="suppressUpgradeReminders" type="checkbox" value="true"
+                           checked="@Model.SuppressUpgradeReminders" />
+                    <span class="slider" aria-hidden="true"></span>
+                </label>
                 <input name="suppressUpgradeReminders" type="hidden" value="false" />
                 <label for="suppressUpgradeReminders" style="margin:0;">Upgrade candidates</label>
             </div>
@@ -56,9 +65,12 @@
                 this reminder almost never fires for one. Wired the same as New License in case that changes.
             </p>
 
-            <div class="field" style="max-width:480px; margin-top:8px;">
-                <input id="suppressRenewalReminders" name="suppressRenewalReminders" type="checkbox" value="true"
-                       checked="@Model.SuppressRenewalReminders" style="width:auto;" />
+            <div style="display:flex; align-items:center; gap:12px; max-width:480px; margin-top:8px;">
+                <label class="switch">
+                    <input id="suppressRenewalReminders" name="suppressRenewalReminders" type="checkbox" value="true"
+                           checked="@Model.SuppressRenewalReminders" />
+                    <span class="slider" aria-hidden="true"></span>
+                </label>
                 <input name="suppressRenewalReminders" type="hidden" value="false" />
                 <label for="suppressRenewalReminders" style="margin:0;">Renewal candidates (future feature)</label>
             </div>

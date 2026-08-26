@@ -42,6 +42,9 @@ public class SystemSettingsModel(UserManager<User> userManager, SystemSettingsSe
 
     public bool IsSystemEmailConfigured { get; private set; }
 
+    public bool SystemBannerEnabled { get; private set; }
+    public string? SystemBannerMessage { get; private set; }
+
     public async Task OnGetAsync()
     {
         var settings = await systemSettingsService.GetAsync(CancellationToken.None);
@@ -53,6 +56,8 @@ public class SystemSettingsModel(UserManager<User> userManager, SystemSettingsSe
         SystemSmtpFromDisplayName = settings.SystemSmtpFromDisplayName;
         SystemSmtpPasswordIsSet = !string.IsNullOrWhiteSpace(settings.SystemSmtpPassword);
         IsSystemEmailConfigured = settings.IsSystemEmailConfigured;
+        SystemBannerEnabled = settings.SystemBannerEnabled;
+        SystemBannerMessage = settings.SystemBannerMessage;
         PiiRetentionWindowDays = settings.PiiRetentionWindowDays;
         UlsWatcherIntervalHours = settings.UlsWatcherIntervalHours;
         UlsWatcherStartHourEt = settings.UlsWatcherStartHourEt;
@@ -128,6 +133,30 @@ public class SystemSettingsModel(UserManager<User> userManager, SystemSettingsSe
         {
             SystemSettingsActionResult.Success => "System email settings updated.",
             _ => "Could not save — the SMTP port must be between 1 and 65535."
+        };
+
+        return RedirectToPage();
+    }
+
+    /// <summary>
+    /// The site-wide banner (2026-08-26) — own form/handler, same reasoning as
+    /// <see cref="OnPostSystemEmailAsync"/>: unrelated to the rest of this screen.
+    /// </summary>
+    public async Task<IActionResult> OnPostSystemBannerAsync(bool systemBannerEnabled, string? systemBannerMessage)
+    {
+        var user = await userManager.GetUserAsync(User);
+        if (user is null || user.Role != UserRole.SystemAdmin)
+        {
+            return Forbid();
+        }
+
+        var result = await systemSettingsService.UpdateSystemBannerAsync(
+            systemBannerEnabled, systemBannerMessage, user.Id, CancellationToken.None);
+
+        TempData[result == SystemSettingsActionResult.Success ? "StatusMessage" : "ErrorMessage"] = result switch
+        {
+            SystemSettingsActionResult.Success => systemBannerEnabled ? "Banner saved and showing." : "Banner turned off.",
+            _ => "Could not save — a message is required to turn the banner on."
         };
 
         return RedirectToPage();

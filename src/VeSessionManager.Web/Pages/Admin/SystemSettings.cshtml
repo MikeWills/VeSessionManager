@@ -157,3 +157,38 @@
         </div>
     </form>
 </div>
+
+<div class="session-panel" style="display:block; margin-top:24px;">
+    <div class="section-head">
+        <h2>System Banner</h2>
+        @if (Model.SystemBannerEnabled)
+        {
+            <span class="chip chip-amber">Showing</span>
+        }
+    </div>
+    <p class="session-sub">
+        A message shown across every page, for anything worth telling every signed-in user right now —
+        a known FCC outage, planned maintenance, whatever comes up next. General-purpose, not tied to
+        any one feature's own switch.
+    </p>
+    <form method="post" asp-page-handler="SystemBanner">
+        <div style="display:flex; align-items:center; gap:12px; max-width:480px;">
+            <label class="switch">
+                <input id="systemBannerEnabled" name="systemBannerEnabled" type="checkbox" value="true" checked="@Model.SystemBannerEnabled"
+                       data-toggle-panel="systemBannerMessageField" />
+                <span class="slider" aria-hidden="true"></span>
+            </label>
+            <input name="systemBannerEnabled" type="hidden" value="false" />
+            <label for="systemBannerEnabled" style="margin:0;">Show the banner</label>
+        </div>
+        <div id="systemBannerMessageField" style="@(Model.SystemBannerEnabled ? "" : "display:none;") margin-top:12px; max-width:480px;">
+            <div class="field">
+                <label for="systemBannerMessage">Message</label>
+                <textarea id="systemBannerMessage" name="systemBannerMessage" rows="2">@Model.SystemBannerMessage</textarea>
+            </div>
+        </div>
+        <div class="panel-actions" style="align-items:flex-start; margin-top:20px;">
+            <button type="submit" class="btn-primary">Save banner</button>
+        </div>
+    </form>
+</div>
