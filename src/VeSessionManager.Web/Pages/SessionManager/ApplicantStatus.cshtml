@@ -53,7 +53,6 @@ else
                 <th>Session</th>
                 <th>License class</th>
                 <th>Status</th>
-                <th>Fee</th>
                 @* Beside the elapsed number it anchors, so "4 days" can be checked rather than trusted. *@
                 <th>Application received</th>
                 <th>Days pending</th>
@@ -62,7 +61,7 @@ else
         <tbody>
             @if (Model.Pending.Count == 0)
             {
-                <tr><td colspan="@(Model.AvailableTeams.Count > 1 ? 9 : 8)">Nobody is currently waiting on an FCC grant.</td></tr>
+                <tr><td colspan="@(Model.AvailableTeams.Count > 1 ? 8 : 7)">Nobody is currently waiting on an FCC grant.</td></tr>
             }
             @foreach (var row in Model.Pending)
             {
@@ -84,7 +83,6 @@ else
                     <td data-sort-value="@row.SessionDateSortValue"><a asp-page="./Detail" asp-route-id="@row.SessionId">@row.SessionDateLine</a></td>
                     <td class="mono">@row.LicenseClassLine</td>
                     <td>@row.StatusLabel</td>
-                    <td>@row.FeeLabel</td>
                     <td data-sort-value="@row.ApplicationReceivedSortValue">@row.ApplicationReceivedLine</td>
                     @* No day numbers in the tooltip since #401 PR2: the boundaries are this team's own
                        rules now, so naming "day 5" here would be right for one team and wrong for the
