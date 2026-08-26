@@ -8,6 +8,18 @@ that window, or immediately if it's phase-numbered work already summarized in "C
 design rationale for any entry still lives in its linked `/docs/*.md` file, not here or in
 CLAUDE.md — this file, like CLAUDE.md's Change Log, is pointers only.
 
+- **Rules can post to Discord, and carry their own Reply-To (2026-08-17).** Issue #401, PR4 — the last
+  of it. See `docs/trigger-points.md`. Three things worth carrying forward: **nothing per-person can
+  reach a channel post because that path builds no `EmailMessage` at all** — the unsubscribe and
+  CAN-SPAM footer have no field to occupy rather than a check that remembers them; **`MessageFanOut`'s
+  `PerSubject` was renamed `SingleDigest`** (value unchanged) because the old name read as "one per
+  candidate", which is the opposite of what it selects and exactly the forty-posts mistake the field
+  exists to prevent; and **there is deliberately no From override** — SPF/DKIM/DMARC live on a domain
+  this app does not control and a wrong From goes to spam silently, so Reply-To (resolvable to the
+  session lead, via `CallSign.Normalize` so ExamTools' `<UNKNOWN>` is never looked up) is the field
+  that answers what people actually ask for. A Cc is refused on candidate mail: the person copied
+  cannot unsubscribe.
+
 - **Three new trigger points, none of them seeded (2026-08-17).** Issue #401, PR3 — see
   `docs/trigger-points.md`. `CandidateTested`, `LicenseGranted` and `FelonyDisclosureDeclared`, all
   opt-in, so no existing team's mail changes. The one to carry forward: **a state trigger is only

@@ -158,4 +158,26 @@ public class SystemSettingsServiceTests
         Assert.False(settings.TestModeEnabled);
         Assert.Empty(dbContext.AuditLogs);
     }
+
+    [Fact]
+    public async Task UpdateFccIssueAsync_PersistsAllFourSwitchesAndAudits()
+    {
+        await using var dbContext = CreateContext();
+        var user = new User { Name = "Team Admin", Role = UserRole.TeamAdmin };
+        dbContext.Users.Add(user);
+        await dbContext.SaveChangesAsync();
+
+        var result = await CreateService(dbContext).UpdateFccIssueAsync(
+            fccIssueActive: true, suppressNewLicenseReminders: true, suppressUpgradeReminders: false,
+            suppressRenewalReminders: true, user.Id, CancellationToken.None);
+
+        Assert.Equal(SystemSettingsActionResult.Success, result);
+        var settings = await dbContext.SystemSettings.SingleAsync();
+        Assert.True(settings.FccIssueActive);
+        Assert.True(settings.FccIssueSuppressNewLicenseReminders);
+        Assert.False(settings.FccIssueSuppressUpgradeReminders);
+        Assert.True(settings.FccIssueSuppressRenewalReminders);
+        Assert.Equal(user.Id, settings.UpdatedByUserId);
+        Assert.Single(dbContext.AuditLogs);
+    }
 }

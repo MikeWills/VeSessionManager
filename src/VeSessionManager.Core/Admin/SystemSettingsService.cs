@@ -148,6 +148,38 @@ public class SystemSettingsService(AppDbContext dbContext, TimeProvider timeProv
         return SystemSettingsActionResult.Success;
     }
 
+    /// <summary>
+    /// The FCC-wide-issue suppression switches (2026-08-26) — own form/handler, same reasoning as
+    /// <see cref="UpdateSystemEmailAsync"/>: unrelated to the rest of this screen, and unlike it,
+    /// reachable by TeamAdmin as well as SystemAdmin (see <c>Pages/Admin/FccStatus.cshtml.cs</c>),
+    /// since either role may be the one who first notices a real FCC outage.
+    /// </summary>
+    public async Task<SystemSettingsActionResult> UpdateFccIssueAsync(
+        bool fccIssueActive,
+        bool suppressNewLicenseReminders,
+        bool suppressUpgradeReminders,
+        bool suppressRenewalReminders,
+        int userId,
+        CancellationToken cancellationToken)
+    {
+        var settings = await GetAsync(cancellationToken);
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+
+        settings.FccIssueActive = fccIssueActive;
+        settings.FccIssueSuppressNewLicenseReminders = suppressNewLicenseReminders;
+        settings.FccIssueSuppressUpgradeReminders = suppressUpgradeReminders;
+        settings.FccIssueSuppressRenewalReminders = suppressRenewalReminders;
+        settings.UpdatedByUserId = userId;
+        settings.UpdatedUtc = now;
+
+        dbContext.AddAuditLog(userId, "FccIssueSettingsUpdated", nameof(SystemSettings), SingletonId,
+            $"FccIssueActive={fccIssueActive}, SuppressNewLicenseReminders={suppressNewLicenseReminders}, SuppressUpgradeReminders={suppressUpgradeReminders}, SuppressRenewalReminders={suppressRenewalReminders}.",
+            now);
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return SystemSettingsActionResult.Success;
+    }
+
     private static string? Blank(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 }
 

@@ -30,6 +30,10 @@ public class FccNavMenuTests
 
     public static IEnumerable<object[]> FccLinks() =>
         Regex.Matches(FccMenuBlock(), "<a [^>]*>")
+            // FCC Status (2026-08-26) is the one deliberate exception: an in-app settings page, not
+            // a public FCC site, so it must NOT behave like the three below it. See the layout's own
+            // comment at that link.
+            .Where(m => !m.Value.Contains("asp-page=\"/Admin/FccStatus\"", StringComparison.Ordinal))
             .Select(m => new object[] { m.Value });
 
     /// <summary>
@@ -39,6 +43,8 @@ public class FccNavMenuTests
     /// <para><c>rel="noopener noreferrer"</c> rides along with <c>target="_blank"</c>: without
     /// <c>noopener</c> the opened page gets a handle back to this one through <c>window.opener</c>,
     /// which is a redirect it should not have. Same pairing as the Support link.</para>
+    ///
+    /// <para>Excludes the FCC Status link (2026-08-26) — see <see cref="FccLinks"/>.</para>
     /// </summary>
     [Theory]
     [MemberData(nameof(FccLinks))]

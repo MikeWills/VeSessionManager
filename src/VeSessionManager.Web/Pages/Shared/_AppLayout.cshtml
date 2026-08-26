@@ -226,6 +226,15 @@
                     <a class="item" href="https://wireless2.fcc.gov/UlsApp/ApplicationSearch/searchAppl.jsp" target="_blank" rel="noopener noreferrer">Application Search</a>
                     <a class="item" href="https://wireless2.fcc.gov/UlsApp/UlsSearch/searchLicense.jsp" target="_blank" rel="noopener noreferrer">License Search</a>
                     <a class="item" href="https://apps.fcc.gov/cores/userLogin.do" target="_blank" rel="noopener noreferrer">CORES</a>
+                    @if (currentUser?.Role is UserRole.SystemAdmin or UserRole.TeamAdmin)
+                    {
+                        @* The one item in this menu that stays in the app rather than leaving it —
+                           deliberately an exception to the "these are external tabs" note above,
+                           since an admin flipping this switch is exactly the FCC-related task this
+                           menu already gathers, just handled here instead of at wireless2.fcc.gov. *@
+                        <hr />
+                        <a class="item @(activeNav == "AdminFccStatus" ? "active" : "")" asp-page="/Admin/FccStatus">FCC Status</a>
+                    }
                 </div>
             </div>
             @if (currentUser?.Role is UserRole.SystemAdmin or UserRole.TeamAdmin)

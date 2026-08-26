@@ -1,0 +1,78 @@
+@page
+@model VeSessionManager.Web.Pages.Admin.FccStatusModel
+@{
+    ViewData["Title"] = "FCC Status";
+    ViewData["ActiveNav"] = "AdminFccStatus";
+    Layout = "_AppLayout";
+}
+
+<div class="page-head">
+    <div>
+        <p class="eyebrow">Deployment-wide</p>
+        <h1>FCC Status</h1>
+    </div>
+</div>
+
+<div class="session-panel" style="display:block;">
+    <p class="session-sub">
+        A manual switch for when the FCC itself — or the VEC's own submission to it — is known to be
+        stalled: a shutdown, a payment-processing outage, weeks or months with nothing moving. The app
+        cannot tell that apart from one candidate simply not having paid yet, so this is how a human
+        says so. While off, every reminder below sends exactly as it always has.
+    </p>
+
+    <form method="post">
+        <div class="field" style="max-width:480px;">
+            <input id="fccIssueActive" name="fccIssueActive" type="checkbox" value="true"
+                   checked="@Model.FccIssueActive" style="width:auto;"
+                   data-toggle-panel="fccSubTogglesPanel"
+                   data-check-with="suppressNewLicenseReminders,suppressUpgradeReminders,suppressRenewalReminders" />
+            <input name="fccIssueActive" type="hidden" value="false" />
+            <label for="fccIssueActive" style="margin:0;">The FCC has a known issue right now</label>
+        </div>
+
+        <div id="fccSubTogglesPanel" style="@(Model.FccIssueActive ? "" : "display:none;") margin-top:16px; margin-left:24px;">
+            <p class="session-sub">
+                Checking a population below stops its reminder from sending at all until unchecked —
+                nothing is queued up to send in a batch once you do. Turning the switch above back off
+                has the same effect immediately, regardless of what is checked here.
+            </p>
+
+            <div class="field" style="max-width:480px;">
+                <input id="suppressNewLicenseReminders" name="suppressNewLicenseReminders" type="checkbox" value="true"
+                       checked="@Model.SuppressNewLicenseReminders" style="width:auto;" />
+                <input name="suppressNewLicenseReminders" type="hidden" value="false" />
+                <label for="suppressNewLicenseReminders" style="margin:0;">New license candidates (FCC application fee reminder)</label>
+            </div>
+
+            <div class="field" style="max-width:480px; margin-top:8px;">
+                <input id="suppressUpgradeReminders" name="suppressUpgradeReminders" type="checkbox" value="true"
+                       checked="@Model.SuppressUpgradeReminders" style="width:auto;" />
+                <input name="suppressUpgradeReminders" type="hidden" value="false" />
+                <label for="suppressUpgradeReminders" style="margin:0;">Upgrade candidates</label>
+            </div>
+            <p class="session-sub" style="margin-left:24px;">
+                Rarely applies today — the FCC does not currently charge upgrade candidates a fee, so
+                this reminder almost never fires for one. Wired the same as New License in case that changes.
+            </p>
+
+            <div class="field" style="max-width:480px; margin-top:8px;">
+                <input id="suppressRenewalReminders" name="suppressRenewalReminders" type="checkbox" value="true"
+                       checked="@Model.SuppressRenewalReminders" style="width:auto;" />
+                <input name="suppressRenewalReminders" type="hidden" value="false" />
+                <label for="suppressRenewalReminders" style="margin:0;">Renewal candidates (future feature)</label>
+            </div>
+            <p class="session-sub" style="margin-left:24px;">
+                This app does not track renewals at all yet, so this switch does nothing today —
+                provisioned only so the control already exists if that ever becomes a feature.
+            </p>
+        </div>
+
+        <button type="submit" class="btn-primary" style="margin-top:20px;">Save</button>
+    </form>
+
+    @if (Model.UpdatedUtc is { } updatedUtc)
+    {
+        <p class="session-sub" style="margin-top:16px;">Last changed @updatedUtc.ToString("MMM d, yyyy h:mm tt") UTC.</p>
+    }
+</div>

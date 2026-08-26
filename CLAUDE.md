@@ -121,6 +121,19 @@ which is "here's what was built and why, mostly historical.")
 One-line-or-two pointer per feature, newest first — full design rationale lives in the linked
 `/docs/*.md` file, not here. See "Documentation Structure" below for the policy this follows.
 
+- **A manual switch for a real FCC-wide processing stall (2026-08-26).** See `docs/trigger-points.md`'s
+  "FCC-wide-issue suppression" section. Mike, watching a live incident: the FCC's payment-verification
+  subsystem stalling for new-license candidates while upgrade grants kept flowing — a distinction
+  `FccFeeOutstandingScanner` had no way to represent. `Admin/FccStatus` (`RoleGroups.Admins`, so
+  TeamAdmin as well as SystemAdmin) sets a master switch plus one sub-switch per candidate population;
+  checking the master auto-checks all three in the UI. **Only two of the three do anything** —
+  Renewal is stored and shown but never read, since this app has no renewal-candidate concept at all;
+  it exists only so the control is already there the day that might change. **Suppressed is terminal,
+  never a silent exclude** — `MessageDispatchService.SuppressByFccIssueAsync` marks it the same way a
+  muted team's Zoom/Discord/Email already is, so flipping the switch back off never sends a backlog of
+  everything that was held back, the same failure `MessageRuleEligibility.FloorUtc` already prevents
+  for a different kind of "off."
+
 - **A picked team now carries across every team-filtered page (2026-08-26).** Mike: a TeamAdmin/
   SessionManager/TeamLead can sit on several teams too, not just SystemAdmin, so this isn't a niche
   case. New `SharedTeamFilterCookie` (design rationale in its own doc comment and
@@ -252,18 +265,6 @@ cap and a newer entry needs to be added; oldest goes first.
   be youth — they *did* test. ⚠️ **It only works if `Payment.Refunds` is loaded**, and session detail
   was not loading it: an unloaded EF collection is empty rather than absent, so the fix would have
   silently restored the old figure with nothing to indicate it.
-
-- **Rules can post to Discord, and carry their own Reply-To (2026-08-17).** Issue #401, PR4 — the last
-  of it. See `docs/trigger-points.md`. Three things worth carrying forward: **nothing per-person can
-  reach a channel post because that path builds no `EmailMessage` at all** — the unsubscribe and
-  CAN-SPAM footer have no field to occupy rather than a check that remembers them; **`MessageFanOut`'s
-  `PerSubject` was renamed `SingleDigest`** (value unchanged) because the old name read as "one per
-  candidate", which is the opposite of what it selects and exactly the forty-posts mistake the field
-  exists to prevent; and **there is deliberately no From override** — SPF/DKIM/DMARC live on a domain
-  this app does not control and a wrong From goes to spam silently, so Reply-To (resolvable to the
-  session lead, via `CallSign.Normalize` so ExamTools' `<UNKNOWN>` is never looked up) is the field
-  that answers what people actually ask for. A Cc is refused on candidate mail: the person copied
-  cannot unsubscribe.
 
 Everything through Phase 0-10's initial build (ExamTools ingestion, Zoom/Discord, Square, email
 notifications, FCC ULS watcher, payment reminders, VE tracking, VEC submission tracker, admin
