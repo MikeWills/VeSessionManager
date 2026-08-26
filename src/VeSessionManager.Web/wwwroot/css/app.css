@@ -177,6 +177,11 @@ h1 { font-size: 24px; margin: 0 0 4px; letter-spacing: -.01em; }
 .switch input:checked + .slider::before { transform: translateX(18px); }
 .switch input:focus-visible + .slider { outline: 2px solid var(--focus); outline-offset: 2px; }
 
+/* A whole row (switch + its own label text) as one clickable target, for a boolean setting whose
+   label isn't a separate <label for="id"> elsewhere on the page — e.g. one row per team in a list
+   of subscriptions, where a per-row id/for pair would be pure boilerplate. */
+.switch-row { display: flex; align-items: center; gap: 10px; cursor: pointer; }
+
 .filters a.filter-pill { font-family: "IBM Plex Mono", monospace; font-size: 12px; padding: 9px 14px; border-radius: 99px; border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink-soft); cursor: pointer; text-decoration: none; display: inline-block; }
 .filters a.filter-pill.active { background: var(--panel); color: #fff; border-color: var(--panel); }
 

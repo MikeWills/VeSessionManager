@@ -102,8 +102,11 @@
                 @foreach (var subscription in Model.Subscriptions)
                 {
                     <label class="switch-row">
-                        <input type="checkbox" name="subscribedTeamIds" value="@subscription.TeamId"
-                               checked="@subscription.Subscribed" style="width:auto;" />
+                        <span class="switch">
+                            <input type="checkbox" name="subscribedTeamIds" value="@subscription.TeamId"
+                                   checked="@subscription.Subscribed" />
+                            <span class="slider" aria-hidden="true"></span>
+                        </span>
                         <span>Email me about @subscription.TeamName sessions</span>
                     </label>
                 }

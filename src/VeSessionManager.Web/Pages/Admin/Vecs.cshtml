@@ -89,7 +89,13 @@
                 <p class="session-sub">ExamTools' own <code>vec</code> value for this VEC's sessions, if it differs from the name — GLAARG reports <code>lagroup</code>. Sessions are matched on this, so a mismatch means they never ingest.</p>
             </div>
             <div class="field">
-                <label><input type="checkbox" name="supportsYouthProgram" value="true" style="width:auto; display:inline-block;" /> Supports youth program</label>
+                <label class="switch-row">
+                    <span class="switch">
+                        <input type="checkbox" name="supportsYouthProgram" value="true" />
+                        <span class="slider" aria-hidden="true"></span>
+                    </span>
+                    <span>Supports youth program</span>
+                </label>
             </div>
             <div class="field"><label for="createVecNotes">Notes</label><textarea id="createVecNotes" name="notes" rows="2"></textarea></div>
             <div class="modal-actions">
@@ -118,7 +124,13 @@
                     <p class="session-sub">ExamTools' own <code>vec</code> value for this VEC's sessions — GLAARG reports <code>lagroup</code>. Sessions are matched on this, so a mismatch means they never ingest. <strong>It does not change when you rename the VEC</strong>, because ExamTools keeps sending the same value. Blank falls back to the name.</p>
                 </div>
                 <div class="field">
-                    <label><input type="checkbox" name="supportsYouthProgram" value="true" checked="@vec.SupportsYouthProgram" style="width:auto; display:inline-block;" /> Supports youth program</label>
+                    <label class="switch-row">
+                        <span class="switch">
+                            <input type="checkbox" name="supportsYouthProgram" value="true" checked="@vec.SupportsYouthProgram" />
+                            <span class="slider" aria-hidden="true"></span>
+                        </span>
+                        <span>Supports youth program</span>
+                    </label>
                 </div>
                 <div class="field"><label for="editVecNotes-@vec.Id">Notes</label><textarea id="editVecNotes-@vec.Id" name="notes" rows="2">@vec.Notes</textarea></div>
                 <div class="modal-actions">
