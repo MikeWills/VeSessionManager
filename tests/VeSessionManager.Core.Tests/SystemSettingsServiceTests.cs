@@ -180,4 +180,57 @@ public class SystemSettingsServiceTests
         Assert.Equal(user.Id, settings.UpdatedByUserId);
         Assert.Single(dbContext.AuditLogs);
     }
+
+    [Fact]
+    public async Task UpdateSystemBannerAsync_EnabledWithMessage_Succeeds()
+    {
+        await using var dbContext = CreateContext();
+        var user = new User { Name = "Sys Admin", Role = UserRole.SystemAdmin };
+        dbContext.Users.Add(user);
+        await dbContext.SaveChangesAsync();
+
+        var result = await CreateService(dbContext).UpdateSystemBannerAsync(
+            enabled: true, message: "The FCC is experiencing a known delay.", user.Id, CancellationToken.None);
+
+        Assert.Equal(SystemSettingsActionResult.Success, result);
+        var settings = await dbContext.SystemSettings.SingleAsync();
+        Assert.True(settings.SystemBannerEnabled);
+        Assert.Equal("The FCC is experiencing a known delay.", settings.SystemBannerMessage);
+    }
+
+    [Fact]
+    public async Task UpdateSystemBannerAsync_EnabledWithoutMessage_ReturnsSystemBannerMissingMessage_ChangesNothing()
+    {
+        // Turning the banner on with nothing to show would render a bare coloured strip with no
+        // way to tell what it's for — same reasoning as TestMode requiring an override address.
+        await using var dbContext = CreateContext();
+        var user = new User { Name = "Sys Admin", Role = UserRole.SystemAdmin };
+        dbContext.Users.Add(user);
+        await dbContext.SaveChangesAsync();
+        await CreateService(dbContext).GetAsync(CancellationToken.None);
+
+        var result = await CreateService(dbContext).UpdateSystemBannerAsync(
+            enabled: true, message: "   ", user.Id, CancellationToken.None);
+
+        Assert.Equal(SystemSettingsActionResult.SystemBannerMissingMessage, result);
+        var settings = await dbContext.SystemSettings.SingleAsync();
+        Assert.False(settings.SystemBannerEnabled);
+        Assert.Empty(dbContext.AuditLogs);
+    }
+
+    [Fact]
+    public async Task UpdateSystemBannerAsync_Disabled_DoesNotRequireAMessage()
+    {
+        await using var dbContext = CreateContext();
+        var user = new User { Name = "Sys Admin", Role = UserRole.SystemAdmin };
+        dbContext.Users.Add(user);
+        await dbContext.SaveChangesAsync();
+
+        var result = await CreateService(dbContext).UpdateSystemBannerAsync(
+            enabled: false, message: null, user.Id, CancellationToken.None);
+
+        Assert.Equal(SystemSettingsActionResult.Success, result);
+        var settings = await dbContext.SystemSettings.SingleAsync();
+        Assert.False(settings.SystemBannerEnabled);
+    }
 }

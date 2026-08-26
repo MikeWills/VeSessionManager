@@ -1,0 +1,14 @@
+@using Microsoft.EntityFrameworkCore
+@using VeSessionManager.Core.Data
+@inject AppDbContext DbContext
+@{
+    // Same "read fresh, no caching, query directly rather than through GetAsync" idiom as
+    // _TestModeBanner — see that partial's own comments for why.
+    var systemSettings = await DbContext.SystemSettings.FirstOrDefaultAsync(s => s.Id == VeSessionManager.Core.Admin.SystemSettingsService.SingletonId);
+}
+@if (systemSettings?.SystemBannerEnabled == true && !string.IsNullOrWhiteSpace(systemSettings.SystemBannerMessage))
+{
+    <div style="background:var(--amber-dim);color:var(--chip-amber-text);text-align:center;font-size:13px;padding:8px 16px;border-bottom:1px solid var(--amber);">
+        @systemSettings.SystemBannerMessage
+    </div>
+}

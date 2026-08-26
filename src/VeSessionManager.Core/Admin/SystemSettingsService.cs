@@ -180,6 +180,36 @@ public class SystemSettingsService(AppDbContext dbContext, TimeProvider timeProv
         return SystemSettingsActionResult.Success;
     }
 
+    /// <summary>
+    /// A free-text banner shown site-wide (2026-08-26) — general-purpose, not specific to the FCC
+    /// switches above; "whatever the operator wants everyone to see right now." SystemAdmin-only,
+    /// enforced at the page (this service takes no role — same as every other method here).
+    /// </summary>
+    public async Task<SystemSettingsActionResult> UpdateSystemBannerAsync(
+        bool enabled, string? message, int userId, CancellationToken cancellationToken)
+    {
+        // Same reasoning as TestModeEnabled requiring an override address: turning a banner on with
+        // nothing to show would render a bare coloured strip with no way to tell what it's for.
+        if (enabled && string.IsNullOrWhiteSpace(message))
+        {
+            return SystemSettingsActionResult.SystemBannerMissingMessage;
+        }
+
+        var settings = await GetAsync(cancellationToken);
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+
+        settings.SystemBannerEnabled = enabled;
+        settings.SystemBannerMessage = Blank(message);
+        settings.UpdatedByUserId = userId;
+        settings.UpdatedUtc = now;
+
+        dbContext.AddAuditLog(userId, "SystemBannerUpdated", nameof(SystemSettings), SingletonId,
+            $"SystemBannerEnabled={enabled}.", now);
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return SystemSettingsActionResult.Success;
+    }
+
     private static string? Blank(string? value) => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 }
 
@@ -187,5 +217,6 @@ public enum SystemSettingsActionResult
 {
     Success,
     InvalidValue,
-    TestModeMissingOverrideEmail
+    TestModeMissingOverrideEmail,
+    SystemBannerMissingMessage
 }

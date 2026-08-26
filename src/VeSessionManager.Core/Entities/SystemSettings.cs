@@ -172,6 +172,18 @@ public class SystemSettings
     /// </summary>
     public bool FccIssueSuppressRenewalReminders { get; set; }
 
+    /// <summary>
+    /// A free-text banner shown site-wide (2026-08-26) — general-purpose, not tied to the FCC switches
+    /// above. SystemAdmin-only, deliberately: unlike <see cref="FccIssueActive"/> (which TeamAdmin can
+    /// also flip), this is meant for whatever a deployment's operator wants everyone to see, and there
+    /// is only one operator role that should be typing announcements onto every screen.
+    /// </summary>
+    public bool SystemBannerEnabled { get; set; }
+
+    /// <summary>Shown only while <see cref="SystemBannerEnabled"/> is true. Free text, not validated
+    /// beyond non-blank — see <c>SystemSettingsService.UpdateSystemBannerAsync</c>.</summary>
+    public string? SystemBannerMessage { get; set; }
+
     public int? UpdatedByUserId { get; set; }
     public User? UpdatedByUser { get; set; }
     public DateTime? UpdatedUtc { get; set; }
