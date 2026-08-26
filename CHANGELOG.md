@@ -20,6 +20,17 @@ CLAUDE.md — this file, like CLAUDE.md's Change Log, is pointers only.
   that answers what people actually ask for. A Cc is refused on candidate mail: the person copied
   cannot unsubscribe.
 
+- **A refunded exam fee was being counted as owed to the VEC (2026-08-19).** PR #430, found by Mike
+  while reviewing #197: "when we refund, ARRL does not get that fee — the person has not tested."
+  `GetFeeSummary()` had overstated "Remit to VEC" on session detail for any session with a refund
+  since refunds shipped four days earlier. **The premise was wrong, not the code**: a refund
+  deliberately does not move a Payment off `Paid` (#375, or the "unpaid and no link" scan reissues a
+  checkout link), and the summary read `Paid` as "money the team kept". Netted rather than excluded,
+  because the one partial refund this team issues is somebody who paid the adult fee and turned out to
+  be youth — they *did* test. ⚠️ **It only works if `Payment.Refunds` is loaded**, and session detail
+  was not loading it: an unloaded EF collection is empty rather than absent, so the fix would have
+  silently restored the old figure with nothing to indicate it.
+
 - **Three new trigger points, none of them seeded (2026-08-17).** Issue #401, PR3 — see
   `docs/trigger-points.md`. `CandidateTested`, `LicenseGranted` and `FelonyDisclosureDeclared`, all
   opt-in, so no existing team's mail changes. The one to carry forward: **a state trigger is only

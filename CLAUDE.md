@@ -121,6 +121,17 @@ which is "here's what was built and why, mostly historical.")
 One-line-or-two pointer per feature, newest first — full design rationale lives in the linked
 `/docs/*.md` file, not here. See "Documentation Structure" below for the policy this follows.
 
+- **A bulk-email screen off Applicant Status (2026-08-26).** See `docs/candidate-email.md`'s new
+  section. Same mechanism as #144's session-scoped compose screen — pick candidates, start from a
+  template, edit, send — reached instead from Applicant Status, over every candidate on one team still
+  waiting on an FCC grant. Built as the other half of the FCC-issue switches above: reminders
+  suppressed, and a human who still wants to tell some or all of those people what's going on.
+  **Requires one specific team, not "All teams"** — a message needs some team's own SMTP credentials,
+  so the button only appears once a specific team is picked. The three predicates answering "who's
+  pending" (Applicant Status's own list, its per-team nav badge, and this screen's recipient pool) are
+  now one shared `CandidateApplicationStatusExtensions.AwaitingFccGrant`, replacing three copies that
+  had already started drifting apart in comment-only form.
+
 - **A manual switch for a real FCC-wide processing stall (2026-08-26).** See `docs/trigger-points.md`'s
   "FCC-wide-issue suppression" section. Mike, watching a live incident: the FCC's payment-verification
   subsystem stalling for new-license candidates while upgrade grants kept flowing — a distinction
@@ -254,17 +265,6 @@ cap and a newer entry needs to be added; oldest goes first.
   absence of a receipt is not absence of a filing, and an earlier unconfirmed attempt blocks a second
   press — which matters because an `Unknown` outcome leaves the session unsubmitted, so nothing else
   would stop one.
-
-- **A refunded exam fee was being counted as owed to the VEC (2026-08-19).** PR #430, found by Mike
-  while reviewing #197: "when we refund, ARRL does not get that fee — the person has not tested."
-  `GetFeeSummary()` had overstated "Remit to VEC" on session detail for any session with a refund
-  since refunds shipped four days earlier. **The premise was wrong, not the code**: a refund
-  deliberately does not move a Payment off `Paid` (#375, or the "unpaid and no link" scan reissues a
-  checkout link), and the summary read `Paid` as "money the team kept". Netted rather than excluded,
-  because the one partial refund this team issues is somebody who paid the adult fee and turned out to
-  be youth — they *did* test. ⚠️ **It only works if `Payment.Refunds` is loaded**, and session detail
-  was not loading it: an unloaded EF collection is empty rather than absent, so the fix would have
-  silently restored the old figure with nothing to indicate it.
 
 Everything through Phase 0-10's initial build (ExamTools ingestion, Zoom/Discord, Square, email
 notifications, FCC ULS watcher, payment reminders, VE tracking, VEC submission tracker, admin
