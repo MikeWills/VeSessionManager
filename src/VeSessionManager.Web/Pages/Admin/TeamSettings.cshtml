@@ -355,8 +355,9 @@ else
                 </div>
             </div>
 
-            <div class="field" style="max-width:640px; margin-top:16px;">
-                <label for="youthConfirmIntroHtml">Youth-rate confirmation page: intro paragraph</label>
+            <div class="section-head" style="margin-top:28px;"><h2>Youth-Rate Confirmation Page</h2></div>
+            <div class="field" style="max-width:640px;">
+                <label for="youthConfirmIntroHtml">Intro paragraph</label>
                 <p class="hint" style="margin-top:0;">
                     Shown at the top of the public page a candidate reaches when confirming they
                     qualify for the reduced youth exam fee — today, ARRL's note about claiming the FCC
@@ -380,5 +381,9 @@ else
 }
 
 @section Scripts {
+    <script src="~/lib/quill/quill.js"></script>
     <script src="~/js/message-editor.js" asp-append-version="true"></script>
+}
+@section Head {
+    <link rel="stylesheet" href="~/lib/quill/quill.snow.css" />
 }
