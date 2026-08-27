@@ -620,15 +620,18 @@ app.Use(async (context, next) =>
         // Derived from App:PublicBaseUrl rather than hardcoded so every self-hosted deployment gets
         // its own domain here automatically, the same as every other consumer of that config value.
         //
-        // square.link, NOT only *.squareup.com (2026-08-27, live-caught on the youth-confirm page):
-        // the payment links Square's Create Payment Link API returns live on https://square.link/u/…,
-        // a different registrable domain the *.squareup.com wildcard cannot match — so the redirect
-        // the youth-confirm POST issues to the candidate's checkout page was blocked by this
-        // directive, with Chrome's console reporting the FORM's own (allowed, same-origin) URL as the
-        // violating target. That misleading attribution cost most of a day: the POST itself was never
-        // the problem, the redirect after it was — the same per-hop enforcement that required
-        // accounts.google.com above.
-        $"form-action 'self' {publicOrigin} https://*.squareup.com https://square.link https://accounts.google.com https://login.microsoftonline.com";
+        // square.link AND *.square.site, NOT only *.squareup.com (2026-08-27, live-caught on the
+        // youth-confirm page): the payment links Square's Create Payment Link API returns live on
+        // https://square.link/u/…, which itself 303s to https://checkout.square.site/… — THREE
+        // registrable domains for one checkout flow, and the *.squareup.com wildcard matches none of
+        // the other two. Chrome enforces form-action on EVERY hop of a POST's redirect chain (the
+        // same per-hop enforcement that required accounts.google.com above), so the youth-confirm
+        // POST was blocked — with the console reporting the FORM's own (allowed, same-origin) URL as
+        // the violating target, never the hop that actually failed. That misleading attribution cost
+        // most of a day across Apache, Cloudflare, Service Workers, and extensions before curl
+        // tracing the actual Location chain found it. If Square ever adds a fourth domain, this is
+        // the line to extend.
+        $"form-action 'self' {publicOrigin} https://*.squareup.com https://square.link https://*.square.site https://accounts.google.com https://login.microsoftonline.com";
     await next();
 });
 
