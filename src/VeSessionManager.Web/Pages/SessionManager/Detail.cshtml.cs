@@ -539,7 +539,9 @@ public class DetailModel(
             can.AwaitingFelonyInstructions,
             can.CanDelete,
             primaryPayment?.Id,
-            emailHistory);
+            emailHistory,
+            candidate.DeclaredUnder13 is not null,
+            candidate.CoppaFormSentConfirmedUtc is not null);
     }
 
     public record SessionSummary(
@@ -604,7 +606,15 @@ public class DetailModel(
         bool AwaitingFelonyInstructions,
         bool CanDelete,
         int? PrimaryPaymentId,
-        IReadOnlyList<EmailHistoryLine> EmailHistory);
+        IReadOnlyList<EmailHistoryLine> EmailHistory,
+        /// <summary>
+        /// Completed the public youth-rate confirmation (Candidate.DeclaredUnder13 is non-null only
+        /// once that form was submitted) — the roster's "Youth" tag, so a VE can see at the door who
+        /// needs their under-18 status verified. Cleared with the rest of PII on purge.
+        /// </summary>
+        bool ConfirmedYouth,
+        /// <summary>Confirmed on the youth form that the COPPA parental-consent form went to ExamTools — the compliance fact a VE needs visible before testing an under-13 candidate.</summary>
+        bool CoppaFormSent);
 
     /// <summary>
     /// <see cref="Eligibility"/> is deliberately shown to every role that can load this page, unlike
