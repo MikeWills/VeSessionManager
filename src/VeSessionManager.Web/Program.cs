@@ -619,7 +619,16 @@ app.Use(async (context, next) =>
         // Worker, extensions, a meta-tag CSP) ruled out; adding the literal origin resolved it.
         // Derived from App:PublicBaseUrl rather than hardcoded so every self-hosted deployment gets
         // its own domain here automatically, the same as every other consumer of that config value.
-        $"form-action 'self' {publicOrigin} https://*.squareup.com https://accounts.google.com https://login.microsoftonline.com";
+        //
+        // square.link, NOT only *.squareup.com (2026-08-27, live-caught on the youth-confirm page):
+        // the payment links Square's Create Payment Link API returns live on https://square.link/u/…,
+        // a different registrable domain the *.squareup.com wildcard cannot match — so the redirect
+        // the youth-confirm POST issues to the candidate's checkout page was blocked by this
+        // directive, with Chrome's console reporting the FORM's own (allowed, same-origin) URL as the
+        // violating target. That misleading attribution cost most of a day: the POST itself was never
+        // the problem, the redirect after it was — the same per-hop enforcement that required
+        // accounts.google.com above.
+        $"form-action 'self' {publicOrigin} https://*.squareup.com https://square.link https://accounts.google.com https://login.microsoftonline.com";
     await next();
 });
 
