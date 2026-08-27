@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Entities;
 using VeSessionManager.Core.Notifications;
+using VeSessionManager.Core.Payments;
 
 namespace VeSessionManager.Core.Messaging.Scanners;
 
@@ -59,23 +60,33 @@ public class BeforeSessionStartScanner(AppDbContext dbContext) : IMessageTrigger
                         && (onlySessionId == null || c.SessionId == onlySessionId))
             .ToListAsync(cancellationToken);
 
-        return [.. candidates.Select(candidate => new MessageSubject(
-            candidate.Id,
-            MessageSubjectType.Candidate,
-            candidate.Email,
-            new Dictionary<string, string>
-            {
-                ["CandidateName"] = candidate.Name ?? "",
-                ["CandidateFirstName"] = candidate.FirstName ?? "",
-                ["SessionDate"] = SessionTimeFormatter.ForCandidate(candidate.Session.ScheduledStartUtc),
-                ["ZoomJoinUrl"] = candidate.Session.ZoomJoinUrl ?? "",
-                ["OutstandingPaymentLinkUrl"] = candidate.Payments
-                    .Where(p => p.Status == PaymentStatus.Unpaid && p.PaymentLinkUrl != null)
-                    .OrderByDescending(p => p.CreatedUtc)
-                    .Select(p => p.PaymentLinkUrl)
-                    .FirstOrDefault() ?? ""
-            },
-            sentUtc => candidate.DayBeforeReminderSentUtc = sentUtc)
-            { SessionLeadCallSign = candidate.Session.TeamLeadCallSign })];
+        return [.. candidates.Select(candidate =>
+        {
+            // Same "most recent Unpaid, else most recent overall" rule the session roster's own
+            // Payment chip uses (Detail.cshtml.cs) — an outstanding fee takes priority over an
+            // older paid/not-applicable row, so this reads the same on both screens (#490).
+            var primaryPayment = candidate.Payments.OrderByDescending(p => p.CreatedUtc).FirstOrDefault(p => p.Status == PaymentStatus.Unpaid)
+                ?? candidate.Payments.OrderByDescending(p => p.CreatedUtc).FirstOrDefault();
+
+            return new MessageSubject(
+                candidate.Id,
+                MessageSubjectType.Candidate,
+                candidate.Email,
+                new Dictionary<string, string>
+                {
+                    ["CandidateName"] = candidate.Name ?? "",
+                    ["CandidateFirstName"] = candidate.FirstName ?? "",
+                    ["SessionDate"] = SessionTimeFormatter.ForCandidate(candidate.Session.ScheduledStartUtc),
+                    ["ZoomJoinUrl"] = candidate.Session.ZoomJoinUrl ?? "",
+                    ["OutstandingPaymentLinkUrl"] = candidate.Payments
+                        .Where(p => p.Status == PaymentStatus.Unpaid && p.PaymentLinkUrl != null)
+                        .OrderByDescending(p => p.CreatedUtc)
+                        .Select(p => p.PaymentLinkUrl)
+                        .FirstOrDefault() ?? "",
+                    ["PaymentStatus"] = PaymentStatusText.For(primaryPayment?.Status)
+                },
+                sentUtc => candidate.DayBeforeReminderSentUtc = sentUtc)
+            { SessionLeadCallSign = candidate.Session.TeamLeadCallSign };
+        })];
     }
 }

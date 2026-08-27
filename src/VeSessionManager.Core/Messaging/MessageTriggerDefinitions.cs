@@ -86,7 +86,7 @@ public static class MessageTriggerDefinitions
             MessageSubjectType.Candidate,
             DefaultParameterHours: 24,
             LegalRecipients: [MessageRecipient.Candidate, MessageRecipient.TeamAdminAddress, MessageRecipient.SessionLead, MessageRecipient.TeamAdmins, MessageRecipient.SystemAdmins, MessageRecipient.SessionManagers, MessageRecipient.DiscordChannel],
-            Placeholders: ["CandidateName", "CandidateFirstName", "SessionDate", "ZoomJoinUrl", "OutstandingPaymentLinkUrl"]),
+            Placeholders: ["CandidateName", "CandidateFirstName", "SessionDate", "ZoomJoinUrl", "OutstandingPaymentLinkUrl", "PaymentStatus"]),
 
         new(MessageTrigger.FccFeeOutstanding,
             MessageTriggerMechanism.TimeRelative,
