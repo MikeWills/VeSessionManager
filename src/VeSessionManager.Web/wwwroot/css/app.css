@@ -625,6 +625,14 @@ footer.roster { margin-top: 28px; background: var(--surface); border: 1px solid 
 .message-editor .ql-container.ql-snow { border-color: var(--line-strong); border-radius: 0 0 5px 5px; background: var(--surface); font-family: "IBM Plex Sans", system-ui, sans-serif; font-size: 14px; }
 .message-editor .ql-editor { min-height: 200px; color: var(--ink); }
 .message-editor .ql-editor.ql-blank::before { color: var(--ink-soft); font-style: normal; }
+/* Quill's own CSS zeroes every block element's margin (quill.snow.css: ".ql-editor p{margin:0}"),
+   so paragraphs sat flush against each other in the editor with no visual break between them —
+   reported live 2026-08-26. The sent email gets no such reset (EmailTemplateRenderer ships the
+   HTML as-is), so a recipient's mail client renders each <p> with its own default margin regardless
+   — meaning the editor was previewing something narrower than what actually goes out. This restores
+   a visible gap here so what you see while composing matches what arrives. */
+.message-editor .ql-editor p { margin: 0 0 1em; }
+.message-editor .ql-editor p:last-child { margin-bottom: 0; }
 
 /* Clickable placeholder chips. They're <button>s for keyboard reach, so the button reset in the
    Buttons section has to be undone at a specificity that beats `.vesm button` (0,1,1) — the same
