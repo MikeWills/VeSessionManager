@@ -94,13 +94,13 @@ public static class SessionChips
     /// <see cref="PaymentStatus.NotApplicable"/>, which is a payment that exists and is not owed —
     /// collapsing the two would report "no payment" for a session that collects no fees.
     /// </param>
-    public static (string Class, string Label) Payment(PaymentStatus? status) => status switch
+    public static (string Class, string Label) Payment(PaymentStatus? status) => (status switch
     {
-        null => ("chip-neutral", "No payment"),
-        PaymentStatus.Paid => ("chip-green", "Paid"),
-        PaymentStatus.Unpaid => ("chip-amber", "Unpaid"),
-        _ => ("chip-neutral", "Not applicable")
-    };
+        null => "chip-neutral",
+        PaymentStatus.Paid => "chip-green",
+        PaymentStatus.Unpaid => "chip-amber",
+        _ => "chip-neutral"
+    }, VeSessionManager.Core.Payments.PaymentStatusText.For(status));
 
     /// <summary>
     /// A refund's state — deliberately about a single <c>Refund</c> row, not the <c>Payment</c> it
