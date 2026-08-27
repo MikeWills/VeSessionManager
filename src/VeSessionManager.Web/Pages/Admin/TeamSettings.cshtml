@@ -4,6 +4,7 @@
 @{
     ViewData["Title"] = "Team Settings";
     ViewData["ActiveNav"] = "AdminTeamSettings";
+    ViewData["WideMain"] = true;
     Layout = "_AppLayout";
 }
 
@@ -355,7 +356,12 @@ else
                 </div>
             </div>
 
-            <div class="section-head" style="margin-top:28px;"><h2>Youth-Rate Confirmation Page</h2></div>
+            <button type="submit" class="btn-primary btn-sm" style="margin-top:12px;">Save Email Settings</button>
+        </form>
+
+        <div class="section-head" style="margin-top:28px;"><h2>Youth-Rate Confirmation Page</h2></div>
+        <form method="post" asp-page-handler="UpdateYouthConfirmIntro">
+            <input type="hidden" name="TeamId" value="@Model.TeamId" />
             <div class="field" style="max-width:640px;">
                 <label for="youthConfirmIntroHtml">Intro paragraph</label>
                 <p class="hint" style="margin-top:0;">
@@ -375,7 +381,7 @@ else
                 </div>
             </div>
 
-            <button type="submit" class="btn-primary btn-sm" style="margin-top:12px;">Save Email Settings</button>
+            <button type="submit" class="btn-primary btn-sm" style="margin-top:12px;">Save Youth-Rate Confirmation</button>
         </form>
     </div>
 }

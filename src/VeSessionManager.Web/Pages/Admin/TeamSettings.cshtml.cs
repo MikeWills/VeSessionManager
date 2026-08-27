@@ -242,13 +242,27 @@ public class TeamSettingsModel(AppDbContext dbContext, UserManager<User> userMan
         return RedirectToPage(new { teamId = auth.Value.Team.Id });
     }
 
-    public async Task<IActionResult> OnPostUpdateEmailSettingsAsync(string fromAddress, string? fromDisplayName, string replyToAddress, string privacyPolicyUrl, string adminNotificationEmail, string? bccAddress, string? youthConfirmIntroHtml)
+    public async Task<IActionResult> OnPostUpdateEmailSettingsAsync(string fromAddress, string? fromDisplayName, string replyToAddress, string privacyPolicyUrl, string adminNotificationEmail, string? bccAddress)
     {
         var auth = await AuthorizeAsync();
         if (auth is null) return Forbid();
 
-        var result = await teamSettingsService.UpdateEmailSettingsAsync(auth.Value.Team.Id, fromAddress, fromDisplayName, replyToAddress, privacyPolicyUrl, adminNotificationEmail, bccAddress, youthConfirmIntroHtml, auth.Value.User.Id, CancellationToken.None);
+        var result = await teamSettingsService.UpdateEmailSettingsAsync(auth.Value.Team.Id, fromAddress, fromDisplayName, replyToAddress, privacyPolicyUrl, adminNotificationEmail, bccAddress, auth.Value.User.Id, CancellationToken.None);
         SetStatus(result, "Email settings updated.");
+        return RedirectToPage(new { teamId = auth.Value.Team.Id });
+    }
+
+    /// <summary>
+    /// Split from OnPostUpdateEmailSettingsAsync (2026-08-27) — see UpdateYouthConfirmIntroAsync's
+    /// own remarks for why sharing one save button was a real bug, not just a cosmetic mismatch.
+    /// </summary>
+    public async Task<IActionResult> OnPostUpdateYouthConfirmIntroAsync(string? youthConfirmIntroHtml)
+    {
+        var auth = await AuthorizeAsync();
+        if (auth is null) return Forbid();
+
+        var result = await teamSettingsService.UpdateYouthConfirmIntroAsync(auth.Value.Team.Id, youthConfirmIntroHtml, auth.Value.User.Id, CancellationToken.None);
+        SetStatus(result, "Youth-rate confirmation intro text updated.");
         return RedirectToPage(new { teamId = auth.Value.Team.Id });
     }
 
