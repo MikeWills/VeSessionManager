@@ -595,7 +595,17 @@ app.Use(async (context, next) =>
         // Square is listed because the youth-rate flow hands the candidate off to Square-hosted
         // checkout; today that is a server-issued redirect rather than a cross-origin form post,
         // so 'self' alone would also pass — this keeps it correct if that ever becomes a direct post.
-        "form-action 'self' https://*.squareup.com";
+        //
+        // accounts.google.com/login.microsoftonline.com are listed for a different reason, and are
+        // NOT optional the way the comment above is (#185, live-caught 2026-08-27): the Login page's
+        // "Sign in with Google"/"Sign in with Microsoft" buttons are real <form> posts to THIS origin
+        // (self, already allowed), but Chrome enforces form-action against the server's subsequent
+        // redirect target too, not just the form's own action URL — so the redirect Identity's
+        // Challenge() issues to the provider's authorize endpoint was being silently blocked with no
+        // error page, just a button that appeared to do nothing. Both buttons render conditionally
+        // (see Program.cs's AddGoogle/AddMicrosoftAccount registration above), so listing both here
+        // unconditionally costs nothing when a given provider isn't configured.
+        "form-action 'self' https://*.squareup.com https://accounts.google.com https://login.microsoftonline.com";
     await next();
 });
 
