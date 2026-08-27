@@ -83,7 +83,12 @@ public class CandidatePiiFieldsTests
         nameof(Candidate.UnmatchedReviewFlaggedUtc),
         nameof(Candidate.FccFeeReminderSentUtc),
         nameof(Candidate.FelonyDisclosureInstructionsSentUtc),
-        nameof(Candidate.YouthProgramInstructionsSentUtc)
+        nameof(Candidate.YouthProgramInstructionsSentUtc),
+
+        // The compliance record that the COPPA parental-consent step happened, not a fact about the
+        // person — a bare timestamp with no name attached still means something after the purge,
+        // the same reasoning as every other retained ...Utc stamp above. See its own doc comment.
+        nameof(Candidate.CoppaFormSentConfirmedUtc)
     ];
 
     /// <summary>The fields that ARE PII, stated positively so the two lists together must account for every property.</summary>
@@ -94,7 +99,8 @@ public class CandidatePiiFieldsTests
         nameof(Candidate.Email),
         nameof(Candidate.City),
         nameof(Candidate.State),
-        nameof(Candidate.HasFelonyDisclosure)
+        nameof(Candidate.HasFelonyDisclosure),
+        nameof(Candidate.DeclaredUnder13)
     ];
 
     private static IEnumerable<PropertyInfo> WritableProperties() =>
@@ -187,6 +193,7 @@ public class CandidatePiiFieldsTests
     [InlineData(nameof(Candidate.City))] // Added for #463 — the "who's local" column.
     [InlineData(nameof(Candidate.State))]
     [InlineData(nameof(Candidate.HasFelonyDisclosure))]
+    [InlineData(nameof(Candidate.DeclaredUnder13))]
     public void Clear_NamedPiiField_IsNulled(string propertyName)
     {
         // Arrange

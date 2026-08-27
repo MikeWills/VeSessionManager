@@ -354,7 +354,31 @@ else
                     </p>
                 </div>
             </div>
+
+            <div class="field" style="max-width:640px; margin-top:16px;">
+                <label for="youthConfirmIntroHtml">Youth-rate confirmation page: intro paragraph</label>
+                <p class="hint" style="margin-top:0;">
+                    Shown at the top of the public page a candidate reaches when confirming they
+                    qualify for the reduced youth exam fee — today, ARRL's note about claiming the FCC
+                    license fee back after passing. Leave blank to use the standard wording.
+                </p>
+                <div class="message-editor">
+                    <div class="editor-tabs" role="tablist">
+                        <button type="button" class="editor-tab" role="tab" data-mode="visual" aria-selected="true">Visual</button>
+                        <button type="button" class="editor-tab" role="tab" data-mode="html" aria-selected="false">HTML</button>
+                    </div>
+                    <div class="editor-visual" data-editor-for="youthConfirmIntroHtml">
+                        <div class="editor-surface"></div>
+                    </div>
+                    <textarea id="youthConfirmIntroHtml" name="youthConfirmIntroHtml" rows="6">@Model.EmailSettings?.YouthConfirmIntroHtml</textarea>
+                </div>
+            </div>
+
             <button type="submit" class="btn-primary btn-sm" style="margin-top:12px;">Save Email Settings</button>
         </form>
     </div>
+}
+
+@section Scripts {
+    <script src="~/js/message-editor.js" asp-append-version="true"></script>
 }

@@ -33,7 +33,12 @@ public record YouthConfirmationResult(YouthConfirmationOutcome Outcome, string? 
 
 /// <summary>What the public youth page needs to render before the candidate confirms anything (#192).</summary>
 /// <param name="TeamContactEmail">The team's reply-to address, or null when it has no EmailSettings row.</param>
-public record YouthEligibility(YouthConfirmationOutcome Outcome, string? TeamContactEmail);
+/// <param name="IntroHtml">
+/// The team's own <see cref="Entities.EmailSettings.YouthConfirmIntroHtml"/>, or
+/// <see cref="YouthConfirmDefaults.IntroHtml"/> when the team has none set (no row at all, or the
+/// field is null/blank) — resolved here so the page never has to know the fallback exists.
+/// </param>
+public record YouthEligibility(YouthConfirmationOutcome Outcome, string? TeamContactEmail, string IntroHtml);
 
 /// <summary>
 /// Backs the public, unauthenticated youth-rate confirmation page (Pages/Public/YouthConfirm in
@@ -69,30 +74,41 @@ public class YouthPaymentConfirmationService(
             .FirstOrDefaultAsync(p => p.YouthConfirmationToken == token, cancellationToken);
         if (payment is null)
         {
-            return new YouthEligibility(YouthConfirmationOutcome.NotFound, null);
+            return new YouthEligibility(YouthConfirmationOutcome.NotFound, null, YouthConfirmDefaults.IntroHtml);
         }
 
         if (payment.Status != PaymentStatus.Unpaid)
         {
-            return new YouthEligibility(YouthConfirmationOutcome.AlreadyResolved, null);
+            return new YouthEligibility(YouthConfirmationOutcome.AlreadyResolved, null, YouthConfirmDefaults.IntroHtml);
         }
 
         if (payment.Candidate.Session.FeeConfiguration.YouthExamFeeAmount is null)
         {
-            return new YouthEligibility(YouthConfirmationOutcome.FeeNotConfigured, null);
+            return new YouthEligibility(YouthConfirmationOutcome.FeeNotConfigured, null, YouthConfirmDefaults.IntroHtml);
         }
 
         // Projected, not the whole row: this is an anonymous page and EmailSettings carries more
         // than it needs to know.
-        var contact = await dbContext.EmailSettings
+        var settings = await dbContext.EmailSettings
             .Where(e => e.TeamId == payment.Candidate.Session.TeamId)
-            .Select(e => e.ReplyToAddress)
+            .Select(e => new { e.ReplyToAddress, e.YouthConfirmIntroHtml })
             .FirstOrDefaultAsync(cancellationToken);
+        var introHtml = string.IsNullOrWhiteSpace(settings?.YouthConfirmIntroHtml) ? YouthConfirmDefaults.IntroHtml : settings.YouthConfirmIntroHtml;
 
-        return new YouthEligibility(YouthConfirmationOutcome.Success, contact);
+        return new YouthEligibility(YouthConfirmationOutcome.Success, settings?.ReplyToAddress, introHtml);
     }
 
-    public async Task<YouthConfirmationResult> ConfirmAsync(Guid token, CancellationToken cancellationToken)
+    /// <param name="declaredUnder13">
+    /// The candidate's answer to "is the candidate under 13?" (2026-08-26) — always supplied, since
+    /// the page requires an answer before this is called. Recorded on the candidate regardless of
+    /// the youth-rate outcome below; the COPPA question and the fee-switch are independent facts.
+    /// </param>
+    /// <param name="coppaFormSent">
+    /// Whether the candidate checked "I have sent this form to ExamTools." Only meaningful — and
+    /// only ever true — when <paramref name="declaredUnder13"/> is true; the page's own validation
+    /// refuses to reach here otherwise.
+    /// </param>
+    public async Task<YouthConfirmationResult> ConfirmAsync(Guid token, bool declaredUnder13, bool coppaFormSent, CancellationToken cancellationToken)
     {
         var payment = await dbContext.Payments
             .Include(p => p.Candidate).ThenInclude(c => c.Session).ThenInclude(s => s.Team)
@@ -107,6 +123,17 @@ public class YouthPaymentConfirmationService(
         {
             return new YouthConfirmationResult(YouthConfirmationOutcome.AlreadyResolved);
         }
+
+        // Recorded before any of the fee/Square outcome checks below, and saved immediately: the
+        // COPPA declaration is a fact about the candidate independent of whether the youth-rate
+        // switch itself succeeds, so a FeeNotConfigured/SquareNotConfigured return further down must
+        // not lose it.
+        payment.Candidate.DeclaredUnder13 = declaredUnder13;
+        if (declaredUnder13 && coppaFormSent)
+        {
+            payment.Candidate.CoppaFormSentConfirmedUtc = timeProvider.GetUtcNow().UtcDateTime;
+        }
+        await dbContext.SaveChangesAsync(cancellationToken);
 
         var feeConfiguration = payment.Candidate.Session.FeeConfiguration;
         if (feeConfiguration.YouthExamFeeAmount is null)
@@ -172,8 +199,9 @@ public class YouthPaymentConfirmationService(
         payment.SquarePaymentLinkId = link.Id;
 
         var now = timeProvider.GetUtcNow().UtcDateTime;
+        var coppaNote = declaredUnder13 ? $"; declared under 13, COPPA form sent to ExamTools confirmed: {coppaFormSent}" : "";
         dbContext.AddAuditLog(null, "YouthRateConfirmed", nameof(Payment), payment.Id,
-            $"Candidate self-confirmed youth rate via public link; Payment switched from standard rate to {Usd.Format(feeConfiguration.YouthExamFeeAmount.Value)}.", now,
+            $"Candidate self-confirmed youth rate via public link; Payment switched from standard rate to {Usd.Format(feeConfiguration.YouthExamFeeAmount.Value)}{coppaNote}.", now,
             teamId: team.Id);
 
         await dbContext.SaveChangesAsync(cancellationToken);

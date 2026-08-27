@@ -42,6 +42,21 @@ public class EmailSettings
     /// </summary>
     public string? BccAddress { get; set; }
 
+    /// <summary>
+    /// The team-editable first paragraph on the public youth-rate confirmation page (2026-08-26) —
+    /// today, ARRL's FCC-fee-reimbursement note. Rich text (edited through the same Quill editor as
+    /// a message body), rendered raw on the public page.
+    ///
+    /// <para><b>Null means "use the built-in default," not "show nothing."</b> Every existing team's
+    /// row was left alone rather than backfilled — the same "explicit opt-in, never backfilled"
+    /// posture as every other optional field on this row — so
+    /// <see cref="Payments.YouthPaymentConfirmationService"/> falls back to
+    /// <see cref="Payments.YouthConfirmDefaults.IntroHtml"/> when this is null or blank. New teams
+    /// get it pre-filled by <c>EmailDefaultsSeeder</c> instead, so a fresh deployment's page never
+    /// starts blank either.</para>
+    /// </summary>
+    public string? YouthConfirmIntroHtml { get; set; }
+
     public int? UpdatedByUserId { get; set; }
     public User? UpdatedByUser { get; set; }
     public DateTime? UpdatedUtc { get; set; }

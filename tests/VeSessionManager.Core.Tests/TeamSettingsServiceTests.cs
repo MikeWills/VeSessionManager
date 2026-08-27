@@ -343,7 +343,7 @@ public class TeamSettingsServiceTests
         var team = await SeedTeamAsync(dbContext);
 
         var result = await CreateService(dbContext).UpdateEmailSettingsAsync(
-            team.Id, "noreply@example.org", "VE Team", "reply@example.org", "https://example.org/privacy", "admin@example.org", null, user.Id, CancellationToken.None);
+            team.Id, "noreply@example.org", "VE Team", "reply@example.org", "https://example.org/privacy", "admin@example.org", null, null, user.Id, CancellationToken.None);
 
         Assert.Equal(TeamActionResult.Success, result);
         var settings = await dbContext.EmailSettings.SingleAsync();
@@ -370,7 +370,7 @@ public class TeamSettingsServiceTests
         await dbContext.SaveChangesAsync();
 
         await CreateService(dbContext).UpdateEmailSettingsAsync(
-            team.Id, "new@example.org", null, "new-reply@example.org", "https://example.org/privacy", "new-admin@example.org", null, user.Id, CancellationToken.None);
+            team.Id, "new@example.org", null, "new-reply@example.org", "https://example.org/privacy", "new-admin@example.org", null, null, user.Id, CancellationToken.None);
 
         var settings = await dbContext.EmailSettings.SingleAsync();
         Assert.Equal("new@example.org", settings.FromAddress);
@@ -384,7 +384,7 @@ public class TeamSettingsServiceTests
         var user = await SeedUserAsync(dbContext);
 
         var result = await CreateService(dbContext).UpdateEmailSettingsAsync(
-            999, "a@example.org", null, "b@example.org", "https://example.org/privacy", "c@example.org", null, user.Id, CancellationToken.None);
+            999, "a@example.org", null, "b@example.org", "https://example.org/privacy", "c@example.org", null, null, user.Id, CancellationToken.None);
 
         Assert.Equal(TeamActionResult.NotFound, result);
     }
@@ -404,7 +404,7 @@ public class TeamSettingsServiceTests
 
         await CreateService(dbContext).UpdateEmailSettingsAsync(
             team.Id, "noreply@example.org", null, "reply@example.org", "https://example.org/privacy",
-            "admin@example.org", entered, user.Id, CancellationToken.None);
+            "admin@example.org", entered, null, user.Id, CancellationToken.None);
 
         Assert.Equal(expected, (await dbContext.EmailSettings.SingleAsync()).BccAddress);
     }
@@ -423,9 +423,9 @@ public class TeamSettingsServiceTests
         var service = CreateService(dbContext);
 
         await service.UpdateEmailSettingsAsync(team.Id, "a@example.org", null, "b@example.org",
-            "https://example.org/privacy", "c@example.org", "watch@example.org", user.Id, CancellationToken.None);
+            "https://example.org/privacy", "c@example.org", "watch@example.org", null, user.Id, CancellationToken.None);
         await service.UpdateEmailSettingsAsync(team.Id, "a@example.org", null, "b@example.org",
-            "https://example.org/privacy", "c@example.org", null, user.Id, CancellationToken.None);
+            "https://example.org/privacy", "c@example.org", null, null, user.Id, CancellationToken.None);
 
         var entries = await dbContext.AuditLogs.Where(a => a.Action == "TeamEmailSettingsUpdated").ToListAsync();
         Assert.Contains(entries, e => e.Details?.Contains("BCC on") == true);

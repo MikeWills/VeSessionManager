@@ -48,6 +48,7 @@ public static class EmailDefaultsSeeder
                 ReplyToAddress = "noreply@example.org",
                 PrivacyPolicyUrl = "https://example.org/privacy",
                 AdminNotificationEmail = "admin@example.org",
+                YouthConfirmIntroHtml = VeSessionManager.Core.Payments.YouthConfirmDefaults.IntroHtml,
                 // DateTime.UtcNow rather than an injected TimeProvider, which every service here
                 // uses (audit item D-16). Deliberate: this is a static startup seeder with no DI
                 // scope of its own, and threading a clock through would buy a testable timestamp

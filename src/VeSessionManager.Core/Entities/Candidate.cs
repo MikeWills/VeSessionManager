@@ -51,6 +51,24 @@ public class Candidate
     /// <summary>Captured from the exam application data if the ExamTools/HamStudy API exposes it. Treated as sensitive PII, purged alongside Name/Email/Frn.</summary>
     public bool? HasFelonyDisclosure { get; set; }
 
+    /// <summary>
+    /// Self-declared on the public youth-rate confirmation page (2026-08-26) — null means never
+    /// asked (most candidates never open that page at all). Treated as sensitive PII and purged
+    /// alongside Name/Email/HasFelonyDisclosure, same reasoning as that field: a declaration about
+    /// the person, not a fact about the session outcome.
+    /// </summary>
+    public bool? DeclaredUnder13 { get; set; }
+
+    /// <summary>
+    /// When the candidate checked "I have sent this form to ExamTools," confirming the COPPA
+    /// parental-consent form was sent — only meaningful when <see cref="DeclaredUnder13"/> is true.
+    /// Deliberately <b>not</b> cleared by the PII purge, unlike <see cref="DeclaredUnder13"/> itself:
+    /// this is the compliance record that the required step happened, and a bare timestamp with no
+    /// name attached is what the record needs to keep meaning something after the purge — the same
+    /// reasoning as every other retained ...Utc stamp on this entity.
+    /// </summary>
+    public DateTime? CoppaFormSentConfirmedUtc { get; set; }
+
     public DateTime DateRegisteredUtc { get; set; }
 
     public CandidateApplicationStatus ApplicationStatus { get; set; } = CandidateApplicationStatus.Unmatched;
