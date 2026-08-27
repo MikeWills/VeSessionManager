@@ -44,6 +44,27 @@
                     </span>
                 </div>
             }
+            @* The honor-system answers from the public youth-rate confirmation page (2026-08-27) —
+               shown only once that form was completed, since "—" on every ordinary adult candidate
+               would just be noise. The COPPA line survives PII purge (compliance record); the
+               under-13 answer does not. *@
+            @if (c.DeclaredUnder13 is not null)
+            {
+                <div class="meta-item">
+                    <span class="k">Youth rate</span>
+                    <span class="v">
+                        Confirmed — under 13: @(c.DeclaredUnder13.Value ? "Yes" : "No")@(c.DeclaredUnder13.Value && c.CoppaFormSentLine is not null ? $", COPPA form sent to ExamTools (confirmed {c.CoppaFormSentLine})" : "")
+                    </span>
+                </div>
+            }
+            else if (c.CoppaFormSentLine is not null)
+            {
+                @* PII purge cleared the under-13 answer but the COPPA compliance record remains. *@
+                <div class="meta-item">
+                    <span class="k">Youth rate</span>
+                    <span class="v">COPPA form sent to ExamTools (confirmed @c.CoppaFormSentLine)</span>
+                </div>
+            }
             <div class="meta-item"><span class="k">Registered</span><span class="v mono">@c.RegisteredLine</span></div>
             <div class="meta-item"><span class="k">FCC application entered</span><span class="v mono">@(c.ApplicationDateLine ?? "—")</span></div>
             <div class="meta-item"><span class="k">License granted</span><span class="v mono">@(c.LicenseGrantDateLine ?? "—")</span></div>

@@ -305,7 +305,9 @@ public class CandidateDetailModel(
             CanFlagRefund: can.CanFlagRefund,
             CanSendYouthProgram: can.CanSendYouthProgram,
             CanSendFelonyInstructions: can.CanSendFelonyInstructions,
-            AwaitingFelonyInstructions: can.AwaitingFelonyInstructions);
+            AwaitingFelonyInstructions: can.AwaitingFelonyInstructions,
+            DeclaredUnder13: candidate.DeclaredUnder13,
+            CoppaFormSentLine: FormatUtcOrNull(candidate.CoppaFormSentConfirmedUtc));
 
         return true;
     }
@@ -419,7 +421,14 @@ public class CandidateDetailModel(
         bool CanSendYouthProgram,
         bool CanSendFelonyInstructions,
         /// <summary>Declared a disclosure and has not been sent the instructions — the marker that replaces the automatic send (#221).</summary>
-        bool AwaitingFelonyInstructions);
+        bool AwaitingFelonyInstructions,
+        /// <summary>
+        /// The under-13 answer from the public youth-rate confirmation (2026-08-27): null if they
+        /// never completed that form (or PII purge cleared it — the field is PII), else their answer.
+        /// </summary>
+        bool? DeclaredUnder13,
+        /// <summary>When the COPPA parental-consent-form-sent checkbox was confirmed — deliberately retained through PII purge as a compliance record.</summary>
+        string? CoppaFormSentLine);
 
     public record PaymentRow(
         int Id,
