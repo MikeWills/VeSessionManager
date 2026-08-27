@@ -381,7 +381,7 @@ public class TeamSettingsService(AppDbContext dbContext, TimeProvider timeProvid
     }
 
     /// <summary>Upserts the Team's EmailSettings row (one per team, unique index on TeamId) — creates it if somehow missing (should already exist via EmailDefaultsSeeder), otherwise updates in place.</summary>
-    public async Task<TeamActionResult> UpdateEmailSettingsAsync(int teamId, string fromAddress, string? fromDisplayName, string replyToAddress, string privacyPolicyUrl, string adminNotificationEmail, string? bccAddress, int userId, CancellationToken cancellationToken)
+    public async Task<TeamActionResult> UpdateEmailSettingsAsync(int teamId, string fromAddress, string? fromDisplayName, string replyToAddress, string privacyPolicyUrl, string adminNotificationEmail, string? bccAddress, string? youthConfirmIntroHtml, int userId, CancellationToken cancellationToken)
     {
         var teamExists = await dbContext.Teams.AnyAsync(t => t.Id == teamId, cancellationToken);
         if (!teamExists)
@@ -411,6 +411,9 @@ public class TeamSettingsService(AppDbContext dbContext, TimeProvider timeProvid
         emailSettings.AdminNotificationEmail = adminNotificationEmail;
         // Blank stores null rather than "", so "is a BCC configured?" is one check everywhere.
         emailSettings.BccAddress = string.IsNullOrWhiteSpace(bccAddress) ? null : bccAddress.Trim();
+        // Blank stores null too — YouthConfirmDefaults.IntroHtml is what a null/blank value falls
+        // back to, so clearing the box is how a team goes back to the shipped wording.
+        emailSettings.YouthConfirmIntroHtml = string.IsNullOrWhiteSpace(youthConfirmIntroHtml) ? null : youthConfirmIntroHtml;
         emailSettings.UpdatedByUserId = userId;
         emailSettings.UpdatedUtc = now;
 

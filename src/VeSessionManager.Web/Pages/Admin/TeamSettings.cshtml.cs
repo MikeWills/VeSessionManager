@@ -242,12 +242,12 @@ public class TeamSettingsModel(AppDbContext dbContext, UserManager<User> userMan
         return RedirectToPage(new { teamId = auth.Value.Team.Id });
     }
 
-    public async Task<IActionResult> OnPostUpdateEmailSettingsAsync(string fromAddress, string? fromDisplayName, string replyToAddress, string privacyPolicyUrl, string adminNotificationEmail, string? bccAddress)
+    public async Task<IActionResult> OnPostUpdateEmailSettingsAsync(string fromAddress, string? fromDisplayName, string replyToAddress, string privacyPolicyUrl, string adminNotificationEmail, string? bccAddress, string? youthConfirmIntroHtml)
     {
         var auth = await AuthorizeAsync();
         if (auth is null) return Forbid();
 
-        var result = await teamSettingsService.UpdateEmailSettingsAsync(auth.Value.Team.Id, fromAddress, fromDisplayName, replyToAddress, privacyPolicyUrl, adminNotificationEmail, bccAddress, auth.Value.User.Id, CancellationToken.None);
+        var result = await teamSettingsService.UpdateEmailSettingsAsync(auth.Value.Team.Id, fromAddress, fromDisplayName, replyToAddress, privacyPolicyUrl, adminNotificationEmail, bccAddress, youthConfirmIntroHtml, auth.Value.User.Id, CancellationToken.None);
         SetStatus(result, "Email settings updated.");
         return RedirectToPage(new { teamId = auth.Value.Team.Id });
     }

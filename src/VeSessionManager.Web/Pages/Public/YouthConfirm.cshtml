@@ -12,30 +12,13 @@
 
         @if (Model.Outcome == YouthConfirmationOutcome.Success)
         {
-            @* No ARRL URL here, deliberately (#192). The claim form is an external ARRL document
-               this app neither hosts nor tracks, and the address for it has changed before — a link
-               that rots on a page candidates are sent to is worse than no link. The existing
-               post-exam ArrlYouthProgramInstructions email already points at it, and takes the same
-               approach for the same reason. A candidate cannot claim before passing anyway, so
-               nothing is lost by saying so here and sending the detail when it is useful. *@
-            <p class="policy-note">
-                <strong>After you pass, you may be able to claim the FCC license fee back.</strong>
-                ARRL runs a youth program that reimburses the FCC application fee for candidates
-                under 18. It is separate from the reduced exam fee below, and it is claimed after you
-                have your call sign — not now. We will send you the form and instructions once your
-                license is granted.
-            </p>
-            <p class="policy-note">
-                <strong>Under 13?</strong> ExamTools requires a separate COPPA consent form, signed
-                by a parent or guardian, before you can be tested. Ask your VE team for it and send
-                the completed form back to them
-                @if (!string.IsNullOrWhiteSpace(Model.TeamContactEmail))
-                {
-                    <text>at <a href="mailto:@Model.TeamContactEmail">@Model.TeamContactEmail</a></text>
-                }
-                before your session. This is a reminder only — nothing on this page confirms or
-                records it.
-            </p>
+            @* Team-editable (Team Settings > Email Settings), 2026-08-26 — see EmailSettings.
+               YouthConfirmIntroHtml's own remarks for why raw team-authored HTML is trusted here at
+               the same level as a message rule body. No ARRL claim-form URL in the shipped default,
+               deliberately (#192): that form is an external ARRL document this app neither hosts nor
+               tracks, and a link that rots on a page candidates are sent to is worse than no link —
+               the post-exam ArrlYouthProgramInstructions email already carries it, once it matters. *@
+            <div class="policy-note">@Html.Raw(Model.IntroHtml)</div>
 
             <form method="post">
                 <div asp-validation-summary="ModelOnly" class="field-error"></div>
@@ -46,6 +29,41 @@
                     </label>
                     <span asp-validation-for="Input.ConfirmYouth" class="field-error"></span>
                 </div>
+
+                @* Was a reminder-only paragraph until 2026-08-26 — now an actual recorded
+                   declaration, since COPPA testing cannot legally proceed without the parental
+                   consent form on file, and this page is the one honor-system checkpoint candidates
+                   pass through before paying. "" as the unselected option, not omitted, so a select
+                   with no JS still posts something distinguishable from a real answer. *@
+                <div class="field">
+                    <label for="declaredUnder13">Is the candidate under the age of 13?</label>
+                    <select id="declaredUnder13" asp-for="Input.DeclaredUnder13"
+                            data-select-panel="coppaPanel" data-select-panel-value="True">
+                        <option value="">Select one</option>
+                        <option value="false">No</option>
+                        <option value="true">Yes</option>
+                    </select>
+                    <span asp-validation-for="Input.DeclaredUnder13" class="field-error"></span>
+                </div>
+
+                <div id="coppaPanel" style="@(Model.Input.DeclaredUnder13 == true ? "" : "display:none;")">
+                    <p class="policy-note">
+                        If you are not 13 years of age or older you may not register for any exam
+                        session through HamStudy.org or ExamTools.org until your parent or guardian
+                        has filled out our
+                        <a href="https://blog.hamstudy.org/wp-content/uploads/2020/05/ExamTools_COPPA_form.pdf"
+                           target="_blank" rel="noopener noreferrer">COPPA Parental Consent Form</a>
+                        and emailed it to <a href="mailto:coppa@examtools.org">coppa@examtools.org</a>.
+                    </p>
+                    <div class="field">
+                        <label>
+                            <input asp-for="Input.CoppaFormSent" style="width:auto; display:inline-block;" />
+                            I have sent this form to ExamTools.
+                        </label>
+                        <span asp-validation-for="Input.CoppaFormSent" class="field-error"></span>
+                    </div>
+                </div>
+
                 <button type="submit" class="btn-primary">Continue to $5 payment</button>
             </form>
         }

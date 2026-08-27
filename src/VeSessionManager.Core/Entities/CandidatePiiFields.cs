@@ -26,6 +26,7 @@ public static class CandidatePiiFields
         candidate.City = null;
         candidate.State = null;
         candidate.HasFelonyDisclosure = null;
+        candidate.DeclaredUnder13 = null;
         candidate.PiiPurgedUtc = purgedUtc;
 
         foreach (var payment in candidate.Payments)

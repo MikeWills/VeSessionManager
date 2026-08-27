@@ -638,6 +638,27 @@
   });
 
 
+  // A <select> that shows a panel by id only while its current value matches a given one (2026-08-26,
+  // the youth-confirm page's "is the candidate under 13?" question revealing the COPPA notice). Same
+  // shape as the checkbox panel toggle above, for a control with more than two states.
+  //
+  // Progressive enhancement only: the server renders the initial display from whatever was posted
+  // back (see the page's own markup), and this only keeps it in sync as the select changes — with
+  // JavaScript unavailable, the panel simply keeps whatever the server last rendered.
+  document.querySelectorAll("[data-select-panel]").forEach(function (select) {
+    var panel = document.getElementById(select.getAttribute("data-select-panel"));
+    var matchValue = select.getAttribute("data-select-panel-value");
+    if (!panel) return;
+
+    function sync() {
+      panel.style.display = select.value === matchValue ? "" : "none";
+    }
+
+    select.addEventListener("change", sync);
+    sync();
+  });
+
+
   // A checkbox that, only when switched ON, checks a fixed list of other checkboxes by id (2026-08-26,
   // the FCC-issue master switch: the common case is "suppress every population", so this saves the
   // three separate clicks). Never unchecks anything when switched off — a checkbox this drives can

@@ -149,7 +149,7 @@ public class YouthPaymentConfirmationServiceTests
         var (team, payment, token) = await SeedAsync(dbContext);
         var square = new FakeSquareClient();
 
-        var result = await CreateService(dbContext, square).ConfirmAsync(token, CancellationToken.None);
+        var result = await CreateService(dbContext, square).ConfirmAsync(token, declaredUnder13: false, coppaFormSent: false, CancellationToken.None);
 
         Assert.Equal(YouthConfirmationOutcome.Success, result.Outcome);
         Assert.NotNull(result.RedirectUrl);
@@ -181,7 +181,7 @@ public class YouthPaymentConfirmationServiceTests
         await SeedAsync(dbContext);
         var square = new FakeSquareClient();
 
-        var result = await CreateService(dbContext, square).ConfirmAsync(Guid.NewGuid(), CancellationToken.None);
+        var result = await CreateService(dbContext, square).ConfirmAsync(Guid.NewGuid(), declaredUnder13: false, coppaFormSent: false, CancellationToken.None);
 
         Assert.Equal(YouthConfirmationOutcome.NotFound, result.Outcome);
         Assert.Empty(square.CreateCalls);
@@ -195,7 +195,7 @@ public class YouthPaymentConfirmationServiceTests
         var (_, payment, token) = await SeedAsync(dbContext, status: PaymentStatus.Paid);
         var square = new FakeSquareClient();
 
-        var result = await CreateService(dbContext, square).ConfirmAsync(token, CancellationToken.None);
+        var result = await CreateService(dbContext, square).ConfirmAsync(token, declaredUnder13: false, coppaFormSent: false, CancellationToken.None);
 
         Assert.Equal(YouthConfirmationOutcome.AlreadyResolved, result.Outcome);
         Assert.Empty(square.CreateCalls);
@@ -211,7 +211,7 @@ public class YouthPaymentConfirmationServiceTests
         var (_, _, token) = await SeedAsync(dbContext, youthExamFeeAmount: null);
         var square = new FakeSquareClient();
 
-        var result = await CreateService(dbContext, square).ConfirmAsync(token, CancellationToken.None);
+        var result = await CreateService(dbContext, square).ConfirmAsync(token, declaredUnder13: false, coppaFormSent: false, CancellationToken.None);
 
         Assert.Equal(YouthConfirmationOutcome.FeeNotConfigured, result.Outcome);
         Assert.Empty(square.CreateCalls);
@@ -224,7 +224,7 @@ public class YouthPaymentConfirmationServiceTests
         var (_, _, token) = await SeedAsync(dbContext, squareConfigured: false);
         var square = new FakeSquareClient();
 
-        var result = await CreateService(dbContext, square).ConfirmAsync(token, CancellationToken.None);
+        var result = await CreateService(dbContext, square).ConfirmAsync(token, declaredUnder13: false, coppaFormSent: false, CancellationToken.None);
 
         Assert.Equal(YouthConfirmationOutcome.SquareNotConfigured, result.Outcome);
         Assert.Empty(square.CreateCalls);
@@ -237,7 +237,7 @@ public class YouthPaymentConfirmationServiceTests
         var (_, payment, token) = await SeedAsync(dbContext);
         var square = new FakeSquareClient { ThrowOnDelete = new InvalidOperationException("Square delete failed") };
 
-        var result = await CreateService(dbContext, square).ConfirmAsync(token, CancellationToken.None);
+        var result = await CreateService(dbContext, square).ConfirmAsync(token, declaredUnder13: false, coppaFormSent: false, CancellationToken.None);
 
         Assert.Equal(YouthConfirmationOutcome.Success, result.Outcome);
         Assert.Single(square.CreateCalls);
@@ -252,7 +252,7 @@ public class YouthPaymentConfirmationServiceTests
         var (_, _, token) = await SeedAsync(dbContext, withExistingSquareLink: false);
         var square = new FakeSquareClient();
 
-        var result = await CreateService(dbContext, square).ConfirmAsync(token, CancellationToken.None);
+        var result = await CreateService(dbContext, square).ConfirmAsync(token, declaredUnder13: false, coppaFormSent: false, CancellationToken.None);
 
         Assert.Equal(YouthConfirmationOutcome.Success, result.Outcome);
         Assert.Empty(square.DeletedPaymentLinkIds);
@@ -275,6 +275,87 @@ public class YouthPaymentConfirmationServiceTests
         Assert.Equal(15m, unchanged.Amount);
     }
 
+    // ---- COPPA declaration (2026-08-26) ----
+
+    [Fact]
+    public async Task ConfirmAsync_DeclaredUnder13_RecordsItOnTheCandidate()
+    {
+        await using var dbContext = CreateContext();
+        var (_, payment, token) = await SeedAsync(dbContext);
+        var square = new FakeSquareClient();
+
+        await CreateService(dbContext, square).ConfirmAsync(token, declaredUnder13: true, coppaFormSent: true, CancellationToken.None);
+
+        var candidate = await dbContext.Candidates.SingleAsync(c => c.Id == payment.CandidateId);
+        Assert.True(candidate.DeclaredUnder13);
+        Assert.NotNull(candidate.CoppaFormSentConfirmedUtc);
+        Assert.Equal(Now, candidate.CoppaFormSentConfirmedUtc);
+    }
+
+    [Fact]
+    public async Task ConfirmAsync_NotUnder13_RecordsFalse_NeverStampsTheCoppaTimestamp()
+    {
+        await using var dbContext = CreateContext();
+        var (_, payment, token) = await SeedAsync(dbContext);
+        var square = new FakeSquareClient();
+
+        await CreateService(dbContext, square).ConfirmAsync(token, declaredUnder13: false, coppaFormSent: false, CancellationToken.None);
+
+        var candidate = await dbContext.Candidates.SingleAsync(c => c.Id == payment.CandidateId);
+        Assert.False(candidate.DeclaredUnder13);
+        Assert.Null(candidate.CoppaFormSentConfirmedUtc);
+    }
+
+    /// <summary>
+    /// The declaration is recorded even when the youth-rate switch itself can't proceed — it's a
+    /// fact about the candidate, independent of whether Square/fee config cooperate.
+    /// </summary>
+    [Fact]
+    public async Task ConfirmAsync_DeclaredUnder13_StillRecordedEvenWhenFeeIsNotConfigured()
+    {
+        await using var dbContext = CreateContext();
+        var (_, payment, token) = await SeedAsync(dbContext, youthExamFeeAmount: null);
+        var square = new FakeSquareClient();
+
+        var result = await CreateService(dbContext, square).ConfirmAsync(token, declaredUnder13: true, coppaFormSent: true, CancellationToken.None);
+
+        Assert.Equal(YouthConfirmationOutcome.FeeNotConfigured, result.Outcome);
+        var candidate = await dbContext.Candidates.SingleAsync(c => c.Id == payment.CandidateId);
+        Assert.True(candidate.DeclaredUnder13);
+        Assert.NotNull(candidate.CoppaFormSentConfirmedUtc);
+    }
+
+    [Fact]
+    public async Task CheckEligibilityAsync_NoTeamIntroText_FallsBackToTheSharedDefault()
+    {
+        await using var dbContext = CreateContext();
+        var (_, _, token) = await SeedAsync(dbContext);
+        var square = new FakeSquareClient();
+
+        var eligibility = await CreateService(dbContext, square).CheckEligibilityAsync(token, CancellationToken.None);
+
+        Assert.Equal(YouthConfirmDefaults.IntroHtml, eligibility.IntroHtml);
+    }
+
+    [Fact]
+    public async Task CheckEligibilityAsync_TeamHasItsOwnIntroText_UsesThatInstead()
+    {
+        await using var dbContext = CreateContext();
+        var (team, _, token) = await SeedAsync(dbContext);
+        dbContext.EmailSettings.Add(new EmailSettings
+        {
+            TeamId = team.Id, FromAddress = "noreply@example.org", ReplyToAddress = "reply@example.org",
+            PrivacyPolicyUrl = "https://example.org/privacy", AdminNotificationEmail = "admin@example.org",
+            YouthConfirmIntroHtml = "<p>Our club's own wording.</p>"
+        });
+        await dbContext.SaveChangesAsync();
+        var square = new FakeSquareClient();
+
+        var eligibility = await CreateService(dbContext, square).CheckEligibilityAsync(token, CancellationToken.None);
+
+        Assert.Equal("<p>Our club's own wording.</p>", eligibility.IntroHtml);
+    }
+
     // ---- idempotency key: persist-once, reused on retry (T07, 2026-08-03) ----
 
     [Fact]
@@ -286,7 +367,7 @@ public class YouthPaymentConfirmationServiceTests
         var (_, _, token) = await SeedAsync(dbContext, squareIdempotencyKey: "standard-rate-key");
         var square = new FakeSquareClient();
 
-        await CreateService(dbContext, square).ConfirmAsync(token, CancellationToken.None);
+        await CreateService(dbContext, square).ConfirmAsync(token, declaredUnder13: false, coppaFormSent: false, CancellationToken.None);
 
         Assert.Equal(["link-old"], square.DeletedPaymentLinkIds);
         var call = Assert.Single(square.CreateCalls);
@@ -301,7 +382,7 @@ public class YouthPaymentConfirmationServiceTests
         var (_, _, token) = await SeedAsync(dbContext);
         var square = new FakeSquareClient();
 
-        await CreateService(dbContext, square).ConfirmAsync(token, CancellationToken.None);
+        await CreateService(dbContext, square).ConfirmAsync(token, declaredUnder13: false, coppaFormSent: false, CancellationToken.None);
 
         var call = Assert.Single(square.CreateCalls);
         Assert.Equal(call.IdempotencyKey, (await dbContext.Payments.SingleAsync()).SquareIdempotencyKey);
@@ -319,7 +400,7 @@ public class YouthPaymentConfirmationServiceTests
         var crashingSquare = new FakeSquareClient { ThrowOnCreate = new HttpRequestException("connection reset after Square accepted the request") };
         var service = CreateService(dbContext, crashingSquare);
 
-        await Assert.ThrowsAsync<HttpRequestException>(() => service.ConfirmAsync(token, CancellationToken.None));
+        await Assert.ThrowsAsync<HttpRequestException>(() => service.ConfirmAsync(token, declaredUnder13: false, coppaFormSent: false, CancellationToken.None));
 
         var keySentBeforeTheCrash = Assert.Single(crashingSquare.CreateCalls).IdempotencyKey;
         var persistedKey = (await dbContext.Payments.SingleAsync()).SquareIdempotencyKey;
@@ -327,7 +408,7 @@ public class YouthPaymentConfirmationServiceTests
 
         // Act — the candidate clicks confirm again after the crash.
         var retrySquare = new FakeSquareClient();
-        var result = await CreateService(dbContext, retrySquare).ConfirmAsync(token, CancellationToken.None);
+        var result = await CreateService(dbContext, retrySquare).ConfirmAsync(token, declaredUnder13: false, coppaFormSent: false, CancellationToken.None);
 
         // Assert — Square sees the same key, so it replays the one order instead of creating a second.
         Assert.Equal(YouthConfirmationOutcome.Success, result.Outcome);
@@ -343,7 +424,7 @@ public class YouthPaymentConfirmationServiceTests
         var (_, _, token) = await SeedAsync(dbContext, withExistingSquareLink: false, squareIdempotencyKey: "interrupted-attempt-key");
         var square = new FakeSquareClient();
 
-        await CreateService(dbContext, square).ConfirmAsync(token, CancellationToken.None);
+        await CreateService(dbContext, square).ConfirmAsync(token, declaredUnder13: false, coppaFormSent: false, CancellationToken.None);
 
         Assert.Empty(square.DeletedPaymentLinkIds);
         Assert.Equal("interrupted-attempt-key", Assert.Single(square.CreateCalls).IdempotencyKey);
@@ -359,10 +440,10 @@ public class YouthPaymentConfirmationServiceTests
         var crashingSquare = new FakeSquareClient { ThrowOnCreate = new HttpRequestException("boom") };
 
         await Assert.ThrowsAsync<HttpRequestException>(
-            () => CreateService(dbContext, crashingSquare).ConfirmAsync(token, CancellationToken.None));
+            () => CreateService(dbContext, crashingSquare).ConfirmAsync(token, declaredUnder13: false, coppaFormSent: false, CancellationToken.None));
 
         var retrySquare = new FakeSquareClient();
-        await CreateService(dbContext, retrySquare).ConfirmAsync(token, CancellationToken.None);
+        await CreateService(dbContext, retrySquare).ConfirmAsync(token, declaredUnder13: false, coppaFormSent: false, CancellationToken.None);
 
         Assert.Equal(["link-old"], crashingSquare.DeletedPaymentLinkIds);
         Assert.Empty(retrySquare.DeletedPaymentLinkIds);
