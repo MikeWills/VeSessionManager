@@ -26,15 +26,27 @@ namespace VeSessionManager.Core.Email;
 /// </summary>
 public class SmtpEmailSender(SystemSettingsService systemSettingsService, ILogger<SmtpEmailSender> logger) : IEmailSender
 {
+    /// <summary>
+    /// A hard ceiling on the whole connect+auth+send+disconnect sequence (2026-08-27, live incident).
+    /// A stuck socket — a TLS handshake that never completes, a connect attempt that never gets a RST
+    /// back — silently blocked <c>MessageRuleJob</c>'s single tick loop for over 5 hours with no
+    /// exception and nothing logged, which also blocked every other team's message rules behind it in
+    /// the same tick (see PerTeamDailyJob.RunTickAsync's sequential per-team loop). MailKit's own
+    /// <c>SmtpClient.Timeout</c> does not reliably bound every stall shape (notably a stuck connect),
+    /// so this wraps every call in its own linked, timed-out token instead of trusting that property
+    /// alone — a real send normally completes in well under this.
+    /// </summary>
+    private static readonly TimeSpan SendTimeout = TimeSpan.FromSeconds(60);
+
     public async Task SendAsync(EmailCredentials credentials, EmailMessage message, CancellationToken cancellationToken)
     {
         var settings = await systemSettingsService.GetAsync(cancellationToken);
         var (effectiveMessage, testMode) = TestModeEmailRedirector.Apply(message, settings.TestModeEnabled, settings.TestModeOverrideEmail);
 
         using var client = new SmtpClient();
-        await ConnectAsync(client, credentials, cancellationToken);
-        await client.SendAsync(BuildMimeMessage(effectiveMessage), cancellationToken);
-        await client.DisconnectAsync(quit: true, cancellationToken);
+        await WithTimeoutAsync(cancellationToken, ct => ConnectAsync(client, credentials, ct));
+        await WithTimeoutAsync(cancellationToken, ct => client.SendAsync(BuildMimeMessage(effectiveMessage), ct));
+        await WithTimeoutAsync(cancellationToken, ct => client.DisconnectAsync(quit: true, ct));
 
         LogSent(effectiveMessage, credentials, testMode);
     }
@@ -63,7 +75,7 @@ public class SmtpEmailSender(SystemSettingsService systemSettingsService, ILogge
         var settings = await systemSettingsService.GetAsync(cancellationToken);
 
         using var client = new SmtpClient();
-        await ConnectAsync(client, credentials, cancellationToken);
+        await WithTimeoutAsync(cancellationToken, ct => ConnectAsync(client, credentials, ct));
 
         try
         {
@@ -74,7 +86,7 @@ public class SmtpEmailSender(SystemSettingsService systemSettingsService, ILogge
 
                 try
                 {
-                    await client.SendAsync(BuildMimeMessage(effectiveMessage), cancellationToken);
+                    await WithTimeoutAsync(cancellationToken, ct => client.SendAsync(BuildMimeMessage(effectiveMessage), ct));
                     outcomes.Add(EmailSendOutcome.Success);
                     LogSent(effectiveMessage, credentials, testMode);
                 }
@@ -87,11 +99,34 @@ public class SmtpEmailSender(SystemSettingsService systemSettingsService, ILogge
         finally
         {
             // In a finally so a cancellation mid-batch still closes the session politely rather than
-            // dropping the socket on the server.
-            await client.DisconnectAsync(quit: true, CancellationToken.None);
+            // dropping the socket on the server. Still timeout-guarded — cleanup that hangs is exactly
+            // the failure this whole change exists to prevent.
+            await WithTimeoutAsync(CancellationToken.None, ct => client.DisconnectAsync(quit: true, ct));
         }
 
         return outcomes;
+    }
+
+    /// <summary>
+    /// Runs one MailKit call under its own <see cref="SendTimeout"/>, layered on top of whatever
+    /// cancellation the caller already passed in. A timeout throws <see cref="TimeoutException"/>
+    /// rather than <see cref="OperationCanceledException"/> specifically so callers that treat
+    /// cancellation as "the host is shutting down, let it propagate" (see the per-message catch in
+    /// <see cref="SendManyAsync"/>) still record a stuck send as a per-message failure instead of
+    /// aborting the whole batch.
+    /// </summary>
+    private static async Task WithTimeoutAsync(CancellationToken cancellationToken, Func<CancellationToken, Task> operation)
+    {
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        cts.CancelAfter(SendTimeout);
+        try
+        {
+            await operation(cts.Token);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            throw new TimeoutException($"SMTP operation did not complete within {SendTimeout.TotalSeconds:0}s.");
+        }
     }
 
     /// <summary>
