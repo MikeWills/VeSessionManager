@@ -577,6 +577,13 @@ app.UseHttpsRedirection();
 // an inline onchange= renders fine, reads correctly in the markup, and simply never runs. Two
 // controls shipped dead that way before anyone noticed. Use app.js's data-autosubmit (or another
 // delegated handler) instead.
+// Same explicit-domain reasoning as the comment on "form-action" below, but derived from
+// App:PublicBaseUrl (already the one config value every self-hosted deployment sets for its own
+// domain — see ForgotPassword.cshtml.cs/VeSelfService for the other places this is read from,
+// rather than the request's Host header) instead of a literal that would only ever be right for
+// this one deployment.
+var publicOrigin = new Uri(app.Configuration["App:PublicBaseUrl"]!, UriKind.Absolute).GetLeftPart(UriPartial.Authority);
+
 app.Use(async (context, next) =>
 {
     var headers = context.Response.Headers;
@@ -606,13 +613,13 @@ app.Use(async (context, next) =>
         // (see Program.cs's AddGoogle/AddMicrosoftAccount registration above), so listing both here
         // unconditionally costs nothing when a given provider isn't configured.
         //
-        // https://ve.wx0mik.radio is listed explicitly, redundantly with 'self' (2026-08-27,
-        // diagnostic) — a same-origin form post was still being blocked by this exact directive with
-        // 'self' present and every other layer (Apache, Cloudflare Managed Transforms/Transform
-        // Rules/Speed Brain, a Service Worker, extensions, a meta-tag CSP) ruled out. Listing the
-        // literal domain costs nothing if 'self' was already covering it, and removes 'self' as a
-        // variable if it somehow wasn't.
-        "form-action 'self' https://ve.wx0mik.radio https://*.squareup.com https://accounts.google.com https://login.microsoftonline.com";
+        // {publicOrigin} is listed explicitly, redundantly with 'self' (2026-08-27) — a same-origin
+        // form post was still being blocked by this exact directive with 'self' present and every
+        // other layer (Apache, Cloudflare Managed Transforms/Transform Rules/Speed Brain, a Service
+        // Worker, extensions, a meta-tag CSP) ruled out; adding the literal origin resolved it.
+        // Derived from App:PublicBaseUrl rather than hardcoded so every self-hosted deployment gets
+        // its own domain here automatically, the same as every other consumer of that config value.
+        $"form-action 'self' {publicOrigin} https://*.squareup.com https://accounts.google.com https://login.microsoftonline.com";
     await next();
 });
 
