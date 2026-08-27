@@ -605,7 +605,14 @@ app.Use(async (context, next) =>
         // error page, just a button that appeared to do nothing. Both buttons render conditionally
         // (see Program.cs's AddGoogle/AddMicrosoftAccount registration above), so listing both here
         // unconditionally costs nothing when a given provider isn't configured.
-        "form-action 'self' https://*.squareup.com https://accounts.google.com https://login.microsoftonline.com";
+        //
+        // https://ve.wx0mik.radio is listed explicitly, redundantly with 'self' (2026-08-27,
+        // diagnostic) — a same-origin form post was still being blocked by this exact directive with
+        // 'self' present and every other layer (Apache, Cloudflare Managed Transforms/Transform
+        // Rules/Speed Brain, a Service Worker, extensions, a meta-tag CSP) ruled out. Listing the
+        // literal domain costs nothing if 'self' was already covering it, and removes 'self' as a
+        // variable if it somehow wasn't.
+        "form-action 'self' https://ve.wx0mik.radio https://*.squareup.com https://accounts.google.com https://login.microsoftonline.com";
     await next();
 });
 
