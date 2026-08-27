@@ -381,7 +381,7 @@ public class TeamSettingsService(AppDbContext dbContext, TimeProvider timeProvid
     }
 
     /// <summary>Upserts the Team's EmailSettings row (one per team, unique index on TeamId) — creates it if somehow missing (should already exist via EmailDefaultsSeeder), otherwise updates in place.</summary>
-    public async Task<TeamActionResult> UpdateEmailSettingsAsync(int teamId, string fromAddress, string? fromDisplayName, string replyToAddress, string privacyPolicyUrl, string adminNotificationEmail, string? bccAddress, string? youthConfirmIntroHtml, int userId, CancellationToken cancellationToken)
+    public async Task<TeamActionResult> UpdateEmailSettingsAsync(int teamId, string fromAddress, string? fromDisplayName, string replyToAddress, string privacyPolicyUrl, string adminNotificationEmail, string? bccAddress, int userId, CancellationToken cancellationToken)
     {
         var teamExists = await dbContext.Teams.AnyAsync(t => t.Id == teamId, cancellationToken);
         if (!teamExists)
@@ -411,9 +411,6 @@ public class TeamSettingsService(AppDbContext dbContext, TimeProvider timeProvid
         emailSettings.AdminNotificationEmail = adminNotificationEmail;
         // Blank stores null rather than "", so "is a BCC configured?" is one check everywhere.
         emailSettings.BccAddress = string.IsNullOrWhiteSpace(bccAddress) ? null : bccAddress.Trim();
-        // Blank stores null too — YouthConfirmDefaults.IntroHtml is what a null/blank value falls
-        // back to, so clearing the box is how a team goes back to the shipped wording.
-        emailSettings.YouthConfirmIntroHtml = string.IsNullOrWhiteSpace(youthConfirmIntroHtml) ? null : youthConfirmIntroHtml;
         emailSettings.UpdatedByUserId = userId;
         emailSettings.UpdatedUtc = now;
 
@@ -421,6 +418,36 @@ public class TeamSettingsService(AppDbContext dbContext, TimeProvider timeProvid
         // or off is the part worth being able to reconstruct later.
         AddAudit(userId, "TeamEmailSettingsUpdated", teamId,
             $"Team {teamId} email settings updated. Candidate BCC {(emailSettings.BccAddress is null ? "off" : "on")}.", now);
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        return TeamActionResult.Success;
+    }
+
+    /// <summary>
+    /// Updates just the youth-confirm page's team-editable intro text — split into its own save
+    /// action (2026-08-27) rather than riding along with <see cref="UpdateEmailSettingsAsync"/>'s
+    /// form. It was originally posted from inside that same form/button, which meant saving one
+    /// re-posted (and could silently overwrite) the other's fields if a team edited them separately —
+    /// every other section on Team Settings already has its own save action, and this now matches.
+    /// </summary>
+    public async Task<TeamActionResult> UpdateYouthConfirmIntroAsync(int teamId, string? youthConfirmIntroHtml, int userId, CancellationToken cancellationToken)
+    {
+        var emailSettings = await dbContext.EmailSettings.FirstOrDefaultAsync(e => e.TeamId == teamId, cancellationToken);
+        if (emailSettings is null)
+        {
+            // Should already exist via EmailDefaultsSeeder — nothing sensible to create here with
+            // only this one field, unlike UpdateEmailSettingsAsync's upsert above.
+            return TeamActionResult.NotFound;
+        }
+
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+        // Blank stores null — YouthConfirmDefaults.IntroHtml is what a null/blank value falls back
+        // to, so clearing the box is how a team goes back to the shipped wording.
+        emailSettings.YouthConfirmIntroHtml = string.IsNullOrWhiteSpace(youthConfirmIntroHtml) ? null : youthConfirmIntroHtml;
+        emailSettings.UpdatedByUserId = userId;
+        emailSettings.UpdatedUtc = now;
+
+        AddAudit(userId, "TeamYouthConfirmIntroUpdated", teamId, $"Team {teamId} youth-confirm intro text updated.", now);
         await dbContext.SaveChangesAsync(cancellationToken);
 
         return TeamActionResult.Success;
