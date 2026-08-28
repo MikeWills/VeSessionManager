@@ -164,7 +164,13 @@ public class SessionActionService(
     public async Task<SessionDeleteResult> DeleteAsync(int sessionId, int userId, CancellationToken cancellationToken)
     {
         var session = await dbContext.Sessions
-            .Include(s => s.Candidates).ThenInclude(c => c.Payments)
+            // Refunds must come with the payments: Refund -> Payment is Restrict (a money record
+            // nothing may cascade away), so leaving them out makes the payment delete below an FK
+            // violation for any session that ever had a refund — which surfaced as an error page on
+            // the very session #431's live refund test ran against (2026-08-28). Deleting them here
+            // is Mike's call ("Delete the refunds"): the session delete is the bigger record loss
+            // already, and the audit entry below still counts what went.
+            .Include(s => s.Candidates).ThenInclude(c => c.Payments).ThenInclude(p => p.Refunds)
             .Include(s => s.SessionVolunteerExaminers)
             .FirstOrDefaultAsync(s => s.Id == sessionId, cancellationToken);
         if (session is null)
@@ -173,6 +179,7 @@ public class SessionActionService(
         }
 
         var payments = session.Candidates.SelectMany(c => c.Payments).ToList();
+        var refunds = payments.SelectMany(p => p.Refunds).ToList();
         var candidateCount = session.Candidates.Count;
         var veCount = session.SessionVolunteerExaminers.Count;
 
@@ -189,16 +196,17 @@ public class SessionActionService(
         // Written before the rows themselves are removed — EntityId is a plain int column (no FK
         // to Session), so it stays a valid forensic record after the delete goes through.
         dbContext.AddAuditLog(userId, "SessionDeleted", nameof(Session), session.Id,
-            $"Session {session.ExamToolsSessionId} deleted, along with {candidateCount} candidate(s), {payments.Count} payment(s), and {veCount} VE roster assignment(s).", now);
+            $"Session {session.ExamToolsSessionId} deleted, along with {candidateCount} candidate(s), {payments.Count} payment(s), {refunds.Count} refund record(s), and {veCount} VE roster assignment(s).", now);
 
+        dbContext.Refunds.RemoveRange(refunds);
         dbContext.Payments.RemoveRange(payments);
         dbContext.Candidates.RemoveRange(session.Candidates);
         dbContext.SessionVolunteerExaminers.RemoveRange(session.SessionVolunteerExaminers);
         dbContext.Sessions.Remove(session);
         await dbContext.SaveChangesAsync(cancellationToken);
 
-        logger.LogWarning("Session {SessionId} ({ExamToolsSessionId}) deleted by user {UserId} — {CandidateCount} candidate(s), {PaymentCount} payment(s), {VeCount} VE roster assignment(s) removed with it",
-            session.Id, session.ExamToolsSessionId, userId, candidateCount, payments.Count, veCount);
+        logger.LogWarning("Session {SessionId} ({ExamToolsSessionId}) deleted by user {UserId} — {CandidateCount} candidate(s), {PaymentCount} payment(s), {RefundCount} refund record(s), {VeCount} VE roster assignment(s) removed with it",
+            session.Id, session.ExamToolsSessionId, userId, candidateCount, payments.Count, refunds.Count, veCount);
         return new SessionDeleteResult(SessionActionResult.Success, candidateCount, payments.Count, veCount);
     }
 }
