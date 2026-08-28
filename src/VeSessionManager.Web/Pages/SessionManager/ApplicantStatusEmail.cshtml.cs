@@ -186,7 +186,7 @@ public class ApplicantStatusEmailModel(
             lastSentByCandidate.TryGetValue(c.Id, out var sentUtc)
                 ? EasternTimeFormatter.Format(sentUtc, "MMM d")
                 : null,
-            CandidateCapabilities.For(c, vecSupportsYouthProgram: false, hasAnyPayment: false).CanReceiveEmail))];
+            CandidateCapabilities.For(c, vecSupportsYouthProgram: false).CanReceiveEmail))];
 
         return null;
     }

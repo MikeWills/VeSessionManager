@@ -159,26 +159,9 @@ public class CandidateActionService(
         return CandidateActionResult.Success;
     }
 
-    /// <summary>"flag a payment as 'refund requested' with notes" — tracking-only, the actual refund is processed manually in the Square dashboard.</summary>
-    public async Task<CandidateActionResult> FlagRefundRequestedAsync(int paymentId, int userId, string? notes, CancellationToken cancellationToken)
-    {
-        var payment = await dbContext.Payments.FirstOrDefaultAsync(p => p.Id == paymentId, cancellationToken);
-        if (payment is null)
-        {
-            return CandidateActionResult.NotFound;
-        }
-
-        var now = timeProvider.GetUtcNow().UtcDateTime;
-        payment.RefundRequested = true;
-        payment.RefundRequestedByUserId = userId;
-        payment.RefundRequestedUtc = now;
-        payment.RefundNotes = notes;
-
-        AddAudit(userId, "PaymentRefundRequested", payment.Id, $"Payment {payment.Id} flagged refund requested.", now);
-        await dbContext.SaveChangesAsync(cancellationToken);
-        logger.LogInformation("Payment {PaymentId} flagged refund requested by user {UserId}", payment.Id, userId);
-        return CandidateActionResult.Success;
-    }
+    // FlagRefundRequestedAsync lived here until 2026-08-27 — see Payment.cs's note on the removed
+    // RefundRequested columns. Real refunds (RefundService, #375) replaced the need for a
+    // note-taking flag entirely.
 
     /// <summary>
     /// "create a retest payment for a candidate who fails and retests within the same session" —

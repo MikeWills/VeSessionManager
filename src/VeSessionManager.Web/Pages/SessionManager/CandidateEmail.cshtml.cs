@@ -197,10 +197,10 @@ public class CandidateEmailModel(
             lastSentByCandidate.TryGetValue(c.Id, out var sentUtc)
                 ? EasternTimeFormatter.Format(sentUtc, "MMM d")
                 : null,
-            // Only CanReceiveEmail is read here; the two arguments feed CanSendYouthProgram and
-            // CanFlagRefund, which this screen does not offer. Passing false rather than querying for
-            // answers nothing consults — the flags they affect are not read on this page.
-            CandidateCapabilities.For(c, vecSupportsYouthProgram: false, hasAnyPayment: false).CanReceiveEmail))];
+            // Only CanReceiveEmail is read here; the argument feeds CanSendYouthProgram, which
+            // this screen does not offer. Passing false rather than querying for an answer nothing
+            // consults — the flag it affects is not read on this page.
+            CandidateCapabilities.For(c, vecSupportsYouthProgram: false).CanReceiveEmail))];
 
         return null;
     }
