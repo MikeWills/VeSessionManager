@@ -185,10 +185,6 @@
                    aren't part of what the Status column means. *@
                 <td data-sort-value="@payment.ChipLabel">
                     <span class="chip @payment.ChipClass">@payment.ChipLabel</span>
-                    @if (payment.RefundRequested)
-                    {
-                        <span class="refund-tag">Refund requested@(payment.RefundNotes is not null ? $" — {payment.RefundNotes}" : "")</span>
-                    }
                     @if (payment.AmountMismatchLine is not null)
                     {
                         <span class="mismatch-tag" title="Matched via Square anyway — this team's real-world payments don't always equal the amount owed (e.g. the ARRL youth rate) until confirmed at test time.">@payment.AmountMismatchLine</span>
@@ -240,8 +236,7 @@
                                 <input type="hidden" name="paymentId" value="@payment.Id" />
                                 <button type="submit" class="item" disabled="@(!payment.CanMarkPaid)">Mark paid manually</button>
                             </form>
-                            <button type="button" class="item" data-open-modal="refundModal-@payment.Id" disabled="@(!c.CanFlagRefund)">Flag refund requested</button>
-                            <button type="button" class="item" data-open-modal="issueRefundModal-@payment.Id" disabled="@(!payment.CanRefund)">Refund through Square…</button>
+                            <button type="button" class="item" data-open-modal="issueRefundModal-@payment.Id" disabled="@(!payment.CanRefund)">Refund…</button>
                         </div>
                     }
                 </td>
@@ -318,29 +313,14 @@ else
 
     @foreach (var payment in c.Payments)
     {
-        <div class="modal-backdrop" id="refundModal-@payment.Id">
-            <div class="modal">
-                <h3>Flag refund requested</h3>
-                <form method="post" asp-page-handler="FlagRefund">
-                    <input type="hidden" name="paymentId" value="@payment.Id" />
-                    <div class="field"><label for="notes-@payment.Id">Notes</label><textarea id="notes-@payment.Id" name="notes" rows="3"></textarea></div>
-                    <div class="modal-actions">
-                        <button type="button" class="btn-secondary btn-sm" data-close-modal>Cancel</button>
-                        <button type="submit" class="btn-primary btn-sm">Flag refund</button>
-                    </div>
-                </form>
-            </div>
-        </div>
-
-        @* The real thing (#375). Rendered only where it can be used — unlike the flag modal above,
-           which is always present and relies on its trigger being disabled. The difference is worth
-           the inconsistency: this form moves money, and a modal that cannot be reached is a modal
+        @* The refund modal (#375). Rendered only where it can be used, rather than always present
+           with a disabled trigger: this form moves money, and a modal that cannot be reached is a modal
            whose form cannot be posted by hand either. *@
         @if (payment.CanRefund)
         {
             <div class="modal-backdrop" id="issueRefundModal-@payment.Id">
                 <div class="modal">
-                    <h3>Refund through Square</h3>
+                    <h3>Refund</h3>
                     <p>
                         This sends money back to the candidate through Square straight away. It cannot be
                         undone from here. <strong>@payment.AmountLine</strong> was charged;
@@ -365,7 +345,7 @@ else
                         </div>
                         <div class="modal-actions">
                             <button type="button" class="btn-secondary btn-sm" data-close-modal>Cancel</button>
-                            <button type="submit" class="btn-primary btn-sm">Refund through Square</button>
+                            <button type="submit" class="btn-primary btn-sm">Refund</button>
                         </div>
                     </form>
                 </div>

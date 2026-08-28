@@ -126,21 +126,13 @@ public class Payment
     /// </summary>
     public DateTime? SquareLinkPurgedUtc { get; set; }
 
-    /// <summary>Actual refund is processed manually in the Square dashboard — this is just a note for tracking.</summary>
-    public bool RefundRequested { get; set; }
-    public int? RefundRequestedByUserId { get; set; }
-    public User? RefundRequestedByUser { get; set; }
-    /// <summary>
-    /// Written, never read back by any query or screen — **deliberately retained** (audit T36,
-    /// decided 2026-08-11). It answers a question that only ever gets asked after something has gone
-    /// wrong, and by then it is too late to start recording it. Storage is nothing; the alternative
-    /// is a migration that destroys history permanently.
-    ///
-    /// <para>Recorded here so the next reader can tell "kept on purpose" from "forgotten", which was
-    /// the actual finding — the ambiguity, not the column.</para>
-    /// </summary>
-    public DateTime? RefundRequestedUtc { get; set; }
-    public string? RefundNotes { get; set; }
+    // RefundRequested / RefundRequestedByUserId / RefundRequestedUtc / RefundNotes lived here until
+    // 2026-08-27 — the "flag refund requested" note-taking feature from the era when refunding meant
+    // opening the Square dashboard by hand. Removed at Mike's direction once real refunds (#375)
+    // covered the need ("remove the flag refund feature. There's no reason for it"), following the
+    // Payment.ExpiredUnpaid precedent of removing outright rather than keeping inert bookkeeping.
+    // This supersedes audit T36's earlier "deliberately retained" ruling on RefundRequestedUtc,
+    // which was about not deleting history while the feature existed.
 
     public DateTime CreatedUtc { get; set; }
 }

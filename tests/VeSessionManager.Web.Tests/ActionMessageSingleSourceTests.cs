@@ -50,8 +50,6 @@ public class ActionMessageSingleSourceTests
         "FRN cannot be blank.",
         "Payment marked paid.",
         "Could not mark payment paid.",
-        "Refund requested flagged.",
-        "Could not flag refund requested.",
         "Retest payment created.",
         "Felony disclosure instructions sent.",
         "Youth program instructions sent."

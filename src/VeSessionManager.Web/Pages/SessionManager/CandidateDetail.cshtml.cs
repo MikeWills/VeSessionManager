@@ -103,21 +103,10 @@ public class CandidateDetailModel(
         return RedirectToPage(new { id = Id });
     }
 
-    public async Task<IActionResult> OnPostFlagRefundAsync(int paymentId, string? notes)
-    {
-        var auth = await AuthorizeAsync();
-        if (auth is null) return Forbid();
-        if (!await PaymentBelongsToCandidateAsync(paymentId)) return Forbid();
-
-        Apply(ActionOutcomes.FlagRefund(
-            await candidateActionService.FlagRefundRequestedAsync(paymentId, auth.Value.User.Id, notes, CancellationToken.None)));
-        return RedirectToPage(new { id = Id });
-    }
-
     /// <summary>
-    /// Issue a real refund through Square (#375) — as opposed to <c>OnPostFlagRefundAsync</c> above,
-    /// which only writes a note. Both survive: the flag is still the right tool for money this API
-    /// cannot reach, which is any payment over a year old or taken outside Square.
+    /// Issue a real refund through Square (#375). (A "flag refund requested" note-taking sibling
+    /// lived beside this until 2026-08-27 — removed as redundant; money this API cannot reach is
+    /// handled in the Square dashboard directly.)
     ///
     /// <para>The amount is parsed here rather than bound, so a typo is a message rather than a
     /// silently-zeroed decimal — <c>Usd.TryParse</c> because a bare <c>decimal.TryParse</c> reads
@@ -233,8 +222,7 @@ public class CandidateDetailModel(
             candidate.Id);
 
         var isWithdrawn = candidate.IsWithdrawn;
-        var can = CandidateCapabilities.For(
-            candidate, candidate.Session.Vec.SupportsYouthProgram, candidate.Payments.Count > 0);
+        var can = CandidateCapabilities.For(candidate, candidate.Session.Vec.SupportsYouthProgram);
 
         // Materialized first, then mapped in memory (not a server-side .Select() projection) — EF
         // Core can't translate EasternTimeFormatter.Format's TimeZoneInfo conversion to SQL.
@@ -302,7 +290,6 @@ public class CandidateDetailModel(
             CanDelete: can.CanDelete,
             CanMarkFailed: can.CanMarkFailed,
             CanCreateRetestPayment: can.CanCreateRetestPayment,
-            CanFlagRefund: can.CanFlagRefund,
             CanSendYouthProgram: can.CanSendYouthProgram,
             CanSendFelonyInstructions: can.CanSendFelonyInstructions,
             AwaitingFelonyInstructions: can.AwaitingFelonyInstructions,
@@ -338,8 +325,6 @@ public class CandidateDetailModel(
             payment.PaymentLinkUrl,
             FormatUtcOrNull(payment.PaidDateUtc),
             payment.PaidDateUtc?.ToString("o", CultureInfo.InvariantCulture),
-            payment.RefundRequested,
-            payment.RefundNotes,
             amountMismatchLine,
             payment.SquareOrderCompletedUtc is not null,
             payment.Status == PaymentStatus.Unpaid,
@@ -417,7 +402,6 @@ public class CandidateDetailModel(
         bool CanDelete,
         bool CanMarkFailed,
         bool CanCreateRetestPayment,
-        bool CanFlagRefund,
         bool CanSendYouthProgram,
         bool CanSendFelonyInstructions,
         /// <summary>Declared a disclosure and has not been sent the instructions — the marker that replaces the automatic send (#221).</summary>
@@ -440,8 +424,6 @@ public class CandidateDetailModel(
         string? PaidDateLine,
         /// <summary>Raw timestamp behind PaidDateLine, for the payments table's click-to-sort header (see app.js) — the displayed M/d/yyyy form sorts wrong as text. Null (an unpaid payment) sorts last in both directions.</summary>
         string? PaidDateSortValue,
-        bool RefundRequested,
-        string? RefundNotes,
         string? AmountMismatchLine,
         bool SquareOrderCompleted,
         bool CanMarkPaid,

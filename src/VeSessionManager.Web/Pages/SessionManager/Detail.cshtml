@@ -248,10 +248,6 @@
                     {
                         <span class="chip @candidate.RefundChipClass">@candidate.RefundChipLabel</span>
                     }
-                    @if (candidate.RefundRequested)
-                    {
-                        <span class="refund-tag">Refund requested</span>
-                    }
                     @if (candidate.AmountMismatchLine is not null)
                     {
                         <span class="mismatch-tag" title="Matched via Square anyway — this team's real-world payments don't always equal the amount owed (e.g. the ARRL youth rate) until confirmed at test time.">@candidate.AmountMismatchLine</span>
@@ -299,7 +295,6 @@
                                 <input type="hidden" name="candidateId" value="@candidate.Id" />
                                 <button type="submit" class="item" disabled="@(!candidate.CanCreateRetestPayment)">Create retest payment</button>
                             </form>
-                            <button type="button" class="item" data-open-modal="refundModal-@candidate.Id" disabled="@(!candidate.CanFlagRefund)">Flag refund requested</button>
                             @if (candidate.CanSendYouthProgram)
                             {
                                 <form method="post" asp-page-handler="SendYouthProgram">
@@ -494,23 +489,5 @@
             </div>
         </div>
 
-        @* See the MarkPaid form above (#277). The whole modal, not just its form: CanFlagRefund is
-           false without a payment, so with no id there is nothing here worth rendering. *@
-        @if (candidate.PrimaryPaymentId is { } refundPaymentId)
-        {
-        <div class="modal-backdrop" id="refundModal-@candidate.Id">
-            <div class="modal">
-                <h3>Flag refund requested</h3>
-                <form method="post" asp-page-handler="FlagRefund">
-                    <input type="hidden" name="paymentId" value="@refundPaymentId" />
-                    <div class="field"><label for="notes-@candidate.Id">Notes</label><textarea id="notes-@candidate.Id" name="notes" rows="3"></textarea></div>
-                    <div class="modal-actions">
-                        <button type="button" class="btn-secondary btn-sm" data-close-modal>Cancel</button>
-                        <button type="submit" class="btn-primary btn-sm">Flag refund</button>
-                    </div>
-                </form>
-            </div>
-        </div>
-        }
     }
 }
