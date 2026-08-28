@@ -35,7 +35,6 @@ public class UserDeleteCoverageTests
         "ArrlVecSubmission.SubmittedByUserId",
         "Session.RetainedAmountOverrideByUserId",
         "Candidate.ResultMarkedByUserId",
-        "Payment.RefundRequestedByUserId",
         "Refund.RequestedByUserId",
         "HistoricalImportRequest.RequestedByUserId",
         "EmailSettings.UpdatedByUserId",

@@ -15,7 +15,6 @@ public class PaymentConfiguration : IEntityTypeConfiguration<Payment>
     public void Configure(EntityTypeBuilder<Payment> b)
     {
         b.HasOne(p => p.Candidate).WithMany(c => c.Payments).HasForeignKey(p => p.CandidateId).OnDelete(DeleteBehavior.Restrict);
-        b.HasOne(p => p.RefundRequestedByUser).WithMany().HasForeignKey(p => p.RefundRequestedByUserId).OnDelete(DeleteBehavior.Restrict);
         // The Square webhook's only lookup, and it runs against Square's response deadline: an
         // unindexed scan of every payment ever taken is not something to leave on that path.
         // Not unique — see the note below on nulls, and a refunded/re-created link can repeat.

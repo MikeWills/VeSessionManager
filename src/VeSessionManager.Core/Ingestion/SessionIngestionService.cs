@@ -854,7 +854,7 @@ public class SessionIngestionService(
     /// id, which is how a system action is recorded everywhere else.
     ///
     /// **Payments are deliberately untouched** — a withdrawn candidate may legitimately have paid,
-    /// and what happens to that money is a human decision (FlagRefundRequestedAsync exists for it).
+    /// and what happens to that money is a human decision (RefundService exists for it).
     /// The one exception is the live Square checkout *link*, which CandidatePiiFields.Clear nulls
     /// along with the PII; the Payment row, its amount and its status all survive.
     ///

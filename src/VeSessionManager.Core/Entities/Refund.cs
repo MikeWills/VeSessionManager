@@ -2,8 +2,8 @@ namespace VeSessionManager.Core.Entities;
 
 /// <summary>
 /// One refund issued through Square's Refunds API from inside this app (#375). Before this existed,
-/// refunding meant opening the Square dashboard and <see cref="Payment.RefundRequested"/> was a note
-/// saying somebody intended to.
+/// refunding meant opening the Square dashboard by hand (a "flag refund requested" note-taking
+/// feature tracked the intent until 2026-08-27, when it was removed as redundant with this).
 ///
 /// <para><b>Why a row rather than just an audit entry.</b> Two reasons, and only the second is
 /// obvious. A refund does not finish when the API call returns — see <see cref="RefundStatus"/> — so

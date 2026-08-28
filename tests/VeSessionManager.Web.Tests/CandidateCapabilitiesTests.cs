@@ -33,14 +33,14 @@ public class CandidateCapabilitiesTests
     [Fact]
     public void CanSendYouthProgram_IsFalseWhenTheVecDoesNotRunOne()
     {
-        var can = CandidateCapabilities.For(Active(), vecSupportsYouthProgram: false, hasAnyPayment: true);
+        var can = CandidateCapabilities.For(Active(), vecSupportsYouthProgram: false);
         Assert.False(can.CanSendYouthProgram);
     }
 
     [Fact]
     public void CanSendYouthProgram_IsTrueWhenTheVecRunsOne()
     {
-        var can = CandidateCapabilities.For(Active(), vecSupportsYouthProgram: true, hasAnyPayment: true);
+        var can = CandidateCapabilities.For(Active(), vecSupportsYouthProgram: true);
         Assert.True(can.CanSendYouthProgram);
     }
 
@@ -61,14 +61,13 @@ public class CandidateCapabilitiesTests
             c.HasFelonyDisclosure = true;
         });
 
-        var can = CandidateCapabilities.For(withdrawn, vecSupportsYouthProgram: true, hasAnyPayment: true);
+        var can = CandidateCapabilities.For(withdrawn, vecSupportsYouthProgram: true);
 
         Assert.True(withdrawn.IsWithdrawn, "fixture no longer produces a withdrawn candidate");
         Assert.False(can.CanResendConfirmation);
         Assert.False(can.CanDelete);
         Assert.False(can.CanMarkFailed);
         Assert.False(can.CanCreateRetestPayment);
-        Assert.False(can.CanFlagRefund);
         Assert.False(can.CanSendYouthProgram);
         Assert.False(can.CanSendFelonyInstructions);
         Assert.False(can.AwaitingFelonyInstructions);
@@ -79,22 +78,22 @@ public class CandidateCapabilitiesTests
     [Fact]
     public void CanResendConfirmation_NeedsAnEmailAddress()
     {
-        Assert.True(CandidateCapabilities.For(Active(), false, false).CanResendConfirmation);
-        Assert.False(CandidateCapabilities.For(Active(c => c.Email = null), false, false).CanResendConfirmation);
+        Assert.True(CandidateCapabilities.For(Active(), false).CanResendConfirmation);
+        Assert.False(CandidateCapabilities.For(Active(c => c.Email = null), false).CanResendConfirmation);
     }
 
     [Fact]
     public void CanDelete_StopsOnceTheCandidateHasTestedWithEvidence()
     {
-        Assert.True(CandidateCapabilities.For(Active(), false, false).CanDelete);
+        Assert.True(CandidateCapabilities.For(Active(), false).CanDelete);
         // A graded result is the evidence — untouchable, as before.
         Assert.False(CandidateCapabilities.For(
             Active(c => { c.MarkTested(DateTime.UtcNow); c.NewLicenseClass = LicenseClass.Technician; }),
-            false, false).CanDelete);
+            false).CanDelete);
         // But a completion-only Tested must still offer Delete (#419): the menu gating on the bare
         // flag is exactly how the fixed server-side path shipped behind a button nobody could press.
         Assert.True(CandidateCapabilities.For(
-            Active(c => c.MarkTested(DateTime.UtcNow)), false, false).CanDelete);
+            Active(c => c.MarkTested(DateTime.UtcNow)), false).CanDelete);
     }
 
     [Theory]
@@ -105,22 +104,15 @@ public class CandidateCapabilitiesTests
     public void CanMarkFailed_OnlyBeforeAnOutcomeIsKnown(CandidateApplicationStatus status, bool expected)
     {
         Assert.Equal(expected,
-            CandidateCapabilities.For(Active(c => c.ApplicationStatus = status), false, false).CanMarkFailed);
+            CandidateCapabilities.For(Active(c => c.ApplicationStatus = status), false).CanMarkFailed);
     }
 
     [Fact]
     public void CanCreateRetestPayment_OnlyAfterFailing()
     {
         Assert.True(CandidateCapabilities.For(
-            Active(c => c.ApplicationStatus = CandidateApplicationStatus.Failed), false, false).CanCreateRetestPayment);
-        Assert.False(CandidateCapabilities.For(Active(), false, false).CanCreateRetestPayment);
-    }
-
-    [Fact]
-    public void CanFlagRefund_NeedsAPaymentToRefund()
-    {
-        Assert.True(CandidateCapabilities.For(Active(), false, hasAnyPayment: true).CanFlagRefund);
-        Assert.False(CandidateCapabilities.For(Active(), false, hasAnyPayment: false).CanFlagRefund);
+            Active(c => c.ApplicationStatus = CandidateApplicationStatus.Failed), false).CanCreateRetestPayment);
+        Assert.False(CandidateCapabilities.For(Active(), false).CanCreateRetestPayment);
     }
 
     /// <summary>
@@ -132,10 +124,10 @@ public class CandidateCapabilitiesTests
     {
         var declared = Active(c => c.HasFelonyDisclosure = true);
 
-        Assert.True(CandidateCapabilities.For(declared, false, false).CanSendFelonyInstructions);
-        Assert.False(CandidateCapabilities.For(Active(), false, false).CanSendFelonyInstructions);
+        Assert.True(CandidateCapabilities.For(declared, false).CanSendFelonyInstructions);
+        Assert.False(CandidateCapabilities.For(Active(), false).CanSendFelonyInstructions);
         Assert.False(CandidateCapabilities.For(
-            Active(c => { c.HasFelonyDisclosure = true; c.Email = null; }), false, false).CanSendFelonyInstructions);
+            Active(c => { c.HasFelonyDisclosure = true; c.Email = null; }), false).CanSendFelonyInstructions);
     }
 
     /// <summary>
@@ -146,12 +138,12 @@ public class CandidateCapabilitiesTests
     public void AwaitingFelonyInstructions_ClearsOnceTheyHaveBeenSent()
     {
         Assert.True(CandidateCapabilities.For(
-            Active(c => c.HasFelonyDisclosure = true), false, false).AwaitingFelonyInstructions);
+            Active(c => c.HasFelonyDisclosure = true), false).AwaitingFelonyInstructions);
 
         Assert.False(CandidateCapabilities.For(Active(c =>
         {
             c.HasFelonyDisclosure = true;
             c.FelonyDisclosureInstructionsSentUtc = new DateTime(2026, 8, 11, 12, 0, 0, DateTimeKind.Utc);
-        }), false, false).AwaitingFelonyInstructions);
+        }), false).AwaitingFelonyInstructions);
     }
 }

@@ -272,17 +272,6 @@ public class DetailModel(
         return RedirectToPage(new { id = Id });
     }
 
-    public async Task<IActionResult> OnPostFlagRefundAsync(int paymentId, string? notes)
-    {
-        var auth = await AuthorizeAsync();
-        if (auth is null) return Forbid();
-        if (!await PaymentBelongsToSessionAsync(paymentId)) return Forbid();
-
-        Apply(ActionOutcomes.FlagRefund(
-            await candidateActionService.FlagRefundRequestedAsync(paymentId, auth.Value.User.Id, notes, CancellationToken.None)));
-        return RedirectToPage(new { id = Id });
-    }
-
     public async Task<IActionResult> OnPostCreateRetestPaymentAsync(int candidateId)
     {
         var auth = await AuthorizeAsync();
@@ -509,7 +498,7 @@ public class DetailModel(
             : null;
 
         var emailHistory = CandidateEmailHistoryFormatter.Build(candidate, ruleSends);
-        var can = CandidateCapabilities.For(candidate, vecSupportsYouthProgram, primaryPayment is not null);
+        var can = CandidateCapabilities.For(candidate, vecSupportsYouthProgram);
 
         return new CandidateRow(
             candidate.Id,
@@ -524,7 +513,6 @@ public class DetailModel(
             paymentLabel,
             refundChip?.Class,
             refundChip?.Label,
-            primaryPayment?.RefundRequested ?? false,
             amountMismatchLine,
             candidate.Tested,
             can.CanResendConfirmation,
@@ -533,7 +521,6 @@ public class DetailModel(
             !isWithdrawn && primaryPayment is { Status: PaymentStatus.Unpaid },
             can.CanMarkFailed,
             can.CanCreateRetestPayment,
-            can.CanFlagRefund,
             can.CanSendYouthProgram,
             can.CanSendFelonyInstructions,
             can.AwaitingFelonyInstructions,
@@ -592,14 +579,12 @@ public class DetailModel(
         /// </summary>
         string? RefundChipClass,
         string? RefundChipLabel,
-        bool RefundRequested,
         string? AmountMismatchLine,
         bool Tested,
         bool CanResendConfirmation,
         bool CanMarkPaid,
         bool CanMarkFailed,
         bool CanCreateRetestPayment,
-        bool CanFlagRefund,
         bool CanSendYouthProgram,
         bool CanSendFelonyInstructions,
         /// <summary>Declared a disclosure and has not been sent the instructions — the marker that replaces the automatic send (#221).</summary>

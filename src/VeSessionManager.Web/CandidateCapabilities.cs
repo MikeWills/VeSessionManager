@@ -34,7 +34,6 @@ public readonly record struct CandidateCapabilities(
     bool CanDelete,
     bool CanMarkFailed,
     bool CanCreateRetestPayment,
-    bool CanFlagRefund,
     bool CanSendYouthProgram,
     bool CanSendFelonyInstructions,
     bool AwaitingFelonyInstructions,
@@ -47,12 +46,7 @@ public readonly record struct CandidateCapabilities(
     /// the requirement explicit at both call sites instead of depending on an <c>Include</c> thirty
     /// lines away, which is how one of them came to omit the check entirely.
     /// </param>
-    /// <param name="hasAnyPayment">
-    /// Whether the candidate has a payment at all. Same reasoning: the roster has already picked out a
-    /// primary payment for its chip and the detail page has the full list, so neither should have to
-    /// re-query and both must mean the same thing by it.
-    /// </param>
-    public static CandidateCapabilities For(Candidate candidate, bool vecSupportsYouthProgram, bool hasAnyPayment)
+    public static CandidateCapabilities For(Candidate candidate, bool vecSupportsYouthProgram)
     {
         // Withdrawn candidates keep a row for statistics with their PII cleared, so every action that
         // acts on a person is off. This is the single most repeated clause in both originals.
@@ -68,7 +62,6 @@ public readonly record struct CandidateCapabilities(
             CanMarkFailed: active && candidate.ApplicationStatus
                 is CandidateApplicationStatus.Unmatched or CandidateApplicationStatus.Received,
             CanCreateRetestPayment: active && candidate.ApplicationStatus == CandidateApplicationStatus.Failed,
-            CanFlagRefund: active && hasAnyPayment,
             // The #274 fix. CandidateNotificationService refuses with VecDoesNotSupportYouthProgram
             // otherwise, so without this the button's only outcome is an error.
             CanSendYouthProgram: active && vecSupportsYouthProgram,

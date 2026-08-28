@@ -127,9 +127,6 @@ public static class ActionOutcomes
     public static ActionOutcome MarkPaid(CandidateActionResult result) =>
         Candidate(result, "Payment marked paid.", "Could not mark payment paid.");
 
-    public static ActionOutcome FlagRefund(CandidateActionResult result) =>
-        Candidate(result, "Refund requested flagged.", "Could not flag refund requested.");
-
     /// <summary>
     /// Issuing a real refund through Square (#375) — used by both entry points, the candidate's
     /// payment and an unmatched payment.

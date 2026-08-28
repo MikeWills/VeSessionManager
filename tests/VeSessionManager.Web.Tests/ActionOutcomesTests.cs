@@ -153,7 +153,6 @@ public class ActionOutcomesTests
             { "DeleteCandidate", o => ActionOutcomes.DeleteCandidate((CandidateActionResult)o), candidate },
             { "SetFrn", o => ActionOutcomes.SetFrn((CandidateActionResult)o), candidate },
             { "MarkPaid", o => ActionOutcomes.MarkPaid((CandidateActionResult)o), candidate },
-            { "FlagRefund", o => ActionOutcomes.FlagRefund((CandidateActionResult)o), candidate },
             { "IssueRefund", o => ActionOutcomes.IssueRefund((RefundOutcome)o, 15m), refunds },
             { "CreateRetestPayment", o => ActionOutcomes.CreateRetestPayment((CandidateActionResult)o), candidate },
             { "ResendConfirmation", o => ActionOutcomes.ResendConfirmation((CandidateEmailSendResult)o), email },
