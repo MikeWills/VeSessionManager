@@ -8,6 +8,21 @@ that window, or immediately if it's phase-numbered work already summarized in "C
 design rationale for any entry still lives in its linked `/docs/*.md` file, not here or in
 CLAUDE.md — this file, like CLAUDE.md's Change Log, is pointers only.
 
+- **Sessions are filed with ARRL-VEC from the app now (2026-08-19).** Issue #197, five stacked PRs.
+  See `docs/arrl-vec-submission.md`. **ARRL only, and that is the design rather than a first step** —
+  every VEC has its own process, so a session under any other finds no submitter and is told so.
+  Three things worth carrying forward. **There is no sandbox and no dry-run**, so the safeguards are
+  the feature: the endpoint is configuration and blank outside production (a source scan fails the
+  build if the host appears anywhere else), the preview is the *only* route to the POST rather than a
+  mode beside it, and the Worker deliberately cannot reach ARRL at all. **Success is recognized and
+  failure deliberately is not** — the only positive signal is the filename we posted echoed back, and
+  everything else is `Unknown` and goes to a human, because nobody has ever seen ARRL's failure page
+  and a matcher built from zero samples would guess in the expensive direction. And **there is no
+  retry**: a fire-and-forget form POST supports neither query-before-create nor an idempotency key, so
+  absence of a receipt is not absence of a filing, and an earlier unconfirmed attempt blocks a second
+  press — which matters because an `Unknown` outcome leaves the session unsubmitted, so nothing else
+  would stop one.
+
 - **Rules can post to Discord, and carry their own Reply-To (2026-08-17).** Issue #401, PR4 — the last
   of it. See `docs/trigger-points.md`. Three things worth carrying forward: **nothing per-person can
   reach a channel post because that path builds no `EmailMessage` at all** — the unsubscribe and

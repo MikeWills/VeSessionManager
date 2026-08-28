@@ -28,10 +28,13 @@ namespace VeSessionManager.Web.Pages.SessionManager;
 ///
 /// TeamLead access (see docs/admin-auth.md): the page-load gate uses
 /// SessionAccessScope.CanView (not CanEdit) so a TeamLead can actually see the page — CanEdit is
-/// always false for TeamLead by design. Every POST handler still gates on CanEdit via
-/// AuthorizeAsync() below, unchanged, so TeamLead is denied server-side regardless of the UI; the
-/// CanEdit property exposed here is only so the Razor view can hide write controls instead of
-/// showing a TeamLead a page full of buttons that 403 when clicked.
+/// always false for TeamLead by design. Every POST handler gates on CanEdit via AuthorizeAsync()
+/// below, so TeamLead is denied server-side regardless of the UI — with exactly two exceptions,
+/// gated on SessionAccessScope.CanRunDayOfActions via AuthorizeDayOfActionsAsync() instead:
+/// "Refresh candidates" and "Create retest payment", the day-of actions a TeamLead running the
+/// session needs when the Session Manager isn't around (Mike, 2026-08-27). The CanEdit/
+/// CanRunDayOfActions properties exposed here are only so the Razor view can hide write controls
+/// instead of showing buttons that 403 when clicked.
 /// </summary>
 [Authorize(Roles = RoleGroups.AllRoles)]
 public class DetailModel(
@@ -76,6 +79,10 @@ public class DetailModel(
     public int TotalCandidateCount => Candidates.Count + WithdrawnCandidates.Count;
     public IReadOnlyList<VeChip> VeRoster { get; private set; } = [];
     public bool CanEdit { get; private set; }
+
+    /// <summary>Gates the two day-of controls (Refresh candidates, Create retest payment) a TeamLead
+    /// may use even though CanEdit is false for them — see SessionAccessScope.CanRunDayOfActions.</summary>
+    public bool CanRunDayOfActions { get; private set; }
 
     /// <summary>What the "Email candidates" menu offers as one-click starting points — see ComposableMessages.</summary>
     public IReadOnlyList<ComposableMessages.Choice> EmailTemplateChoices { get; private set; } = [];
@@ -192,7 +199,7 @@ public class DetailModel(
     // Full table, and the two things this audit found stale in it, in docs/email-reference.md.
     public async Task<IActionResult> OnPostRefreshCandidatesAsync()
     {
-        var auth = await AuthorizeAsync();
+        var auth = await AuthorizeDayOfActionsAsync();
         if (auth is null) return Forbid();
 
         var result = await manualRefreshService.RunForSessionAsync(auth.Value.Session.Team, Id, CancellationToken.None);
@@ -274,7 +281,7 @@ public class DetailModel(
 
     public async Task<IActionResult> OnPostCreateRetestPaymentAsync(int candidateId)
     {
-        var auth = await AuthorizeAsync();
+        var auth = await AuthorizeDayOfActionsAsync();
         if (auth is null) return Forbid();
         if (!await CandidateBelongsToSessionAsync(candidateId)) return Forbid();
 
@@ -312,7 +319,14 @@ public class DetailModel(
 
     // ---- Shared plumbing ----
 
-    private async Task<(User User, Session Session)?> AuthorizeAsync()
+    private Task<(User User, Session Session)?> AuthorizeAsync() =>
+        AuthorizeCoreAsync(accessScope.CanEdit);
+
+    /// <summary>The wider gate for the two day-of handlers only — see the class doc comment.</summary>
+    private Task<(User User, Session Session)?> AuthorizeDayOfActionsAsync() =>
+        AuthorizeCoreAsync(accessScope.CanRunDayOfActions);
+
+    private async Task<(User User, Session Session)?> AuthorizeCoreAsync(Func<User, Session, bool> allowed)
     {
         // Must be GetUserWithManagerAsync, not the bare GetUserAsync: CanEdit reads user.UserTeams,
         // which the bare load leaves empty — every POST here would Forbid() for TeamAdmin/
@@ -324,7 +338,7 @@ public class DetailModel(
         }
 
         var session = await dbContext.Sessions.Include(s => s.Team).FirstOrDefaultAsync(s => s.Id == Id);
-        if (session is null || !accessScope.CanEdit(user, session))
+        if (session is null || !allowed(user, session))
         {
             return null;
         }
@@ -378,6 +392,7 @@ public class DetailModel(
         }
 
         CanEdit = accessScope.CanEdit(user, session);
+        CanRunDayOfActions = accessScope.CanRunDayOfActions(user, session);
         // Shortcuts straight into the compose screen with a template already chosen (#394 follow-up).
         // Only loaded for someone who can act on them.
         EmailTemplateChoices = CanEdit

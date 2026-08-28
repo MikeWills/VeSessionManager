@@ -325,6 +325,32 @@ public class SessionAccessScopeTests
         Assert.Equal(canViewOtherTeam, Scope.CanView(user, otherSession));
     }
 
+    [Theory]
+    [InlineData(UserRole.SystemAdmin, true, true)]
+    [InlineData(UserRole.TeamAdmin, true, false)]
+    [InlineData(UserRole.SessionManager, true, false)]
+    [InlineData(UserRole.TeamLead, true, false)]
+    public void CanRunDayOfActions_UnlikeCanEdit_AllowsTeamLeadOnTheirOwnTeamsSession(UserRole role, bool ownTeam, bool otherTeam)
+    {
+        var ownTeamId = 1;
+        var otherTeamId = 2;
+        var ownSession = new Session { ExamToolsSessionId = "own", Title = "Own", TeamId = ownTeamId, CreatedUtc = Now };
+        var otherSession = new Session { ExamToolsSessionId = "other", Title = "Other", TeamId = otherTeamId, CreatedUtc = Now };
+        var user = NewUser("User", role, ownTeamId);
+
+        Assert.Equal(ownTeam, Scope.CanRunDayOfActions(user, ownSession));
+        Assert.Equal(otherTeam, Scope.CanRunDayOfActions(user, otherSession));
+    }
+
+    [Fact]
+    public void CanRunDayOfActions_TeamLeadWithNoTeamAssigned_CannotActAnywhere()
+    {
+        var session = new Session { ExamToolsSessionId = "s", Title = "S", TeamId = 1, CreatedUtc = Now };
+        var unassignedTeamLead = new User { Name = "Team Lead", Role = UserRole.TeamLead };
+
+        Assert.False(Scope.CanRunDayOfActions(unassignedTeamLead, session));
+    }
+
     [Fact]
     public void CanView_TeamLeadWithNoManagerAssigned_CannotViewAnySession()
     {
