@@ -203,15 +203,26 @@
                         <div><span class="refund-tag" title="Declared a felony disclosure and has not been sent the FCC instructions. Send them from this row's menu.">Needs BQQ disclosure info</span></div>
                     }
                     @* Same reasoning as the BQQ tag above: facts about the person a VE needs at the
-                       door, not columns that would be empty for almost every row. Youth first, then
-                       COPPA — the second only ever appears with the first. *@
-                    @if (candidate.ConfirmedYouth)
+                       door, not columns that would be empty for almost every row. Youth first; the
+                       second tag then answers the age question distinctly (Mike, 2026-08-27) —
+                       "Over 13" needs no COPPA form, under 13 shows whether the form is on file,
+                       and an under-13 with NO form on file is the one state that must read as a
+                       warning, since the form is required before they may test. *@
+                    @if (candidate.DeclaredUnder13 is not null)
                     {
                         <div>
                             <span class="youth-tag" title="Confirmed the reduced youth exam rate — verify under-18 status at the session.">Youth</span>
-                            @if (candidate.CoppaFormSent)
+                            @if (candidate.DeclaredUnder13 == false)
+                            {
+                                <span class="youth-tag" title="Declared 13 or older on the youth-rate confirmation — no COPPA consent form needed.">Over 13</span>
+                            }
+                            else if (candidate.CoppaFormSent)
                             {
                                 <span class="youth-tag" title="Confirmed the COPPA parental-consent form was sent to ExamTools — required before an under-13 candidate may test.">COPPA form sent</span>
+                            }
+                            else
+                            {
+                                <span class="refund-tag" title="Declared under 13 with no COPPA parental-consent form confirmed — the form must be on file with ExamTools before they may test.">COPPA form needed</span>
                             }
                         </div>
                     }

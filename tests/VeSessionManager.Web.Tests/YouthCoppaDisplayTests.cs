@@ -39,7 +39,7 @@ public class YouthCoppaDisplayTests
     }
 
     [Fact]
-    public async Task Roster_YouthConfirmedNotUnder13_ShowsYouthTagOnly()
+    public async Task Roster_YouthConfirmedNotUnder13_ShowsOver13Tag_NeverCoppa()
     {
         using var factory = new WebAppFactory();
         await MarkYouthConfirmedAsync(factory, under13: false, coppaSent: false);
@@ -48,6 +48,25 @@ public class YouthCoppaDisplayTests
         var html = await client.GetStringAsync($"/SessionManager/Detail/{factory.Seeded.SessionId}");
 
         Assert.Contains(">Youth</span>", html);
+        Assert.Contains(">Over 13</span>", html);
+        Assert.DoesNotContain(">COPPA form sent</span>", html);
+    }
+
+    /// <summary>
+    /// The one state that must read as a warning: under 13 declared, no consent form confirmed. The
+    /// public form refuses this combination, but the data can still exist (a resubmission race, a
+    /// future import) and a VE must not test that candidate.
+    /// </summary>
+    [Fact]
+    public async Task Roster_Under13WithoutCoppa_ShowsTheWarningTag()
+    {
+        using var factory = new WebAppFactory();
+        await MarkYouthConfirmedAsync(factory, under13: true, coppaSent: false);
+        var client = factory.CreateClientAs(UserRole.SessionManager);
+
+        var html = await client.GetStringAsync($"/SessionManager/Detail/{factory.Seeded.SessionId}");
+
+        Assert.Contains(">COPPA form needed</span>", html);
         Assert.DoesNotContain(">COPPA form sent</span>", html);
     }
 
