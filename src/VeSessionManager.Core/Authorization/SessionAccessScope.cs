@@ -123,6 +123,20 @@ public class SessionAccessScope
     }
 
     /// <summary>
+    /// Whether the given user may run the day-of session actions — pulling last-minute registrants
+    /// in from ExamTools ("Refresh candidates") and creating a retest payment link. These are a
+    /// TeamLead's job when they are the one running the session and the Session Manager isn't
+    /// around, so this is deliberately wider than <see cref="CanEdit"/>: every role that can view
+    /// the session can run them (signed off by Mike 2026-08-27 — see docs/admin-auth.md's TeamLead
+    /// exceptions section, alongside the Renewal Monitor). Any other write action stays behind
+    /// CanEdit; add to this grant only with the same explicit sign-off.
+    /// </summary>
+    public bool CanRunDayOfActions(User user, Session session) => CanRunDayOfActions(user, session.TeamId);
+
+    /// <summary>Team-id overload — see the CanView overload for why this exists.</summary>
+    public bool CanRunDayOfActions(User user, int teamId) => CanView(user, teamId);
+
+    /// <summary>
     /// The single "which team is this user actually looking at right now" resolution for the
     /// per-team list pages (VE Roster, VEC Submission, Unmatched Payments, Fee Configurations) that
     /// show one team's data at a time rather than a mixed multi-team list like the session list.

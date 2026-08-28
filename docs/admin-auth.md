@@ -17,7 +17,8 @@ well once the multi-team foundation (Phase 6.5) gave each `Team` its own credent
   SessionManager/TeamLead to users within their team.
 - **SessionManager** (unchanged): full visibility/edit on their own team's sessions.
 - **TeamLead** (unchanged): scoped to whichever sessions their assigned manager can see, read-only —
-  with one deliberate exception, the Renewal Monitor; see its own section below.
+  with two deliberate exceptions: the Renewal Monitor, and the two day-of session actions
+  (Refresh candidates, Create retest payment); each has its own section below.
 
 `UserRole` (`VeSessionManager.Core/Entities/Enums.cs`) is `{ SystemAdmin, TeamAdmin,
 SessionManager, TeamLead }`. Deliberately **not** using ASP.NET Core Identity's own Role tables
@@ -222,6 +223,26 @@ Two things that are **not** relaxed, and should be checked if this page is ever 
 
 If TeamLead write access is ever widened beyond this page, update the summary at the top of this
 document rather than adding a second exception here.
+
+### The second exception — the day-of session actions (2026-08-27)
+
+A TeamLead can press **Refresh candidates** and **Create retest payment** on Session Detail.
+Signed off by Mike during role-access testing: *"These are a key part of running a test session.
+The SM might not be available to do that for them."* A lead running the session at the door is
+exactly who needs to pull in a walk-in who just registered in ExamTools, and to mint the retest
+payment link when someone fails and wants another attempt — "no fee, no test" is enforced by the
+human at the door, so the person at the door needs the fee link.
+
+Mechanism: `SessionAccessScope.CanRunDayOfActions` — a named grant beside `CanEdit`, true for every
+role that can view the session. The two POST handlers gate on it via
+`AuthorizeDayOfActionsAsync()`; every other handler on the page still gates on `CanEdit`, so the
+rest of TeamLead's read-only rule is unchanged. The view renders the Refresh button and a
+one-item candidate menu (retest only) for a lead; everything else stays hidden.
+
+Worth knowing before widening further: **Refresh is not a pure read.** The session-scoped refresh
+runs the full pipeline slice for that session — ingestion, then payment links and registration
+confirmation emails for anyone new. That is the point (a walk-in needs exactly those), but it means
+this grant already lets a lead cause outbound email; it is not a loophole, it is the feature.
 
 ## TeamLead read-only view (added 2026-07-22)
 

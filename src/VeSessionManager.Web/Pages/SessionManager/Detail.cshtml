@@ -118,36 +118,41 @@
         <p class="eyebrow">@Model.Candidates.Count candidates</p>
         <h2>Candidate roster</h2>
     </div>
-    @if (Model.CanEdit)
+    @if (Model.CanRunDayOfActions)
     {
         <span class="header-actions">
-            @* A link, not a form: nothing sends until the draft has been read (#144). Beside Refresh
-               for the same reason "Invite VEs" sits beside the VE roster — the action belongs to the
-               list it acts on. *@
-            <a class="btn-secondary btn-sm" asp-page="/SessionManager/CandidateEmail" asp-route-id="@Model.Session.Id">
-                <i class="bi bi-envelope" aria-hidden="true"></i> Email candidates
-            </a>
-            @* The same destination, one click shorter: pick which email you are writing and land on
-               the compose screen with it already loaded. The plain button above stays, because
-               "just open it" is still the common case and a menu is a worse way to say that. *@
-            @if (Model.EmailTemplateChoices.Count > 0)
+            @if (Model.CanEdit)
             {
-                <div class="nav-group" style="position:relative;">
-                    <button type="button" class="kebab" aria-label="Email candidates from a template">
-                        <i class="bi bi-caret-down-fill" aria-hidden="true"></i>
-                    </button>
-                    <div class="menu">
-                        <div class="menu-head">Start from</div>
-                        @foreach (var choice in Model.EmailTemplateChoices)
-                        {
-                            <a class="item" asp-page="/SessionManager/CandidateEmail"
-                               asp-route-id="@Model.Session.Id" asp-route-message="@choice.Id">@choice.Label</a>
-                        }
-                        <hr>
-                        <a class="item" asp-page="/SessionManager/CandidateEmail" asp-route-id="@Model.Session.Id">Write your own</a>
+                @* A link, not a form: nothing sends until the draft has been read (#144). Beside Refresh
+                   for the same reason "Invite VEs" sits beside the VE roster — the action belongs to the
+                   list it acts on. *@
+                <a class="btn-secondary btn-sm" asp-page="/SessionManager/CandidateEmail" asp-route-id="@Model.Session.Id">
+                    <i class="bi bi-envelope" aria-hidden="true"></i> Email candidates
+                </a>
+                @* The same destination, one click shorter: pick which email you are writing and land on
+                   the compose screen with it already loaded. The plain button above stays, because
+                   "just open it" is still the common case and a menu is a worse way to say that. *@
+                @if (Model.EmailTemplateChoices.Count > 0)
+                {
+                    <div class="nav-group" style="position:relative;">
+                        <button type="button" class="kebab" aria-label="Email candidates from a template">
+                            <i class="bi bi-caret-down-fill" aria-hidden="true"></i>
+                        </button>
+                        <div class="menu">
+                            <div class="menu-head">Start from</div>
+                            @foreach (var choice in Model.EmailTemplateChoices)
+                            {
+                                <a class="item" asp-page="/SessionManager/CandidateEmail"
+                                   asp-route-id="@Model.Session.Id" asp-route-message="@choice.Id">@choice.Label</a>
+                            }
+                            <hr>
+                            <a class="item" asp-page="/SessionManager/CandidateEmail" asp-route-id="@Model.Session.Id">Write your own</a>
+                        </div>
                     </div>
-                </div>
+                }
             }
+            @* Rendered for CanRunDayOfActions, not CanEdit: pulling in a last-minute registrant is a
+               day-of action a TeamLead running the session may take — see the page model's doc comment. *@
             <form method="post" asp-page-handler="RefreshCandidates">
                 <button type="submit" class="btn-secondary btn-sm"><i class="bi bi-arrow-clockwise" aria-hidden="true"></i> Refresh candidates</button>
             </form>
@@ -255,9 +260,9 @@
                 </td>
                 <td data-sort-value="@(candidate.Tested ? 1 : 0)"><span class="tested-check @(candidate.Tested ? "on" : "")">@if (candidate.Tested) { <i class="bi bi-check-lg" aria-hidden="true"></i> } else { <text>·</text> }</span></td>
                 <td class="row-actions">
-                    @if (!Model.CanEdit)
+                    @if (!Model.CanRunDayOfActions)
                     {
-                        <!-- read-only view (e.g. TeamLead) — no actions -->
+                        <!-- read-only view — no actions -->
                     }
                     else if (candidate.IsWithdrawn)
                     {
@@ -265,8 +270,12 @@
                     }
                     else
                     {
+                        @* A TeamLead (CanRunDayOfActions without CanEdit) gets this menu with only the
+                           retest item in it — the one candidate action in the day-of grant. *@
                         <button type="button" class="kebab"><i class="bi bi-three-dots-vertical" aria-hidden="true"></i></button>
                         <div class="menu">
+                            @if (Model.CanEdit)
+                            {
                             <button type="button" class="item" data-open-modal="emailHistoryModal-@candidate.Id">Email history</button>
                             <form method="post" asp-page-handler="ResendConfirmation">
                                 <input type="hidden" name="candidateId" value="@candidate.Id" />
@@ -291,11 +300,12 @@
                                 <input type="hidden" name="candidateId" value="@candidate.Id" />
                                 <button type="submit" class="item" disabled="@(!candidate.CanMarkFailed)">Mark failed</button>
                             </form>
+                            }
                             <form method="post" asp-page-handler="CreateRetestPayment">
                                 <input type="hidden" name="candidateId" value="@candidate.Id" />
                                 <button type="submit" class="item" disabled="@(!candidate.CanCreateRetestPayment)">Create retest payment</button>
                             </form>
-                            @if (candidate.CanSendYouthProgram)
+                            @if (Model.CanEdit && candidate.CanSendYouthProgram)
                             {
                                 <form method="post" asp-page-handler="SendYouthProgram">
                                     <input type="hidden" name="candidateId" value="@candidate.Id" />
@@ -307,18 +317,21 @@
                                candidate can no longer easily ask anyone about it. The label names the
                                person because telling the wrong one that their felony disclosure needs
                                FCC paperwork is the mistake worth designing against. *@
-                            @if (candidate.CanSendFelonyInstructions)
+                            @if (Model.CanEdit && candidate.CanSendFelonyInstructions)
                             {
                                 <form method="post" asp-page-handler="SendFelonyInstructions">
                                     <input type="hidden" name="candidateId" value="@candidate.Id" />
                                     <button type="submit" class="item">Send felony disclosure instructions to @candidate.DisplayName</button>
                                 </form>
                             }
+                            @if (Model.CanEdit)
+                            {
                             <hr>
                             <form method="post" asp-page-handler="DeleteCandidate">
                                 <input type="hidden" name="candidateId" value="@candidate.Id" />
                                 <button type="submit" class="item danger" disabled="@(!candidate.CanDelete)">Delete (no-show / withdrew)</button>
                             </form>
+                            }
                         </div>
                     }
                 </td>

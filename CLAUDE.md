@@ -127,6 +127,15 @@ which is "here's what was built and why, mostly historical.")
 One-line-or-two pointer per feature, newest first — full design rationale lives in the linked
 `/docs/*.md` file, not here. See "Documentation Structure" below for the policy this follows.
 
+- **TeamLead can run the two day-of session actions (2026-08-27).** See `docs/admin-auth.md`'s
+  "second exception" section. Mike, during role-access testing: *"These are a key part of running a
+  test session. The SM might not be available to do that for them."*
+  `SessionAccessScope.CanRunDayOfActions` grants exactly "Refresh candidates" and "Create retest
+  payment" on Session Detail to every role that can view the session; every other write stays behind
+  `CanEdit`, which remains false for TeamLead. Worth knowing: Refresh is not a pure read — it mints
+  payment links and sends registration confirmations for anyone new, which is the point (a walk-in
+  needs exactly those).
+
 - **A bulk-email screen off Applicant Status (2026-08-26).** See `docs/candidate-email.md`'s new
   section. Same mechanism as #144's session-scoped compose screen — pick candidates, start from a
   template, edit, send — reached instead from Applicant Status, over every candidate on one team still
@@ -262,21 +271,6 @@ cap and a newer entry needs to be added; oldest goes first.
   on exactly the contended path #434 exists to measure. ⚠️ The `code` is still upper-cased on the
   way in — `ResolveHoldReason` matches exact values, so that normalisation is now load-bearing for
   two features rather than one.
-
-- **Sessions are filed with ARRL-VEC from the app now (2026-08-19).** Issue #197, five stacked PRs.
-  See `docs/arrl-vec-submission.md`. **ARRL only, and that is the design rather than a first step** —
-  every VEC has its own process, so a session under any other finds no submitter and is told so.
-  Three things worth carrying forward. **There is no sandbox and no dry-run**, so the safeguards are
-  the feature: the endpoint is configuration and blank outside production (a source scan fails the
-  build if the host appears anywhere else), the preview is the *only* route to the POST rather than a
-  mode beside it, and the Worker deliberately cannot reach ARRL at all. **Success is recognized and
-  failure deliberately is not** — the only positive signal is the filename we posted echoed back, and
-  everything else is `Unknown` and goes to a human, because nobody has ever seen ARRL's failure page
-  and a matcher built from zero samples would guess in the expensive direction. And **there is no
-  retry**: a fire-and-forget form POST supports neither query-before-create nor an idempotency key, so
-  absence of a receipt is not absence of a filing, and an earlier unconfirmed attempt blocks a second
-  press — which matters because an `Unknown` outcome leaves the session unsubmitted, so nothing else
-  would stop one.
 
 Everything through Phase 0-10's initial build (ExamTools ingestion, Zoom/Discord, Square, email
 notifications, FCC ULS watcher, payment reminders, VE tracking, VEC submission tracker, admin
