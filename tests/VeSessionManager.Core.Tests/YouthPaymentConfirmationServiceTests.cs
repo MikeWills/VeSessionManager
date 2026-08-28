@@ -307,6 +307,28 @@ public class YouthPaymentConfirmationServiceTests
     }
 
     /// <summary>
+    /// The latest submission wins in full (live-caught 2026-08-27): a candidate who first said
+    /// under-13 with the COPPA form sent, then resubmitted as over-13, must not keep the stale COPPA
+    /// timestamp — the roster was showing "COPPA form sent" against a candidate no longer claiming
+    /// to need one.
+    /// </summary>
+    [Fact]
+    public async Task ConfirmAsync_ResubmittedAsOver13_ClearsAPreviouslyStampedCoppaTimestamp()
+    {
+        await using var dbContext = CreateContext();
+        var (_, payment, token) = await SeedAsync(dbContext);
+        var square = new FakeSquareClient();
+        var service = CreateService(dbContext, square);
+
+        await service.ConfirmAsync(token, declaredUnder13: true, coppaFormSent: true, CancellationToken.None);
+        await service.ConfirmAsync(token, declaredUnder13: false, coppaFormSent: false, CancellationToken.None);
+
+        var candidate = await dbContext.Candidates.SingleAsync(c => c.Id == payment.CandidateId);
+        Assert.False(candidate.DeclaredUnder13);
+        Assert.Null(candidate.CoppaFormSentConfirmedUtc);
+    }
+
+    /// <summary>
     /// The declaration is recorded even when the youth-rate switch itself can't proceed — it's a
     /// fact about the candidate, independent of whether Square/fee config cooperate.
     /// </summary>

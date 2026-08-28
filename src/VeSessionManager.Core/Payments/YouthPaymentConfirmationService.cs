@@ -128,11 +128,15 @@ public class YouthPaymentConfirmationService(
         // COPPA declaration is a fact about the candidate independent of whether the youth-rate
         // switch itself succeeds, so a FeeNotConfigured/SquareNotConfigured return further down must
         // not lose it.
+        //
+        // The latest submission wins in FULL — a "No" clears any COPPA timestamp a previous "Yes"
+        // stamped (live-caught 2026-08-27: a candidate who resubmitted the form as over-13 kept a
+        // stale "COPPA form sent" record, and the roster then showed a compliance fact that was no
+        // longer claimed). An unchanged repeat "Yes" keeps its original confirmation time.
         payment.Candidate.DeclaredUnder13 = declaredUnder13;
-        if (declaredUnder13 && coppaFormSent)
-        {
-            payment.Candidate.CoppaFormSentConfirmedUtc = timeProvider.GetUtcNow().UtcDateTime;
-        }
+        payment.Candidate.CoppaFormSentConfirmedUtc = declaredUnder13 && coppaFormSent
+            ? payment.Candidate.CoppaFormSentConfirmedUtc ?? timeProvider.GetUtcNow().UtcDateTime
+            : null;
         await dbContext.SaveChangesAsync(cancellationToken);
 
         var feeConfiguration = payment.Candidate.Session.FeeConfiguration;

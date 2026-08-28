@@ -540,7 +540,7 @@ public class DetailModel(
             can.CanDelete,
             primaryPayment?.Id,
             emailHistory,
-            candidate.DeclaredUnder13 is not null,
+            candidate.DeclaredUnder13,
             candidate.CoppaFormSentConfirmedUtc is not null);
     }
 
@@ -608,11 +608,12 @@ public class DetailModel(
         int? PrimaryPaymentId,
         IReadOnlyList<EmailHistoryLine> EmailHistory,
         /// <summary>
-        /// Completed the public youth-rate confirmation (Candidate.DeclaredUnder13 is non-null only
-        /// once that form was submitted) — the roster's "Youth" tag, so a VE can see at the door who
-        /// needs their under-18 status verified. Cleared with the rest of PII on purge.
+        /// The under-13 answer from the public youth-rate confirmation — null until that form was
+        /// submitted (or after PII purge cleared it). Non-null is the roster's "Youth" tag, so a VE
+        /// can see at the door who needs their under-18 status verified; the value picks the second
+        /// tag ("Over 13" vs. the COPPA one), per Mike 2026-08-27.
         /// </summary>
-        bool ConfirmedYouth,
+        bool? DeclaredUnder13,
         /// <summary>Confirmed on the youth form that the COPPA parental-consent form went to ExamTools — the compliance fact a VE needs visible before testing an under-13 candidate.</summary>
         bool CoppaFormSent);
 
