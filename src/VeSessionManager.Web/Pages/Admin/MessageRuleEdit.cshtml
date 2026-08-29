@@ -79,6 +79,25 @@
             </select>
         </div>
 
+        @* Mirrors the Discord "how many posts" field below (#491) — grouping by session is what
+           gives a batched email a single sensible To (the session's lead VE, a team-admin role),
+           which a whole-team digest can't offer. Not offered when the recipient is Candidate; the
+           handler refuses that combination if it's posted anyway. *@
+        <div class="field" style="max-width:420px;" data-channel-only="Email" data-channel-group="edit"
+             hidden="@(Model.Channel == VeSessionManager.Core.Entities.MessageChannel.Discord)">
+            <label asp-for="FanOut">How many emails</label>
+            <select asp-for="FanOut" class="filter-select">
+                <option value="@((int)VeSessionManager.Core.Entities.MessageFanOut.PerRecipient)">One each</option>
+                <option value="@((int)VeSessionManager.Core.Entities.MessageFanOut.PerSession)">One per session, covering everybody on it</option>
+            </select>
+            <span class="session-sub">
+                A per-session email renders once with <code>{{Count}}</code>, <code>{{Subjects}}</code>,
+                and — for a trigger that's about one session —
+                <code>{{SessionTitle}}</code>, <code>{{SessionDate}}</code>, <code>{{RegisteredCount}}</code>.
+                Per-candidate tokens have no answer there and come out blank.
+            </span>
+        </div>
+
         <div class="field" style="max-width:420px;" data-channel-only="Discord" data-channel-group="edit"
              hidden="@(Model.Channel != VeSessionManager.Core.Entities.MessageChannel.Discord)">
             <label asp-for="DiscordChannelId">Discord channel id</label>
@@ -237,6 +256,24 @@
                 </label>
                 <span class="session-sub">Recommended.</span>
             </div>
+
+            @* Only offered on a trigger whose scanner actually loads a session (#491) — everywhere
+               else the checkbox would look configured and attach nothing, which is exactly what
+               MessageRuleAdminService.ValidateAsync refuses server-side too. Per rule, not per team:
+               Mike wanted the choice next to the message it's about, not buried in team settings. *@
+            @if (Model.Definition.CarriesSessionContext)
+            {
+                <div class="field">
+                    <label class="switch-row" style="font-weight:400;">
+                        <span class="switch">
+                            <input asp-for="IncludeCalendarInvite" type="checkbox" />
+                            <span class="slider" aria-hidden="true"></span>
+                        </span>
+                        <span>Attach a calendar invite for the session</span>
+                    </label>
+                    <span class="session-sub">A .ics file the recipient's calendar app can add on its own — Outlook, Gmail, Apple Calendar and most others recognize it.</span>
+                </div>
+            }
         </div>
 
         <button type="submit" class="btn-primary btn-sm">Save</button>

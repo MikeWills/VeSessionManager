@@ -8,6 +8,20 @@ that window, or immediately if it's phase-numbered work already summarized in "C
 design rationale for any entry still lives in its linked `/docs/*.md` file, not here or in
 CLAUDE.md — this file, like CLAUDE.md's Change Log, is pointers only.
 
+- **The FCC application timeline is on screen now (2026-08-20).** Issue #195, opened as an idea
+  recorded in a doc and never filed. See `docs/uls-watcher.md`. ExamTools' ULS mirror has always
+  returned human-readable application history (`code_text: "Redlight Review Completed"`) with dates,
+  on the same lookup the watcher already makes, and everything but the hold flag was discarded at
+  parse time. It renders on candidate detail as **FCC application history**. Two things worth
+  carrying forward. **Stored rather than fetched at render time**, because the issue's "costs no
+  additional polling" only holds if the page reads what the poll already had — and this endpoint is
+  undocumented enough that the app polls it on a schedule rather than in a request. And
+  **reconciled rather than rewritten**: the obvious clear-and-re-add would rewrite an unchanged
+  timeline for every open candidate every run, which is pure write churn on a single-writer file,
+  on exactly the contended path #434 exists to measure. ⚠️ The `code` is still upper-cased on the
+  way in — `ResolveHoldReason` matches exact values, so that normalisation is now load-bearing for
+  two features rather than one.
+
 - **Sessions are filed with ARRL-VEC from the app now (2026-08-19).** Issue #197, five stacked PRs.
   See `docs/arrl-vec-submission.md`. **ARRL only, and that is the design rather than a first step** —
   every VEC has its own process, so a session under any other finds no submitter and is told so.

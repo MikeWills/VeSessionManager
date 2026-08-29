@@ -78,6 +78,16 @@ public class MessageDispatchService(
 
         var credentials = team.ToEmailCredentials();
 
+        // One email per session rather than one per candidate (#491) — the VE-facing counterpart to
+        // PostDigestAsync's Discord PerSession branch below. Its own method because "who does a
+        // batched message go To" has no Discord equivalent (a channel post addresses nobody), so the
+        // recipient resolution, Cc/Bcc-once-per-run bookkeeping and per-group send loop are all new
+        // rather than shared with the per-subject loop just below.
+        if (rule.FanOut == MessageFanOut.PerSession)
+        {
+            return await DispatchEmailPerSessionAsync(team, rule, emailSettings, credentials, subjects, result, cancellationToken);
+        }
+
         // The rule's own Cc/Bcc, resolved once. Forty candidates on a fan-out would otherwise be
         // forty copies of the same message into the same inbox, which stops being monitoring and
         // becomes a folder somebody filters — see MessageRule.MonitoringCopyOncePerRun.
@@ -123,6 +133,7 @@ public class MessageDispatchService(
                 }
 
                 var replyTo = await ResolveReplyToAsync(rule, subject, emailSettings, replyToCache, cancellationToken);
+                var icsAttachment = BuildCalendarInvite(rule, subject);
 
                 // One message each rather than one message with several To addresses: staff should not
                 // see each other's addresses on a header, and a per-address send means one bad address
@@ -136,7 +147,8 @@ public class MessageDispatchService(
                             rendered.Subject, rendered.Body, rendered.InlineLogo,
                             // Two Bccs can be in play; the rule's own is folded in beside the team's.
                             BccAddress: teamMonitoringBcc ?? ruleBcc,
-                            CcAddress: ruleCc),
+                            CcAddress: ruleCc,
+                            IcsAttachment: icsAttachment),
                         cancellationToken);
                 }
 
@@ -358,6 +370,106 @@ public class MessageDispatchService(
     }
 
     /// <summary>
+    /// Groups subjects by session and sends one email per group (#491) — the null-session group
+    /// (a subject the scanner never loaded one for) still gets a send rather than being dropped, same
+    /// tolerance as <see cref="PostDigestAsync"/>'s Discord PerSession branch, even though
+    /// <c>ValidateAsync</c> means it's rare in practice: every trigger offering PerSession on email
+    /// today is candidate-subject and populates Session.
+    /// </summary>
+    private async Task<MessageRuleResult> DispatchEmailPerSessionAsync(
+        Team team, MessageRule rule, EmailSettings emailSettings, EmailCredentials credentials,
+        IReadOnlyList<MessageSubject> subjects, MessageRuleResult result, CancellationToken cancellationToken)
+    {
+        var monitoringCopyRemaining = rule.MonitoringCopyOncePerRun ? 1 : int.MaxValue;
+        var replyToCache = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var group in subjects.GroupBy(s => s.Session?.SessionId))
+        {
+            var groupSubjects = (IReadOnlyList<MessageSubject>)[.. group];
+            var representative = groupSubjects[0];
+            var now = timeProvider.GetUtcNow().UtcDateTime;
+
+            try
+            {
+                var toAddresses = await MessageRecipientResolver.ResolveAsync(
+                    dbContext, team, rule.Recipient, representative.SessionLeadCallSign, representative.CandidateEmail,
+                    emailSettings.AdminNotificationEmail, cancellationToken);
+
+                if (toAddresses.Count == 0)
+                {
+                    // Same reasoning as the per-subject loop: not terminal, since an address filled in
+                    // later (a VE record gaining an email, a role gaining a user) should still get the
+                    // next tick's summary.
+                    foreach (var subject in groupSubjects)
+                    {
+                        await RecordAsync(team, rule, subject, MessageRuleOutcome.NoRecipient, $"No address for recipient {rule.Recipient}", now, cancellationToken);
+                    }
+
+                    result.NoRecipient += groupSubjects.Count;
+                    continue;
+                }
+
+                // Same placeholder set PostDigestAsync builds for Discord's PerSession posts, so a
+                // team already using {{RegisteredCount}}/{{SessionTitle}}/{{SessionDate}} on a Discord
+                // rule can reuse the same body text on an email rule.
+                var placeholders = new Dictionary<string, string>
+                {
+                    ["Count"] = groupSubjects.Count.ToString(),
+                    ["Subjects"] = string.Join("\n", groupSubjects.Select(s => "• " + s.DigestLabel))
+                };
+
+                if (representative.Session is { } session)
+                {
+                    placeholders["SessionTitle"] = session.Title;
+                    placeholders["SessionDate"] = SessionTimeFormatter.ForCandidate(session.ScheduledStartUtc);
+                    placeholders["RegisteredCount"] = session.RegisteredCandidateCount.ToString();
+                }
+
+                var rendered = await templateRenderer.RenderTextAsync(team.Id, rule.Subject, rule.Body, placeholders, rule.Name, cancellationToken);
+
+                var takeMonitoringCopy = monitoringCopyRemaining > 0;
+                var ruleCc = takeMonitoringCopy ? NullIfBlank(rule.CcAddress) : null;
+                var ruleBcc = takeMonitoringCopy ? NullIfBlank(rule.BccAddress) : null;
+                if (takeMonitoringCopy && (ruleCc is not null || ruleBcc is not null))
+                {
+                    monitoringCopyRemaining--;
+                }
+
+                var replyTo = await ResolveReplyToAsync(rule, representative, emailSettings, replyToCache, cancellationToken);
+                var icsAttachment = BuildCalendarInvite(rule, representative);
+
+                foreach (var toAddress in toAddresses)
+                {
+                    await emailSender.SendAsync(
+                        credentials,
+                        new EmailMessage(toAddress, emailSettings.FromAddress, emailSettings.FromDisplayName,
+                            replyTo, rendered.Subject, rendered.Body, rendered.InlineLogo,
+                            BccAddress: ruleBcc, CcAddress: ruleCc, IcsAttachment: icsAttachment),
+                        cancellationToken);
+                }
+
+                // No legacy ...SentUtc stamp, for the same reason DispatchToDiscordAsync's channel
+                // post skips it: those columns mean "this candidate was personally emailed", and a
+                // session summary goes to the VE, not to any candidate in it.
+                foreach (var subject in groupSubjects)
+                {
+                    await RecordAsync(team, rule, subject, MessageRuleOutcome.Sent, "Included in a per-session summary", now, cancellationToken);
+                }
+
+                result.Sent += groupSubjects.Count;
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Rule \"{RuleName}\" ({RuleId}) failed to send its per-session summary for session {SessionId}",
+                    rule.Name, rule.Id, representative.Session?.SessionId);
+                result = await RecordAllAsync(team, rule, groupSubjects, MessageRuleOutcome.Failed, Truncate(ex.Message), result, cancellationToken);
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>
     /// Where a reply goes (#401 PR4). Falls back to the team's own address whenever the rule's choice
     /// cannot be honoured — a reply reaching the team is worse than one reaching the session lead, and
     /// a reply reaching nobody is worse than both.
@@ -405,6 +517,36 @@ public class MessageDispatchService(
         }
 
         return NullIfBlank(leadEmail) ?? emailSettings.ReplyToAddress;
+    }
+
+    /// <summary>
+    /// Built here rather than in a scanner (#491): a scanner's job is deciding who's due, and every
+    /// subject on one session's run would otherwise build the identical bytes over again.
+    ///
+    /// <para><b>Defensive against a rule that shouldn't exist, not just the happy path.</b>
+    /// <c>MessageRuleAdminService.ValidateAsync</c> already refuses saving
+    /// <c>IncludeCalendarInvite</c> on a Discord rule or a trigger whose scanner never sets
+    /// <c>MessageSubject.Session</c> — but validation only guards the save path, and a row can reach
+    /// this method however it got here (a direct DB edit, a future migration). Null here just means no
+    /// attachment, never a throw.</para>
+    ///
+    /// <para><b>The UID is keyed on the session, not the send.</b> The same session's registration
+    /// confirmation and day-before reminder reuse it, so a calendar client updates one event instead of
+    /// creating two — see <see cref="IcsInviteBuilder.Build"/>'s own remarks on why that matters.</para>
+    /// </summary>
+    private static EmailAttachment? BuildCalendarInvite(MessageRule rule, MessageSubject subject)
+    {
+        if (!rule.IncludeCalendarInvite || subject.Session is not { } session)
+        {
+            return null;
+        }
+
+        var ics = IcsInviteBuilder.Build(
+            $"session-{session.SessionId}@ve-ops", session.Title, session.ScheduledStartUtc,
+            session.DurationMinutes, session.ZoomJoinUrl);
+
+        return new EmailAttachment("invite.ics", "text/calendar; method=PUBLISH; charset=utf-8",
+            System.Text.Encoding.UTF8.GetBytes(ics));
     }
 
     private static string? NullIfBlank(string? value) => string.IsNullOrWhiteSpace(value) ? null : value;

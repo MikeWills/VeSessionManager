@@ -107,7 +107,9 @@ public class CandidateRegisteredScanner(
         new(session.Id,
             session.Title,
             session.ScheduledStartUtc,
-            registeredCounts.TryGetValue(session.Id, out var count) ? count : 0);
+            registeredCounts.TryGetValue(session.Id, out var count) ? count : 0,
+            session.DurationMinutes,
+            session.ZoomJoinUrl);
 
     /// <summary>Blank when the session's Vec doesn't support the youth program, or the InitialExam
     /// Payment has no token (fee collection disabled) — a Team's template copy for a

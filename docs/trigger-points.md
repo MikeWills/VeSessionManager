@@ -1015,3 +1015,89 @@ flip), rendered site-wide by `_SystemBanner.cshtml` next to the existing `_TestM
 for anything worth telling every signed-in user right now, an FCC outage among them — an operator types
 the message and turns it on/off by hand; nothing about it reads the FCC switches or derives its text
 automatically.
+
+## A calendar invite, candidate side (#491, 2026-08-28)
+
+`MessageRule.IncludeCalendarInvite` — a per-rule opt-in, not a per-team setting. Mike, asked where the
+toggle belongs: *"The toggle I want is per email related to a session, not per team."* Built for the
+candidate side only; the VE side is deliberately still open — see "Still to come" below.
+
+**`IcsInviteBuilder` (a standalone RFC 5545 `VEVENT` builder) shipped weeks earlier in #502 and sat
+unwired.** Its own doc comment named exactly what was missing: no scanner populated
+`MessageSubject.Session`, no per-rule toggle existed, and `EmailMessage`/`SmtpEmailSender` had no real
+attachment mechanism, only `InlineLogo`'s `LinkedResource` path (embedded, not downloadable). This
+entry is those three pieces landing.
+
+**`MessageSessionContext` carries two more fields now** — `DurationMinutes` and `ZoomJoinUrl` — needed
+only for the invite's DTEND and LOCATION. `CandidateRegisteredScanner` already built a
+`MessageSessionContext` for `PerSession` fan-out grouping; `BeforeSessionStartScanner` did not, and
+needed its own `registeredCounts` lookup added to build one, the same shape as the other scanner's.
+
+**A trigger has to declare it "carries session context" before its rule may turn the checkbox on.**
+`MessageTriggerDefinition.CarriesSessionContext` is true only for `CandidateRegistered` and
+`BeforeSessionStart` — the two triggers whose scanner actually sets `MessageSubject.Session`. Every
+other trigger's definition defaults it false, and `MessageRuleAdminService.ValidateAsync` refuses
+`IncludeCalendarInvite` on any of them, and on a Discord rule (no `EmailMessage` is ever built for a
+channel post — see this file's own "Posting to Discord" section). Offering the checkbox anywhere else
+would be exactly the "looks configured, does nothing" class of mistake every other check in that method
+already exists to refuse — and the admin page hides the control entirely rather than showing one that
+would only fail server-side.
+
+**The .ics is built once per send, in `MessageDispatchService`, not in a scanner.** A scanner's job is
+deciding who's due; building the same bytes over again for every subject on one session's run would be
+pure waste. `MessageDispatchService.BuildCalendarInvite` is deliberately defensive beyond what
+validation already guarantees — `rule.IncludeCalendarInvite && subject.Session is not null`, checked
+again at send time — because validation only guards the *save* path, and a row could reach dispatch
+however it got there (a direct DB edit, a future migration that doesn't go through the admin service).
+
+**The UID is keyed on the session, not the send.** `session-{SessionId}@ve-ops`, reused whether the
+attachment came from the registration confirmation or the day-before reminder — a calendar client
+updates one event on the second send rather than creating a duplicate, which is exactly the behaviour
+`IcsInviteBuilder`'s own doc comment asked callers to provide and nothing had, until now.
+
+**A real MimeKit `Attachment`, not a `LinkedResource`.** New `EmailAttachment` record and
+`EmailMessage.IcsAttachment` field; `SmtpEmailSender.BuildMimeMessage` adds it via
+`BodyBuilder.Attachments`, the opposite mechanism from the inline logo two lines above it in the same
+method — a `LinkedResource` is referenced by `cid:` and never offered as a file, which is right for a
+logo and wrong for something that needs "add to calendar" to actually appear.
+
+### `MessageFanOut.PerSession` extended to email — the VE side, same day
+
+Asked directly, mid-session: does a VE already get told "there's a session on this date, N candidates
+registered," with a calendar invite? Half yes — `CandidateRegistered`/`BeforeSessionStart` already list
+`SessionLead` as a legal recipient, and `IncludeCalendarInvite` only checks the *trigger*, not who it's
+addressed to, so a VE-facing rule on either one already gets the .ics for free. But the "N candidates"
+half didn't exist: those triggers fire **once per candidate**, so a VE addressed as `SessionLead` got
+one email per registration, and `{{RegisteredCount}}` only ever rendered inside `PostDigestAsync`'s
+Discord `PerSession` branch — never on email.
+
+**`MessageFanOut.PerSession` (previously Discord-only) now works on email too** — `DispatchEmailPerSessionAsync`,
+alongside the existing Discord `PostDigestAsync`. The reason it was Discord-only wasn't the grouping,
+it was recipient resolution: a channel post addresses nobody, so "who does a batched message go To"
+never had to be answered before. Answered here by refusing exactly one combination —
+`MessageRuleActionResult.PerSessionDigestCannotAddressCandidate`, when `Recipient == Candidate` — the
+one recipient a message covering several candidates has no single address for. Every other
+`LegalRecipients` option (`SessionLead`, `TeamAdmins`, `SessionManagers`, `TeamAdminAddress`,
+`SystemAdmins`) is a role/session-lead address, which is exactly what makes it safe. `SingleDigest`
+(a batch spanning *every* session in the scan, not just one) stays Discord-only — grouping by session is
+what gives `PerSession` a recipient to be about; a whole-team digest still can't offer one.
+
+**Same placeholder set as the Discord `PerSession` post**: `{{Count}}`, `{{Subjects}}`, and — when the
+group has a session — `{{SessionTitle}}`, `{{SessionDate}}`, `{{RegisteredCount}}`. A team already
+using those tokens on a Discord rule can reuse the same body text on an email rule.
+
+**No legacy `...SentUtc` stamp**, for the same reason the Discord channel post skips it: those columns
+mean "this candidate was personally emailed," and a session summary goes to the VE, not to any
+candidate in it — but every candidate in the group still gets its own `MessageRuleRun` marker, so a
+second tick doesn't re-summarize the same session to the same VE.
+
+### Still to come
+
+- **No toggle on the New-rule form**, for either `IncludeCalendarInvite` or the new email `FanOut`
+  option. Matches existing precedent: Reply-To/Cc/Bcc aren't offered at creation either
+  (`MessageEnvelope.Default` applies, then Edit is where a team changes it) — a rule is created plain
+  and these turned on afterward, same two-step as every other envelope setting.
+- **A true VEC (the org) notification is a different, unbuilt thing.** Nothing here reaches a VEC —
+  session paperwork is filed by the one-shot `SubmitToVec`/ARRL flow (`docs/arrl-vec-submission.md`),
+  not by email, and no `MessageRecipient` value represents "the VEC." If that's ever wanted, it needs
+  its own design, not an extension of this.

@@ -84,11 +84,21 @@ public sealed record MessageSubject(
 /// already having a terminal run for this rule. #116 asks for "x candidates registered to test", which
 /// is this number and not that one.
 /// </param>
+/// <param name="DurationMinutes">
+/// <see cref="Session.DurationMinutes"/> — needed only for a calendar invite's DTEND (#491), which is
+/// why every earlier field here predates it. Not used for anything rendered on screen.
+/// </param>
+/// <param name="ZoomJoinUrl">
+/// The session's Zoom link, doubling as a calendar invite's LOCATION (#491) — null for an in-person
+/// session or one with no Zoom scheduled yet.
+/// </param>
 public sealed record MessageSessionContext(
     int SessionId,
     string Title,
     DateTime ScheduledStartUtc,
-    int RegisteredCandidateCount);
+    int RegisteredCandidateCount,
+    int DurationMinutes,
+    string? ZoomJoinUrl);
 
 /// <summary>
 /// Answers "which subjects is this rule due to fire for, right now" for one trigger point (#401).

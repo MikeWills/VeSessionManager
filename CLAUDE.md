@@ -127,6 +127,24 @@ which is "here's what was built and why, mostly historical.")
 One-line-or-two pointer per feature, newest first — full design rationale lives in the linked
 `/docs/*.md` file, not here. See "Documentation Structure" below for the policy this follows.
 
+- **A calendar invite, and a per-session VE summary email (#491, 2026-08-28).** See
+  `docs/trigger-points.md`'s two new sections. Per-rule opt-in (`MessageRule.IncludeCalendarInvite`),
+  not per-team — Mike: "The toggle I want is per email related to a session, not per team."
+  `IcsInviteBuilder` shipped in #502 and sat unwired for three reasons its own doc comment named; all
+  three landed here: `MessageSessionContext` gained `DurationMinutes`/`ZoomJoinUrl`,
+  `BeforeSessionStartScanner` now populates `Session` the same way `CandidateRegisteredScanner`
+  already did, and `EmailMessage` gained a real MimeKit `Attachment` (`IcsAttachment`), distinct from
+  `InlineLogo`'s `LinkedResource`. A new `MessageTriggerDefinition.CarriesSessionContext` flag gates
+  which triggers may turn the checkbox on — true only for `CandidateRegistered`/`BeforeSessionStart`
+  today. **Same day, asked directly: `MessageFanOut.PerSession` (Discord-only until now) now works on
+  email too** — a VE addressed as `SessionLead` used to get one email per candidate registered, with
+  no candidate-count token available outside Discord's digest; `DispatchEmailPerSessionAsync` groups by
+  session and renders the same `{{Count}}`/`{{SessionTitle}}`/`{{RegisteredCount}}` tokens Discord's
+  `PerSession` posts already use. Refused only when addressed to `Candidate` — the one recipient a
+  batched message has no single address for (`SingleDigest`, a batch spanning *every* session, stays
+  Discord-only for the same underlying reason). A true VEC-the-organization notification is still a
+  different, unbuilt thing — see the doc's "Still to come."
+
 - **TeamLead can run the two day-of session actions (2026-08-27).** See `docs/admin-auth.md`'s
   "second exception" section. Mike, during role-access testing: *"These are a key part of running a
   test session. The SM might not be available to do that for them."*
@@ -257,20 +275,6 @@ cap and a newer entry needs to be added; oldest goes first.
   **the rich-text editor moved rather than died** — it lived on the deleted Templates page, so
   `message-editor.js` now serves the message editor; `app.js`'s own tag-chip handler bails on any chip
   Quill has claimed (`data-token-handled`), because both firing on one click inserts the tag twice.
-
-- **The FCC application timeline is on screen now (2026-08-20).** Issue #195, opened as an idea
-  recorded in a doc and never filed. See `docs/uls-watcher.md`. ExamTools' ULS mirror has always
-  returned human-readable application history (`code_text: "Redlight Review Completed"`) with dates,
-  on the same lookup the watcher already makes, and everything but the hold flag was discarded at
-  parse time. It renders on candidate detail as **FCC application history**. Two things worth
-  carrying forward. **Stored rather than fetched at render time**, because the issue's "costs no
-  additional polling" only holds if the page reads what the poll already had — and this endpoint is
-  undocumented enough that the app polls it on a schedule rather than in a request. And
-  **reconciled rather than rewritten**: the obvious clear-and-re-add would rewrite an unchanged
-  timeline for every open candidate every run, which is pure write churn on a single-writer file,
-  on exactly the contended path #434 exists to measure. ⚠️ The `code` is still upper-cased on the
-  way in — `ResolveHoldReason` matches exact values, so that normalisation is now load-bearing for
-  two features rather than one.
 
 Everything through Phase 0-10's initial build (ExamTools ingestion, Zoom/Discord, Square, email
 notifications, FCC ULS watcher, payment reminders, VE tracking, VEC submission tracker, admin

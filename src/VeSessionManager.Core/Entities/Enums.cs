@@ -388,12 +388,15 @@ public enum MessageRecipient
 /// </summary>
 public enum MessageFanOut
 {
-    /// <summary>One message per subject, addressed to that subject's recipient. What every email rule does.</summary>
+    /// <summary>One message per subject, addressed to that subject's recipient. The default for every rule, email or Discord.</summary>
     PerRecipient = 0,
 
     /// <summary>
-    /// One message covering every subject in the batch — a digest. Only meaningful for a channel
-    /// nobody is individually addressed on, which today means Discord.
+    /// One message covering every subject in the batch across every session — a true digest. Only
+    /// meaningful for a channel nobody is individually addressed on, which today means Discord: on
+    /// email it would be one message to one address listing every other candidate, a disclosure
+    /// rather than a feature. <see cref="PerSession"/> is the version usable on email (#491), because
+    /// grouping by session is what gives it a single recipient to be about.
     ///
     /// <para><b>Renamed from <c>PerSubject</c> in PR4</b>, value unchanged so nothing stored moves.
     /// The old name was ambiguous in the one place ambiguity is expensive: "per subject" reads as
@@ -412,6 +415,12 @@ public enum MessageFanOut
     ///
     /// <para>Subjects with no session are grouped together and rendered without the session tokens,
     /// rather than dropped: a payment-subject rule set to PerSession should still send something.</para>
+    ///
+    /// <para><b>Usable on email too, unlike <see cref="SingleDigest"/> (#491).</b> Grouping by session
+    /// is what a batched message needs to have a single, sensible To — the VE running that session, a
+    /// team-admin role, and so on — which is exactly what a whole-team digest can't offer. Refused only
+    /// when addressed to <see cref="MessageRecipient.Candidate"/>, the one recipient a per-session
+    /// summary about several candidates has no single address for.</para>
     /// </summary>
     PerSession = 2
 }

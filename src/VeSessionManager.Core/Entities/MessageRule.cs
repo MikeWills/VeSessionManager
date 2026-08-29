@@ -132,6 +132,15 @@ public class MessageRule
     /// </summary>
     public bool MonitoringCopyOncePerRun { get; set; } = true;
 
+    /// <summary>
+    /// Whether this rule attaches an .ics calendar invite for the session it's about (#491). Off by
+    /// default and per rule, not per team — Mike, when asked: "The toggle I want is per email related
+    /// to a session, not per team." Only meaningful for an email rule whose trigger's
+    /// <see cref="Messaging.MessageTriggerDefinition.CarriesSessionContext"/> is true; see
+    /// <c>MessageRuleAdminService.ValidateAsync</c> for the guard.
+    /// </summary>
+    public bool IncludeCalendarInvite { get; set; }
+
     public bool IsEnabled { get; set; } = true;
 
     /// <summary>

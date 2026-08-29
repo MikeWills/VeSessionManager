@@ -42,10 +42,10 @@ public class MessageRuleAdminService(AppDbContext dbContext, TimeProvider timePr
         int teamId, MessageTrigger trigger, string name, string subject, string body, int? parameterHours,
         MessageRecipient recipient, int userId, CancellationToken cancellationToken,
         MessageChannel channel = MessageChannel.Email, ulong? discordChannelId = null, MessageFanOut fanOut = MessageFanOut.PerRecipient,
-        MessageEnvelope? envelope = null)
+        MessageEnvelope? envelope = null, bool includeCalendarInvite = false)
     {
         envelope ??= MessageEnvelope.Default;
-        var validation = await ValidateAsync(teamId, trigger, name, subject, body, parameterHours, recipient, channel, discordChannelId, fanOut, envelope, cancellationToken);
+        var validation = await ValidateAsync(teamId, trigger, name, subject, body, parameterHours, recipient, channel, discordChannelId, fanOut, envelope, includeCalendarInvite, cancellationToken);
         if (validation != MessageRuleActionResult.Success)
         {
             return validation;
@@ -69,6 +69,7 @@ public class MessageRuleAdminService(AppDbContext dbContext, TimeProvider timePr
             CcAddress = envelope.CcAddress,
             BccAddress = envelope.BccAddress,
             MonitoringCopyOncePerRun = envelope.MonitoringCopyOncePerRun,
+            IncludeCalendarInvite = includeCalendarInvite,
             IsEnabled = true,
             // "Now", and it is the whole safety property rather than a timestamp: every scan is
             // bounded by it, so a rule created this morning cannot reach anybody whose moment passed
@@ -102,7 +103,7 @@ public class MessageRuleAdminService(AppDbContext dbContext, TimeProvider timePr
         int messageRuleId, string name, string subject, string body, int? parameterHours,
         MessageRecipient recipient, int userId, CancellationToken cancellationToken,
         MessageChannel channel = MessageChannel.Email, ulong? discordChannelId = null, MessageFanOut fanOut = MessageFanOut.PerRecipient,
-        MessageEnvelope? envelope = null)
+        MessageEnvelope? envelope = null, bool includeCalendarInvite = false)
     {
         envelope ??= MessageEnvelope.Default;
         var rule = await dbContext.MessageRules.FirstOrDefaultAsync(r => r.Id == messageRuleId, cancellationToken);
@@ -111,7 +112,7 @@ public class MessageRuleAdminService(AppDbContext dbContext, TimeProvider timePr
             return MessageRuleActionResult.NotFound;
         }
 
-        var validation = await ValidateAsync(rule.TeamId, rule.Trigger, name, subject, body, parameterHours, recipient, channel, discordChannelId, fanOut, envelope, cancellationToken);
+        var validation = await ValidateAsync(rule.TeamId, rule.Trigger, name, subject, body, parameterHours, recipient, channel, discordChannelId, fanOut, envelope, includeCalendarInvite, cancellationToken);
         if (validation != MessageRuleActionResult.Success)
         {
             return validation;
@@ -130,6 +131,7 @@ public class MessageRuleAdminService(AppDbContext dbContext, TimeProvider timePr
         rule.CcAddress = envelope.CcAddress;
         rule.BccAddress = envelope.BccAddress;
         rule.MonitoringCopyOncePerRun = envelope.MonitoringCopyOncePerRun;
+        rule.IncludeCalendarInvite = includeCalendarInvite;
 
         var now = timeProvider.GetUtcNow().UtcDateTime;
         dbContext.AddAuditLog(userId, "MessageRuleUpdated", nameof(MessageRule), rule.Id,
@@ -180,6 +182,7 @@ public class MessageRuleAdminService(AppDbContext dbContext, TimeProvider timePr
             CcAddress = original.CcAddress,
             BccAddress = original.BccAddress,
             MonitoringCopyOncePerRun = original.MonitoringCopyOncePerRun,
+            IncludeCalendarInvite = original.IncludeCalendarInvite,
             IsEnabled = false,
             CreatedUtc = now
         };
@@ -339,7 +342,7 @@ public class MessageRuleAdminService(AppDbContext dbContext, TimeProvider timePr
     private async Task<MessageRuleActionResult> ValidateAsync(
         int teamId, MessageTrigger trigger, string name, string subject, string body, int? parameterHours,
         MessageRecipient recipient, MessageChannel channel, ulong? discordChannelId, MessageFanOut fanOut,
-        MessageEnvelope envelope, CancellationToken cancellationToken)
+        MessageEnvelope envelope, bool includeCalendarInvite, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(name))
         {
@@ -384,7 +387,10 @@ public class MessageRuleAdminService(AppDbContext dbContext, TimeProvider timePr
         {
             // A digest is one message covering everybody, which only makes sense where nobody is
             // individually addressed. On email it would mean one message to one address listing every
-            // other candidate — a disclosure, not a feature.
+            // other candidate — a disclosure, not a feature. PerSession is different: it groups by
+            // session rather than batching the whole scan, which is what lets it name a recipient at
+            // all (see the check just below) — that's the distinction that makes it usable on email
+            // and SingleDigest still not (#491).
             if (fanOut == MessageFanOut.SingleDigest)
             {
                 return MessageRuleActionResult.DigestNeedsAChannel;
@@ -393,6 +399,16 @@ public class MessageRuleAdminService(AppDbContext dbContext, TimeProvider timePr
             if (!definition.LegalRecipients.Contains(recipient))
             {
                 return MessageRuleActionResult.RecipientNotLegal;
+            }
+
+            // A per-session summary is about several candidates at once, so there is no single
+            // candidate address it could go to — the same "one message, several people's worth of
+            // content, one address" question SingleDigest already answers by refusing email outright.
+            // Every other LegalRecipients option is a role/session-lead address, which is exactly why
+            // those are fine here and Candidate specifically is not.
+            if (fanOut == MessageFanOut.PerSession && recipient == MessageRecipient.Candidate)
+            {
+                return MessageRuleActionResult.PerSessionDigestCannotAddressCandidate;
             }
         }
 
@@ -409,6 +425,15 @@ public class MessageRuleAdminService(AppDbContext dbContext, TimeProvider timePr
         // only ever use that trigger's placeholders — the mismatch #409 guarded against (a VE-worded
         // template rendered through a candidate-subject scanner, every token blank, and the send
         // *succeeding*) is now impossible to express rather than caught.
+
+        // A calendar invite needs both an EmailMessage to attach to (no Discord post ever builds one —
+        // see MessageDispatchService's own doc comment) and a scanner that actually populates
+        // MessageSubject.Session (#491) — otherwise the checkbox would look configured and attach
+        // nothing, the exact failure mode every check in this method exists to refuse.
+        if (includeCalendarInvite && (channel != MessageChannel.Email || !definition.CarriesSessionContext))
+        {
+            return MessageRuleActionResult.CalendarInviteNotApplicable;
+        }
 
         return ValidateEnvelope(channel, envelope);
     }
@@ -506,5 +531,18 @@ public enum MessageRuleActionResult
     EnvelopeNeedsEmail,
 
     /// <summary>Reply-To set to a custom address, with no address.</summary>
-    ReplyToRequired
+    ReplyToRequired,
+
+    /// <summary>
+    /// Asked for a calendar invite on a Discord rule, or on a trigger whose scanner never populates
+    /// <c>MessageSubject.Session</c> (#491) — either way, there is nothing to attach one to.
+    /// </summary>
+    CalendarInviteNotApplicable,
+
+    /// <summary>
+    /// A <see cref="MessageFanOut.PerSession"/> rule addressed to <see cref="MessageRecipient.Candidate"/>
+    /// on email (#491) — a per-session summary covers several candidates, so there is no one candidate
+    /// address a batched message could go to.
+    /// </summary>
+    PerSessionDigestCannotAddressCandidate
 }
