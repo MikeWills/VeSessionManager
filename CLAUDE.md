@@ -127,6 +127,14 @@ which is "here's what was built and why, mostly historical.")
 One-line-or-two pointer per feature, newest first — full design rationale lives in the linked
 `/docs/*.md` file, not here. See "Documentation Structure" below for the policy this follows.
 
+- **A Discord channel is picked from a dropdown now, not typed by hand (#503, 2026-08-29).** See
+  `docs/trigger-points.md`'s new section. New `IDiscordChannelMessageClient.ListTextChannelsAsync`
+  backs a `<select>` on both `MessageRuleNew`/`MessageRuleEdit`; falls back to the old manual-id input
+  whenever the list comes back empty — no `DiscordGuildId`, bot unconfigured, or the guild lookup
+  failing all collapse to the same fallback rather than erroring the page. Fetched on `OnGetAsync`
+  only, not from the shared `LoadAsync` both verbs call — a failed POST already redirects to a fresh
+  GET, so fetching it there too would be a wasted Discord round trip on every validation failure.
+
 - **A calendar invite, and a per-session VE summary email (#491, 2026-08-28).** See
   `docs/trigger-points.md`'s two new sections. Per-rule opt-in (`MessageRule.IncludeCalendarInvite`),
   not per-team — Mike: "The toggle I want is per email related to a session, not per team."
@@ -256,25 +264,6 @@ cap and a newer entry needs to be added; oldest goes first.
   anything legible. And **the typed team name is the guard rather than a second "are you sure"**,
   checked server-side because a modal is not a permission: the mistake this invites is deleting the
   right-looking row of the wrong team, which a confirm dialog does not catch.
-
-- **A message owns its own words, and there are no templates any more (2026-08-21).** Issue #401,
-  three stacked commits. See `docs/trigger-points.md`. Mike found the defect from the screen: **the
-  tags a body may use depend on the trigger that sends it, and a template had none** — so the editor
-  could show nothing. Not a missing affordance, an unanswerable question, and it is why my original
-  argument for the split (reuse) does not survive: reuse across *triggers* is exactly the part that
-  cannot work. Four things worth carrying forward. **Manual sends are trigger points too** — Mike's
-  insight, and what made it collapse to one object rather than two: a hand-composed email is a message
-  whose mechanism is "somebody pressed a button", so `Manual` joins `State` and `TimeRelative` and the
-  tag list becomes answerable everywhere. **Automatic messages seed off, hand-sent ones seed on** —
-  the risk is unread mail going out by itself, and a message nothing sends until a button is pressed
-  is not that; seeding those off would leave two candidate buttons silently doing nothing, which reads
-  as broken rather than as safe. ⚠️ **The migration deletes rather than converts** (Mike: *"delete it
-  all and re-create it all"*) — a `TemplateKey` renamed to `Subject` would leave every rule with
-  `DayBeforeReminder` as its subject and an empty body, which is nonsense that looks like data;
-  history survives because `MessageRuleRun` is `SetNull` and snapshots the name and trigger. And
-  **the rich-text editor moved rather than died** — it lived on the deleted Templates page, so
-  `message-editor.js` now serves the message editor; `app.js`'s own tag-chip handler bails on any chip
-  Quill has claimed (`data-token-handled`), because both firing on one click inserts the tag twice.
 
 Everything through Phase 0-10's initial build (ExamTools ingestion, Zoom/Discord, Square, email
 notifications, FCC ULS watcher, payment reminders, VE tracking, VEC submission tracker, admin

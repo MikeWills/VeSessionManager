@@ -100,12 +100,33 @@
 
         <div class="field" style="max-width:420px;" data-channel-only="Discord" data-channel-group="edit"
              hidden="@(Model.Channel != VeSessionManager.Core.Entities.MessageChannel.Discord)">
-            <label asp-for="DiscordChannelId">Discord channel id</label>
-            <input asp-for="DiscordChannelId" type="text" inputmode="numeric" />
-            <span class="session-sub">
-                Developer Mode on, right-click the channel, Copy Channel ID. The bot needs View Channel
-                and Send Messages there.
-            </span>
+            @* A dropdown when the bot can actually list the guild's channels (#503); the old manual-id
+               input stays as a fallback for a team whose bot/guild isn't reachable right now, rather
+               than blocking the page on it. Listing and posting check different things — a channel
+               that appears here can still refuse the post if the bot lacks View Channel/Send Messages
+               on it specifically, which is why that instruction stays either way. *@
+            @if (Model.DiscordChannels.Count > 0)
+            {
+                <label asp-for="DiscordChannelId">Discord channel</label>
+                <select asp-for="DiscordChannelId" class="filter-select">
+                    <option value="">Choose a channel…</option>
+                    @foreach (var channel in Model.DiscordChannels)
+                    {
+                        <option value="@channel.Id">#@channel.Name</option>
+                    }
+                </select>
+                <span class="session-sub">The bot needs View Channel and Send Messages there.</span>
+            }
+            else
+            {
+                <label asp-for="DiscordChannelId">Discord channel id</label>
+                <input asp-for="DiscordChannelId" type="text" inputmode="numeric" />
+                <span class="session-sub">
+                    Couldn't list this team's channels right now — enter the id by hand instead:
+                    Developer Mode on, right-click the channel, Copy Channel ID. The bot needs View
+                    Channel and Send Messages there.
+                </span>
+            }
         </div>
 
         <div class="field" style="max-width:420px;" data-channel-only="Discord" data-channel-group="edit"

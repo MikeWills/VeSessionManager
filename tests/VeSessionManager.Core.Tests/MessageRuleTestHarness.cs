@@ -52,6 +52,12 @@ public static class MessageRuleTestHarness
             AllowedRoleIds.Add(mentionableRoleIds);
             return Task.CompletedTask;
         }
+
+        /// <summary>Never exercised by MessageDispatchService — the admin UI is the only caller of this (#503). Settable so a page test can assert on the rendered options.</summary>
+        public IReadOnlyList<DiscordChannelSummary> Channels { get; set; } = [];
+
+        public Task<IReadOnlyList<DiscordChannelSummary>> ListTextChannelsAsync(ulong guildId, CancellationToken cancellationToken) =>
+            Task.FromResult(Channels);
     }
 
     /// <param name="logger">

@@ -1091,6 +1091,31 @@ mean "this candidate was personally emailed," and a session summary goes to the 
 candidate in it — but every candidate in the group still gets its own `MessageRuleRun` marker, so a
 second tick doesn't re-summarize the same session to the same VE.
 
+## The Discord channel is picked from a dropdown now (#503, 2026-08-29)
+
+Was a manual `ulong` — "Developer Mode on, right-click the channel, Copy Channel ID." New
+`IDiscordChannelMessageClient.ListTextChannelsAsync(guildId)` (`DiscordEventClient` wraps
+`RestGuild.GetTextChannelsAsync()`, ordered by Discord's own channel position) backs a `<select>` on
+both `MessageRuleNew` and `MessageRuleEdit`.
+
+**Falls back to the old manual input, never errors the page.** Three independent reasons a team might
+have nothing to pick from — no `Team.DiscordGuildId` set, the bot token unconfigured, or the guild
+unreachable (bot not invited, network hiccup) — all collapse to the same thing: an empty
+`DiscordChannels` list, caught in a try/catch around the one network call, logged as a warning and
+never rethrown. The Razor conditionally renders the dropdown or the manual input based on nothing more
+than whether that list came back non-empty.
+
+**Listing and posting check different things, and the hint text says so.** Guild-level channel listing
+doesn't require the bot to have View Channel on any particular one — `PostMessageAsync` still checks
+that per-channel at send time (its own existing error names exactly this). So a channel can legitimately
+appear in the dropdown and still refuse the post; the "the bot needs View Channel and Send Messages
+there" caption stays on both the dropdown and the fallback input for that reason.
+
+**Only fetched on GET, not POST.** A failed save redirects straight back to a fresh GET rather than
+re-rendering the same page (existing pattern, unchanged) — fetching the channel list from the shared
+`LoadAsync` both verbs call would have meant a wasted Discord round trip on every validation failure.
+Each page's own `LoadDiscordChannelsAsync` is called only from `OnGetAsync`.
+
 ### Still to come
 
 - **No toggle on the New-rule form**, for either `IncludeCalendarInvite` or the new email `FanOut`

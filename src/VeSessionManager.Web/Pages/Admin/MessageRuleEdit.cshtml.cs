@@ -3,9 +3,11 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using VeSessionManager.Core.Admin;
 using VeSessionManager.Core.Authorization;
 using VeSessionManager.Core.Data;
+using VeSessionManager.Core.Discord;
 using VeSessionManager.Core.Email;
 using VeSessionManager.Core.Entities;
 using VeSessionManager.Core.Messaging;
@@ -25,7 +27,9 @@ public class MessageRuleEditModel(
     AppDbContext dbContext,
     UserManager<User> userManager,
     AdminAccessScope adminAccessScope,
-    MessageRuleAdminService messageRuleAdminService) : PageModel
+    MessageRuleAdminService messageRuleAdminService,
+    IDiscordChannelMessageClient discordClient,
+    ILogger<MessageRuleEditModel> logger) : PageModel
 {
     [BindProperty(SupportsGet = true)]
     public int Id { get; set; }
@@ -110,6 +114,15 @@ public class MessageRuleEditModel(
     /// </summary>
     public string? TeamReplyToAddress { get; private set; }
 
+    /// <summary>
+    /// The team's Discord text channels, for the picker (#503) — replaces "copy the channel id by
+    /// hand via Developer Mode" with a dropdown. Empty when the team has no <c>DiscordGuildId</c> set,
+    /// the bot isn't configured, or the lookup fails (bot not invited, guild unreachable) — the view
+    /// falls back to the old manual-id input in every one of those cases rather than erroring the
+    /// whole page.
+    /// </summary>
+    public IReadOnlyList<DiscordChannelSummary> DiscordChannels { get; private set; } = [];
+
     public MessageTriggerDefinition Definition => MessageTriggerDefinitions.For(Rule.Trigger);
     public bool TakesParameter => Definition.Mechanism == MessageTriggerMechanism.TimeRelative;
     public string TriggerLabel => MessageTriggerLabels.Label(Rule.Trigger);
@@ -121,6 +134,7 @@ public class MessageRuleEditModel(
         var loaded = await LoadAsync();
         if (loaded is not null) return loaded;
 
+        DiscordChannels = await LoadDiscordChannelsAsync(Rule.TeamId);
         Name = Rule.Name;
         Subject = Rule.Subject;
         Body = Rule.Body;
@@ -215,5 +229,34 @@ public class MessageRuleEditModel(
             .Select(e => e.ReplyToAddress)
             .FirstOrDefaultAsync(HttpContext.RequestAborted);
         return null;
+    }
+
+    /// <summary>
+    /// GET-only (#503): a POST that fails validation redirects straight back to a fresh GET rather
+    /// than re-rendering, so fetching this from <c>LoadAsync</c> — called on both verbs — would be a
+    /// wasted Discord round trip on every failed save. Never throws: a bot/guild problem here should
+    /// degrade to the manual-id fallback, not break the whole edit screen.
+    /// </summary>
+    private async Task<IReadOnlyList<DiscordChannelSummary>> LoadDiscordChannelsAsync(int teamId)
+    {
+        var guildId = await dbContext.Teams.AsNoTracking()
+            .Where(t => t.Id == teamId)
+            .Select(t => t.DiscordGuildId)
+            .FirstOrDefaultAsync(HttpContext.RequestAborted);
+
+        if (guildId is not { } gid || gid == 0 || !discordClient.IsConfigured)
+        {
+            return [];
+        }
+
+        try
+        {
+            return await discordClient.ListTextChannelsAsync(gid, HttpContext.RequestAborted);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Could not list Discord channels for team {TeamId} guild {GuildId} — falling back to manual channel id entry", teamId, gid);
+            return [];
+        }
     }
 }

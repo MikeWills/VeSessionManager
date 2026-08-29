@@ -12,3 +12,11 @@ public class DiscordEvent
 
     public DateTime? StartTimeUtc { get; set; }
 }
+
+/// <summary>
+/// One text channel in a guild, for the Message Rule admin screen's channel picker (#503) — replaces
+/// "Developer Mode on, right-click the channel, Copy Channel ID" with a dropdown. Not every field
+/// Discord.Net's <c>RestTextChannel</c> carries, just enough to render an option: <c>Id</c> is what the
+/// rule actually stores, <c>Name</c> is what a human recognizes.
+/// </summary>
+public record DiscordChannelSummary(ulong Id, string Name);

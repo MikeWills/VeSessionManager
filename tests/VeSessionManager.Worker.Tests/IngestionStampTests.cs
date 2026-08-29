@@ -121,6 +121,7 @@ public class IngestionStampTests
         public Task<IReadOnlyList<DiscordEvent>> ListEventsAsync(ulong g, CancellationToken ct) => Nope<IReadOnlyList<DiscordEvent>>();
 
         public Task PostMessageAsync(ulong g, ulong c, string m, IReadOnlyList<ulong> roleIds, CancellationToken ct) => Nope<object>();
+        public Task<IReadOnlyList<DiscordChannelSummary>> ListTextChannelsAsync(ulong g, CancellationToken ct) => Nope<IReadOnlyList<DiscordChannelSummary>>();
 
         public Task<SquarePaymentLink> CreatePaymentLinkAsync(SquareCredentials c, SquarePaymentLinkRequest r, CancellationToken ct) => Nope<SquarePaymentLink>();
         public Task CompleteOrderAsync(SquareCredentials c, string o, CancellationToken ct) => Nope<object>();
