@@ -127,6 +127,25 @@ which is "here's what was built and why, mostly historical.")
 One-line-or-two pointer per feature, newest first — full design rationale lives in the linked
 `/docs/*.md` file, not here. See "Documentation Structure" below for the policy this follows.
 
+- **Historical import gets a real provenance flag instead of date-window guesses (#88, 2026-08-29).**
+  See `docs/session-lifecycle-gate.md`. New `Session.ImportedHistoricallyUtc`, stamped only by
+  `SessionIngestionService.ImportHistoricalRangeAsync`, replaces `PaymentEligibilityWindow` (retired,
+  a 30-day guess from session age) in `PaymentGenerationService`/`FccFeeOutstandingScanner`, and adds
+  an explicit exclusion to `UlsWatcherService`, the shared `AwaitingFccGrant` predicate (covering
+  Applicant Status, its nav badge, and the bulk-email screen at once), `CandidateRegisteredScanner`
+  and `SessionEventSchedulingService`. **The correction, not just the replacement**: a date window
+  couldn't tell "backfilled" from "a real session that's simply old," so it wrongly excluded the
+  latter — every new test pins that a real old session (flag unset) is now correctly still eligible.
+  **Deliberately scoped out**: `ExamResultSyncService`'s 14-day window (a discovery window for
+  amendable results, not a "never touch this" guard — folding it in would be wrong) and
+  `VolunteerExaminerSyncService`'s `ignoreRetryWindow` (a working one-time-fetch mechanism; changing
+  it risked regressing real behavior for a mechanism this pass didn't need to touch). **Backfilling
+  existing HRCC/MARC sessions is a read-only report, not an automatic write** — Mike's call: a wrong
+  tag silently stops a real session's reminders/checks, so `--report-historical-imports` (Worker)
+  lists candidates via two combinable, imperfect signals (an exact-but-incomplete `AuditLog` trail,
+  and a `CreatedUtc`-vs-`ScheduledStartUtc` gap heuristic) for review before any backfill writes
+  anything — the backfill-apply step itself is not built by this pass.
+
 - **A Discord channel is picked from a dropdown now, not typed by hand (#503, 2026-08-29).** See
   `docs/trigger-points.md`'s new section. New `IDiscordChannelMessageClient.ListTextChannelsAsync`
   backs a `<select>` on both `MessageRuleNew`/`MessageRuleEdit`; falls back to the old manual-id input
@@ -236,21 +255,6 @@ all — it's already one-line-summarized in "Current State" above, so a separate
 would be pure duplication — and goes straight to `CHANGELOG.md` instead. Non-phase entries (fixes,
 redesigns, hardening passes) start here and move to `CHANGELOG.md` once the section is at/over the
 cap and a newer entry needs to be added; oldest goes first.
-
-- **No backlog on enable, for messaging specifically (2026-08-25).** See `docs/trigger-points.md`'s
-  "MessageRuleEligibility" section. Every scanner used to bound eligibility by `MessageRule.CreatedUtc`
-  alone — right for "a new rule shouldn't fire for people already past the moment," but it missed two
-  other off-to-on transitions: a rule switched back on, and a team's email configured for the first
-  time. Mike, after a beta candidate got a registration confirmation the moment SMTP was turned on:
-  *"it's not supposed to send any backlog of email"* / *"if a message is off then I turn on, it's not
-  supposed to send backlog either."* `MessageRuleEligibility.FloorUtc` now folds in
-  `MessageRule.EnabledSinceUtc` (stamped only on an actual disabled→enabled transition) and, for an
-  email rule, `Team.EmailConfiguredUtc` (stamped only on an actual unconfigured→configured transition)
-  — both null-by-default and never backfilled, so an already-running team or already-enabled rule sees
-  no behavior change. **Deliberately narrower than "no backlog" everywhere**: Zoom/Discord/Square still
-  backfill the moment they're configured, and that stays right — those create a resource that has to
-  exist regardless of when config caught up, where messaging is telling a person about something old
-  the moment notifications get switched on.
 
 - **A team can be deactivated, or deleted outright (2026-08-21).** See `docs/team-lifecycle.md`.
   Deactivate stops the app polling and sending and is one click back; delete removes the team and

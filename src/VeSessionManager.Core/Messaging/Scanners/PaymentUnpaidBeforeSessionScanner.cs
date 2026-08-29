@@ -25,10 +25,10 @@ namespace VeSessionManager.Core.Messaging.Scanners;
 /// shape. This scanner anchors on the session itself, and a retest payment belongs to a session like
 /// any other — the ordinary query already covers it.</para>
 ///
-/// <para><b>No <c>PaymentEligibilityWindow</c> either.</b> That guard exists to stop the historical
-/// import's backfilled candidates being chased about sessions from months ago. This only ever looks at
-/// sessions that have <i>not started yet</i>, so a backfilled session — always in the past — can never
-/// match in the first place.</para>
+/// <para><b>No <c>Session.ImportedHistoricallyUtc</c> exclusion either (#88).</b> That flag exists to
+/// stop the historical import's backfilled candidates being chased about sessions from months ago.
+/// This only ever looks at sessions that have <i>not started yet</i>, so a backfilled session —
+/// always in the past — can never match in the first place.</para>
 /// </summary>
 public class PaymentUnpaidBeforeSessionScanner(AppDbContext dbContext) : IMessageTriggerScanner
 {

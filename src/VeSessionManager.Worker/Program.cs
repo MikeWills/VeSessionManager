@@ -196,7 +196,7 @@ builder.Services.AddHostedService<RecordRetentionJob>();
 // A mistyped switch used to be ignored in silence: the Worker started normally, did none of the
 // one-off work that was asked for, and looked identical to a successful run. Checked before the
 // host is even built so it costs nothing and cannot be missed.
-string[] knownSwitches = ["--migrate-team-secrets", "--run-uls", "--verify-keyring"];
+string[] knownSwitches = ["--migrate-team-secrets", "--run-uls", "--verify-keyring", "--report-historical-imports"];
 var unknownSwitches = args.Where(a => a.StartsWith("--") && !knownSwitches.Contains(a)).ToList();
 if (unknownSwitches.Count > 0)
 {
@@ -277,6 +277,17 @@ using (var scope = host.Services.CreateScope())
         await jobRunHistoryLogger.RunAsync("UlsWatcher", watcher.RunAsync, null, CancellationToken.None);
         ulsLogger.LogInformation("On-demand ULS run complete — exiting without starting the normal Worker jobs.");
         return 0;
+    }
+
+    // #88's dry-run backfill report. Read-only — see HistoricalImportReport's own doc comment for
+    // why this reports rather than writes: a wrong tag here silently stops a real session's payment
+    // reminders and license checks, which is worse than the gap the field exists to close. Runs
+    // after the migration above (deliberately, unlike --verify-keyring) because the query depends on
+    // the ImportedHistoricallyUtc column already existing.
+    if (args.Contains("--report-historical-imports"))
+    {
+        var reportLogger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+        return await HistoricalImportReport.RunAsync(dbContext, reportLogger, Console.Out, TimeProvider.System);
     }
 
     var startupLogger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();

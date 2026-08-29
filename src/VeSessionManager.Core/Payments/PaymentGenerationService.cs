@@ -46,16 +46,16 @@ public class PaymentGenerationService(
 
         // Status == Active means "not cancelled", NOT "not finished" (CLAUDE.md) — on its own it
         // matched every session the team has ever run, so the historical import's year of backfilled
-        // candidates all queued up for payment. See PaymentEligibilityWindow.
-        var paymentCutoff = PaymentEligibilityWindow.CutoffUtc(now);
-
+        // candidates all queued up for payment. Excluded by Session.ImportedHistoricallyUtc (#88)
+        // rather than a date-window guess (PaymentEligibilityWindow, retired) — a real session that
+        // is simply old still needs a payment; only a genuinely-imported one is excluded.
         var candidatesNeedingPayment = await dbContext.Candidates
             .Include(c => c.Session).ThenInclude(s => s.FeeConfiguration)
             .Include(c => c.Session).ThenInclude(s => s.Vec)
             .Where(c => c.PiiPurgedUtc == null
                         && c.Session.TeamId == team.Id
                         && c.Session.Status == SessionStatus.Active
-                        && c.Session.ScheduledStartUtc >= paymentCutoff
+                        && c.Session.ImportedHistoricallyUtc == null
                         && (onlySessionId == null || c.SessionId == onlySessionId)
                         && !c.Payments.Any(p => p.Reason == PaymentReason.InitialExam))
             .ToListAsync(cancellationToken);
@@ -125,7 +125,7 @@ public class PaymentGenerationService(
             }
         }
 
-        // Bounded by the same window as creation above, and this is the half that matters most: the
+        // Bounded by the same exclusion as creation above, and this is the half that matters most: the
         // ~1710 Unpaid payments the unbounded version already created for backfilled historical
         // candidates are still in the table, and without this bound the first poll after Square
         // credentials are set would mint a real payment link for every one of them.
@@ -142,7 +142,7 @@ public class PaymentGenerationService(
                         // tears down Zoom and Discord for a cancelled session; nothing tears these
                         // down, so the only defence is never minting them.
                         && p.Candidate.Session.Status == SessionStatus.Active
-                        && p.Candidate.Session.ScheduledStartUtc >= paymentCutoff
+                        && p.Candidate.Session.ImportedHistoricallyUtc == null
                         && (onlySessionId == null || p.Candidate.SessionId == onlySessionId))
             .ToListAsync(cancellationToken);
 

@@ -40,8 +40,6 @@ public class FccFeeOutstandingScanner(AppDbContext dbContext) : IMessageTriggerS
         // MessageRuleEligibility for what folds into that floor beyond CreatedUtc.
         var earliestAnchorUtc = MessageRuleEligibility.FloorUtc(team, rule).AddHours(-parameterHours);
 
-        var paymentCutoff = PaymentEligibilityWindow.CutoffUtc(nowUtc);
-
         var settled = dbContext.MessageRuleRuns
             .Where(r => r.MessageRuleId == rule.Id && MessageRuleOutcomes.Terminal.Contains(r.Outcome))
             .Select(r => r.SubjectId);
@@ -62,11 +60,12 @@ public class FccFeeOutstandingScanner(AppDbContext dbContext) : IMessageTriggerS
                         && !CandidateApplicationStatusExtensions.TerminalStatuses.Contains(c.ApplicationStatus)
                         && c.Session.TeamId == team.Id
                         && c.Session.Status == SessionStatus.Active
-                        // Status == Active means "not cancelled", not "not finished" — without an
-                        // age bound this reaches the historical import's backfilled candidates and
-                        // would email them about sessions they sat months ago.
-                        // See PaymentEligibilityWindow.
-                        && c.Session.ScheduledStartUtc >= paymentCutoff
+                        // Status == Active means "not cancelled", not "not finished" — without this
+                        // exclusion the historical import's backfilled candidates would get emailed
+                        // about a fee for a session they sat months ago (#88). Defense in depth: a
+                        // historical candidate is realistically already terminal (auto-Granted by
+                        // MarkHistoricalCandidatesGranted) and excluded above anyway.
+                        && c.Session.ImportedHistoricallyUtc == null
                         && (onlySessionId == null || c.SessionId == onlySessionId))
             .ToListAsync(cancellationToken);
 

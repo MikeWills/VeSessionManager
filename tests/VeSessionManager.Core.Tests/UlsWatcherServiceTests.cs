@@ -46,10 +46,15 @@ public class UlsWatcherServiceTests
         CandidateApplicationStatus status = CandidateApplicationStatus.Unmatched,
         LicenseClass? newLicenseClass = LicenseClass.Technician,
         LicenseClass initialLicenseClass = LicenseClass.None,
-        string frnOrCallSign = "0038704029")
+        string frnOrCallSign = "0038704029",
+        DateTime? importedHistoricallyUtc = null)
     {
         var team = new Team { Name = "Test Team", ExamToolsTeamCode = "TEST" };
-        var session = new Session { Team = team, ScheduledStartUtc = SessionStart, ExamToolsSessionId = "s1", Title = "Test Session" };
+        var session = new Session
+        {
+            Team = team, ScheduledStartUtc = SessionStart, ExamToolsSessionId = "s1", Title = "Test Session",
+            ImportedHistoricallyUtc = importedHistoricallyUtc
+        };
         var candidate = new Candidate
         {
             Session = session,
@@ -98,6 +103,33 @@ public class UlsWatcherServiceTests
         Assert.Equal("KC1ZYU", updated.CallSign);
         Assert.Equal("5339614", updated.FccUlsLicenseKey);
         Assert.Equal(new DateTime(2026, 7, 31, 0, 0, 0, DateTimeKind.Utc), updated.LicenseGrantDateUtc);
+    }
+
+    /// <summary>
+    /// #88's structural backstop for rule 1. In practice a historical candidate is already terminal
+    /// (auto-Granted by <c>SessionIngestionService.MarkHistoricalCandidatesGranted</c>) and would
+    /// never reach this query's <c>!TerminalStatuses.Contains(...)</c> filter anyway — but that's an
+    /// invariant maintained *elsewhere*, not one this service enforces itself, and the issue is
+    /// explicit that rule 1 should hold structurally rather than only as a side effect of another
+    /// service's behavior.
+    /// </summary>
+    [Fact]
+    public async Task CandidateOnAnImportedSession_IsNeverLookedUp()
+    {
+        await using var dbContext = CreateContext();
+        // Non-terminal on purpose, simulating the gap the issue names: a historical candidate that
+        // wasn't auto-granted for some reason must still never be polled.
+        await SeedCandidateAsync(dbContext, status: CandidateApplicationStatus.Unmatched, importedHistoricallyUtc: SessionStart.AddDays(400));
+        var client = new FakeUlsLookupClient(new()
+        {
+            ["0038704029"] = ActiveLicense(grantDate: SessionStart.AddDays(1))
+        });
+
+        var result = await CreateService(dbContext, client).RunAsync(CancellationToken.None);
+
+        Assert.Equal(0, result.CandidatesChecked);
+        Assert.Empty(client.LookedUpFrns);
+        Assert.Equal(CandidateApplicationStatus.Unmatched, (await dbContext.Candidates.SingleAsync()).ApplicationStatus);
     }
 
     /// <summary>

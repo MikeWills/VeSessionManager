@@ -63,7 +63,11 @@ public class SessionIngestionService(
     /// against live-scheduling or emailing a session ingested this way once it's already over
     /// (Session.HasEnded) — this window only controls whether the row gets created at all.
     /// </summary>
-    private static readonly TimeSpan CompletedSessionBackfillWindow = TimeSpan.FromDays(7);
+    // Public rather than private so the --report-historical-imports backfill report (Worker,
+    // HistoricalImportReport.cs) can reuse the exact same number for its "created long after its own
+    // scheduled date" heuristic, rather than a second copy that could drift from this one (#88).
+    // Same reasoning as UlsWatcherService.MaxLookupsPerRun being public.
+    public static readonly TimeSpan CompletedSessionBackfillWindow = TimeSpan.FromDays(7);
 
     /// <summary>
     /// Issue #67 part 2: imports completed sessions over an explicit date range, for the one-off
@@ -128,6 +132,11 @@ public class SessionIngestionService(
             // HasEnded to fall back on. Costs nothing here and keeps the imported rows in the same
             // shape the continuous path eventually produces.
             created.ExamToolsClosedUtc = now;
+            // #88: the one place this is ever set. Every job that used to guess "was this backfilled"
+            // from a session's age (PaymentEligibilityWindow, several HasEnded-based inferences) reads
+            // this instead — an ordinary session's null value is trustworthy specifically because the
+            // routine sweep (RunAsync, above) never touches this field.
+            created.ImportedHistoricallyUtc = now;
             existing.Add(remote.Id);
 
             // A historical session's VEC paperwork was filed outside this app, months ago — leaving

@@ -83,19 +83,14 @@ public static class MessageTriggerLabels
     /// <summary>
     /// A caution to show beside the hours field, or null when there is nothing to say.
     ///
-    /// <para>Both money triggers are bounded by <c>PaymentEligibilityWindow</c> — 30 days from the
-    /// session start — which exists to stop the historical import's backfilled candidates being
-    /// chased about payments for sessions they sat months ago. A rule set past that simply stops
-    /// firing, silently, and the form's own ceiling is a year. Surfaced rather than refused: the real
-    /// headroom depends on how long after the session the FCC entered the application, so there is no
-    /// honest number to validate against — only a point past which this stops working.</para>
+    /// <para><c>FccFeeOutstanding</c> used to carry a note here — both money triggers were bounded by
+    /// a 30-day <c>PaymentEligibilityWindow</c> guessed from session age, past which a rule would
+    /// silently stop firing even for a real, live-eligible session. Replaced (#88) by
+    /// <c>Session.ImportedHistoricallyUtc</c>, an exact flag rather than a date-window guess — there
+    /// is no longer a rolling point at which this trigger stops working, so there is nothing to
+    /// caution about.</para>
     /// </summary>
-    public static string? ParameterCeilingNote(MessageTrigger trigger) => trigger switch
-    {
-        MessageTrigger.FccFeeOutstanding or MessageTrigger.PaymentUnpaid =>
-            "Past about 30 days from the session this stops firing — payments age out of scope so old sessions are never chased.",
-        _ => null
-    };
+    public static string? ParameterCeilingNote(MessageTrigger trigger) => null;
 
     public static string Label(MessageRecipient recipient) => recipient switch
     {

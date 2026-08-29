@@ -72,6 +72,10 @@ public class SessionEventSchedulingService(
                         && s.Status == SessionStatus.Active
                         && s.ScheduledStartUtc >= recentSessionCutoff
                         && s.ScheduledStartUtc != s.ZoomDiscordSyncedStartUtc
+                        // Exact rather than relying on the coarse bound above alone (#88) — see
+                        // CandidateRegisteredScanner's identical comment for why the 1-day cutoff
+                        // alone isn't quite enough.
+                        && s.ImportedHistoricallyUtc == null
                         && (onlySessionId == null || s.Id == onlySessionId))
             .ToListAsync(cancellationToken);
 

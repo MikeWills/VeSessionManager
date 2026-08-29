@@ -129,6 +129,19 @@ public class Session
     public DateTime? ExamToolsClosedUtc { get; set; }
 
     /// <summary>
+    /// Set only by <c>SessionIngestionService.ImportHistoricalRangeAsync</c>, never by the routine
+    /// polling path — the one-word answer to "was this session backfilled" that #88 exists to
+    /// provide, replacing several services' own date-window guesses at the same fact
+    /// (<c>PaymentEligibilityWindow</c> chief among them). Null for every ordinary session.
+    ///
+    /// <para>Deliberately independent of <see cref="ExamToolsClosedUtc"/>, which the routine sweep
+    /// also stamps for a session it merely observed closing — that one answers "has this session
+    /// finished", not "did an operator deliberately backfill a year of history". Conflating the two
+    /// is exactly the trap this field exists to close.</para>
+    /// </summary>
+    public DateTime? ImportedHistoricallyUtc { get; set; }
+
+    /// <summary>
     /// When this session's VE roster was last successfully fetched from ExamTools **while the
     /// session was already finished** — the "final poll" marker, and the thing that retires the
     /// session from `VolunteerExaminerSyncService`'s scan.

@@ -50,6 +50,11 @@ public class CandidateRegisteredScanner(
                         // session starting more than a day ago has certainly ended (durations are
                         // hours), so this never hides one the precise HasEnded check below needs.
                         && c.Session.ScheduledStartUtc >= recentSessionCutoff
+                        // Exact rather than relying on the coarse bound above alone (#88): the
+                        // 1-day cutoff already excludes a typical historical import (always much
+                        // older than a day), but an import of a *recent* range wouldn't be — this
+                        // makes the exclusion correct regardless of how recent the imported range is.
+                        && c.Session.ImportedHistoricallyUtc == null
                         && (onlySessionId == null || c.SessionId == onlySessionId))
             .ToListAsync(cancellationToken);
 
