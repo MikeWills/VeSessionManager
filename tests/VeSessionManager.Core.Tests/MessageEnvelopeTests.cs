@@ -351,4 +351,57 @@ public class MessageEnvelopeTests
 
         Assert.Equal(MessageRuleActionResult.ReplyToRequired, result);
     }
+
+    // ---- IncludeCalendarInvite (#491) ----
+
+    /// <summary>The two triggers whose scanner actually populates MessageSubject.Session today.</summary>
+    [Fact]
+    public async Task CalendarInvite_OnATriggerThatCarriesSessionContext_Succeeds()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        var userId = await SeedUserAsync(dbContext);
+
+        var result = await CreateAdminService(dbContext).CreateAsync(
+            team.Id, MessageTrigger.CandidateRegistered, "Confirmation", "Subject", "Confirm", null,
+            MessageRecipient.Candidate, userId, CancellationToken.None, includeCalendarInvite: true);
+
+        Assert.Equal(MessageRuleActionResult.Success, result);
+        Assert.True((await dbContext.MessageRules.SingleAsync()).IncludeCalendarInvite);
+    }
+
+    /// <summary>
+    /// A trigger whose scanner never sets Session (a payment-subject trigger, here) would offer a
+    /// checkbox that does nothing — exactly the "looks configured, does nothing" class this file's own
+    /// class doc comment names as the reason most of these validations exist.
+    /// </summary>
+    [Fact]
+    public async Task CalendarInvite_OnATriggerWithNoSessionContext_IsRefused()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        var userId = await SeedUserAsync(dbContext);
+
+        var result = await CreateAdminService(dbContext).CreateAsync(
+            team.Id, MessageTrigger.PaymentUnpaidBeforeSession, "Unpaid", "Subject", "Body", 24,
+            MessageRecipient.Candidate, userId, CancellationToken.None, includeCalendarInvite: true);
+
+        Assert.Equal(MessageRuleActionResult.CalendarInviteNotApplicable, result);
+    }
+
+    /// <summary>Nobody is addressed on a channel post, and the dispatcher never builds an EmailMessage for one — there is nothing to attach a file to.</summary>
+    [Fact]
+    public async Task CalendarInvite_OnADiscordRule_IsRefused()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        var userId = await SeedUserAsync(dbContext);
+
+        var result = await CreateAdminService(dbContext).CreateAsync(
+            team.Id, MessageTrigger.CandidateRegistered, "Confirmation", "Subject", "Confirm", null,
+            MessageRecipient.Candidate, userId, CancellationToken.None,
+            MessageChannel.Discord, 42UL, MessageFanOut.PerRecipient, includeCalendarInvite: true);
+
+        Assert.Equal(MessageRuleActionResult.CalendarInviteNotApplicable, result);
+    }
 }

@@ -149,7 +149,9 @@ public class SmtpEmailSender(SystemSettingsService systemSettingsService, ILogge
         logger.LogInformation("Sent email with subject {Subject} for team {TeamId} (test mode: {TestMode})",
             effectiveMessage.Subject, credentials.TeamId, testMode);
 
-    private static MimeMessage BuildMimeMessage(EmailMessage effectiveMessage)
+    /// <summary>Internal, not private, so <c>SmtpEmailSenderAttachmentTests</c> can assert on the built
+    /// MIME structure directly rather than standing up a real SMTP server.</summary>
+    internal static MimeMessage BuildMimeMessage(EmailMessage effectiveMessage)
     {
         var mimeMessage = new MimeMessage();
         mimeMessage.From.Add(new MailboxAddress(effectiveMessage.FromDisplayName ?? "", effectiveMessage.FromAddress));
@@ -187,6 +189,13 @@ public class SmtpEmailSender(SystemSettingsService systemSettingsService, ILogge
             // Must match the cid: the renderer wrote into the <img> tag exactly, or the client
             // silently shows a broken image. Add() sets a generated id, so it is overwritten here.
             resource.ContentId = logo.ContentId;
+        }
+
+        if (effectiveMessage.IcsAttachment is { } ics)
+        {
+            // A real Attachment, not a LinkedResource — the opposite reasoning from the logo above.
+            // An .ics has to appear as a downloadable "add to calendar" file, not be embedded inline.
+            bodyBuilder.Attachments.Add(ics.FileName, ics.Content, ContentType.Parse(ics.ContentType));
         }
 
         mimeMessage.Body = bodyBuilder.ToMessageBody();

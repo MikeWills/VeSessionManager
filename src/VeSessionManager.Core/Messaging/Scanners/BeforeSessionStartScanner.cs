@@ -60,6 +60,17 @@ public class BeforeSessionStartScanner(AppDbContext dbContext) : IMessageTrigger
                         && (onlySessionId == null || c.SessionId == onlySessionId))
             .ToListAsync(cancellationToken);
 
+        // Registered candidates per session (#491, same shape as CandidateRegisteredScanner) — needed
+        // only so MessageSessionContext.RegisteredCandidateCount has an answer; the calendar invite
+        // itself only needs Title/ScheduledStartUtc/DurationMinutes/ZoomJoinUrl, all already on
+        // candidate.Session, but a rule set to MessageFanOut.PerSession wants this too.
+        var sessionIds = candidates.Select(c => c.SessionId).Distinct().ToList();
+        var registeredCounts = await dbContext.Candidates
+            .Where(c => sessionIds.Contains(c.SessionId))
+            .GroupBy(c => c.SessionId)
+            .Select(g => new { SessionId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.SessionId, x => x.Count, cancellationToken);
+
         return [.. candidates.Select(candidate =>
         {
             // Same "most recent Unpaid, else most recent overall" rule the session roster's own
@@ -86,7 +97,21 @@ public class BeforeSessionStartScanner(AppDbContext dbContext) : IMessageTrigger
                     ["PaymentStatus"] = PaymentStatusText.For(primaryPayment?.Status)
                 },
                 sentUtc => candidate.DayBeforeReminderSentUtc = sentUtc)
-            { SessionLeadCallSign = candidate.Session.TeamLeadCallSign };
+            {
+                SessionLeadCallSign = candidate.Session.TeamLeadCallSign,
+                Session = SessionContext(candidate.Session, registeredCounts)
+            };
         })];
     }
+
+    /// <summary>Same shape as <c>CandidateRegisteredScanner.SessionContext</c> — kept separate rather
+    /// than shared, since sharing would mean a public static helper for two call sites that would
+    /// otherwise stay private.</summary>
+    private static MessageSessionContext SessionContext(Session session, IReadOnlyDictionary<int, int> registeredCounts) =>
+        new(session.Id,
+            session.Title,
+            session.ScheduledStartUtc,
+            registeredCounts.TryGetValue(session.Id, out var count) ? count : 0,
+            session.DurationMinutes,
+            session.ZoomJoinUrl);
 }

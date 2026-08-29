@@ -49,13 +49,22 @@ public enum MessageTriggerMechanism
 /// seeded template body happens to use — the same distinction <see cref="Email.EmailTemplatePlaceholders"/>
 /// draws, and for the same reason: this list is what an admin can rely on resolving.
 /// </param>
+/// <param name="CarriesSessionContext">
+/// Whether this trigger's scanner actually populates <see cref="MessageSubject.Session"/> (#491) —
+/// true only for <see cref="MessageTrigger.CandidateRegistered"/> and
+/// <see cref="MessageTrigger.BeforeSessionStart"/> today. Gates whether a rule may turn on
+/// <see cref="MessageRule.IncludeCalendarInvite"/>: offering that checkbox on a trigger whose scanner
+/// never sets <c>Session</c> would be exactly the "looks configured, does nothing" class of mistake
+/// <c>MessageRuleAdminService.ValidateAsync</c> exists to refuse elsewhere.
+/// </param>
 public sealed record MessageTriggerDefinition(
     MessageTrigger Trigger,
     MessageTriggerMechanism Mechanism,
     MessageSubjectType SubjectType,
     int? DefaultParameterHours,
     IReadOnlyList<MessageRecipient> LegalRecipients,
-    IReadOnlyList<string> Placeholders);
+    IReadOnlyList<string> Placeholders,
+    bool CarriesSessionContext = false);
 
 /// <summary>
 /// Every trigger point this deployment knows about (#401) — one file, the way
@@ -79,14 +88,16 @@ public static class MessageTriggerDefinitions
             // Byte-identical to EmailTemplatePlaceholders.ByKey["RegistrationConfirmation"], and it
             // must stay that way for as long as both exist — PR1 froze behaviour, so a token that
             // appears here and not there would be a token the drift test no longer covers.
-            Placeholders: ["CandidateName", "CandidateFirstName", "SessionDate", "ZoomJoinUrl", "PaymentLinkUrl", "YouthPaymentLinkUrl", "PrivacyPolicyUrl"]),
+            Placeholders: ["CandidateName", "CandidateFirstName", "SessionDate", "ZoomJoinUrl", "PaymentLinkUrl", "YouthPaymentLinkUrl", "PrivacyPolicyUrl"],
+            CarriesSessionContext: true),
 
         new(MessageTrigger.BeforeSessionStart,
             MessageTriggerMechanism.TimeRelative,
             MessageSubjectType.Candidate,
             DefaultParameterHours: 24,
             LegalRecipients: [MessageRecipient.Candidate, MessageRecipient.TeamAdminAddress, MessageRecipient.SessionLead, MessageRecipient.TeamAdmins, MessageRecipient.SystemAdmins, MessageRecipient.SessionManagers, MessageRecipient.DiscordChannel],
-            Placeholders: ["CandidateName", "CandidateFirstName", "SessionDate", "ZoomJoinUrl", "OutstandingPaymentLinkUrl", "PaymentStatus"]),
+            Placeholders: ["CandidateName", "CandidateFirstName", "SessionDate", "ZoomJoinUrl", "OutstandingPaymentLinkUrl", "PaymentStatus"],
+            CarriesSessionContext: true),
 
         new(MessageTrigger.FccFeeOutstanding,
             MessageTriggerMechanism.TimeRelative,

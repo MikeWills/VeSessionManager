@@ -85,6 +85,12 @@ public class MessageRuleEditModel(
     [BindProperty]
     public bool MonitoringCopyOncePerRun { get; set; }
 
+    /// <summary>Only ever meaningful when <see cref="Definition"/>.CarriesSessionContext is true and
+    /// the rule is email — see <c>MessageRuleAdminService.ValidateAsync</c>. The view hides the
+    /// checkbox rather than showing one that would look configured and attach nothing.</summary>
+    [BindProperty]
+    public bool IncludeCalendarInvite { get; set; }
+
     public MessageRule Rule { get; private set; } = null!;
     /// <summary>
     /// The list this page was opened from, filters and all. Bound from the query string, so it is
@@ -132,6 +138,7 @@ public class MessageRuleEditModel(
         CcAddress = Rule.CcAddress;
         BccAddress = Rule.BccAddress;
         MonitoringCopyOncePerRun = Rule.MonitoringCopyOncePerRun;
+        IncludeCalendarInvite = Rule.IncludeCalendarInvite;
         return Page();
     }
 
@@ -150,7 +157,8 @@ public class MessageRuleEditModel(
         var result = await messageRuleAdminService.UpdateAsync(
             Id, Name, Subject, Body, parameterHours, Recipient, user.Id, HttpContext.RequestAborted,
             Channel, DiscordChannelId, FanOut,
-            new MessageEnvelope(ReplyToSource, ReplyToOverride, CcAddress, BccAddress, MonitoringCopyOncePerRun));
+            new MessageEnvelope(ReplyToSource, ReplyToOverride, CcAddress, BccAddress, MonitoringCopyOncePerRun),
+            IncludeCalendarInvite);
 
         if (result == MessageRuleActionResult.Success)
         {
@@ -172,6 +180,10 @@ public class MessageRuleEditModel(
             MessageRuleActionResult.EnvelopeNeedsEmail =>
                 "Reply-To, Cc and Bcc only apply to email — nobody is addressed on a Discord post.",
             MessageRuleActionResult.ReplyToRequired => "Pick an address for replies, or choose one of the other two options.",
+            MessageRuleActionResult.CalendarInviteNotApplicable =>
+                "A calendar invite only works on an email rule for a trigger that's about one upcoming session.",
+            MessageRuleActionResult.PerSessionDigestCannotAddressCandidate =>
+                "A per-session email is about several candidates at once — pick a different recipient, or switch back to one email each.",
             _ => "Rule not found."
         };
         return RedirectToPage(new { id = Id });

@@ -32,4 +32,11 @@ public record EmailMessage(
     /// <c>MessageRule.CcAddress</c> — so this is null everywhere except a rule that deliberately set
     /// one.</para>
     /// </summary>
-    string? CcAddress = null);
+    string? CcAddress = null,
+    /// <summary>
+    /// A calendar invite for the session this message is about (#491) — null for every message except
+    /// one whose rule opted in (<c>MessageRule.IncludeCalendarInvite</c>) and whose subject actually
+    /// carries a <c>MessageSessionContext</c>. A real attachment, not an <see cref="InlineImage"/>: it
+    /// needs to be openable/downloadable ("add to calendar"), not embedded.
+    /// </summary>
+    EmailAttachment? IcsAttachment = null);
