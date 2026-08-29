@@ -22,4 +22,15 @@ public interface IDiscordChannelMessageClient
     /// resolves, which is what keeps an unescaped candidate name from pinging a server (#116).
     /// </param>
     Task PostMessageAsync(ulong guildId, ulong channelId, string message, IReadOnlyList<ulong> mentionableRoleIds, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// The guild's text channels, for the Message Rule admin screen's channel picker (#503) — lets an
+    /// admin pick "#reminders" from a dropdown instead of copying a channel id by hand via Developer
+    /// Mode. Ordered the same way Discord's own channel list is (by position).
+    ///
+    /// <para>A UI convenience only — <see cref="PostMessageAsync"/> still checks View Channel + Send
+    /// Messages at post time regardless of whether a channel appeared here, since guild-level channel
+    /// listing and per-channel permission are different things.</para>
+    /// </summary>
+    Task<IReadOnlyList<DiscordChannelSummary>> ListTextChannelsAsync(ulong guildId, CancellationToken cancellationToken);
 }

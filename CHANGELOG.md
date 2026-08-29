@@ -37,6 +37,25 @@ CLAUDE.md — this file, like CLAUDE.md's Change Log, is pointers only.
   press — which matters because an `Unknown` outcome leaves the session unsubmitted, so nothing else
   would stop one.
 
+- **A message owns its own words, and there are no templates any more (2026-08-21).** Issue #401,
+  three stacked commits. See `docs/trigger-points.md`. Mike found the defect from the screen: **the
+  tags a body may use depend on the trigger that sends it, and a template had none** — so the editor
+  could show nothing. Not a missing affordance, an unanswerable question, and it is why my original
+  argument for the split (reuse) does not survive: reuse across *triggers* is exactly the part that
+  cannot work. Four things worth carrying forward. **Manual sends are trigger points too** — Mike's
+  insight, and what made it collapse to one object rather than two: a hand-composed email is a message
+  whose mechanism is "somebody pressed a button", so `Manual` joins `State` and `TimeRelative` and the
+  tag list becomes answerable everywhere. **Automatic messages seed off, hand-sent ones seed on** —
+  the risk is unread mail going out by itself, and a message nothing sends until a button is pressed
+  is not that; seeding those off would leave two candidate buttons silently doing nothing, which reads
+  as broken rather than as safe. ⚠️ **The migration deletes rather than converts** (Mike: *"delete it
+  all and re-create it all"*) — a `TemplateKey` renamed to `Subject` would leave every rule with
+  `DayBeforeReminder` as its subject and an empty body, which is nonsense that looks like data;
+  history survives because `MessageRuleRun` is `SetNull` and snapshots the name and trigger. And
+  **the rich-text editor moved rather than died** — it lived on the deleted Templates page, so
+  `message-editor.js` now serves the message editor; `app.js`'s own tag-chip handler bails on any chip
+  Quill has claimed (`data-token-handled`), because both firing on one click inserts the tag twice.
+
 - **Rules can post to Discord, and carry their own Reply-To (2026-08-17).** Issue #401, PR4 — the last
   of it. See `docs/trigger-points.md`. Three things worth carrying forward: **nothing per-person can
   reach a channel post because that path builds no `EmailMessage` at all** — the unsubscribe and

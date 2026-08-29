@@ -113,12 +113,29 @@
 
         <div class="field" style="max-width:420px;" data-channel-only="Discord" data-channel-group="new"
              hidden="@(Model.Channel != MessageChannel.Discord)" hidden>
-            <label asp-for="DiscordChannelId">Discord channel id</label>
-            <input asp-for="DiscordChannelId" type="text" inputmode="numeric" placeholder="e.g. 1042938475610293847" />
-            <span class="session-sub">
-                Developer Mode on, right-click the channel, Copy Channel ID. The bot needs View Channel
-                and Send Messages there.
-            </span>
+            @* See MessageRuleEdit.cshtml's own copy of this control for the fallback reasoning (#503). *@
+            @if (Model.DiscordChannels.Count > 0)
+            {
+                <label asp-for="DiscordChannelId">Discord channel</label>
+                <select asp-for="DiscordChannelId" class="filter-select">
+                    <option value="">Choose a channel…</option>
+                    @foreach (var channel in Model.DiscordChannels)
+                    {
+                        <option value="@channel.Id">#@channel.Name</option>
+                    }
+                </select>
+                <span class="session-sub">The bot needs View Channel and Send Messages there.</span>
+            }
+            else
+            {
+                <label asp-for="DiscordChannelId">Discord channel id</label>
+                <input asp-for="DiscordChannelId" type="text" inputmode="numeric" placeholder="e.g. 1042938475610293847" />
+                <span class="session-sub">
+                    Couldn't list this team's channels right now — enter the id by hand instead:
+                    Developer Mode on, right-click the channel, Copy Channel ID. The bot needs View
+                    Channel and Send Messages there.
+                </span>
+            }
         </div>
 
         <div class="field" style="max-width:420px;" data-channel-only="Discord" data-channel-group="new"

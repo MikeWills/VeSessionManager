@@ -115,6 +115,14 @@ public sealed class DiscordEventClient : IDiscordEventClient, IDiscordChannelMes
         _logger.LogInformation("Posted a message to Discord channel {ChannelId} in guild {GuildId}", channelId, guildId);
     }
 
+    /// <summary>See <see cref="IDiscordChannelMessageClient.ListTextChannelsAsync"/>.</summary>
+    public async Task<IReadOnlyList<DiscordChannelSummary>> ListTextChannelsAsync(ulong guildId, CancellationToken cancellationToken)
+    {
+        var guild = await GetGuildAsync(guildId, cancellationToken);
+        var channels = await guild.GetTextChannelsAsync();
+        return [.. channels.OrderBy(c => c.Position).Select(c => new DiscordChannelSummary(c.Id, c.Name))];
+    }
+
     /// <summary>DateTimeOffset(DateTime, TimeSpan.Zero) requires Kind=Utc (or Unspecified); force it so a value that round-tripped through EF/Sqlite (which drops Kind) never throws.</summary>
     private static DateTimeOffset ToOffset(DateTime utc) =>
         new(DateTime.SpecifyKind(utc, DateTimeKind.Utc), TimeSpan.Zero);

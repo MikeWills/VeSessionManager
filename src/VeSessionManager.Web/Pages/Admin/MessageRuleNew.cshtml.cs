@@ -3,9 +3,11 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using VeSessionManager.Core.Admin;
 using VeSessionManager.Core.Authorization;
 using VeSessionManager.Core.Data;
+using VeSessionManager.Core.Discord;
 using VeSessionManager.Core.Email;
 using VeSessionManager.Core.Entities;
 using VeSessionManager.Core.Messaging;
@@ -31,7 +33,9 @@ public class MessageRuleNewModel(
     AppDbContext dbContext,
     UserManager<User> userManager,
     AdminAccessScope adminAccessScope,
-    MessageRuleAdminService messageRuleAdminService) : PageModel
+    MessageRuleAdminService messageRuleAdminService,
+    IDiscordChannelMessageClient discordClient,
+    ILogger<MessageRuleNewModel> logger) : PageModel
 {
     [BindProperty(SupportsGet = true)]
     public int TeamId { get; set; }
@@ -92,6 +96,9 @@ public class MessageRuleNewModel(
 
     public IReadOnlyList<MessageTriggerDefinition> Triggers => MessageTriggerDefinitions.All;
 
+    /// <summary>See <see cref="MessageRuleEditModel.DiscordChannels"/> — same picker, same fallback (#503).</summary>
+    public IReadOnlyList<DiscordChannelSummary> DiscordChannels { get; private set; } = [];
+
     public static string Label(MessageTrigger trigger) => MessageTriggerLabels.Label(trigger);
     public static string Blurb(MessageTrigger trigger) => MessageTriggerLabels.Blurb(trigger);
     public static string ParameterPrompt(MessageTrigger trigger) => MessageTriggerLabels.ParameterPrompt(trigger);
@@ -115,7 +122,37 @@ public class MessageRuleNewModel(
 
         // Whatever the chosen trigger's default is, so the delay box is never blank on arrival.
         ParameterDays = DefaultDays(Trigger);
+        DiscordChannels = await LoadDiscordChannelsAsync(TeamId);
         return Page();
+    }
+
+    /// <summary>
+    /// GET-only (#503), same reasoning as <c>MessageRuleEditModel</c>'s own copy: a failed POST
+    /// redirects straight back to a fresh GET rather than re-rendering, so fetching this on POST too
+    /// would be a wasted Discord round trip. Never throws — a bot/guild problem degrades to the
+    /// manual-id fallback rather than breaking the page.
+    /// </summary>
+    private async Task<IReadOnlyList<DiscordChannelSummary>> LoadDiscordChannelsAsync(int teamId)
+    {
+        var guildId = await dbContext.Teams.AsNoTracking()
+            .Where(t => t.Id == teamId)
+            .Select(t => t.DiscordGuildId)
+            .FirstOrDefaultAsync(HttpContext.RequestAborted);
+
+        if (guildId is not { } gid || gid == 0 || !discordClient.IsConfigured)
+        {
+            return [];
+        }
+
+        try
+        {
+            return await discordClient.ListTextChannelsAsync(gid, HttpContext.RequestAborted);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Could not list Discord channels for team {TeamId} guild {GuildId} — falling back to manual channel id entry", teamId, gid);
+            return [];
+        }
     }
 
     public async Task<IActionResult> OnPostAsync()
