@@ -37,6 +37,21 @@ CLAUDE.md — this file, like CLAUDE.md's Change Log, is pointers only.
   press — which matters because an `Unknown` outcome leaves the session unsubmitted, so nothing else
   would stop one.
 
+- **No backlog on enable, for messaging specifically (2026-08-25).** See `docs/trigger-points.md`'s
+  "MessageRuleEligibility" section. Every scanner used to bound eligibility by `MessageRule.CreatedUtc`
+  alone — right for "a new rule shouldn't fire for people already past the moment," but it missed two
+  other off-to-on transitions: a rule switched back on, and a team's email configured for the first
+  time. Mike, after a beta candidate got a registration confirmation the moment SMTP was turned on:
+  *"it's not supposed to send any backlog of email"* / *"if a message is off then I turn on, it's not
+  supposed to send backlog either."* `MessageRuleEligibility.FloorUtc` now folds in
+  `MessageRule.EnabledSinceUtc` (stamped only on an actual disabled→enabled transition) and, for an
+  email rule, `Team.EmailConfiguredUtc` (stamped only on an actual unconfigured→configured transition)
+  — both null-by-default and never backfilled, so an already-running team or already-enabled rule sees
+  no behavior change. **Deliberately narrower than "no backlog" everywhere**: Zoom/Discord/Square still
+  backfill the moment they're configured, and that stays right — those create a resource that has to
+  exist regardless of when config caught up, where messaging is telling a person about something old
+  the moment notifications get switched on.
+
 - **A message owns its own words, and there are no templates any more (2026-08-21).** Issue #401,
   three stacked commits. See `docs/trigger-points.md`. Mike found the defect from the screen: **the
   tags a body may use depend on the trigger that sends it, and a template had none** — so the editor

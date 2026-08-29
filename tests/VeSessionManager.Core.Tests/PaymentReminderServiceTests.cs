@@ -162,7 +162,8 @@ public class PaymentReminderServiceTests
         // "the FCC fee is due" — because that is the state under test in the reminder half, and the
         // expiration half ignores it entirely.
         FccApplicationPaymentStatus fccPaymentStatus = FccApplicationPaymentStatus.PendingVerification,
-        DateTime? fccFeeReminderSentUtc = null)
+        DateTime? fccFeeReminderSentUtc = null,
+        DateTime? importedHistoricallyUtc = null)
     {
         var vec = new Vec { Name = "ARRL" };
         var user = new User { Name = "System", Email = "system@localhost", Role = UserRole.SystemAdmin };
@@ -175,7 +176,7 @@ public class PaymentReminderServiceTests
         {
             ExamToolsSessionId = "session-1", Title = "July Session", ScheduledStartUtc = scheduledStartUtc ?? Now.AddDays(-3),
             DurationMinutes = 60, Vec = vec, TeamId = team.Id, FeeConfiguration = feeConfiguration, Status = sessionStatus,
-            ZoomJoinUrl = "https://zoom.us/j/123", CreatedUtc = Now
+            ZoomJoinUrl = "https://zoom.us/j/123", ImportedHistoricallyUtc = importedHistoricallyUtc, CreatedUtc = Now
         };
         dbContext.Sessions.Add(session);
         await dbContext.SaveChangesAsync();
@@ -250,14 +251,31 @@ public class PaymentReminderServiceTests
     // ---- 5-day reminder ----
 
     /// <summary>
-    /// Historical-import safety (2026-08-01). These queries filtered on Session.Status == Active,
-    /// which means "not cancelled", never "not finished" — so once SMTP is configured, a year of
-    /// backfilled candidates would have received "you haven't paid" emails about sessions they sat
-    /// months ago. The seeded session is far past the reminder threshold, so without the
-    /// PaymentEligibilityWindow bound this very much fires.
+    /// Historical-import safety (2026-08-01, moved to <c>Session.ImportedHistoricallyUtc</c> per #88,
+    /// 2026-08-29). Without this exclusion, once SMTP is configured a year of backfilled candidates
+    /// would receive "the FCC is waiting for its fee" reminders about sessions they sat months ago.
     /// </summary>
     [Fact]
-    public async Task Reminder_ForALongPastSession_DoesNotFire()
+    public async Task Reminder_ForAnImportedSession_DoesNotFire()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        await SeedEmailSettingsAndTemplatesAsync(dbContext, team);
+        await SeedCandidateWithPaymentAsync(
+            dbContext, team, applicationDateEnteredUtc: Now.AddDays(-190), scheduledStartUtc: Now.AddDays(-200),
+            importedHistoricallyUtc: Now.AddDays(-1));
+        var sender = new FakeEmailSender();
+
+        var result = await CreateService(dbContext, sender).RunAsync(team, CancellationToken.None);
+
+        Assert.Equal(0, result.RemindersSent);
+        Assert.Empty(sender.SentMessages);
+        Assert.Null((await dbContext.Candidates.SingleAsync()).FccFeeReminderSentUtc);
+    }
+
+    /// <summary>The correction #88 makes: a real session that is simply old, and was never historically imported, is still owed its reminder — age alone must not exclude it.</summary>
+    [Fact]
+    public async Task ARealSessionThatIsSimplyOld_StillGetsAReminder()
     {
         await using var dbContext = CreateContext();
         var team = await SeedTeamAsync(dbContext);
@@ -268,9 +286,9 @@ public class PaymentReminderServiceTests
 
         var result = await CreateService(dbContext, sender).RunAsync(team, CancellationToken.None);
 
-        Assert.Equal(0, result.RemindersSent);
-        Assert.Empty(sender.SentMessages);
-        Assert.Null((await dbContext.Candidates.SingleAsync()).FccFeeReminderSentUtc);
+        Assert.Equal(1, result.RemindersSent);
+        Assert.Single(sender.SentMessages);
+        Assert.NotNull((await dbContext.Candidates.SingleAsync()).FccFeeReminderSentUtc);
     }
 
     [Fact]

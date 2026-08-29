@@ -73,7 +73,13 @@ public class UlsWatcherService(
         var candidates = await dbContext.Candidates
             .Include(c => c.Session)
             .Where(c => !CandidateApplicationStatusExtensions.TerminalStatuses.Contains(c.ApplicationStatus)
-                        && c.Frn != null)
+                        && c.Frn != null
+                        // Rule 1 (#88), enforced structurally rather than only as a side effect of
+                        // MarkHistoricalCandidatesGranted auto-granting historical candidates
+                        // elsewhere: there is no reason to ask FCC whether a license from a
+                        // backfilled session was issued, regardless of why this candidate is still
+                        // non-terminal.
+                        && c.Session.ImportedHistoricallyUtc == null)
             .OrderBy(c => c.UlsLastCheckedUtc)
             .Take(MaxLookupsPerRun)
             .ToListAsync(cancellationToken);

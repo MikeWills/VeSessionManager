@@ -185,6 +185,8 @@ public class SessionIngestionServiceTests
         Assert.NotEqual(0, session.VecId);
         Assert.Equal(team.Id, session.TeamId);
         Assert.NotEqual(0, session.FeeConfigurationId);
+        // #88 — only ImportHistoricalRangeAsync ever sets this; the routine sweep must not.
+        Assert.Null(session.ImportedHistoricallyUtc);
 
         var repollResult = await CreateService(dbContext, client).RunAsync(team, CancellationToken.None);
         Assert.Equal(0, repollResult.SessionsAdded);
@@ -383,6 +385,28 @@ public class SessionIngestionServiceTests
         Assert.Equal(ImportingUserId, session.VecSubmittedByUserId);
         Assert.Equal(Now, session.VecSubmittedDate);
         Assert.Contains(dbContext.AuditLogs, a => a.Action == "VecSubmissionMarked" && a.EntityId == session.Id);
+    }
+
+    /// <summary>
+    /// #88 — the field several jobs' own date-window guesses exist to replace. Stamped only on the
+    /// historical path; the routine sweep (see the RunAsync-based tests elsewhere in this file) never
+    /// sets it, which is what makes an ordinary session's null value trustworthy.
+    /// </summary>
+    [Fact]
+    public async Task HistoricalImport_StampsImportedHistoricallyUtc_OnCreatedSessions()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        await SeedVecAndFeeConfigAsync(dbContext);
+        var client = new FakeExamToolsClient();
+        var done = PendingSession(id: "old-1");
+        done.State = "done";
+        client.ClosedSessionsFor(team.Id).Add(done);
+
+        await CreateService(dbContext, client).ImportHistoricalRangeAsync(
+            team, new DateOnly(2026, 1, 1), new DateOnly(2026, 1, 31), ImportingUserId, CancellationToken.None);
+
+        Assert.Equal(Now, dbContext.Sessions.Single().ImportedHistoricallyUtc);
     }
 
     /// <summary>

@@ -83,10 +83,16 @@ public static class CandidateApplicationStatusExtensions
     /// Unmatched or Received. The one definition of Applicant Status's "Pending" worklist (2026-08-26),
     /// shared with the bulk-email screen reached from it so the two can never quietly drift apart on
     /// who counts as still waiting.
+    ///
+    /// <para>Excludes a historically-imported session (#88) — in practice this rarely matters, since
+    /// <c>MarkHistoricalCandidatesGranted</c> already auto-grants (terminal) every historical
+    /// candidate at import time, but the exclusion is the structural backstop for whatever gap leaves
+    /// one non-terminal anyway, rather than relying only on that other service's behavior.</para>
     /// </summary>
     public static IQueryable<Candidate> AwaitingFccGrant(this IQueryable<Candidate> candidates) =>
         candidates.Where(c => c.Tested
-            && (c.ApplicationStatus == CandidateApplicationStatus.Unmatched || c.ApplicationStatus == CandidateApplicationStatus.Received));
+            && (c.ApplicationStatus == CandidateApplicationStatus.Unmatched || c.ApplicationStatus == CandidateApplicationStatus.Received)
+            && c.Session.ImportedHistoricallyUtc == null);
 }
 
 /// <summary>

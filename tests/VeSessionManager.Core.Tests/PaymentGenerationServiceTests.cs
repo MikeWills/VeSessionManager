@@ -90,7 +90,7 @@ public class PaymentGenerationServiceTests
     private static async Task<Candidate> SeedCandidateAsync(
         AppDbContext dbContext, Team team, bool feeCollectionEnabled = true, decimal examFeeAmount = 15m,
         SessionStatus sessionStatus = SessionStatus.Active, bool purged = false, bool supportsYouthProgram = false,
-        DateTime? scheduledStartUtc = null)
+        DateTime? scheduledStartUtc = null, DateTime? importedHistoricallyUtc = null)
     {
         var vec = new Vec { Name = "ARRL", SupportsYouthProgram = supportsYouthProgram };
         var user = new User { Name = "System", Email = "system@localhost", Role = UserRole.SystemAdmin };
@@ -113,6 +113,7 @@ public class PaymentGenerationServiceTests
             TeamId = team.Id,
             FeeConfiguration = feeConfiguration,
             Status = sessionStatus,
+            ImportedHistoricallyUtc = importedHistoricallyUtc,
             CreatedUtc = Now
         };
         var candidate = new Candidate
@@ -129,19 +130,24 @@ public class PaymentGenerationServiceTests
         return candidate;
     }
 
-    // ---- Historical-import safety (2026-08-01) ----
+    // ---- Historical-import safety (2026-08-01, moved to Session.ImportedHistoricallyUtc per #88, 2026-08-29) ----
 
     /// <summary>
     /// The bug this guards: PaymentGenerationService filtered only on Session.Status == Active,
     /// which means "not cancelled", never "not finished". After the historical import backfilled a
     /// year of sessions it created ~1710 Unpaid payments for candidates who tested months earlier.
+    ///
+    /// <para>Originally bounded by session age (PaymentEligibilityWindow, 30 days) — replaced by the
+    /// explicit flag (#88) because age was only ever a proxy: a genuinely old *real* session (see
+    /// <see cref="ARealSessionThatIsSimplyOld_StillGetsAPayment"/>) is indistinguishable from an
+    /// imported one under a date window, and shouldn't be excluded just for being old.</para>
     /// </summary>
     [Fact]
-    public async Task CandidateOnALongPastSession_GetsNoPayment()
+    public async Task CandidateOnAnImportedSession_GetsNoPayment()
     {
         await using var dbContext = CreateContext();
         var team = await SeedTeamAsync(dbContext);
-        await SeedCandidateAsync(dbContext, team, scheduledStartUtc: Now.AddDays(-200));
+        await SeedCandidateAsync(dbContext, team, scheduledStartUtc: Now.AddDays(-200), importedHistoricallyUtc: Now.AddDays(-1));
         var square = new FakeSquareClient();
 
         var result = await CreateService(dbContext, square).RunAsync(team, CancellationToken.None);
@@ -153,15 +159,15 @@ public class PaymentGenerationServiceTests
 
     /// <summary>
     /// The half that actually protects real people: payments the unbounded version already created
-    /// are still in the table. Without a bound here, the first poll after Square credentials are set
+    /// are still in the table. Without this exclusion, the first poll after Square credentials are set
     /// would mint a live payment link for every one of them.
     /// </summary>
     [Fact]
-    public async Task ExistingUnpaidPaymentOnALongPastSession_GetsNoSquareLink()
+    public async Task ExistingUnpaidPaymentOnAnImportedSession_GetsNoSquareLink()
     {
         await using var dbContext = CreateContext();
         var team = await SeedTeamAsync(dbContext);
-        var candidate = await SeedCandidateAsync(dbContext, team, scheduledStartUtc: Now.AddDays(-200));
+        var candidate = await SeedCandidateAsync(dbContext, team, scheduledStartUtc: Now.AddDays(-200), importedHistoricallyUtc: Now.AddDays(-1));
         dbContext.Payments.Add(new Payment
         {
             CandidateId = candidate.Id,
@@ -178,6 +184,25 @@ public class PaymentGenerationServiceTests
         Assert.Equal(0, result.LinksGenerated);
         Assert.Empty(square.Calls);
         Assert.Null(dbContext.Payments.Single().PaymentLinkUrl);
+    }
+
+    /// <summary>
+    /// The correction #88 makes: a session that is simply old, and was never historically imported,
+    /// is a real session someone is entitled to be billed for — age alone must not exclude it. This
+    /// is exactly the case the old 30-day <c>PaymentEligibilityWindow</c> proxy got wrong.
+    /// </summary>
+    [Fact]
+    public async Task ARealSessionThatIsSimplyOld_StillGetsAPayment()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        await SeedCandidateAsync(dbContext, team, scheduledStartUtc: Now.AddDays(-200));
+        var square = new FakeSquareClient();
+
+        var result = await CreateService(dbContext, square).RunAsync(team, CancellationToken.None);
+
+        Assert.Equal(1, result.PaymentsCreated);
+        Assert.Single(dbContext.Payments);
     }
 
     /// <summary>A session inside the window still works normally — the bound must not break the real feature.</summary>
