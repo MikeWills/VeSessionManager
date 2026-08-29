@@ -127,6 +127,17 @@ which is "here's what was built and why, mostly historical.")
 One-line-or-two pointer per feature, newest first — full design rationale lives in the linked
 `/docs/*.md` file, not here. See "Documentation Structure" below for the policy this follows.
 
+- **#116 closed — the missing token, not a missing mechanism (2026-08-29).** See
+  `docs/trigger-points.md`'s "Per-session fan-out" section. Everything else the issue asked for
+  (custom channel, hour-level timing, zero-candidates suppression, the
+  `{{RegisteredCount}}`/`{{SessionDate}}` summary sentence, `@VE` role mentions) had already shipped
+  across #491/#503's work — checked by re-reading #116 directly rather than trusting the trail of
+  comments that referenced it. Only "link to the event" was missing: `{{ZoomJoinUrl}}` was already
+  advertised as a valid token for these triggers, but nothing wired `MessageSessionContext.ZoomJoinUrl`
+  into either digest's placeholder dictionary, so it silently rendered blank on exactly the `PerSession`
+  path #116 needed it on. Added to both `PostDigestAsync` (Discord) and `DispatchEmailPerSessionAsync`
+  (email) identically.
+
 - **Historical import gets a real provenance flag instead of date-window guesses (#88, 2026-08-29).**
   See `docs/session-lifecycle-gate.md`. New `Session.ImportedHistoricallyUtc`, stamped only by
   `SessionIngestionService.ImportHistoricalRangeAsync`, replaces `PaymentEligibilityWindow` (retired,
@@ -255,25 +266,6 @@ all — it's already one-line-summarized in "Current State" above, so a separate
 would be pure duplication — and goes straight to `CHANGELOG.md` instead. Non-phase entries (fixes,
 redesigns, hardening passes) start here and move to `CHANGELOG.md` once the section is at/over the
 cap and a newer entry needs to be added; oldest goes first.
-
-- **A team can be deactivated, or deleted outright (2026-08-21).** See `docs/team-lifecycle.md`.
-  Deactivate stops the app polling and sending and is one click back; delete removes the team and
-  everything it owns and cannot be undone. Five things worth carrying forward. **Order is the whole
-  difficulty** — thirteen of a team's child tables are `Restrict`, so each goes explicitly, leaves
-  first, and `TeamDeletionCoverageTests` reads the EF model to fail when a new table with a Team
-  foreign key is added and nobody teaches the service about it (a hand-written list cannot notice the
-  seventeenth table). ⚠️ **The deletion's own audit entry carries no `TeamId`** — attributed to the
-  team it describes, it would be caught by the sweep clearing that team's audit rows and delete
-  itself; only *attributed* rows are identifiable at all, since `AuditLog.TeamId` is populated on
-  job writes and left null on user-attributed ones. **Files go before rows**, because a file left
-  after the row naming it is unreachable forever while the reverse is just a retry — and file by
-  file, never by removing the team's directory, which is keyed on a free-text team code two teams
-  could share. **A VE is a person, not team property**: deleted only if this was their sole
-  membership *and* no user account links them, nothing was merged into them, and they are not on
-  another team's session roster — that last one fails as a foreign key violation rather than as
-  anything legible. And **the typed team name is the guard rather than a second "are you sure"**,
-  checked server-side because a modal is not a permission: the mistake this invites is deleting the
-  right-looking row of the wrong team, which a confirm dialog does not catch.
 
 Everything through Phase 0-10's initial build (ExamTools ingestion, Zoom/Discord, Square, email
 notifications, FCC ULS watcher, payment reminders, VE tracking, VEC submission tracker, admin

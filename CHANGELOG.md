@@ -52,6 +52,25 @@ CLAUDE.md — this file, like CLAUDE.md's Change Log, is pointers only.
   exist regardless of when config caught up, where messaging is telling a person about something old
   the moment notifications get switched on.
 
+- **A team can be deactivated, or deleted outright (2026-08-21).** See `docs/team-lifecycle.md`.
+  Deactivate stops the app polling and sending and is one click back; delete removes the team and
+  everything it owns and cannot be undone. Five things worth carrying forward. **Order is the whole
+  difficulty** — thirteen of a team's child tables are `Restrict`, so each goes explicitly, leaves
+  first, and `TeamDeletionCoverageTests` reads the EF model to fail when a new table with a Team
+  foreign key is added and nobody teaches the service about it (a hand-written list cannot notice the
+  seventeenth table). ⚠️ **The deletion's own audit entry carries no `TeamId`** — attributed to the
+  team it describes, it would be caught by the sweep clearing that team's audit rows and delete
+  itself; only *attributed* rows are identifiable at all, since `AuditLog.TeamId` is populated on
+  job writes and left null on user-attributed ones. **Files go before rows**, because a file left
+  after the row naming it is unreachable forever while the reverse is just a retry — and file by
+  file, never by removing the team's directory, which is keyed on a free-text team code two teams
+  could share. **A VE is a person, not team property**: deleted only if this was their sole
+  membership *and* no user account links them, nothing was merged into them, and they are not on
+  another team's session roster — that last one fails as a foreign key violation rather than as
+  anything legible. And **the typed team name is the guard rather than a second "are you sure"**,
+  checked server-side because a modal is not a permission: the mistake this invites is deleting the
+  right-looking row of the wrong team, which a confirm dialog does not catch.
+
 - **A message owns its own words, and there are no templates any more (2026-08-21).** Issue #401,
   three stacked commits. See `docs/trigger-points.md`. Mike found the defect from the screen: **the
   tags a body may use depend on the trigger that sends it, and a template had none** — so the editor

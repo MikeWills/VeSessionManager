@@ -169,6 +169,25 @@ public class PerSessionEmailDigestTests
 
     // ---- Dispatch ----
 
+    /// <summary>#116's last piece — same {{ZoomJoinUrl}} token as the Discord PerSession digest, so a VE-facing rule body works the same regardless of channel.</summary>
+    [Fact]
+    public async Task PerSessionEmail_RendersTheSessionsZoomJoinUrl()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        dbContext.VolunteerExaminers.Add(new VolunteerExaminer { CallSign = "N0LEAD", Name = "Lead VE", Email = "lead@example.org" });
+        await dbContext.SaveChangesAsync();
+        var rule = await SeedRuleAsync(dbContext, team, MessageTrigger.CandidateRegistered, MessageRecipient.SessionLead);
+        rule.Body = "<p>Join at {{ZoomJoinUrl}}</p>";
+        await dbContext.SaveChangesAsync();
+        await SeedCandidatesAsync(dbContext, await SeedSessionAsync(dbContext, team, "N0LEAD", Now.AddDays(3)), "Roana");
+
+        var sender = new FakeEmailSender();
+        await RunAsync(dbContext, team, sender, MessageTrigger.CandidateRegistered);
+
+        Assert.Contains("https://zoom.example/join/123", Assert.Single(sender.SentMessages).HtmlBody);
+    }
+
     [Fact]
     public async Task TwoCandidatesOnOneSession_ProduceExactlyOneEmail_ToTheSessionLead()
     {

@@ -85,7 +85,7 @@ public class DiscordMessageRuleTests
         return rule;
     }
 
-    private static async Task<Session> SeedSessionAsync(AppDbContext dbContext, Team team)
+    private static async Task<Session> SeedSessionAsync(AppDbContext dbContext, Team team, string? zoomJoinUrl = "https://zoom.example/j/123")
     {
         var vec = new Vec { Name = "ARRL" };
         var user = new User { Name = "System", Email = $"s-{Guid.NewGuid():N}@localhost", Role = UserRole.SystemAdmin };
@@ -95,6 +95,7 @@ public class DiscordMessageRuleTests
             Title = "August",
             ScheduledStartUtc = Now.AddDays(3),
             DurationMinutes = 60,
+            ZoomJoinUrl = zoomJoinUrl,
             Vec = vec,
             TeamId = team.Id,
             FeeConfiguration = new FeeConfiguration
@@ -384,6 +385,43 @@ public class DiscordMessageRuleTests
         Assert.Contains("August", post.Message);
         Assert.Contains("ET", post.Message);          // Eastern, per SessionTimeFormatter
         Assert.DoesNotContain("{{", post.Message);    // nothing left unrendered
+    }
+
+    /// <summary>
+    /// The last piece of #116: "link to the event ... so the VE can get the Zoom details ... from
+    /// that." Everything else the issue asked for shipped without this — the token just didn't exist
+    /// yet, even though <c>MessageSessionContext.ZoomJoinUrl</c> (added for #491's calendar invite)
+    /// already carries the value.
+    /// </summary>
+    [Fact]
+    public async Task PerSession_RendersTheSessionsZoomJoinUrl()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        await SeedDiscordRuleAsync(dbContext, team, MessageFanOut.PerSession, "Join at {{ZoomJoinUrl}}");
+        await SeedCandidatesAsync(dbContext, await SeedSessionAsync(dbContext, team, zoomJoinUrl: "https://zoom.example/j/999"), "Roana Glory");
+
+        var discord = new MessageRuleTestHarness.FakeDiscordChannelClient();
+        await RunAsync(dbContext, team, discord);
+
+        var post = Assert.Single(discord.Posts);
+        Assert.Contains("https://zoom.example/j/999", post.Message);
+    }
+
+    /// <summary>No Zoom link yet — the token renders blank rather than leaving a stray {{ZoomJoinUrl}} in the post.</summary>
+    [Fact]
+    public async Task PerSession_WithNoZoomLinkYet_RendersTheTokenBlank()
+    {
+        await using var dbContext = CreateContext();
+        var team = await SeedTeamAsync(dbContext);
+        await SeedDiscordRuleAsync(dbContext, team, MessageFanOut.PerSession, "Join at {{ZoomJoinUrl}}");
+        await SeedCandidatesAsync(dbContext, await SeedSessionAsync(dbContext, team, zoomJoinUrl: null), "Roana Glory");
+
+        var discord = new MessageRuleTestHarness.FakeDiscordChannelClient();
+        await RunAsync(dbContext, team, discord);
+
+        var post = Assert.Single(discord.Posts);
+        Assert.DoesNotContain("{{", post.Message);
     }
 
     /// <summary>
