@@ -345,6 +345,12 @@ public class MessageDispatchService(
             // being purged, and not already having a terminal run, so the two differ constantly —
             // and "x candidates registered to test" means this one.
             placeholders["RegisteredCount"] = session.RegisteredCandidateCount.ToString();
+
+            // The last piece of #116 — "link to the event ... so the VE can get the Zoom details ...
+            // from that." Blank rather than omitted when there's no link yet, same as every
+            // per-candidate scanner's own {{ZoomJoinUrl}} token, so a rule body renders cleanly either
+            // way instead of leaving a stray {{ZoomJoinUrl}}.
+            placeholders["ZoomJoinUrl"] = session.ZoomJoinUrl ?? "";
         }
 
         try
@@ -410,8 +416,8 @@ public class MessageDispatchService(
                 }
 
                 // Same placeholder set PostDigestAsync builds for Discord's PerSession posts, so a
-                // team already using {{RegisteredCount}}/{{SessionTitle}}/{{SessionDate}} on a Discord
-                // rule can reuse the same body text on an email rule.
+                // team already using {{RegisteredCount}}/{{SessionTitle}}/{{SessionDate}}/
+                // {{ZoomJoinUrl}} on a Discord rule can reuse the same body text on an email rule.
                 var placeholders = new Dictionary<string, string>
                 {
                     ["Count"] = groupSubjects.Count.ToString(),
@@ -423,6 +429,7 @@ public class MessageDispatchService(
                     placeholders["SessionTitle"] = session.Title;
                     placeholders["SessionDate"] = SessionTimeFormatter.ForCandidate(session.ScheduledStartUtc);
                     placeholders["RegisteredCount"] = session.RegisteredCandidateCount.ToString();
+                    placeholders["ZoomJoinUrl"] = session.ZoomJoinUrl ?? "";
                 }
 
                 var rendered = await templateRenderer.RenderTextAsync(team.Id, rule.Subject, rule.Body, placeholders, rule.Name, cancellationToken);

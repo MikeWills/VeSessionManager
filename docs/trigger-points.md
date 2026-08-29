@@ -622,6 +622,7 @@ spanning several sessions cannot answer them:
 | `{{RegisteredCount}}` | **Candidates registered on the session** |
 | `{{Count}}` | How many subjects this rule is firing for — *not* the same number |
 | `{{Subjects}}` | That session's people only |
+| `{{ZoomJoinUrl}}` | The session's Zoom link, blank if none yet (added 2026-08-29, closing #116 — see below) |
 
 ⚠️ **`{{Count}}` and `{{RegisteredCount}}` differ constantly and the difference matters.** Subjects
 are filtered by having an email, not being purged, and not already having a terminal run for this
@@ -637,6 +638,19 @@ Two smaller decisions:
   rendering UTC (#205).
 - **Subjects with no session are grouped together and rendered without the session tokens**, rather
   than dropped. A payment-subject rule set to `PerSession` should still say something.
+
+### #116 closed, 2026-08-29 — the missing token, not a missing mechanism
+
+Everything else #116 asked for shipped earlier — a custom channel, hour-level `BeforeSessionStart`
+timing, "never send at 0 candidates" (`DispatchAsync` returns before any send when `subjects.Count ==
+0`), the `{{RegisteredCount}}`/`{{SessionDate}}` summary sentence, and per-team mentionable roles for
+`@VE`. Only "link to the event" was missing: `MessageSessionContext.ZoomJoinUrl` had existed since
+#491's calendar-invite work, but nothing wired it into either digest's placeholder dictionary, so
+`{{ZoomJoinUrl}}` — despite already being advertised as a valid token for `CandidateRegistered`/
+`BeforeSessionStart` in `MessageTriggerDefinitions` — silently rendered blank the one place #116
+actually needed it: a `PerSession` post or email. Added to both `PostDigestAsync` (Discord) and
+`DispatchEmailPerSessionAsync` (email, #491) identically, same blank-when-absent rule every other
+`ZoomJoinUrl` token already follows.
 
 Markers stay per subject, exactly as for a digest: one post covering twelve candidates writes twelve
 rows, or the next tick would re-announce eleven of them.
