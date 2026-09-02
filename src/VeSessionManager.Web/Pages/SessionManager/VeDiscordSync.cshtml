@@ -1,0 +1,159 @@
+@page
+@model VeSessionManager.Web.Pages.SessionManager.VeDiscordSyncModel
+@{
+    ViewData["Title"] = "Discord Tags";
+    ViewData["ActiveNav"] = "VeDiscordSync";
+    Layout = "_AppLayout";
+}
+
+<div class="page-head">
+    <div>
+        <p class="eyebrow">Volunteer examiners</p>
+        <h1>Discord Tags</h1>
+    </div>
+</div>
+
+@if (Model.AvailableTeams.Count > 1)
+{
+    <form method="get" class="filters" style="margin-bottom:20px;">
+        <partial name="_TeamPicker" model="@(new VeSessionManager.Web.TeamPicker(Model.ResolvedTeamId, Model.AvailableTeams, Model.AvailableTeams.FirstOrDefault(t => t.Id == Model.ResolvedTeamId).Name ?? "Choose a team", IncludeAllTeams: false))" />
+    </form>
+}
+
+@if (Model.ResolvedTeamId is null)
+{
+    <p>Choose a team to check its Discord roles.</p>
+}
+else
+{
+    <div class="ve-panel">
+        <h2>Check Discord</h2>
+        <p class="session-sub">
+            Compares each VE's tags against the roles they hold in this team's Discord server.
+            <strong>Nothing is changed</strong> — this shows what would change, and who couldn't be matched.
+            Only tags you've matched to a Discord role on the VE Tags screen are compared.
+        </p>
+        @* An external call, so a button rather than a link: a prefetched GET would hit Discord on
+           every hover. See the page model. *@
+        <form method="post" action="@Url.Page("VeDiscordSync", "Check", new { teamId = Model.ResolvedTeamId })" asp-antiforgery="true">
+            <button type="submit" class="btn-primary">Check Discord</button>
+        </form>
+    </div>
+
+    @if (Model.Plan is { } plan)
+    {
+        if (!plan.Ran)
+        {
+            <div class="ve-panel">
+                <p><strong>Nothing was checked.</strong> @plan.SkippedReason</p>
+            </div>
+        }
+        else if (!plan.HasAnythingToShow)
+        {
+            <div class="ve-panel">
+                <p>Everything matches. No tags would change.</p>
+            </div>
+        }
+        else
+        {
+            @if (plan.Changes.Count > 0)
+            {
+                <div class="ve-panel">
+                    <h2>Tags that would change</h2>
+                    <div class="table-scroll">
+                        <table class="cards">
+                            <thead><tr><th>VE</th><th>On Discord</th><th>Would gain</th><th>Would lose</th></tr></thead>
+                            <tbody>
+                                @foreach (var change in plan.Changes)
+                                {
+                                    <tr>
+                                        <td>@change.Name @(change.CallSign is null ? "" : $"({change.CallSign})")</td>
+                                        <td>@change.DiscordDisplayName</td>
+                                        <td>@(change.TagsToAdd.Count == 0 ? "—" : string.Join(", ", change.TagsToAdd.Select(t => t.Name)))</td>
+                                        <td>@(change.TagsToRemove.Count == 0 ? "—" : string.Join(", ", change.TagsToRemove.Select(t => t.Name)))</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            }
+
+            @if (plan.NewLinks.Count > 0)
+            {
+                <div class="ve-panel">
+                    <h2>Newly recognized on Discord</h2>
+                    <p class="session-sub">
+                        Matched by call sign this time. Saving the match means they stay matched even if they
+                        change their name in Discord later.
+                    </p>
+                    <div class="table-scroll">
+                        <table class="cards">
+                            <thead><tr><th>VE</th><th>Discord name</th><th>Account</th></tr></thead>
+                            <tbody>
+                                @foreach (var link in plan.NewLinks)
+                                {
+                                    <tr>
+                                        <td>@link.Name @(link.CallSign is null ? "" : $"({link.CallSign})")</td>
+                                        <td>@link.DiscordDisplayName</td>
+                                        <td>@link.DiscordUsername</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            }
+
+            @if (plan.AmbiguousMembers.Count > 0)
+            {
+                <div class="ve-panel">
+                    <h2>Could mean more than one VE</h2>
+                    <p class="session-sub">
+                        These Discord names contain more than one call sign, so nothing was matched for them.
+                    </p>
+                    <ul>
+                        @foreach (var member in plan.AmbiguousMembers)
+                        {
+                            <li>@member.DisplayName — could be @string.Join(" or ", member.MatchedCallSigns)</li>
+                        }
+                    </ul>
+                </div>
+            }
+
+            @if (plan.VolunteerExaminersWithoutMember.Count > 0)
+            {
+                <div class="ve-panel">
+                    <h2>VEs not found in Discord</h2>
+                    <p class="session-sub">
+                        Their tags were left alone. Either they aren't in the server, or their name there doesn't
+                        show their call sign.
+                    </p>
+                    <ul>
+                        @foreach (var ve in plan.VolunteerExaminersWithoutMember)
+                        {
+                            <li>@ve.Name @(ve.CallSign is null ? "" : $"({ve.CallSign})")</li>
+                        }
+                    </ul>
+                </div>
+            }
+
+            @if (plan.MembersWithoutVolunteerExaminer.Count > 0)
+            {
+                <div class="ve-panel">
+                    <h2>In Discord, but not on the VE list</h2>
+                    <p class="session-sub">
+                        These people hold a role you've matched to a tag, but they aren't a VE on this team.
+                        Only people holding one of those roles are listed — everyone else in the server is ignored.
+                    </p>
+                    <ul>
+                        @foreach (var member in plan.MembersWithoutVolunteerExaminer)
+                        {
+                            <li>@member.DisplayName (@member.Username)</li>
+                        }
+                    </ul>
+                </div>
+            }
+        }
+    }
+}
