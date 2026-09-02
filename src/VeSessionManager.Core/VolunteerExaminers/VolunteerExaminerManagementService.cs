@@ -353,7 +353,9 @@ public class VolunteerExaminerManagementService(AppDbContext dbContext, TimeProv
 
     // ---- Tag vocabulary (per team) ------------------------------------------------------------
 
-    public async Task<(VeManagementResult Result, VeTag? Tag)> CreateTagAsync(int teamId, string name, int sortOrder, string? color, int userId, CancellationToken cancellationToken)
+    /// <param name="discordRoleId">The Discord role that means this tag, or null for a hand-managed tag Discord never touches (#519).</param>
+    /// <param name="discordRoleName">That role's current name, stored as a display snapshot. Ignored when <paramref name="discordRoleId"/> is null.</param>
+    public async Task<(VeManagementResult Result, VeTag? Tag)> CreateTagAsync(int teamId, string name, int sortOrder, string? color, ulong? discordRoleId, string? discordRoleName, int userId, CancellationToken cancellationToken)
     {
         name = name.Trim();
         if (string.IsNullOrWhiteSpace(name))
@@ -371,8 +373,22 @@ public class VolunteerExaminerManagementService(AppDbContext dbContext, TimeProv
             return (VeManagementResult.DuplicateTagName, null);
         }
 
+        if (await DiscordRoleIsTakenAsync(teamId, discordRoleId, 0, cancellationToken))
+        {
+            return (VeManagementResult.DuplicateDiscordRole, null);
+        }
+
         var now = timeProvider.GetUtcNow().UtcDateTime;
-        var tag = new VeTag { TeamId = teamId, Name = name, SortOrder = sortOrder, Color = normalizedColor, CreatedUtc = now };
+        var tag = new VeTag
+        {
+            TeamId = teamId,
+            Name = name,
+            SortOrder = sortOrder,
+            Color = normalizedColor,
+            DiscordRoleId = discordRoleId,
+            DiscordRoleName = discordRoleId is null ? null : discordRoleName,
+            CreatedUtc = now,
+        };
         dbContext.VeTags.Add(tag);
         await dbContext.SaveChangesAsync(cancellationToken); // assigns Id for the audit row
 
@@ -394,7 +410,9 @@ public class VolunteerExaminerManagementService(AppDbContext dbContext, TimeProv
     /// all under SQL null semantics, and EF InMemory would not reproduce it — the trap CLAUDE.md
     /// records from <c>VecManagementService.MatchCodeIsTakenAsync</c>.</para>
     /// </summary>
-    public async Task<VeManagementResult> UpdateTagAsync(int tagId, string name, int sortOrder, string? color, int userId, CancellationToken cancellationToken)
+    /// <param name="discordRoleId">The Discord role that means this tag, or null to unmap it — which is how a tag is taken back off the sync entirely (#519).</param>
+    /// <param name="discordRoleName">That role's current name, stored as a display snapshot. Ignored when <paramref name="discordRoleId"/> is null.</param>
+    public async Task<VeManagementResult> UpdateTagAsync(int tagId, string name, int sortOrder, string? color, ulong? discordRoleId, string? discordRoleName, int userId, CancellationToken cancellationToken)
     {
         var tag = await dbContext.VeTags.FirstOrDefaultAsync(t => t.Id == tagId, cancellationToken);
         if (tag is null)
@@ -418,11 +436,32 @@ public class VolunteerExaminerManagementService(AppDbContext dbContext, TimeProv
             return VeManagementResult.DuplicateTagName;
         }
 
+        if (await DiscordRoleIsTakenAsync(tag.TeamId, discordRoleId, tagId, cancellationToken))
+        {
+            return VeManagementResult.DuplicateDiscordRole;
+        }
+
         var previousName = tag.Name;
         var changes = new List<string>();
         if (!string.Equals(previousName, name, StringComparison.Ordinal)) changes.Add($"renamed from '{previousName}'");
         if (tag.SortOrder != sortOrder) changes.Add($"order {tag.SortOrder} to {sortOrder}");
         if (!string.Equals(tag.Color, normalizedColor, StringComparison.OrdinalIgnoreCase)) changes.Add("colour changed");
+
+        // The Discord mapping has to be in this list, not just assigned below: the early return makes
+        // "nothing changed" mean "save nothing", so a role-only edit would report Success and leave
+        // the tag unmapped. Pinned by MappingAnExistingTagIsSaved_EvenThoughNothingElseChanged.
+        if (tag.DiscordRoleId != discordRoleId)
+        {
+            changes.Add(discordRoleId is null
+                ? "Discord role unmapped"
+                : $"mapped to Discord role {discordRoleName ?? discordRoleId.Value.ToString()}");
+        }
+        else if (discordRoleId is not null && !string.Equals(tag.DiscordRoleName, discordRoleName, StringComparison.Ordinal))
+        {
+            // Same role, renamed in Discord. Worth saving (the screen reads this snapshot) and worth
+            // an audit line, since the mapping itself did not move.
+            changes.Add($"Discord role now called '{discordRoleName}'");
+        }
 
         if (changes.Count == 0)
         {
@@ -432,12 +471,40 @@ public class VolunteerExaminerManagementService(AppDbContext dbContext, TimeProv
         tag.Name = name;
         tag.SortOrder = sortOrder;
         tag.Color = normalizedColor;
+        tag.DiscordRoleId = discordRoleId;
+        tag.DiscordRoleName = discordRoleId is null ? null : discordRoleName;
 
         var now = timeProvider.GetUtcNow().UtcDateTime;
         dbContext.AddAuditLog(userId, "VeTagUpdated", nameof(VeTag), tag.Id,
             $"VE tag '{name}' updated: {string.Join(", ", changes)}.", now);
         await dbContext.SaveChangesAsync(cancellationToken);
         return VeManagementResult.Success;
+    }
+
+    /// <summary>
+    /// Is another tag on this team already mapped to <paramref name="discordRoleId"/>? (#519)
+    ///
+    /// <para><b>Null is answered before the query, not by it.</b> An unmapped tag is always allowed —
+    /// most tags are — but "is any other tag also NULL" is not the question, and asking it in SQL
+    /// would return false anyway: <c>DiscordRoleId = NULL</c> is NULL, never true. The early return is
+    /// the behaviour, not an optimisation.</para>
+    ///
+    /// <para><paramref name="excludingTagId"/> is a plain <c>int</c> taking <c>0</c> on the create
+    /// path, never <c>int?</c>. The same SQL null semantics turn <c>t.Id != null</c> into a predicate
+    /// that matches nothing, waving every duplicate through — and EF InMemory evaluates it as plain
+    /// LINQ and passes, so the tests would agree with the bug. See CLAUDE.md's note on
+    /// <c>VecManagementService.MatchCodeIsTakenAsync</c>, where exactly this shipped.</para>
+    /// </summary>
+    private async Task<bool> DiscordRoleIsTakenAsync(int teamId, ulong? discordRoleId, int excludingTagId, CancellationToken cancellationToken)
+    {
+        if (discordRoleId is null)
+        {
+            return false;
+        }
+
+        return await dbContext.VeTags.AnyAsync(
+            t => t.TeamId == teamId && t.Id != excludingTagId && t.DiscordRoleId == discordRoleId,
+            cancellationToken);
     }
 
     /// <summary>Deleting a tag removes it from everyone who had it — the assignments cascade. That is the intent: the vocabulary changed.</summary>
@@ -492,6 +559,9 @@ public enum VeManagementResult
     NameRequired,
     DuplicateTagName,
     TagNotOnThisTeam,
+
+    /// <summary>Another tag on this team already claims that Discord role (#519). One role means one tag — see VeTag.DiscordRoleId.</summary>
+    DuplicateDiscordRole,
 
     /// <summary>A tag colour that isn't #RRGGBB. Rejected rather than dropped, so a bad value is never silently stored — see VeTagColor.</summary>
     InvalidColor,

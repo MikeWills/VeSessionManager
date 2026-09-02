@@ -197,8 +197,8 @@ public class VolunteerExaminerDirectoryServiceTests
         await SeedVeAsync(dbContext, teamA, "K4ZZZ", "Untagged Person");
 
         var management = CreateManagement(dbContext);
-        var (_, tagOnA) = await management.CreateTagAsync(teamA.Id, "Member", 0, null, 1, CancellationToken.None);
-        var (_, tagOnB) = await management.CreateTagAsync(teamB.Id, "Member", 0, null, 1, CancellationToken.None);
+        var (_, tagOnA) = await management.CreateTagAsync(teamA.Id, "Member", 0, null, null, null, 1, CancellationToken.None);
+        var (_, tagOnB) = await management.CreateTagAsync(teamB.Id, "Member", 0, null, null, null, 1, CancellationToken.None);
         await management.SetTagsAsync(onA.Id, [tagOnA!.Id], 1, CancellationToken.None);
         await management.SetTagsAsync(onB.Id, [tagOnB!.Id], 1, CancellationToken.None);
 
@@ -224,7 +224,7 @@ public class VolunteerExaminerDirectoryServiceTests
         await SeedVeAsync(dbContext, team, "K4ZZZ", "Untagged Person");
 
         var management = CreateManagement(dbContext);
-        var (_, tag) = await management.CreateTagAsync(team.Id, "Member", 0, null, 1, CancellationToken.None);
+        var (_, tag) = await management.CreateTagAsync(team.Id, "Member", 0, null, null, null, 1, CancellationToken.None);
         await management.SetTagsAsync(tagged.Id, [tag!.Id], 1, CancellationToken.None);
 
         var rows = await new VolunteerExaminerDirectoryService(dbContext).GetDirectoryAsync(
@@ -255,7 +255,7 @@ public class VolunteerExaminerDirectoryServiceTests
         await dbContext.SaveChangesAsync();
 
         var management = CreateManagement(dbContext);
-        var (_, tag) = await management.CreateTagAsync(teamA.Id, "Member", 0, null, 1, CancellationToken.None);
+        var (_, tag) = await management.CreateTagAsync(teamA.Id, "Member", 0, null, null, null, 1, CancellationToken.None);
         await management.SetTagsAsync(onA.Id, [tag!.Id], 1, CancellationToken.None);
 
         var acrossBothTeams = await new VolunteerExaminerDirectoryService(dbContext).GetDirectoryAsync(
@@ -283,7 +283,7 @@ public class VolunteerExaminerDirectoryServiceTests
         var (_, membership) = await SeedVeAsync(dbContext, team, "N2SPG", "Sam Granger");
 
         var management = CreateManagement(dbContext);
-        var (_, tag) = await management.CreateTagAsync(team.Id, "Member", 0, null, 1, CancellationToken.None);
+        var (_, tag) = await management.CreateTagAsync(team.Id, "Member", 0, null, null, null, 1, CancellationToken.None);
         await management.SetTagsAsync(membership.Id, [tag!.Id], 1, CancellationToken.None);
 
         var rows = await new VolunteerExaminerDirectoryService(dbContext)
@@ -302,7 +302,7 @@ public class VolunteerExaminerDirectoryServiceTests
         var (_, membershipOnA) = await SeedVeAsync(dbContext, teamA, "N2SPG", "Sam Granger");
 
         var management = CreateManagement(dbContext);
-        var (_, teamBTag) = await management.CreateTagAsync(teamB.Id, "Team member", 0, null, userId: 1, CancellationToken.None);
+        var (_, teamBTag) = await management.CreateTagAsync(teamB.Id, "Team member", 0, null, null, null, userId: 1, CancellationToken.None);
 
         var result = await management.SetTagsAsync(membershipOnA.Id, [teamBTag!.Id], userId: 1, CancellationToken.None);
 
@@ -318,8 +318,8 @@ public class VolunteerExaminerDirectoryServiceTests
         var (_, membership) = await SeedVeAsync(dbContext, team, "N2SPG", "Sam Granger");
 
         var management = CreateManagement(dbContext);
-        var (_, member) = await management.CreateTagAsync(team.Id, "Team member", 0, null, 1, CancellationToken.None);
-        var (_, lead) = await management.CreateTagAsync(team.Id, "Team lead", 1, null, 1, CancellationToken.None);
+        var (_, member) = await management.CreateTagAsync(team.Id, "Team member", 0, null, null, null, 1, CancellationToken.None);
+        var (_, lead) = await management.CreateTagAsync(team.Id, "Team lead", 1, null, null, null, 1, CancellationToken.None);
 
         await management.SetTagsAsync(membership.Id, [member!.Id, lead!.Id], 1, CancellationToken.None);
         Assert.Equal(2, dbContext.VeTagAssignments.Count());

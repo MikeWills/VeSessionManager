@@ -53,12 +53,23 @@ public class VeTagsGrantNoAccessTests
     /// The same promise from the other direction: the tag entity must not grow a field that looks
     /// like a permission. A "CanApproveSessions" flag on a tag would be honoured by whoever added it
     /// long before anyone updated the "reporting only" copy on three screens.
+    ///
+    /// <para><b>"Discord*" is exempt, and the exemption is narrow on purpose (#519).</b> A Discord
+    /// role is a label in somebody else's system that this app reads to decide which tag to apply —
+    /// it confers nothing here, and the read is one-directional (see <c>IDiscordGuildClient</c>). The
+    /// name collision is real though: <c>DiscordRoleId</c> trips a rule written against the word
+    /// "Role", and this test caught it on the commit that added it, which is the rule working. The
+    /// exemption is a prefix match rather than a named allow-list of two properties so that step 2's
+    /// columns don't have to re-litigate it — and <see cref="NoAuthorizationCodeReadsVeTags"/> above
+    /// is the check that actually matters, since it fails if any of this ever reaches an access
+    /// scope, whatever the property is called.</para>
     /// </summary>
     [Fact]
     public void VeTagHasNoPermissionShapedProperties()
     {
         var suspicious = typeof(Core.Entities.VeTag).GetProperties()
             .Select(p => p.Name)
+            .Where(name => !name.StartsWith("Discord", StringComparison.Ordinal))
             .Where(name =>
                 name.StartsWith("Can", StringComparison.Ordinal)
                 || name.Contains("Permission", StringComparison.OrdinalIgnoreCase)
