@@ -134,6 +134,7 @@ builder.Services.AddScoped<VolunteerExaminerReportService>();
 builder.Services.AddScoped<SessionStatsService>();
 builder.Services.AddScoped<VolunteerExaminerDirectoryService>();
 builder.Services.AddScoped<VolunteerExaminerManagementService>();
+builder.Services.AddScoped<DiscordTagSyncService>();
 builder.Services.AddScoped<VolunteerExaminerMergeService>();
 builder.Services.AddScoped<VolunteerExaminerImportService>();
 builder.Services.AddScoped<VeSelfServiceLinkService>();

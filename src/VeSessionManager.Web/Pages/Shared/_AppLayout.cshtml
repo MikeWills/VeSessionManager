@@ -82,7 +82,7 @@
     @* Reports split out of the VEs group 2026-08-15: those three answer "how are we doing", while
        what is left under VEs is roster maintenance. Keep each list in step with the group's own
        [Authorize] — all six pages are Admins-only, which is why one gate wraps both groups. *@
-    var vesGroupActive = activeNav is "VeDirectory" or "VeTags" or "VeImport";
+    var vesGroupActive = activeNav is "VeDirectory" or "VeTags" or "VeImport" or "VeDiscordSync";
     var reportsGroupActive = activeNav is "Stats" or "VeRoster" or "AuditioningReport" or "TransactionsReport";
     var settingsGroupActive = activeNav is "AdminTeams" or "AdminTeamSettings" or "AdminUsers" or "AdminMessageRules"
         or "AdminFees" or "AdminVecs" or "AdminAuditLog" or "AdminJobHistory" or "AdminJobSchedule" or "Reconciliation" or "AdminSystemSettings";
@@ -181,6 +181,7 @@
                         <a class="item @(activeNav == "VeDirectory" ? "active" : "")" asp-page="/SessionManager/VeDirectory">VE Directory</a>
                         <a class="item @(activeNav == "VeTags" ? "active" : "")" asp-page="/SessionManager/VeTags">VE Tags</a>
                         <a class="item @(activeNav == "VeImport" ? "active" : "")" asp-page="/SessionManager/VeImport">Import VEs</a>
+                        <a class="item @(activeNav == "VeDiscordSync" ? "active" : "")" asp-page="/SessionManager/VeDiscordSync">Discord Tags</a>
                     </div>
                 </div>
                 @* Requested 2026-08-15. Same Admins gate as the VEs group above — every page in here

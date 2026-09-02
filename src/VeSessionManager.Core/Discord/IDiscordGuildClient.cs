@@ -33,7 +33,34 @@ public interface IDiscordGuildClient
     /// the server — and the screen falls back to accepting a typed id rather than erroring.</para>
     /// </summary>
     Task<IReadOnlyList<DiscordRoleSummary>> ListRolesAsync(ulong guildId, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Every member of the guild, with the roles each holds — what the tag sync matches against.
+    ///
+    /// <para><b>Needs the <c>GUILD_MEMBERS</c> privileged intent</b>, enabled for the bot application
+    /// in the Discord developer portal. Unlike <see cref="ListRolesAsync"/>, which reads roles off the
+    /// guild object, this calls Discord's paged member list, and without the intent it comes back
+    /// <b>empty rather than failing</b>.</para>
+    ///
+    /// <para>That silence is why every caller must treat an empty result as "could not read", never as
+    /// "the server has nobody in it" — a real guild always contains at least the bot. Under the sync's
+    /// rule, "holds no role" means "remove the mapped tag", so an empty list read literally would
+    /// strip every mapped tag from every matched VE. See docs/discord-tag-sync.md.</para>
+    /// </summary>
+    Task<IReadOnlyList<DiscordGuildMember>> ListMembersAsync(ulong guildId, CancellationToken cancellationToken);
 }
+
+/// <param name="Id">The member's snowflake — the identity that survives every rename.</param>
+/// <param name="Username">The account's own name, stable-ish and global to Discord.</param>
+/// <param name="DisplayName">What the server shows: the per-guild nickname where one is set, otherwise the account's display name. This is where a call sign usually is.</param>
+/// <param name="Nickname">The per-guild nickname alone, or null. Kept beside <paramref name="DisplayName"/> so a report can say which one carried the match.</param>
+/// <param name="RoleIds">Roles held in this guild. Never includes @everyone, which every member holds and no tag may map to.</param>
+public record DiscordGuildMember(
+    ulong Id,
+    string Username,
+    string DisplayName,
+    string? Nickname,
+    IReadOnlyList<ulong> RoleIds);
 
 /// <param name="Id">The role's snowflake — the stable identity, and what a mapping stores.</param>
 /// <param name="Name">What it is called today. Stored beside the id only as a display snapshot; roles get renamed.</param>

@@ -619,6 +619,15 @@ To pick up updates: `/plugin marketplace update claude-tools`
   If a future request sounds like "notify/flag when our own fee has been unpaid for a while," it is
   almost certainly describing the FCC's fee and should be built against `FccFeeOutstanding`, not a new
   `Payment`-side trigger.
+- **Discord answers a member-list request with an empty list, not an error, when the `GUILD_MEMBERS`
+  privileged intent is off** — and for the Discord tag sync (#519) an empty list read literally means
+  "nobody holds any role", which under its own rule means "remove every mapped tag from every matched
+  VE". A real guild always contains at least the bot, so **empty is "could not read", never "the server
+  is empty"**; `DiscordTagSyncService` refuses the whole run for both an empty list and a thrown fetch.
+  Any future code reading that list needs the same reading. Note the asymmetry that makes this easy to
+  miss: `ListRolesAsync` needs no intent at all (roles come off the guild object already fetched), so
+  the role picker works perfectly while the member list silently returns nothing. See
+  `docs/discord-tag-sync.md`.
 - (Environment-specific quirks and gotchas go here as they're discovered — e.g. API quirks, IIS behavior, network/DMZ restrictions, auth issues)
 
 ## Definition of Done
