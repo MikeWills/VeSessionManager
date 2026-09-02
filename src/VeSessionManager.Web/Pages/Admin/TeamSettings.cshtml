@@ -1,4 +1,4 @@
-@page
+﻿@page
 @using VeSessionManager.Core.Entities
 @model VeSessionManager.Web.Pages.Admin.TeamSettingsModel
 @{
@@ -184,6 +184,27 @@ else
                    which is what stops a candidate named "@@everyone" pinging the server — naming the
                    roles grants the ask without giving that back (#116). *@
                 <span class="session-sub">Role IDs, comma-separated. Leave blank and posts ping nobody, which is the default. <strong>@@everyone and @@here can never be pinged</strong>, however a message is written.</span>
+            </div>
+            <div class="field" style="max-width:520px;">
+                <div style="display:flex; align-items:center; gap:12px;">
+                    <label class="switch">
+                        <input id="tagSyncEnabled" name="tagSyncEnabled" type="checkbox" value="true"
+                               checked="@Model.Team.DiscordTagSyncEnabled" />
+                        <span class="slider" aria-hidden="true"></span>
+                    </label>
+                    @* Posts false when the switch is off. Without it an unchecked box sends nothing at
+                       all and the setting could be turned on but never off. *@
+                    <input name="tagSyncEnabled" type="hidden" value="false" />
+                    <label for="tagSyncEnabled" style="margin:0;">Keep VE tags in step with Discord roles</label>
+                </div>
+                @* Off by default, and worth leaving off until the check has been run by hand: this
+                   removes tags as well as adding them, so a VE whose Discord name stops showing their
+                   call sign loses a matched tag with nobody watching (#519). *@
+                <span class="session-sub">
+                    Runs daily. Only affects tags you've matched to a Discord role.
+                    Try it first on <a asp-page="/SessionManager/VeDiscordSync">Discord Tags</a>, which shows
+                    what would change without changing anything.
+                </span>
             </div>
             <p class="session-sub">The shared bot's token is a deployment-wide setting (Discord:BotToken), not editable per-team here.</p>
             <button type="submit" class="btn-primary btn-sm" style="margin-top:8px;">Save Discord</button>

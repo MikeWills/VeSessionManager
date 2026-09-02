@@ -52,6 +52,13 @@ public class TeamConfiguration : IEntityTypeConfiguration<Team>
         // DeclareColumnDefaultsOnModel migration was about, and this is the same trap (#191).
         b.Property(t => t.VeEmailSubscriptionsEnabled).HasDefaultValue(false);
 
+        // A database default, like every other bool on this table. Without one, SQLite's CREATE TABLE
+        // has no DEFAULT for the column and any INSERT that does not name it fails outright — which is
+        // how TeamSecretsEncryptionTests caught this: it writes a legacy plaintext row with raw SQL
+        // naming three columns, and that is exactly the shape a hand-written insert or an older
+        // migration takes.
+        b.Property(t => t.DiscordTagSyncEnabled).HasDefaultValue(false);
+
         // Encrypted at rest (2026-07-30 security review) — genuine bearer secrets only, not the
         // usernames/ids/URLs alongside them (those stay plaintext, useful to read at a glance).
         // See EncryptedStringConverter's remarks and TeamSecretsMigrationService for existing data.

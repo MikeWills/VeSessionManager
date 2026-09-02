@@ -91,6 +91,21 @@ public class Team
     /// </remarks>
     public string? DiscordMentionableRoleIds { get; set; }
 
+    /// <summary>
+    /// Whether the daily job keeps this team's VE tags in step with its Discord roles (#519 step 4).
+    ///
+    /// <para><b>Off for every team, including every existing one, until somebody turns it on.</b> That
+    /// is the whole point of the switch: the sync <i>removes</i> tags as well as adding them, so a VE
+    /// whose display name stops carrying their call sign loses a mapped tag with nobody watching. The
+    /// on-demand check on the Discord Tags screen is how a team finds that out first, and this switch
+    /// is what says they have.</para>
+    ///
+    /// <para>Independent of the mapping itself. A team can map every tag and still leave this off —
+    /// mapping opts a tag into the rule, this opts the team into running it unattended — which is what
+    /// lets the check be used for months before anything is scheduled.</para>
+    /// </summary>
+    public bool DiscordTagSyncEnabled { get; set; }
+
     // Square credentials — nullable. This team's own separate Square merchant account (confirmed
     // with the user — not shared across teams), including which API environment those credentials are
     // for: a token authenticates against one host only, so it travels with them (2026-08-06).

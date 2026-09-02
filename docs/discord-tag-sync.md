@@ -7,8 +7,8 @@ member / auditioning / a session manager" with Discord roles. That is a second, 
 of something this app also stores as [`VeTag`](../src/VeSessionManager.Core/Entities/VeTag.cs)
 assignments, and the two drift. This closes that gap in one direction only.
 
-**Status: steps 1-3 of 4 are built** — the map, the check, and applying it by hand. Only the scheduled
-run is left. See [Build order](#build-order).
+**Status: all four steps are built** — the map, the check, applying it by hand, and a daily job that is
+**off for every team until someone turns it on**. See [Build order](#build-order).
 
 ## The rule
 
@@ -202,6 +202,42 @@ the label would leave a permanent handle on someone's Discord account after thei
 supposed to have aged out. The cost is accepted: a purged VE still in the server is matched by call
 sign again on the next check, exactly as they were the first time.
 
+## The scheduled run
+
+`DiscordTagSyncJob` is the unattended form of the same button, on the shared `PerTeamDailyJob`
+scaffold, calling the identical `ApplyAsync`. It exists because the alternative to a schedule is that
+the app's copy of "who is a team member" is only as fresh as the last time somebody remembered to
+press a button.
+
+**Off unless a team turned it on** (`Team.DiscordTagSyncEnabled`, a switch in Team Settings, default
+false for every team including existing ones). Mapping a tag opts *that tag* into the rule; this opts
+*the team* into running it unattended — which is what lets the on-demand check be used for as long as
+a team likes before anything is scheduled. A team with mapped tags and the switch off is skipped, and
+the skip is recorded rather than silent: it is a team using the check, not a misconfiguration.
+
+The reason for the extra switch is the same reason step 3 was split from step 2. This job *removes*
+tags, so a VE whose Discord display name stops carrying their call sign loses a mapped tag with nobody
+looking at the result. The check is how a team finds that out first.
+
+**Safe to run repeatedly, which is what makes a schedule reasonable at all**: the plan is a diff
+against current state, so a second run proposes nothing (pinned by a test). The same property makes a
+missed tick harmless — the next one catches up — which is the assumption the shared 24-hour timer idiom
+rests on. It holds here because Discord's roles are current state rather than a one-shot window;
+contrast `FccDailyWatcherJob`, where it does not, per CLAUDE.md's note on that idiom.
+
+An unattended change is audited with a **null user**. Nobody clicked, and naming a real admin would put
+their name on a change they did not make; a hardcoded stand-in id would break the foreign key on any
+deployment that lacks it.
+
+### Where an unattended run shows up
+
+The job logs a summary line and writes a per-team `JobRunHistory` row — tags added, tags removed,
+accounts matched, and the exception count — or the skip reason when it did not run. The Discord Tags
+screen reads the latest of those rows back, so "last automatic run" is visible next to the button
+rather than only in the logs or on the Job Run History page. The exceptions themselves are not stored;
+pressing Check shows them live, which is also the only way to see the current ones rather than
+yesterday's.
+
 ## Ops prerequisite: the privileged intent
 
 `GET /guilds/{id}/members` is gated behind the **`GUILD_MEMBERS` privileged intent**, which has to be
@@ -218,7 +254,21 @@ screen works on day one, and the sync is what waits.
 2. **Matching, and the preview + exceptions report.** ← built — `DiscordTagSyncService.BuildPreviewAsync`
    and the Discord Tags screen. Read-only; writes nothing, to the database or to Discord.
 3. **Apply, audit-logged.** ← built — `DiscordTagSyncService.ApplyAsync`, one button on the same screen.
-4. A scheduled run on `TeamPipeline` — only once (2) and (3) have been used against real data.
+4. **A daily job, per-team opt-in.** ← built — `DiscordTagSyncJob`. Shipped off for every team, which
+   is the form the "wait until it has been used against real data" caution takes in code: merging it
+   changes nothing until a team's switch is turned on.
+
+## Before turning any of this on
+
+Nothing here has yet run against a real Discord server. Two things are worth doing in order:
+
+1. Enable the `GUILD_MEMBERS` privileged intent (see above). Until then the check reports "Discord
+   returned no members" and changes nothing — which is correct behaviour, not a bug to chase.
+2. Run **Check Discord** on a real team and read the exceptions. The matcher has never seen a real
+   roster, and the display-name conventions a team actually uses are the one part of this that cannot
+   be verified from a test.
+
+Only then is the daily switch worth turning on.
 
 Steps 2 and 3 are split from 4 on purpose. Removals are in scope, so an unattended bad match strips a
 real tag; the manual preview is what makes the first runs inspectable. Same report-then-act shape as

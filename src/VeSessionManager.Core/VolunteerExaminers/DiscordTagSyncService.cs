@@ -197,9 +197,10 @@ public class DiscordTagSyncService(
     /// where a wrong row is caught, and the fix for one is in Discord or in the tag map, not in
     /// skipping it here — a skip that is not remembered would silently return on the next run.</para>
     /// </summary>
+    /// <param name="userId">Who clicked, or <b>null for an unattended run</b> — the same "no human did this" the audit log already uses elsewhere. Never a stand-in id: attributing a scheduled change to a real person puts their name on something they did not do, and a hardcoded one would break the foreign key on any deployment that lacks it.</param>
     /// <param name="previewedFingerprint">The <see cref="DiscordTagSyncPlan.Fingerprint"/> of what the user was shown, or null when nothing was previewed (a scheduled run).</param>
     public async Task<DiscordTagSyncApplyResult> ApplyAsync(
-        int teamId, int userId, string? previewedFingerprint, CancellationToken cancellationToken)
+        int teamId, int? userId, string? previewedFingerprint, CancellationToken cancellationToken)
     {
         var plan = await BuildPreviewAsync(teamId, cancellationToken);
         if (!plan.Ran)

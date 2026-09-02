@@ -1,4 +1,4 @@
-using VeSessionManager.Core.Discord;
+﻿using VeSessionManager.Core.Discord;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using VeSessionManager.Core.Data;
@@ -174,7 +174,8 @@ public class TeamSettingsService(AppDbContext dbContext, TimeProvider timeProvid
         return await SaveTeamUpdateAsync(team, "TeamZoomCredentialsUpdated", userId, cancellationToken);
     }
 
-    public async Task<TeamActionResult> UpdateDiscordAsync(int teamId, ulong? guildId, string? mentionableRoleIds, int userId, CancellationToken cancellationToken)
+    /// <param name="tagSyncEnabled">Whether the daily job keeps this team's VE tags in step with Discord roles (#519). Off until a team has checked the match by hand — it removes tags as well as adding them.</param>
+    public async Task<TeamActionResult> UpdateDiscordAsync(int teamId, ulong? guildId, string? mentionableRoleIds, bool tagSyncEnabled, int userId, CancellationToken cancellationToken)
     {
         var team = await dbContext.Teams.FirstOrDefaultAsync(t => t.Id == teamId, cancellationToken);
         if (team is null)
@@ -188,6 +189,7 @@ public class TeamSettingsService(AppDbContext dbContext, TimeProvider timeProvid
         // a team that typed "@everyone" sees it disappear rather than believing it took (#116).
         var roleIds = DiscordMentionPolicy.ParseRoleIds(mentionableRoleIds);
         team.DiscordMentionableRoleIds = roleIds.Count == 0 ? null : string.Join(",", roleIds);
+        team.DiscordTagSyncEnabled = tagSyncEnabled;
 
         return await SaveTeamUpdateAsync(team, "TeamDiscordSettingsUpdated", userId, cancellationToken);
     }

@@ -1,5 +1,6 @@
 ﻿@page
 @model VeSessionManager.Web.Pages.SessionManager.VeDiscordSyncModel
+@using VeSessionManager.Web
 @{
     ViewData["Title"] = "Discord Tags";
     ViewData["ActiveNav"] = "VeDiscordSync";
@@ -38,6 +39,35 @@ else
         <form method="post" action="@Url.Page("VeDiscordSync", "Check", new { teamId = Model.ResolvedTeamId })" asp-antiforgery="true">
             <button type="submit" class="btn-primary">Check Discord</button>
         </form>
+
+        @* The only place an unattended run is visible outside the logs and Job Run History. *@
+        <p class="session-sub" style="margin-top:12px;">
+            @if (Model.ScheduledSyncEnabled)
+            {
+                <text>This runs automatically every day for this team.</text>
+            }
+            else
+            {
+                <text>
+                    Automatic daily updates are off for this team. Turn them on in
+                    <a asp-page="/Admin/TeamSettings" asp-route-teamId="@Model.ResolvedTeamId">Team Settings</a>
+                    once you're happy with what the check finds.
+                </text>
+            }
+            @if (Model.LastAutomaticRun is { } last)
+            {
+                <br />
+                <text>Last automatic run: @EasternTimeFormatter.Format(last.StartedUtc, "M/d/yyyy h:mm tt")</text>
+                @if (!string.IsNullOrWhiteSpace(last.ResultSummary))
+                {
+                    <text> — @last.ResultSummary</text>
+                }
+                @if (!last.Success)
+                {
+                    <text> (it failed)</text>
+                }
+            }
+        </p>
     </div>
 
     @if (Model.Applied is { } applied)
