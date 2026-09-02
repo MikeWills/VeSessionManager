@@ -64,6 +64,32 @@ public class VeDiscordSyncModel(
         return Page();
     }
 
+    /// <summary>
+    /// Applies everything the check found — after re-reading Discord, so a role revoked between looking
+    /// and clicking is not applied as though it were still held. <paramref name="fingerprint"/> is what
+    /// was on screen; it only decides whether the result says "Discord changed while you were looking",
+    /// never whether the write happens.
+    /// </summary>
+    public async Task<IActionResult> OnPostApplyAsync(string? fingerprint)
+    {
+        await LoadAsync();
+        if (ResolvedTeamId is not { } teamId)
+        {
+            return Forbid();
+        }
+
+        var user = await userManager.GetRequiredUserAsync(dbContext, User);
+        var result = await syncService.ApplyAsync(teamId, user.Id, fingerprint, HttpContext.RequestAborted);
+
+        // The plan that comes back is the one actually applied, so the page re-renders against fresh
+        // truth rather than the picture the button was clicked on.
+        Plan = result.Plan;
+        Applied = result;
+        return Page();
+    }
+
+    public DiscordTagSyncApplyResult? Applied { get; private set; }
+
     private async Task LoadAsync()
     {
         var user = await userManager.GetRequiredUserAsync(dbContext, User);

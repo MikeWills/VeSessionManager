@@ -7,8 +7,13 @@ using VeSessionManager.Core.Entities;
 namespace VeSessionManager.Core.VolunteerExaminers;
 
 /// <summary>
-/// Works out what a team's VE tags would become if Discord's roles were applied to them (#519 step 2).
-/// <b>Read-only — this builds a plan and writes nothing</b>, neither to the database nor to Discord.
+/// Works out what a team's VE tags would become if Discord's roles were applied to them, and applies
+/// it (#519). <see cref="BuildPreviewAsync"/> writes nothing at all; <see cref="ApplyAsync"/> writes
+/// tag assignments and matched account ids to <i>this app's</i> database only.
+///
+/// <para><b>Nothing here ever writes to Discord</b> — no role granted or revoked, no nickname changed,
+/// no permission touched. Roles are managed in Discord and read from it; see
+/// <see cref="IDiscordGuildClient"/>.</para>
 ///
 /// <para>The decided rule, in full, is in docs/discord-tag-sync.md. In short: for a VE matched to a
 /// member of the team's server, and only for tags carrying a <see cref="VeTag.DiscordRoleId"/>,
@@ -178,6 +183,119 @@ public class DiscordTagSyncService(
     }
 
     /// <summary>
+    /// Writes the plan — the only method here that changes anything, and still only in this app's own
+    /// database. Nothing is ever written to Discord.
+    ///
+    /// <para><b>The plan is rebuilt from Discord rather than replayed.</b> A preview is a photograph,
+    /// and a role revoked in the seconds between looking and clicking would otherwise be applied as
+    /// though it were still held. <paramref name="previewedFingerprint"/> is compared against the
+    /// fresh plan purely to report that the picture was out of date — it never blocks the write, since
+    /// the fresh answer is the correct one either way and refusing it would just mean looking at the
+    /// same screen again.</para>
+    ///
+    /// <para>Everything in the plan is applied together. There is no per-row selection: the preview is
+    /// where a wrong row is caught, and the fix for one is in Discord or in the tag map, not in
+    /// skipping it here — a skip that is not remembered would silently return on the next run.</para>
+    /// </summary>
+    /// <param name="previewedFingerprint">The <see cref="DiscordTagSyncPlan.Fingerprint"/> of what the user was shown, or null when nothing was previewed (a scheduled run).</param>
+    public async Task<DiscordTagSyncApplyResult> ApplyAsync(
+        int teamId, int userId, string? previewedFingerprint, CancellationToken cancellationToken)
+    {
+        var plan = await BuildPreviewAsync(teamId, cancellationToken);
+        if (!plan.Ran)
+        {
+            // Skipped covers every "no data" case, and no data must never be written as "nobody holds
+            // a role" — which under the rule would strip every mapped tag on the team.
+            return new DiscordTagSyncApplyResult(plan, DifferedFromPreview: false, 0, 0, 0);
+        }
+
+        var differed = previewedFingerprint is not null
+            && !string.Equals(previewedFingerprint, plan.Fingerprint, StringComparison.Ordinal);
+
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+        var added = 0;
+        var removed = 0;
+
+        foreach (var change in plan.Changes)
+        {
+            foreach (var tag in change.TagsToAdd)
+            {
+                dbContext.VeTagAssignments.Add(new VeTagAssignment
+                {
+                    VeTeamMembershipId = change.VeTeamMembershipId,
+                    VeTagId = tag.TagId,
+                    CreatedUtc = now,
+                });
+                added++;
+            }
+
+            if (change.TagsToRemove.Count > 0)
+            {
+                var removing = change.TagsToRemove.Select(t => t.TagId).ToList();
+                var assignments = await dbContext.VeTagAssignments
+                    .Where(a => a.VeTeamMembershipId == change.VeTeamMembershipId && removing.Contains(a.VeTagId))
+                    .ToListAsync(cancellationToken);
+                dbContext.VeTagAssignments.RemoveRange(assignments);
+                removed += assignments.Count;
+            }
+
+            var description = Describe(change);
+            dbContext.AddAuditLog(userId, "VeTagsUpdatedFromDiscord", nameof(VeTeamMembership), change.VeTeamMembershipId,
+                $"{change.CallSign ?? change.Name}: {description} (from Discord role membership).", now);
+        }
+
+        var linked = 0;
+        foreach (var link in plan.NewLinks)
+        {
+            var person = await dbContext.VolunteerExaminers.FirstOrDefaultAsync(v => v.Id == link.VolunteerExaminerId, cancellationToken);
+            if (person is null)
+            {
+                continue;
+            }
+
+            person.DiscordUserId = link.DiscordUserId;
+
+            // The username follows the id rather than the other way round: it is the label on a link
+            // that is now established, and leaving a hand-typed guess beside a confirmed account would
+            // make the screen disagree with itself.
+            person.DiscordUsername = link.DiscordUsername;
+            person.UpdatedUtc = now;
+            linked++;
+
+            dbContext.AddAuditLog(userId, "VeDiscordAccountLinked", nameof(VolunteerExaminer), person.Id,
+                $"{link.CallSign ?? link.Name} matched to Discord account {link.DiscordUsername}.", now);
+        }
+
+        // One transaction: this is a handful of rows from a single button press, and a half-applied
+        // roster is harder to reason about than one that either happened or did not. That is a
+        // different situation from the scan-based jobs, which save per item because they run unattended
+        // across hundreds of rows and must never lose progress already made.
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        logger.LogInformation(
+            "Applied Discord tag sync for team {TeamId}: {Added} tag(s) added, {Removed} removed, {Linked} account(s) matched",
+            teamId, added, removed, linked);
+
+        return new DiscordTagSyncApplyResult(plan, differed, added, removed, linked);
+    }
+
+    private static string Describe(DiscordTagChange change)
+    {
+        var parts = new List<string>();
+        if (change.TagsToAdd.Count > 0)
+        {
+            parts.Add("added " + string.Join(", ", change.TagsToAdd.Select(t => $"'{t.Name}'")));
+        }
+
+        if (change.TagsToRemove.Count > 0)
+        {
+            parts.Add("removed " + string.Join(", ", change.TagsToRemove.Select(t => $"'{t.Name}'")));
+        }
+
+        return string.Join("; ", parts);
+    }
+
+    /// <summary>
     /// The lookup from a guild member to this team's memberships, in the order identity is trusted:
     /// a stored Discord id, then the hand-entered username, then a call sign in the display name —
     /// current or former.
@@ -281,6 +399,23 @@ public record DiscordTagSyncPlan(
 {
     public static DiscordTagSyncPlan Skipped(string reason) => new(false, reason, null, [], [], [], [], []);
 
+    /// <summary>
+    /// A stable summary of everything this plan would write, for comparing a preview against the fresh
+    /// plan built at apply time. Order-independent by construction, since the change list follows
+    /// Discord's member order and that is not guaranteed stable between calls.
+    ///
+    /// <para>Deliberately covers only the writes — the exception lists can shift (somebody joins the
+    /// server, somebody fixes their nickname) without the outcome of applying changing at all, and
+    /// reporting that as "this differs from what you saw" would cry wolf.</para>
+    /// </summary>
+    public string Fingerprint =>
+        string.Join("|", Changes
+            .Select(c => $"{c.VeTeamMembershipId}:{c.DiscordUserId}"
+                + $":+{string.Join(",", c.TagsToAdd.Select(t => t.TagId).Order())}"
+                + $":-{string.Join(",", c.TagsToRemove.Select(t => t.TagId).Order())}")
+            .Concat(NewLinks.Select(l => $"L{l.VolunteerExaminerId}:{l.DiscordUserId}"))
+            .Order(StringComparer.Ordinal));
+
     public bool HasAnythingToShow =>
         Changes.Count > 0 || NewLinks.Count > 0 || MembersWithoutVolunteerExaminer.Count > 0
         || VolunteerExaminersWithoutMember.Count > 0 || AmbiguousMembers.Count > 0;
@@ -298,6 +433,15 @@ public record DiscordTagChange(
     IReadOnlyList<DiscordTagRef> TagsToRemove);
 
 public record DiscordTagRef(int TagId, string Name);
+
+/// <param name="Plan">The plan that was actually applied — freshly built, not the one previewed.</param>
+/// <param name="DifferedFromPreview">True when Discord changed between the preview and this write. Reported, never a refusal: the fresh answer is the correct one either way.</param>
+public record DiscordTagSyncApplyResult(
+    DiscordTagSyncPlan Plan,
+    bool DifferedFromPreview,
+    int TagsAdded,
+    int TagsRemoved,
+    int Linked);
 
 public record DiscordMemberSummary(ulong DiscordUserId, string DisplayName, string Username);
 

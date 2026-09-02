@@ -1,4 +1,4 @@
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using VeSessionManager.Core.Admin;
 using VeSessionManager.Core.Data;
@@ -496,6 +496,7 @@ public class PiiPurgeServiceTests
             State = "MN",
             PostalCode = "56001",
             DiscordUsername = "pat-1234",
+            DiscordUserId = 1170000000000000009,
             Notes = "Prefers Saturday sessions",
             CreatedUtc = createdUtc ?? Now.AddYears(-20)
         };
@@ -549,6 +550,11 @@ public class PiiPurgeServiceTests
         Assert.Null(person.State);
         Assert.Null(person.PostalCode);
         Assert.Null(person.DiscordUsername);
+
+        // The id is the same fact as the username, and the stronger one: clearing the label while
+        // keeping a permanent handle on the person's Discord account would defeat the purge (#519).
+        Assert.Null(person.DiscordUserId);
+
         Assert.Null(person.Notes);
         Assert.NotNull(person.PiiPurgedUtc);
     }
