@@ -109,6 +109,7 @@ builder.Services.AddSingleton<DiscordEventClient>();
 builder.Services.AddSingleton<IDiscordEventClient>(sp => sp.GetRequiredService<DiscordEventClient>());
 builder.Services.AddSingleton<IDiscordChannelMessageClient>(sp => sp.GetRequiredService<DiscordEventClient>());
 builder.Services.AddSingleton<IDiscordGuildClient>(sp => sp.GetRequiredService<DiscordEventClient>());
+builder.Services.AddScoped<DiscordTagSyncService>();
 builder.Services.AddScoped<SessionEventSchedulingService>();
 
 // Singleton: the Square SDK client owns its own HttpClient, same reasoning as the other API clients.
@@ -192,6 +193,7 @@ builder.Services.AddHostedService<RefundStatusJob>();
 builder.Services.AddHostedService<PiiPurgeJob>();
 builder.Services.AddHostedService<HistoricalImportJob>();
 builder.Services.AddHostedService<ReconciliationJob>();
+builder.Services.AddHostedService<DiscordTagSyncJob>();
 builder.Services.AddHostedService<RecordRetentionJob>();
 
 // A mistyped switch used to be ignored in silence: the Worker started normally, did none of the

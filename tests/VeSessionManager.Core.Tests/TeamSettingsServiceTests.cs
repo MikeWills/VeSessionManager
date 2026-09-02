@@ -197,7 +197,7 @@ public class TeamSettingsServiceTests
         var user = await SeedUserAsync(dbContext);
         var team = await SeedTeamAsync(dbContext);
 
-        var result = await CreateService(dbContext).UpdateDiscordAsync(team.Id, 1323140214008578111UL, null, user.Id, CancellationToken.None);
+        var result = await CreateService(dbContext).UpdateDiscordAsync(team.Id, 1323140214008578111UL, null, tagSyncEnabled: false, user.Id, CancellationToken.None);
 
         Assert.Equal(TeamActionResult.Success, result);
         var updated = await dbContext.Teams.SingleAsync();

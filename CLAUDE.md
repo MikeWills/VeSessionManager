@@ -127,6 +127,23 @@ which is "here's what was built and why, mostly historical.")
 One-line-or-two pointer per feature, newest first — full design rationale lives in the linked
 `/docs/*.md` file, not here. See "Documentation Structure" below for the policy this follows.
 
+- **VE tags follow Discord roles now (#519, 2026-09-02).** See `docs/discord-tag-sync.md`. A team's
+  Discord roles are read and applied to its `VeTag` assignments: map a tag to a role, and holding the
+  role means holding the tag while not holding it means not holding it. **One-directional and
+  read-only against Discord** — no role, nickname or permission is ever written back, and a tag still
+  grants nothing (`VeTagsGrantNoAccessTests` unchanged; the `Discord*` prefix is exempted from its
+  property-name rule with the reasoning recorded in the test it caught). Matched VEs and mapped tags
+  only: a VE not in the server keeps every tag, a member who is not a VE is never given a record, and
+  an unmapped tag is untouched. Built as four steps — map, check, apply, daily job — the last **off
+  for every team until switched on**, because it removes tags and a drifted display name would do that
+  unattended. Mike's ruling on hand edits: a mapped tag removed in the app comes back on the next run;
+  the place to make a change stick is Discord. Two things worth carrying: an **empty member list means
+  "could not read", never "nobody holds a role"** (see Known Constraints — read literally it would
+  strip every mapped tag on the team), and the PII purge now clears `DiscordUserId` alongside
+  `DiscordUsername`, since a snowflake never changes and keeping it would have left a permanent handle
+  on someone's account after their details aged out. **Not yet run against a real server** — the
+  privileged intent is still off, and the doc's "Before turning any of this on" is the order to do it in.
+
 - **#116 closed — the missing token, not a missing mechanism (2026-08-29).** See
   `docs/trigger-points.md`'s "Per-session fan-out" section. Everything else the issue asked for
   (custom channel, hour-level timing, zero-candidates suppression, the
@@ -237,27 +254,6 @@ One-line-or-two pointer per feature, newest first — full design rationale live
   (password reset, VE self-service/email-change) all changed from "VE Session Manager"/
   "VESESSIONMGR" to "VE Ops". **The repo, namespaces, classes, and every doc path stay
   `VeSessionManager`** — this was a display-string-only rename, not a rebrand of the codebase.
-
-- **Refunds and payments show, tie to a candidate, and report (2026-08-26).** Issue #431 (live
-  verification) and a same-day follow-on ask. See `docs/transactions-report.md`. Live-verified end to
-  end on WX0MIK: a real Square payment taken and refunded from inside the app. **Settlement to
-  `Completed` is now confirmed for both a full and a split-partial refund (2026-08-29)** — the
-  partial-refund pair ($2 + $3 against one $5 charge, submitted 2026-08-27) was checked off on #384 as
-  *submitted* but its settlement was inferred rather than observed at the time; the real bank
-  statement showing both `PURCHASE RETURN` lines posted is that missing observation.
-  **#384/#431 stay open** — #384 still has "Refund and dismiss" on Unmatched Payments and the
-  pre-#383-payment fallback note unchecked; #431 is the broader end-to-end pass (ExamTools
-  registration → close-session, youth-rate registration, the ARRL preview against real money) and most
-  of its steps haven't run yet. Two things worth carrying forward from the report itself:
-  **`Payment.CandidateNameSnapshot`** exists because `Candidate.Name` does not survive PII purge and a
-  withdrawal (the report's reason to exist) is exactly what triggers that purge — captured once at
-  Payment creation, same snapshot-on-the-record pattern as `MessageRuleRun`, so the Transactions
-  Report has a name to show without reopening PII purge policy; and **only a `Completed` refund
-  subtracts from the report's totals** — `Pending`/`Rejected`/`Failed` still show as rows (a record of
-  what was attempted) but contribute zero, since counting them would understate money the team
-  actually has. ⚠️ Flagged the same day, not yet built: a Square payment still `APPROVED` (not yet
-  `COMPLETED`) can't be refunded at all — it needs `CancelPayment` (void) instead, which
-  `RefundService` has no branch for today.
 
 **Kept here vs. `CHANGELOG.md`:** this section is a bounded, recent-only window (rule of thumb: cap
 around 10 entries), since CLAUDE.md is read in full on every conversation turn and this is the one

@@ -8,6 +8,27 @@ that window, or immediately if it's phase-numbered work already summarized in "C
 design rationale for any entry still lives in its linked `/docs/*.md` file, not here or in
 CLAUDE.md — this file, like CLAUDE.md's Change Log, is pointers only.
 
+- **Refunds and payments show, tie to a candidate, and report (2026-08-26).** Issue #431 (live
+  verification) and a same-day follow-on ask. See `docs/transactions-report.md`. Live-verified end to
+  end on WX0MIK: a real Square payment taken and refunded from inside the app. **Settlement to
+  `Completed` is now confirmed for both a full and a split-partial refund (2026-08-29)** — the
+  partial-refund pair ($2 + $3 against one $5 charge, submitted 2026-08-27) was checked off on #384 as
+  *submitted* but its settlement was inferred rather than observed at the time; the real bank
+  statement showing both `PURCHASE RETURN` lines posted is that missing observation.
+  **#384/#431 stay open** — #384 still has "Refund and dismiss" on Unmatched Payments and the
+  pre-#383-payment fallback note unchecked; #431 is the broader end-to-end pass (ExamTools
+  registration → close-session, youth-rate registration, the ARRL preview against real money) and most
+  of its steps haven't run yet. Two things worth carrying forward from the report itself:
+  **`Payment.CandidateNameSnapshot`** exists because `Candidate.Name` does not survive PII purge and a
+  withdrawal (the report's reason to exist) is exactly what triggers that purge — captured once at
+  Payment creation, same snapshot-on-the-record pattern as `MessageRuleRun`, so the Transactions
+  Report has a name to show without reopening PII purge policy; and **only a `Completed` refund
+  subtracts from the report's totals** — `Pending`/`Rejected`/`Failed` still show as rows (a record of
+  what was attempted) but contribute zero, since counting them would understate money the team
+  actually has. ⚠️ Flagged the same day, not yet built: a Square payment still `APPROVED` (not yet
+  `COMPLETED`) can't be refunded at all — it needs `CancelPayment` (void) instead, which
+  `RefundService` has no branch for today.
+
 - **The FCC application timeline is on screen now (2026-08-20).** Issue #195, opened as an idea
   recorded in a doc and never filed. See `docs/uls-watcher.md`. ExamTools' ULS mirror has always
   returned human-readable application history (`code_text: "Redlight Review Completed"`) with dates,

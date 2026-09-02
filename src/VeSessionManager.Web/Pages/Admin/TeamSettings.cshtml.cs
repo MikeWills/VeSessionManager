@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Authorization;
+﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
@@ -148,12 +148,12 @@ public class TeamSettingsModel(AppDbContext dbContext, UserManager<User> userMan
         return RedirectToPage(new { teamId = auth.Value.Team.Id });
     }
 
-    public async Task<IActionResult> OnPostUpdateDiscordAsync(ulong? guildId, string? mentionableRoleIds)
+    public async Task<IActionResult> OnPostUpdateDiscordAsync(ulong? guildId, string? mentionableRoleIds, bool tagSyncEnabled)
     {
         var auth = await AuthorizeAsync();
         if (auth is null) return Forbid();
 
-        var result = await teamSettingsService.UpdateDiscordAsync(auth.Value.Team.Id, guildId, mentionableRoleIds, auth.Value.User.Id, CancellationToken.None);
+        var result = await teamSettingsService.UpdateDiscordAsync(auth.Value.Team.Id, guildId, mentionableRoleIds, tagSyncEnabled, auth.Value.User.Id, CancellationToken.None);
         SetStatus(result, "Discord settings updated.");
         return RedirectToPage(new { teamId = auth.Value.Team.Id });
     }

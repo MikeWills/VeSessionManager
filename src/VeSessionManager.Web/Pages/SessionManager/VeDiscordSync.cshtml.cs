@@ -1,17 +1,19 @@
-using Microsoft.AspNetCore.Authorization;
+﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.RazorPages;
+using Microsoft.EntityFrameworkCore;
 using VeSessionManager.Core.Authorization;
 using VeSessionManager.Core.Data;
 using VeSessionManager.Core.Entities;
+using VeSessionManager.Core.Jobs;
 using VeSessionManager.Core.VolunteerExaminers;
 
 namespace VeSessionManager.Web.Pages.SessionManager;
 
 /// <summary>
-/// What the team's VE tags would become if its Discord roles were applied to them (#519 step 2), plus
-/// everything the check could not account for.
+/// What the team's VE tags would become if its Discord roles were applied to them, and the button that
+/// applies it (#519) — plus everything the check could not account for.
 ///
 /// <para><b>This page changes nothing.</b> It runs on demand, reads Discord, and shows a plan —
 /// applying it is step 3. That split is deliberate rather than incremental: tag <i>removal</i> is in
@@ -39,6 +41,13 @@ public class VeDiscordSyncModel(
 
     /// <summary>Null until the check is actually run — this page does not call Discord just because someone opened it.</summary>
     public DiscordTagSyncPlan? Plan { get; private set; }
+
+    /// <summary>
+    /// Whether the daily job is turned on for this team, and what it did last time — the only place
+    /// an unattended run surfaces outside the logs and the Job Run History page.
+    /// </summary>
+    public bool ScheduledSyncEnabled { get; private set; }
+    public JobRunHistory? LastAutomaticRun { get; private set; }
 
     public async Task<IActionResult> OnGetAsync()
     {
@@ -95,5 +104,23 @@ public class VeDiscordSyncModel(
         var user = await userManager.GetRequiredUserAsync(dbContext, User);
         AvailableTeams = await accessScope.GetAvailableTeamsAsync(dbContext, user);
         ResolvedTeamId = adminAccessScope.TryResolveManageableTeamId(user, TeamId, [.. AvailableTeams.Select(t => t.Id)]);
+
+        if (ResolvedTeamId is not { } teamId)
+        {
+            return;
+        }
+
+        ScheduledSyncEnabled = await dbContext.Teams
+            .Where(t => t.Id == teamId)
+            .Select(t => t.DiscordTagSyncEnabled)
+            .FirstOrDefaultAsync(HttpContext.RequestAborted);
+
+        // Read from the job's own history rather than a field of its own: the row is already written
+        // for every run, per team, and a second copy would be one more thing to keep in step.
+        LastAutomaticRun = await dbContext.JobRunHistories
+            .AsNoTracking()
+            .Where(h => h.JobName == JobSchedules.DiscordTagSync && h.TeamId == teamId)
+            .OrderByDescending(h => h.StartedUtc)
+            .FirstOrDefaultAsync(HttpContext.RequestAborted);
     }
 }

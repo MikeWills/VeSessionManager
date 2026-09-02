@@ -1,4 +1,4 @@
-namespace VeSessionManager.Core.Jobs;
+﻿namespace VeSessionManager.Core.Jobs;
 
 /// <summary>
 /// How a background job decides when to run. Two genuinely different shapes, and the difference is
@@ -107,6 +107,7 @@ public static class JobSchedules
     public const string VeLicenseWatch = "VeLicenseWatch";
     public const string Reconciliation = "Reconciliation";
     public const string RecordRetention = "RecordRetention";
+    public const string DiscordTagSync = "DiscordTagSync";
 
     // LicenseWatchStartHourEt = 6 lived here until 2026-08-11 (issue #301). It had no callers: the
     // descriptor below passes StartHourEt: 8 and reads SystemSettings.UlsWatcherStartHourEt, because
@@ -133,6 +134,14 @@ public static class JobSchedules
             "Compares ExamTools' closed-session feed against this app's own data and records anything missing. Read-only — it reports, it never repairs.",
             JobCadenceKind.IntervalFromWorkerStart,
             "Jobs:ReconciliationIntervalHours",
+            DefaultIntervalHours: 24,
+            TickIntervalSeconds: 86400),
+
+        new(DiscordTagSync,
+            "Discord tag sync",
+            "Keeps each team's VE tags in step with the Discord roles they're matched to. Only runs for teams that have turned it on, and only touches tags that are matched to a role.",
+            JobCadenceKind.IntervalFromWorkerStart,
+            "Jobs:DiscordTagSyncIntervalHours",
             DefaultIntervalHours: 24,
             TickIntervalSeconds: 86400),
 
