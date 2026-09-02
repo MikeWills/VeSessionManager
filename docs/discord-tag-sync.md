@@ -7,8 +7,8 @@ member / auditioning / a session manager" with Discord roles. That is a second, 
 of something this app also stores as [`VeTag`](../src/VeSessionManager.Core/Entities/VeTag.cs)
 assignments, and the two drift. This closes that gap in one direction only.
 
-**Status: step 1 of 4 is built** — the map, and the role picker that sets it. Nothing syncs yet. See
-[Build order](#build-order).
+**Status: steps 1-2 of 4 are built** — the map, and an on-demand check that shows what would change.
+Nothing writes yet. See [Build order](#build-order).
 
 ## The rule
 
@@ -78,6 +78,35 @@ error anywhere. So a run reports:
 - **VEs with no Discord match** — unfiltered, since it is bounded by the team's own roster.
 
 Neither list changes data. It exists to be read.
+
+## Matching
+
+In the order identity is trusted, first hit wins:
+
+1. **A stored `VolunteerExaminer.DiscordUserId`.** Ends the question — including for someone who has
+   since dropped their call sign from their nickname, which is exactly when guessing fails.
+2. **A hand-entered `DiscordUsername`** equal to the member's account name. A person typed it
+   deliberately, so it outranks anything inferred.
+3. **A call sign in the display name**, current or former (`VeCallSignHistory`) — a vanity call comes
+   through and a server nickname lags for months, and the person is the same person.
+
+`DiscordCallSignParser` produces *candidates*, not matches: the shape test is loose ("Ham2" is
+call-sign-shaped and is nobody's call) because the filter that actually decides is the team's own
+roster. A portable suffix is split as well as kept, so "WX0MIK/M" still finds `WX0MIK`.
+
+**Two call signs in one name resolves to nothing.** Both come back, the member is reported as
+ambiguous, and no tag moves — taking the first would assign one person's tags to another by string
+order.
+
+Only **active** memberships are in scope. Someone retired from the team is neither synced nor reported
+as missing from Discord: they are not expected to be there.
+
+### Recognising someone is not a tag change
+
+The first successful match produces an *identity link* — a `DiscordUserId` to store — which is listed
+separately from tag changes. Folding it in would make "3 changes" mean something different depending
+on whether anyone had been matched before, and the steady state (linked, correct) has to be able to
+report nothing at all.
 
 ## A failed fetch is not "no roles"
 
@@ -150,7 +179,8 @@ screen works on day one, and the sync is what waits.
 ## Build order
 
 1. **The map, and the role picker that sets it.** ← built
-2. Matching, and the preview + exceptions report. Read-only; writes nothing.
+2. **Matching, and the preview + exceptions report.** ← built — `DiscordTagSyncService.BuildPreviewAsync`
+   and the Discord Tags screen. Read-only; writes nothing, to the database or to Discord.
 3. Apply, audit-logged.
 4. A scheduled run on `TeamPipeline` — only once (2) has been looked at against real data.
 

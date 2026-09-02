@@ -116,6 +116,22 @@ public class VolunteerExaminer : ILicenseSnapshot
     /// <summary>Ties the roster to the team's Discord server — "completing the loop" in issue #142. Free text; not validated against Discord.</summary>
     public string? DiscordUsername { get; set; }
 
+    /// <summary>
+    /// This VE's Discord account id, once a member of a team's server has been matched to them (#519).
+    ///
+    /// <para><b>The link; <see cref="DiscordUsername"/> is the label.</b> A username changes, a
+    /// per-server nickname changes more often, and the call sign people put in their display name is
+    /// the very thing that goes stale after a vanity grant — the snowflake survives all of it. Once
+    /// this is set the tag sync stops guessing from the display name for this person entirely, which
+    /// is also what makes a VE who drops the call sign from their nickname stay matched.</para>
+    ///
+    /// <para>Null for everyone until a sync matches them, and left null for anyone it cannot match —
+    /// an unmatched VE is reported, never invented. Not unique-indexed: two VE records for one human
+    /// is a real state this app already handles by merge, and refusing the second write would turn a
+    /// duplicate-person problem into a failed sync.</para>
+    /// </summary>
+    public ulong? DiscordUserId { get; set; }
+
     public VeContactPreference ContactPreference { get; set; } = VeContactPreference.Email;
 
     /// <summary>Admin-facing free text. Not shown to the VE.</summary>

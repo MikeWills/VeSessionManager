@@ -143,6 +143,34 @@ public sealed class DiscordEventClient : IDiscordEventClient, IDiscordChannelMes
         ];
     }
 
+    /// <summary>See <see cref="IDiscordGuildClient.ListMembersAsync"/> — including why an empty result is not "the server is empty".</summary>
+    public async Task<IReadOnlyList<DiscordGuildMember>> ListMembersAsync(ulong guildId, CancellationToken cancellationToken)
+    {
+        var guild = await GetGuildAsync(guildId, cancellationToken);
+        var members = new List<DiscordGuildMember>();
+
+        // Paged by Discord, 1000 at a time. Enumerated to the end rather than capped: a partial roster
+        // is indistinguishable from "these people hold no roles", which under the sync's rule means
+        // "remove their tags" — so a cap here would quietly become a data-loss knob.
+        await foreach (var page in guild.GetUsersAsync().WithCancellation(cancellationToken))
+        {
+            foreach (var user in page)
+            {
+                members.Add(new DiscordGuildMember(
+                    user.Id,
+                    user.Username,
+                    user.DisplayName,
+                    user.Nickname,
+                    // @everyone is a real role in Discord's model, with the guild's own id. Dropped so
+                    // "holds a mapped role" cannot be satisfied by simply being in the server.
+                    [.. user.RoleIds.Where(id => id != guildId)]));
+            }
+        }
+
+        _logger.LogInformation("Read {MemberCount} member(s) from Discord guild {GuildId}", members.Count, guildId);
+        return members;
+    }
+
     /// <summary>DateTimeOffset(DateTime, TimeSpan.Zero) requires Kind=Utc (or Unspecified); force it so a value that round-tripped through EF/Sqlite (which drops Kind) never throws.</summary>
     private static DateTimeOffset ToOffset(DateTime utc) =>
         new(DateTime.SpecifyKind(utc, DateTimeKind.Utc), TimeSpan.Zero);
