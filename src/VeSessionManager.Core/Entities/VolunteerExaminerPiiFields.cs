@@ -33,6 +33,13 @@ public static class VolunteerExaminerPiiFields
         volunteerExaminer.State = null;
         volunteerExaminer.PostalCode = null;
         volunteerExaminer.DiscordUsername = null;
+
+        // The same fact as the username above, and the stronger form of it: a snowflake never changes,
+        // so keeping it while clearing the label would leave a permanent handle on the person's Discord
+        // account after their contact details were supposed to have aged out (#519). The cost is real
+        // and accepted — a purged VE who is still in the team's server has to be matched by call sign
+        // again on the next check, exactly as they were the first time.
+        volunteerExaminer.DiscordUserId = null;
         volunteerExaminer.Notes = null;
         volunteerExaminer.PiiPurgedUtc = purgedUtc;
     }

@@ -7,8 +7,8 @@ member / auditioning / a session manager" with Discord roles. That is a second, 
 of something this app also stores as [`VeTag`](../src/VeSessionManager.Core/Entities/VeTag.cs)
 assignments, and the two drift. This closes that gap in one direction only.
 
-**Status: steps 1-2 of 4 are built** — the map, and an on-demand check that shows what would change.
-Nothing writes yet. See [Build order](#build-order).
+**Status: steps 1-3 of 4 are built** — the map, the check, and applying it by hand. Only the scheduled
+run is left. See [Build order](#build-order).
 
 ## The rule
 
@@ -166,6 +166,42 @@ Two details worth keeping:
   *(not in this server)*. Without it, saving the row for an unrelated reason — a rename, a reorder —
   would silently unmap the tag.
 
+## Applying
+
+One button, everything in the plan. There is no per-row selection: the preview is where a wrong row is
+caught, and the fix for one is in Discord or in the tag map — a skip that nothing remembers would
+silently return on the next run, and would be indistinguishable from a row nobody looked at.
+
+**Apply rebuilds the plan from Discord and writes that**, rather than replaying what the screen showed.
+A preview is a photograph: a role revoked in the seconds between looking and clicking would otherwise
+be applied as though it were still held. The previewed `Fingerprint` travels with the form and is
+compared against the fresh plan purely to *report* that the picture was out of date — it never blocks
+the write, since the fresh answer is the correct one either way and refusing would only mean looking at
+the same screen again.
+
+The fingerprint deliberately covers only the writes. Exception lists shift on their own (somebody
+joins the server, somebody fixes their nickname) without changing what applying does, and reporting
+that as "this differs from what you saw" would cry wolf.
+
+Everything lands in one transaction. A handful of rows from one button press is easier to reason about
+as all-or-nothing than half-applied — different from the scan-based jobs, which save per item precisely
+because they run unattended across hundreds of rows and must never lose progress already made. Every
+tag change and every account match is written to the audit log against the person who clicked.
+
+### The username follows the id
+
+On a confirmed match, `DiscordUsername` is overwritten with the account's real name. It is a label on a
+link that is now established, and leaving a hand-typed guess beside a confirmed account would make the
+screen disagree with itself.
+
+### PII purge clears the match
+
+`VolunteerExaminerPiiFields.Clear` nulls `DiscordUserId` alongside `DiscordUsername`. They are the same
+fact, and the id is the stronger form of it — a snowflake never changes, so keeping it while clearing
+the label would leave a permanent handle on someone's Discord account after their contact details were
+supposed to have aged out. The cost is accepted: a purged VE still in the server is matched by call
+sign again on the next check, exactly as they were the first time.
+
 ## Ops prerequisite: the privileged intent
 
 `GET /guilds/{id}/members` is gated behind the **`GUILD_MEMBERS` privileged intent**, which has to be
@@ -181,8 +217,8 @@ screen works on day one, and the sync is what waits.
 1. **The map, and the role picker that sets it.** ← built
 2. **Matching, and the preview + exceptions report.** ← built — `DiscordTagSyncService.BuildPreviewAsync`
    and the Discord Tags screen. Read-only; writes nothing, to the database or to Discord.
-3. Apply, audit-logged.
-4. A scheduled run on `TeamPipeline` — only once (2) has been looked at against real data.
+3. **Apply, audit-logged.** ← built — `DiscordTagSyncService.ApplyAsync`, one button on the same screen.
+4. A scheduled run on `TeamPipeline` — only once (2) and (3) have been used against real data.
 
 Steps 2 and 3 are split from 4 on purpose. Removals are in scope, so an unattended bad match strips a
 real tag; the manual preview is what makes the first runs inspectable. Same report-then-act shape as

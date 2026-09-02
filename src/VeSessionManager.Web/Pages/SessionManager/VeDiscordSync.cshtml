@@ -1,4 +1,4 @@
-@page
+﻿@page
 @model VeSessionManager.Web.Pages.SessionManager.VeDiscordSyncModel
 @{
     ViewData["Title"] = "Discord Tags";
@@ -40,18 +40,55 @@ else
         </form>
     </div>
 
+    @if (Model.Applied is { } applied)
+    {
+        <div class="ve-panel">
+            @if (!applied.Plan.Ran)
+            {
+                <p><strong>Nothing was changed.</strong> @applied.Plan.SkippedReason</p>
+            }
+            else
+            {
+                <p>
+                    <strong>Done.</strong>
+                    @applied.TagsAdded tag(s) added, @applied.TagsRemoved removed,
+                    @applied.Linked Discord account(s) matched.
+                </p>
+                @if (applied.DifferedFromPreview)
+                {
+                    @* Reported rather than refused: Discord was re-read at the moment of applying, so
+                       what happened is right — but the person clicked based on an older picture and
+                       should be told the two did not agree. *@
+                    <p class="session-sub">
+                        Discord changed while you were looking, so this may differ from what was listed above.
+                        What's shown now is the result after the change.
+                    </p>
+                }
+            }
+        </div>
+    }
+
     @if (Model.Plan is { } plan)
     {
+        @* After applying, this same plan is the record of what was done — so the wording switches to
+           the past tense rather than telling someone what "would" happen to tags that already moved. *@
+        var done = Model.Applied is not null;
+
         if (!plan.Ran)
         {
-            <div class="ve-panel">
-                <p><strong>Nothing was checked.</strong> @plan.SkippedReason</p>
-            </div>
+            @* The banner above already gave the reason when this ran as an apply; saying it twice
+               reads as two separate failures. *@
+            if (!done)
+            {
+                <div class="ve-panel">
+                    <p><strong>Nothing was checked.</strong> @plan.SkippedReason</p>
+                </div>
+            }
         }
         else if (!plan.HasAnythingToShow)
         {
             <div class="ve-panel">
-                <p>Everything matches. No tags would change.</p>
+                <p>Everything matches. @(done ? "Nothing needed changing." : "No tags would change.")</p>
             </div>
         }
         else
@@ -59,10 +96,10 @@ else
             @if (plan.Changes.Count > 0)
             {
                 <div class="ve-panel">
-                    <h2>Tags that would change</h2>
+                    <h2>@(done ? "Tags changed" : "Tags that would change")</h2>
                     <div class="table-scroll">
                         <table class="cards">
-                            <thead><tr><th>VE</th><th>On Discord</th><th>Would gain</th><th>Would lose</th></tr></thead>
+                            <thead><tr><th>VE</th><th>On Discord</th><th>@(done ? "Gained" : "Would gain")</th><th>@(done ? "Lost" : "Would lose")</th></tr></thead>
                             <tbody>
                                 @foreach (var change in plan.Changes)
                                 {
@@ -76,16 +113,33 @@ else
                             </tbody>
                         </table>
                     </div>
+                    @if (Model.Applied is null)
+                    {
+                        <form method="post" action="@Url.Page("VeDiscordSync", "Apply", new { teamId = Model.ResolvedTeamId })" asp-antiforgery="true">
+                            @* What was on screen. Only used to tell you if Discord changed underneath
+                               it — Discord is re-read either way. *@
+                            <input type="hidden" name="fingerprint" value="@plan.Fingerprint" />
+                            <button type="submit" class="btn-primary">
+                                Apply @plan.Changes.Count change@(plan.Changes.Count == 1 ? "" : "s")
+                            </button>
+                        </form>
+                        <p class="session-sub">
+                            Applies every change listed above, and saves the Discord matches below.
+                            To leave one out, change it in Discord (or unmatch the tag) and check again.
+                        </p>
+                    }
                 </div>
             }
 
             @if (plan.NewLinks.Count > 0)
             {
                 <div class="ve-panel">
-                    <h2>Newly recognized on Discord</h2>
+                    <h2>@(done ? "Newly matched on Discord" : "Newly recognized on Discord")</h2>
                     <p class="session-sub">
-                        Matched by call sign this time. Saving the match means they stay matched even if they
-                        change their name in Discord later.
+                        Matched by call sign this time.
+                        @(done
+                            ? "They'll stay matched now, even if they change their name in Discord later."
+                            : "Saving the match means they stay matched even if they change their name in Discord later.")
                     </p>
                     <div class="table-scroll">
                         <table class="cards">
@@ -110,7 +164,8 @@ else
                 <div class="ve-panel">
                     <h2>Could mean more than one VE</h2>
                     <p class="session-sub">
-                        These Discord names contain more than one call sign, so nothing was matched for them.
+                        These Discord names contain more than one call sign, so nothing was matched for them
+                        and their tags were left alone.
                     </p>
                     <ul>
                         @foreach (var member in plan.AmbiguousMembers)
