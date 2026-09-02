@@ -172,6 +172,7 @@ builder.Services.Configure<DiscordOptions>(builder.Configuration.GetSection(Disc
 builder.Services.AddSingleton<DiscordEventClient>();
 builder.Services.AddSingleton<IDiscordEventClient>(sp => sp.GetRequiredService<DiscordEventClient>());
 builder.Services.AddSingleton<IDiscordChannelMessageClient>(sp => sp.GetRequiredService<DiscordEventClient>());
+builder.Services.AddSingleton<IDiscordGuildClient>(sp => sp.GetRequiredService<DiscordEventClient>());
 builder.Services.AddScoped<SessionEventSchedulingService>();
 builder.Services.AddScoped<JobRunHistoryLogger>();
 // Backs Admin -> Job Schedule. Web-only: the Worker obeys the schedule, it has no need to report it.

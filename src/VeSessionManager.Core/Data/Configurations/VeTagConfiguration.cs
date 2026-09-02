@@ -16,6 +16,14 @@ public class VeTagConfiguration : IEntityTypeConfiguration<VeTag>
     {
         b.HasIndex(t => new { t.TeamId, t.Name }).IsUnique();
         b.HasOne(t => t.Team).WithMany().HasForeignKey(t => t.TeamId).OnDelete(DeleteBehavior.Cascade);
-        
+
+        // One Discord role means one tag, per team (#519). Per team for the same reason the name
+        // index is: two teams can share a Discord server and each map its roles to their own words.
+        //
+        // Unfiltered on purpose. SQLite treats NULLs in a unique index as distinct, so any number of
+        // tags may stay unmapped — which is the normal case, and the thing that would break loudly if
+        // it were not true (a team could hold exactly one unmapped tag). EF InMemory enforces no
+        // unique index at all, so VeTagDiscordRoleTests pins both halves against real SQLite.
+        b.HasIndex(t => new { t.TeamId, t.DiscordRoleId }).IsUnique();
     }
 }

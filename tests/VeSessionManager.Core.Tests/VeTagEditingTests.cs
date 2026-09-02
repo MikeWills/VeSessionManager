@@ -50,7 +50,7 @@ public class VeTagEditingTests
         await using var dbContext = CreateContext();
         var team = await SeedTeamAsync(dbContext);
         var service = CreateService(dbContext);
-        var (_, tag) = await service.CreateTagAsync(team.Id, "Team member", 0, null, 1, CancellationToken.None);
+        var (_, tag) = await service.CreateTagAsync(team.Id, "Team member", 0, null, null, null, 1, CancellationToken.None);
 
         var person = new VolunteerExaminer { Name = "Alaric Hanson", CallSign = "KF0JZP" };
         dbContext.VolunteerExaminers.Add(person);
@@ -61,7 +61,7 @@ public class VeTagEditingTests
         dbContext.Set<VeTagAssignment>().Add(new VeTagAssignment { VeTeamMembershipId = membership.Id, VeTagId = tag!.Id, CreatedUtc = Now });
         await dbContext.SaveChangesAsync();
 
-        var result = await service.UpdateTagAsync(tag.Id, "Full member", 5, "#3366CC", 1, CancellationToken.None);
+        var result = await service.UpdateTagAsync(tag.Id, "Full member", 5, "#3366CC", null, null, 1, CancellationToken.None);
 
         Assert.Equal(VeManagementResult.Success, result);
         var stored = await dbContext.VeTags.SingleAsync();
@@ -77,10 +77,10 @@ public class VeTagEditingTests
         await using var dbContext = CreateContext();
         var team = await SeedTeamAsync(dbContext);
         var service = CreateService(dbContext);
-        await service.CreateTagAsync(team.Id, "Team member", 0, null, 1, CancellationToken.None);
-        var (_, second) = await service.CreateTagAsync(team.Id, "Team lead", 1, null, 1, CancellationToken.None);
+        await service.CreateTagAsync(team.Id, "Team member", 0, null, null, null, 1, CancellationToken.None);
+        var (_, second) = await service.CreateTagAsync(team.Id, "Team lead", 1, null, null, null, 1, CancellationToken.None);
 
-        var result = await service.UpdateTagAsync(second!.Id, "Team member", 1, null, 1, CancellationToken.None);
+        var result = await service.UpdateTagAsync(second!.Id, "Team member", 1, null, null, null, 1, CancellationToken.None);
 
         Assert.Equal(VeManagementResult.DuplicateTagName, result);
         Assert.Equal("Team lead", (await dbContext.VeTags.FindAsync(second.Id))!.Name);
@@ -96,9 +96,9 @@ public class VeTagEditingTests
         await using var dbContext = CreateContext();
         var team = await SeedTeamAsync(dbContext);
         var service = CreateService(dbContext);
-        var (_, tag) = await service.CreateTagAsync(team.Id, "Team member", 0, null, 1, CancellationToken.None);
+        var (_, tag) = await service.CreateTagAsync(team.Id, "Team member", 0, null, null, null, 1, CancellationToken.None);
 
-        var result = await service.UpdateTagAsync(tag!.Id, "Team member", 3, null, 1, CancellationToken.None);
+        var result = await service.UpdateTagAsync(tag!.Id, "Team member", 3, null, null, null, 1, CancellationToken.None);
 
         Assert.Equal(VeManagementResult.Success, result);
         Assert.Equal(3, (await dbContext.VeTags.FindAsync(tag.Id))!.SortOrder);
@@ -112,10 +112,10 @@ public class VeTagEditingTests
         var teamA = await SeedTeamAsync(dbContext, "HRCC");
         var teamB = await SeedTeamAsync(dbContext, "MARC");
         var service = CreateService(dbContext);
-        await service.CreateTagAsync(teamA.Id, "Team member", 0, null, 1, CancellationToken.None);
-        var (_, other) = await service.CreateTagAsync(teamB.Id, "Provisional", 0, null, 1, CancellationToken.None);
+        await service.CreateTagAsync(teamA.Id, "Team member", 0, null, null, null, 1, CancellationToken.None);
+        var (_, other) = await service.CreateTagAsync(teamB.Id, "Provisional", 0, null, null, null, 1, CancellationToken.None);
 
-        var result = await service.UpdateTagAsync(other!.Id, "Team member", 0, null, 1, CancellationToken.None);
+        var result = await service.UpdateTagAsync(other!.Id, "Team member", 0, null, null, null, 1, CancellationToken.None);
 
         Assert.Equal(VeManagementResult.Success, result);
     }
@@ -139,7 +139,7 @@ public class VeTagEditingTests
         var team = await SeedTeamAsync(dbContext);
         var service = CreateService(dbContext);
 
-        var (createResult, _) = await service.CreateTagAsync(team.Id, "Team member", 0, color, 1, CancellationToken.None);
+        var (createResult, _) = await service.CreateTagAsync(team.Id, "Team member", 0, color, null, null, 1, CancellationToken.None);
 
         Assert.Equal(VeManagementResult.InvalidColor, createResult);
         Assert.Empty(dbContext.VeTags);
@@ -151,9 +151,9 @@ public class VeTagEditingTests
         await using var dbContext = CreateContext();
         var team = await SeedTeamAsync(dbContext);
         var service = CreateService(dbContext);
-        var (_, tag) = await service.CreateTagAsync(team.Id, "Team member", 0, "#3366cc", 1, CancellationToken.None);
+        var (_, tag) = await service.CreateTagAsync(team.Id, "Team member", 0, "#3366cc", null, null, 1, CancellationToken.None);
 
-        await service.UpdateTagAsync(tag!.Id, "Team member", 0, null, 1, CancellationToken.None);
+        await service.UpdateTagAsync(tag!.Id, "Team member", 0, null, null, null, 1, CancellationToken.None);
 
         Assert.Null((await dbContext.VeTags.FindAsync(tag.Id))!.Color);
     }

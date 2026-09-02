@@ -108,6 +108,7 @@ builder.Services.Configure<DiscordOptions>(builder.Configuration.GetSection(Disc
 builder.Services.AddSingleton<DiscordEventClient>();
 builder.Services.AddSingleton<IDiscordEventClient>(sp => sp.GetRequiredService<DiscordEventClient>());
 builder.Services.AddSingleton<IDiscordChannelMessageClient>(sp => sp.GetRequiredService<DiscordEventClient>());
+builder.Services.AddSingleton<IDiscordGuildClient>(sp => sp.GetRequiredService<DiscordEventClient>());
 builder.Services.AddScoped<SessionEventSchedulingService>();
 
 // Singleton: the Square SDK client owns its own HttpClient, same reasoning as the other API clients.

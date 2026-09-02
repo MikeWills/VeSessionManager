@@ -39,6 +39,36 @@ public class VeTag
     /// </summary>
     public string? Color { get; set; }
 
+    /// <summary>
+    /// The Discord role that means this tag, or null for a tag Discord has no opinion about (#519).
+    ///
+    /// <para><b>Only mapped tags are ever synced.</b> Null here is what keeps a hand-managed tag
+    /// hand-managed: the sync neither adds nor removes it, whatever roles a matched VE holds. For a
+    /// mapped tag the rule is symmetric — holding the role means holding the tag, and not holding the
+    /// role means not holding it — so mapping a tag hands it to Discord in both directions.</para>
+    ///
+    /// <para>Unique per team (see <c>VeTagConfiguration</c>): one role means one tag. Two tags on one
+    /// role is well defined to <i>run</i> ("both apply") and impossible to <i>read</i> off this
+    /// screen, which is the wrong trade for a mapping an admin has to trust.</para>
+    ///
+    /// <para><b>Grants nothing.</b> A Discord role is not an authorization signal here any more than
+    /// the tag it sets is — see the class remarks. Nor does this app ever write back: Discord roles
+    /// and permissions are managed in Discord, and this is a read.</para>
+    /// </summary>
+    public ulong? DiscordRoleId { get; set; }
+
+    /// <summary>
+    /// What that role was called when it was last mapped or confirmed. A snapshot for display, never
+    /// the link — roles get renamed, and <see cref="DiscordRoleId"/> survives it.
+    ///
+    /// <para>Stored rather than fetched so the tag screen can still say which role a tag is mapped to
+    /// when Discord is unreachable, the bot token is unset, or the privileged intent has been turned
+    /// off — all of which leave the role list empty and would otherwise render the mapping as a bare
+    /// 18-digit number. Same snapshot-on-the-record reasoning as <c>Payment.CandidateNameSnapshot</c>
+    /// and <c>MessageRuleRun</c>.</para>
+    /// </summary>
+    public string? DiscordRoleName { get; set; }
+
     public DateTime CreatedUtc { get; set; }
 
     public List<VeTagAssignment> Assignments { get; } = [];

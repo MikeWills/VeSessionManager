@@ -39,11 +39,11 @@ else
 
         <div class="table-scroll">
         <table class="cards">
-            <thead><tr><th>Name</th><th>Order</th><th>Color</th><th>VEs tagged</th><th></th></tr></thead>
+            <thead><tr><th>Name</th><th>Order</th><th>Color</th><th>Discord role</th><th>VEs tagged</th><th></th></tr></thead>
             <tbody>
                 @if (Model.Tags.Count == 0)
                 {
-                    <tr><td colspan="5">No tags yet. Add the ones your team actually uses below.</td></tr>
+                    <tr><td colspan="6">No tags yet. Add the ones your team actually uses below.</td></tr>
                 }
                 @foreach (var row in Model.Tags)
                 {
@@ -74,6 +74,31 @@ else
                                     <span>Use</span>
                                 </label>
                             </span>
+                        </td>
+                        <td>
+                            @if (Model.AvailableRoles.Count > 0)
+                            {
+                                <select form="tag-@row.Tag.Id" name="discordRoleId" class="menu-input" aria-label="Discord role">
+                                    <option value="">None</option>
+                                    @foreach (var role in Model.AvailableRoles)
+                                    {
+                                        <option value="@role.Id" selected="@(role.Id == row.Tag.DiscordRoleId)">@role.Name</option>
+                                    }
+                                    @* A role that is mapped but no longer in the list — renamed away, deleted, or
+                                       simply not visible to the bot — still has to be selectable, or saving the row
+                                       for any other reason would silently unmap it. *@
+                                    @if (row.Tag.DiscordRoleId is { } mapped && Model.AvailableRoles.All(r => r.Id != mapped))
+                                    {
+                                        <option value="@mapped" selected>@(row.Tag.DiscordRoleName ?? mapped.ToString()) (not in this server)</option>
+                                    }
+                                </select>
+                            }
+                            else
+                            {
+                                <input form="tag-@row.Tag.Id" name="discordRoleId" value="@(row.Tag.DiscordRoleId?.ToString())"
+                                       class="menu-input" style="width:170px;" aria-label="Discord role id"
+                                       placeholder="Role id" />
+                            }
                         </td>
                         <td class="count">@row.AssignedCount</td>
                         <td class="row-actions-cell">
@@ -128,6 +153,24 @@ else
                     <label class="inline-check"><input type="checkbox" name="useColor" value="true" checked /> <span>Use</span></label>
                 </span>
                 <span class="session-sub">Color-codes the team on a VE's page.</span>
+            </div>
+            <div class="field">
+                <label for="discordRoleId">Discord role</label>
+                @if (Model.AvailableRoles.Count > 0)
+                {
+                    <select id="discordRoleId" name="discordRoleId">
+                        <option value="">None</option>
+                        @foreach (var role in Model.AvailableRoles)
+                        {
+                            <option value="@role.Id">@role.Name</option>
+                        }
+                    </select>
+                }
+                else
+                {
+                    <input id="discordRoleId" name="discordRoleId" placeholder="Role id" />
+                }
+                <span class="session-sub">Optional. Which role means this tag.</span>
             </div>
             <button type="submit" class="btn-primary btn-sm">Add tag</button>
         </form>

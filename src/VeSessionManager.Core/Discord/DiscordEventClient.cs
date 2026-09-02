@@ -1,4 +1,4 @@
-using Discord;
+﻿using Discord;
 using Discord.Rest;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -12,7 +12,7 @@ namespace VeSessionManager.Core.Discord;
 /// https://docs.discordnet.dev/guides/guild_events/creating-guild-events.html. Registered as a
 /// singleton so the login only happens once; bot tokens don't expire, unlike Zoom's.
 /// </summary>
-public sealed class DiscordEventClient : IDiscordEventClient, IDiscordChannelMessageClient, IDisposable
+public sealed class DiscordEventClient : IDiscordEventClient, IDiscordChannelMessageClient, IDiscordGuildClient, IDisposable
 {
     private readonly DiscordOptions _options;
     private readonly ILogger<DiscordEventClient> _logger;
@@ -121,6 +121,26 @@ public sealed class DiscordEventClient : IDiscordEventClient, IDiscordChannelMes
         var guild = await GetGuildAsync(guildId, cancellationToken);
         var channels = await guild.GetTextChannelsAsync();
         return [.. channels.OrderBy(c => c.Position).Select(c => new DiscordChannelSummary(c.Id, c.Name))];
+    }
+
+    /// <summary>See <see cref="IDiscordGuildClient.ListRolesAsync"/>.</summary>
+    public async Task<IReadOnlyList<DiscordRoleSummary>> ListRolesAsync(ulong guildId, CancellationToken cancellationToken)
+    {
+        var guild = await GetGuildAsync(guildId, cancellationToken);
+
+        // Roles come off the already-fetched guild — no extra call, and no privileged intent involved
+        // (that gate is on the member list, which arrives with the sync itself).
+        //
+        // @everyone is filtered out rather than shown and rejected later: Discord models it as a real
+        // role whose id equals the guild id, every member holds it, and a tag mapped to it could be
+        // added to the whole roster and never removed from anyone.
+        return
+        [
+            .. guild.Roles
+                .Where(r => r.Id != guildId)
+                .OrderByDescending(r => r.Position)
+                .Select(r => new DiscordRoleSummary(r.Id, r.Name))
+        ];
     }
 
     /// <summary>DateTimeOffset(DateTime, TimeSpan.Zero) requires Kind=Utc (or Unspecified); force it so a value that round-tripped through EF/Sqlite (which drops Kind) never throws.</summary>

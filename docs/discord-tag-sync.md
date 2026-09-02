@@ -1,0 +1,163 @@
+# Discord tag sync
+
+Reading a team's Discord server to keep VE tags in step with Discord roles ([#519]).
+
+Most VEs carry their call sign in their Discord display name, and teams already manage "who is a full
+member / auditioning / a session manager" with Discord roles. That is a second, hand-maintained copy
+of something this app also stores as [`VeTag`](../src/VeSessionManager.Core/Entities/VeTag.cs)
+assignments, and the two drift. This closes that gap in one direction only.
+
+**Status: step 1 of 4 is built** — the map, and the role picker that sets it. Nothing syncs yet. See
+[Build order](#build-order).
+
+## The rule
+
+Discord is authoritative, one-directional, and applies only to matched VEs and mapped tags. Two
+independent filters decide whether a VE is in scope at all:
+
+- **Not in the Discord server, or not matched to a VE record on that team → do nothing.** No tags
+  added, none removed. A VE who never joined Discord is untouched forever, not stripped.
+- **In Discord but not on the team's VE list → do nothing.** The sync never creates a VE record or a
+  team membership. ExamTools and the admin still own who is a VE.
+
+For a VE that passes both, and only for tags carrying a `DiscordRoleId`:
+
+| Discord role | App tag | Action |
+|---|---|---|
+| has | has | nothing |
+| has | missing | **add the tag** |
+| missing | has | **remove the tag** |
+
+A tag with no role mapped is never read or written — hand-managed exactly as before. Mapping a tag is
+therefore the whole opt-in: it hands that tag to Discord in both directions at once.
+
+**A hand edit to a mapped tag does not stick, in either direction** (Mike, 2026-09-01: "if it's
+removed from the app, re-add it if Discord has it"). Taking a mapped tag off a matched VE by hand puts
+the app in the "missing tag, has role" row, so the next sync adds it straight back; adding one by hand
+that Discord does not back puts it in "has tag, missing role", so the next sync removes it. That is
+the rule working, not a bug to file — the place to make the change stick is Discord, which is what
+"Discord is authoritative" means in practice. The only way to hand-manage a tag again is to unmap it.
+
+There is deliberately **no in-app marker** saying which tags are Discord-managed beyond the mapping
+shown on the VE Tags screen itself (asked and declined, same day). Worth revisiting only if someone is
+actually surprised by a tag reappearing.
+
+### Why removal is in scope
+
+Adding only would have been the safer-sounding half, and it would also have been useless: the state a
+team actually wants reflected is "this person is no longer a full member," which is expressed in
+Discord by *taking the role away*. A sync that never removes cannot represent it, so the app's copy
+would keep drifting in the one direction that matters.
+
+The cost is that a hand-set tag on a matched VE disappears when Discord disagrees — the same shape as
+the in-app VE roster editing that was removed (see CLAUDE.md's Known Constraints: an edit was reverted
+by the next sync precisely when it disagreed, i.e. exactly when it mattered). That is accepted here,
+because unlike the roster case it is opt-in per tag and per matched person, and because the preview
+step below means the first disagreement is *shown* rather than applied.
+
+### What this never does
+
+- **Never writes to Discord.** No role is granted or revoked, no nickname changed, no permission
+  touched. Roles are managed in Discord; this is a read. `IDiscordGuildClient` says so in its own
+  remarks, and if pushing a role is ever wanted that is a new decision and a new interface.
+- **Never grants access in this app.** A Discord role is not an authorization signal here, any more
+  than the tag it sets is — `VeTagsGrantNoAccessTests` asserts no authorization code reads tags at
+  all, and a role reaching a tag does not change that.
+- **Never creates or deletes people.** Neither VE records nor team memberships.
+
+## Exceptions, in both directions
+
+Doing nothing is the right *action* for both no-op cases above, but it is also how a mapping mistake
+hides: a VE whose display name stops carrying their call sign simply drops out of the sync, with no
+error anywhere. So a run reports:
+
+- **Discord members with no VE match** — filtered to members holding a mapped role. A team's server is
+  full of candidates, club members and bots; an unfiltered list would be mostly noise, and a noisy
+  list stops being read. Someone holding a mapped role is exactly the person whose tags *would* have
+  synced had they matched, which makes their absence worth a line.
+- **VEs with no Discord match** — unfiltered, since it is bounded by the team's own roster.
+
+Neither list changes data. It exists to be read.
+
+## A failed fetch is not "no roles"
+
+An empty or errored member fetch looks identical to "nobody holds any role", and under the rule above
+that would remove every mapped tag from every matched VE. No data means no run: nothing added, nothing
+removed, nothing reported. This is the same shape as the aggregate-settled gotcha in CLAUDE.md — a
+piece that is unconfigured must never *contribute* to a conclusion, only fail to.
+
+## Identity
+
+`VolunteerExaminer.DiscordUserId` (added in step 2) is the link: a snowflake, stable across every
+rename. `DiscordUsername` stays as a hand-editable display value, refreshed when a match is confirmed,
+because a VE detail page showing an 18-digit number instead of a name is worse than one showing a
+slightly stale name.
+
+The same split applies to the map itself: `VeTag.DiscordRoleId` is the link and
+`VeTag.DiscordRoleName` is a display snapshot, stored rather than fetched so the tag screen can still
+say which role a tag is mapped to when Discord is unreachable.
+
+## The map
+
+One Discord role means one tag, per team — enforced by a unique index on `(TeamId, DiscordRoleId)` and
+by `VolunteerExaminerManagementService`. Two tags on one role is well defined to *run* ("both apply")
+and impossible to *read* off the tag screen, which is the wrong trade for a mapping an admin has to
+trust. Per team for the same reason tag names are: two teams can share one Discord server and map its
+roles to their own vocabularies.
+
+The index is deliberately unfiltered. SQLite treats NULLs in a unique index as distinct, so any number
+of tags stay unmapped — the normal case. EF InMemory enforces no unique index at all, so
+`VeTagDiscordRoleTests` pins both halves against real SQLite, per CLAUDE.md's rule about
+provider-dependent behaviour.
+
+**The map lives on `VeTag` rather than in a table of its own.** A tag is already a team's own
+vocabulary with its own screen, and "which Discord role means this tag" is a property of that entry; a
+separate entity would need its own team scoping, its own uniqueness rules and its own screen to say
+the same thing.
+
+### The role picker
+
+`IDiscordGuildClient.ListRolesAsync` backs a `<select>` on the VE Tags screen, so an admin picks
+"Team Member" rather than copying an 18-digit id out of Developer Mode. `@everyone` is excluded: every
+member holds it, so a tag mapped to it could be added to the whole roster and never removed from
+anyone — a mapping with no meaning is one somebody eventually picks by mistake.
+
+An empty role list falls back to a typed id box rather than erroring the page, and every failure
+collapses to that one path: no bot token, no `DiscordGuildId` on the team, the bot not in the server,
+or the lookup throwing. Same pattern as the message rule channel picker ([#503]). A team that does not
+use Discord must not lose the ability to edit tag names because of it.
+
+Two details worth keeping:
+
+- Roles are fetched in `OnGetAsync`, not in the `LoadAsync` both verbs call. A POST always redirects
+  to a fresh GET, so fetching on the way in would be a wasted round trip on every save. The one POST
+  that does ask Discord is a tag being mapped to a role it did not hold before — there is nothing else
+  to name it with. An unchanged mapping keeps its stored name and asks nothing.
+- A tag mapped to a role that is no longer in the list still renders as a selected option, marked
+  *(not in this server)*. Without it, saving the row for an unrelated reason — a rename, a reorder —
+  would silently unmap the tag.
+
+## Ops prerequisite: the privileged intent
+
+`GET /guilds/{id}/members` is gated behind the **`GUILD_MEMBERS` privileged intent**, which has to be
+enabled for the bot application in the Discord developer portal. It is a checkbox for a bot in fewer
+than 100 servers, with no verification process, but the member list is empty until it is on.
+
+Listing *roles* needs no such intent — they come off the guild object the app already fetches — so the
+map can be configured before the intent is enabled. That ordering is deliberate: the configuration
+screen works on day one, and the sync is what waits.
+
+## Build order
+
+1. **The map, and the role picker that sets it.** ← built
+2. Matching, and the preview + exceptions report. Read-only; writes nothing.
+3. Apply, audit-logged.
+4. A scheduled run on `TeamPipeline` — only once (2) has been looked at against real data.
+
+Steps 2 and 3 are split from 4 on purpose. Removals are in scope, so an unattended bad match strips a
+real tag; the manual preview is what makes the first runs inspectable. Same report-then-act shape as
+[#88]'s `--report-historical-imports`.
+
+[#88]: https://github.com/MikeWills/VeSessionManager/issues/88
+[#503]: https://github.com/MikeWills/VeSessionManager/issues/503
+[#519]: https://github.com/MikeWills/VeSessionManager/issues/519
