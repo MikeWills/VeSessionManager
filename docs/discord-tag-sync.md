@@ -7,8 +7,11 @@ member / auditioning / a session manager" with Discord roles. That is a second, 
 of something this app also stores as [`VeTag`](../src/VeSessionManager.Core/Entities/VeTag.cs)
 assignments, and the two drift. This closes that gap in one direction only.
 
-**Status: all four steps are built** — the map, the check, applying it by hand, and a daily job that is
-**off for every team until someone turns it on**. See [Build order](#build-order).
+**Status: all four steps are built, merged, and deployed in `v0.34.0` (2026-09-02) — and every one of
+them is inert until somebody configures it.** No tag is mapped to a role, the daily job is off for
+every team, and the member list returns nothing until the privileged intent is enabled. Nothing here
+has yet run against a real Discord server; see [Before turning any of this on](#before-turning-any-of-this-on)
+for the order to do that in, and [Build order](#build-order) for what each step contains.
 
 ## The rule
 
