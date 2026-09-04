@@ -141,8 +141,10 @@ One-line-or-two pointer per feature, newest first — full design rationale live
   "could not read", never "nobody holds a role"** (see Known Constraints — read literally it would
   strip every mapped tag on the team), and the PII purge now clears `DiscordUserId` alongside
   `DiscordUsername`, since a snowflake never changes and keeping it would have left a permanent handle
-  on someone's account after their details aged out. **Not yet run against a real server** — the
-  privileged intent is still off, and the doc's "Before turning any of this on" is the order to do it in.
+  on someone's account after their details aged out. **Shipped in `v0.34.0` and inert** — deployed
+  2026-09-02, but nothing has run against a real Discord server: the privileged intent is still off,
+  no tag is mapped, and the daily switch is off for every team. The doc's "Before turning any of this
+  on" is the order to do it in.
 
 - **#116 closed — the missing token, not a missing mechanism (2026-08-29).** See
   `docs/trigger-points.md`'s "Per-session fan-out" section. Everything else the issue asked for
